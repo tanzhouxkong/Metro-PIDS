@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro PIDS V2 - Control Panel</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* ================= 1. 全局定义 ================= */
+        :root { --theme: #00b894; --font: "Microsoft YaHei", sans-serif; --gold: #ffaa00; --dark: #2d3436; }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; outline: none; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: #f0f2f5; font-family: var(--font); }
+
+        /* ================= 3. Admin 控制台 ================= */
+        #admin-app { width: 100vw; height: 100vh; display: flex; background: #f0f2f5; color: #333; }
+        .adm-side { width: 360px; background: #fff; border-right: 1px solid #e0e0e0; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; box-shadow: 2px 0 10px rgba(0,0,0,0.05); }
+        .adm-main { flex: 1; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+        
+        .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; }
+        .head { font-size: 15px; font-weight: 800; border-bottom: 2px solid #f5f5f5; padding-bottom: 10px; margin-bottom: 15px; color: #2d3436; display: flex; justify-content: space-between; align-items: center; }
+        
+        .btn { border: none; padding: 10px 16px; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 13px; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+        .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .b-blue { background: #0984e3; } .b-green { background: #00b894; } .b-org { background: #e17055; } .b-red { background: #d63031; } .b-gray { background: #636e72; }
+
+        .st-list { border: 1px solid #eee; flex: 1; overflow-y: auto; border-radius: 8px; margin-top: 10px; background: #fff; }
+        .item { padding: 10px; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 10px; transition: 0.2s; }
+        .item:hover { background: #fafafa; } 
+        .item.active { background: #e8f7ff; border-left: 4px solid #0984e3; }
+        
+        .item-txt { flex: 1; cursor: pointer; font-size: 14px; font-weight: 500; }
+        .item-act { display: flex; gap: 5px; opacity: 0.6; transition: 0.2s; }
+        .item:hover .item-act { opacity: 1; }
+
+        input, select { width: 100%; padding: 10px; border: 1px solid #dfe6e9; border-radius: 6px; margin-bottom: 10px; background: #fff; transition: 0.2s; }
+        input:focus, select:focus { border-color: var(--theme); outline: none; box-shadow: 0 0 0 3px rgba(0,184,148,0.1); }
+        
+        .xf-edit { background: #f9f9f9; padding: 10px; border: 1px dashed #ced6e0; max-height: 150px; overflow-y: auto; margin-bottom: 10px; border-radius: 6px; }
+        .xf-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        
+        .door-sel { display: flex; border: 1px solid #dfe6e9; border-radius: 6px; overflow: hidden; margin-bottom: 0; }
+        .d-btn { flex: 1; border: none; background: #fff; padding: 6px 10px; cursor: pointer; font-size: 12px; transition: 0.2s; border-right: 1px solid #eee; color: #666; }
+        .d-btn:last-child { border-right: none; }
+        .d-btn:hover { background: #f5f5f5; }
+        .d-btn.active { background: #0984e3; color: #fff; font-weight: bold; }
+
+        #rec-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 2000; display: none; flex-direction: column; justify-content: center; align-items: center; color: #fff; backdrop-filter: blur(5px); }
+    </style>
+</head>
+
+<body>
+    <!-- ================= 控制端 ================= -->
+    <div id="admin-app">
+        <div id="rec-mask">
+            <div style="font-size:60px; color:#ff7675; margin-bottom:20px;"><i class="fas fa-video"></i></div>
+            <h1 style="margin-bottom:10px;">正在录制中...</h1>
+            <p style="opacity:0.7; margin-bottom:30px;">请保持此窗口在前台，切勿最小化。</p>
+            <button class="btn b-red" style="padding:12px 40px; font-size:16px;" onclick="stopRec()">停止录制</button>
+        </div>
+
+        <div class="adm-side">
+            <div style="text-align:center; padding-bottom:10px; border-bottom:1px solid #eee; margin-bottom:10px;">
+                <h2 style="color:#2d3436;">PIDS 控制台</h2>
+                <div style="font-size:12px; color:#aaa; font-weight:bold;">V2-Multi Stable</div>
+            </div>
+
+            <!-- 新增：多线路管理 -->
+            <div class="card" style="border-left: 5px solid #6c5ce7; background: #fdfdff;">
+                <div class="head" style="color:#6c5ce7">多线路切换 (Multi-Line)</div>
+                <select id="line-select" onchange="switchLine(this.value)" style="font-weight:bold; color:#2d3436; border-color:#a29bfe;"></select>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn" style="flex:1; background:#6c5ce7;" onclick="newLine()"><i class="fas fa-plus"></i> 新建</button>
+                    <button class="btn b-red" style="flex:1" onclick="delLine()"><i class="fas fa-trash"></i> 删除</button>
+                </div>
+            </div>
+
+            <div class="card" style="border-left: 5px solid #00b894;">
+                <div class="head" style="color:#00b894">线路设置</div>
+                <input id="cfg-name" placeholder="线路名称 (如: 2号线)" oninput="saveCfg()">
+                <div style="display:flex; gap:10px;">
+                    <input type="color" id="cfg-color" style="height:42px; padding:2px; flex:1" title="主题色" oninput="saveCfg()">
+                    <select id="cfg-mode" onchange="saveCfg()" style="flex:2"><option value="loop">环线 (Loop)</option><option value="linear">单线 (Linear)</option></select>
+                </div>
+                <select id="cfg-dir" onchange="saveCfg()"></select>
+            </div>
+
+            <div class="card" style="border-left: 5px solid #d63031;">
+                <div class="head" style="color:#d63031">录制工具 (精准定时)</div>
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1"><label style="font-size:12px;color:#888">码率 (Mbps)</label><input id="rec-bps" type="number" value="50"></div>
+                    <div style="flex:1"><label style="font-size:12px;color:#888">单站停留 (秒)</label><input id="rec-int" type="number" type="number" value="" min="1" step="1"></div>
+                </div>
+                <button class="btn b-red" style="width:100%" onclick="startRec()"><i class="fas fa-circle"></i> 开始自动录制</button>
+            </div>
+
+            <div class="card" style="border-left: 5px solid #636e72;">
+                <div class="head" style="color:#636e72">系统操作</div>
+                <button class="btn b-green" style="width:100%; margin-bottom:10px;" onclick="openWin()"><i class="fas fa-external-link-alt"></i> 打开显示端窗口（PIDS）</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn b-gray" style="flex:1" onclick="exportData()"><i class="fas fa-download"></i> 导出</button>
+                    <label class="btn b-org" style="flex:1; margin:0;">
+                        <i class="fas fa-upload"></i> 导入 <input type="file" style="display:none" onchange="importData(this)">
+                    </label>
+                </div>
+                <button class="btn b-red" style="width:100%; margin-top:15px; opacity:0.8" onclick="resetData()"><i class="fas fa-trash-alt"></i> 重置数据</button>
+            </div>
+        </div>
+
+        <div class="adm-main">
+            <!-- 状态仪表盘 -->
+            <div class="card" style="display:flex; justify-content:space-between; align-items:center; border-left:6px solid #0984e3; background: linear-gradient(to right, #fff, #f4faff);">
+                <div>
+                    <div id="ctrl-lbl" style="font-size:12px; color:#888; text-transform:uppercase; letter-spacing:1px;">Current Station</div>
+                    <div style="font-size:24px; font-weight:800; color:#2d3436;" id="ctrl-cur">--</div>
+                    <div id="ctrl-dest" style="font-size:14px; color:#0984e3; margin-top:4px; font-weight:600;">Destination: --</div>
+                </div>
+                <div id="ctrl-st" style="background:#0984e3; color:#fff; padding:8px 16px; border-radius:30px; font-weight:800; font-size:14px; box-shadow:0 4px 10px rgba(9,132,227,0.3);">WAITING</div>
+            </div>
+
+            <!-- 控制按钮组 -->
+            <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-bottom:20px;">
+                <button class="btn b-gray" style="height:50px; font-size:12px; padding:0 2px;" onclick="move(-1)"><i class="fas fa-chevron-left"></i> 上一站</button>
+                <button class="btn b-org" style="height:50px; font-size:12px; padding:0 2px;" onclick="setArr()"><i class="fas fa-sign-in-alt"></i> 进站</button>
+                <button class="btn b-blue" style="height:50px; font-size:12px; padding:0 2px;" onclick="setDep()"><i class="fas fa-sign-out-alt"></i> 出站</button>
+                <button class="btn b-gray" style="height:50px; font-size:12px; padding:0 2px;" onclick="move(1)">下一站 <i class="fas fa-chevron-right"></i></button>
+                <button class="btn b-green" style="height:50px; font-size:12px; padding:0 2px; font-weight:bold;" onclick="next()"><i class="fas fa-step-forward"></i> 下一步</button>
+            </div>
+
+            <!-- 站点编辑区域 -->
+            <div class="card" id="st-edit-card" style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:400px; transition:all 0.3s;">
+                <div class="head" onclick="toggleEdit()" style="cursor:pointer; user-select:none;">
+                    <span><i class="fas fa-edit"></i> 站点管理 <span id="st-edit-txt" style="font-size:12px; color:#666; margin-left:5px;">(收起)</span> <i id="st-edit-icon" class="fas fa-chevron-down" style="font-size:12px;"></i></span>
+                    <button class="btn b-gray" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); clearForm()">清空表单</button>
+                </div>
+                
+                <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+                <div id="st-form-container" style="background:#f8f9fa; padding:15px; border:1px solid #e9ecef; border-radius:8px; margin-bottom:15px;">
+                    <div style="display:flex; gap:10px; margin-bottom:10px;">
+                        <input id="ed-cn" placeholder="中文站名 (例如: 人民广场)" style="flex:1">
+                        <input id="ed-en" placeholder="English Name" style="flex:1">
+                    </div>
+                    <div style="margin-bottom:10px; display:flex; gap:10px;">
+                        <div style="flex:1">
+                            <div style="font-size:12px;color:#666;margin-bottom:4px;">站点状态 (Status)</div>
+                            <div class="door-sel">
+                                <input type="hidden" id="ed-skip" value="false">
+                                <button class="d-btn active" id="btn-skip-off" onclick="setSkip(false)">正常</button>
+                                <button class="d-btn" id="btn-skip-on" onclick="setSkip(true)">暂缓</button>
+                            </div>
+                        </div>
+                        <div style="flex:1">
+                            <div style="font-size:12px;color:#666;margin-bottom:4px;">开门方向 (Door)</div>
+                            <div class="door-sel">
+                                <input type="hidden" id="ed-door" value="left">
+                                <button class="d-btn active" onclick="setDoor('left')">左侧</button>
+                                <button class="d-btn" onclick="setDoor('right')">右侧</button>
+                                <button class="d-btn" onclick="setDoor('both')">双侧</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-size:12px;color:#666;margin-bottom:8px; display:flex; justify-content:space-between;">
+                        <span>换乘线路</span>
+                        <a href="#" onclick="addXfer()" style="color:#0984e3; text-decoration:none;">+ 添加换乘</a>
+                    </div>
+                    <div id="ed-xfer" class="xf-edit"></div>
+                    <button class="btn b-green" style="width:100%" id="btn-save" onclick="saveSt()">
+                        <i class="fas fa-check"></i> <span id="btn-txt">添加新站点</span>
+                    </button>
+                    <input type="hidden" id="ed-idx" value="-1">
+                </div>
+                
+                <div class="st-list" id="st-list-box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============ 1. 全局变量与初始化 ============
+        const bc = new BroadcastChannel('metro_pids_v3');
+        let store = { cur: 0, list: [] };
+        let appData = null;
+        let rt = { idx: 0, state: 0 }; // state: 0=Arriving/Waiting, 1=Departing
+        let isRec = false;
+        let recTimer = null;
+
+        // 默认数据 (如果 localStorage 为空)
+        const DEF = {"meta":{"lineName":"2号线","themeColor":"#00ff4c","mode":"linear","dirType":"up"},"stations":[{"name":"浦东1号2号航站楼","en":"Pudong Airport Terminal 1 & 2","xfer":[{"line":"磁浮线","color":"#808080"},{"line":"机场联络线","color":"#808080"}]},{"name":"海天三路","en":"Haitian Sanlu","xfer":[]},{"name":"远东大道","en":"Yuandong Dadao","xfer":[]},{"name":"凌空路","en":"Lingkong Lu","xfer":[]},{"name":"川沙","en":"Chuansha","xfer":[]},{"name":"华夏东路","en":"Huaxia Donglu","xfer":[]},{"name":"创新中路","en":"Chuangxin Zhonglu","xfer":[]},{"name":"唐镇","en":"Tangzhen","xfer":[]},{"name":"广兰路","en":"Guanglan Lu","xfer":[]},{"name":"金科路","en":"Jinke Lu","xfer":[]},{"name":"张江高科","en":"Zhangjiang Hi-Tech Park","xfer":[]},{"name":"龙阳路","en":"Longyang Lu","xfer":[{"line":"7号线","color":"#FF6900"},{"line":"16号线","color":"#99CC66"},{"line":"18号线","color":"#D7000F"},{"line":"磁浮线","color":"#808080"}]},{"name":"世纪公园","en":"Century Park","xfer":[]},{"name":"上海科技馆","en":"Shanghai Science & Technology Museum","xfer":[]},{"name":"世纪大道","en":"Century Avenue","xfer":[{"line":"4号线","color":"#52c41a"},{"line":"6号线","color":"#D9027D"},{"line":"9号线","color":"#71C5E8"}]},{"name":"浦东南路","en":"Pudong Nanlu","xfer":[{"line":"14号线","color":"#8A2BE2"},{"line":"19号线","color":"#808080"}]},{"name":"陆家嘴","en":"Lujiazui","xfer":[{"line":"14号线","color":"#8A2BE2"}]},{"name":"南京东路","en":"East Nanjing Road","xfer":[{"line":"10号线","color":"#C0A8D1"}]},{"name":"人民广场","en":"People's Square","xfer":[{"line":"1号线","color":"#ED3229"},{"line":"8号线","color":"#0099CC"}]},{"name":"南京西路","en":"West Nanjing Road","xfer":[{"line":"12号线","color":"#007B65"},{"line":"13号线","color":"#F19D00"}]},{"name":"静安寺","en":"Jing'an Temple","xfer":[{"line":"7号线","color":"#FF6900"},{"line":"14号线","color":"#8A2BE2"}]},{"name":"江苏路","en":"Jiangsu Road","xfer":[{"line":"11号线","color":"#882E91"}]},{"name":"中山公园","en":"Zhongshan Park","xfer":[{"line":"3号线","color":"#FFD700"},{"line":"4号线","color":"#52c41a"}]},{"name":"娄山关路","en":"Loushanguan Lu","xfer":[{"line":"15号线","color":"#BBA786"}]},{"name":"威宁路","en":"Weining Lu","xfer":[]},{"name":"北新泾","en":"Beixinjing","xfer":[]},{"name":"淞虹路","en":"Songhong Lu","xfer":[]},{"name":"虹桥2号航站楼","en":"Hongqiao Airport Terminal 2","xfer":[{"line":"10号线","color":"#C0A8D1"},{"line":"机场联络线","color":"#808080"}]},{"name":"虹桥火车站","en":"Hongqiao Railway Station","xfer":[{"line":"10号线","color":"#C0A8D1"},{"line":"17号线","color":"#B5BD00"}]},{"name":"国家会展中心","en":"National Exhibition and Convention Center","xfer":[{"line":"13号线","color":"#F19D00"},{"line":"17号线","color":"#B5BD00"}]},{"name":"蟠祥路•国家会计学院站","en":"Panxiang Road·Shanghai National Accounting Institute Station","xfer":[]}]};
+
+        window.onload = () => {
+            loadSafe();
+            initUI();
+            renderAdmin();
+            renderLineSelector();
+            sync();
+
+            // 键盘监听
+            document.onkeydown = (e) => {
+                if (!isRec && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+                    handleKey(e.code, e);
+                }
+            };
+
+            // 监听来自 Display 的消息
+            bc.onmessage = (e) => {
+                if (e.data.t === 'REQ') sync();
+                if (e.data.t === 'REC_STOP_ERR') {
+                    isRec = false;
+                    clearInterval(recTimer);
+                    document.getElementById('rec-mask').style.display = 'none';
+                    alert('录制出错');
+                }
+                if (e.data.t === 'CMD_KEY') {
+                    handleKey(e.data.code, null);
+                }
+            };
+        };
+
+        function loadSafe() {
+            try {
+                const saved = localStorage.getItem('pids_global_store_v1');
+                if (saved) {
+                    store = JSON.parse(saved);
+                    if (!store.list || !Array.isArray(store.list) || store.list.length === 0) throw new Error();
+                } else {
+                    throw new Error();
+                }
+            } catch (e) {
+                console.log('初始化默认数据...');
+                store = { cur: 0, list: [JSON.parse(JSON.stringify(DEF))] };
+            }
+            if (store.cur < 0 || store.cur >= store.list.length) store.cur = 0;
+            appData = store.list[store.cur];
+        }
+
+        function sync() {
+            store.list[store.cur] = appData;
+            localStorage.setItem('pids_global_store_v1', JSON.stringify(store));
+            bc.postMessage({ t: 'SYNC', d: appData, r: rt });
+            renderAdmin();
+            renderLineSelector();
+        }
+
+        // ============ 2. 逻辑控制 ============
+        function getStep() {
+            const meta = appData.meta;
+            if (meta.mode === 'loop' && meta.dirType === 'inner') return -1;
+            if (meta.mode === 'linear' && meta.dirType === 'down') return -1;
+            return 1;
+        }
+
+        function handleKey(code, e) {
+            const step = getStep();
+            if (code === 'Space') {
+                if (e) e.preventDefault();
+                next();
+            }
+            if (code === 'KeyA') setArr();
+            if (code === 'KeyD') setDep();
+            if (code === 'ArrowRight') move(step);
+            if (code === 'ArrowLeft') move(-step);
+        }
+
+        function move(delta) {
+            let nextIdx = rt.idx;
+            const len = appData.stations.length;
+            const isLoop = appData.meta.mode === 'loop';
+            let count = 0;
+
+            while (count < len) {
+                nextIdx += delta;
+                
+                if (isLoop) {
+                    if (nextIdx >= len) nextIdx = 0;
+                    if (nextIdx < 0) nextIdx = len - 1;
+                } else {
+                    if (nextIdx >= len || nextIdx < 0) return; // Hit boundary
+                }
+
+                if (!appData.stations[nextIdx].skip) {
+                    rt.idx = nextIdx;
+                    rt.state = 0;
+                    sync();
+                    return;
+                }
+                count++;
+            }
+        }
+
+        function jumpTo(idx) {
+            rt.idx = idx;
+            rt.state = 0;
+            sync();
+        }
+
+        function setArr() {
+            if (rt.state === 1) move(getStep());
+            rt.state = 0;
+            sync();
+        }
+
+        function setDep() {
+            rt.state = 1;
+            sync();
+        }
+
+        function next() {
+            rt.state === 0 ? setDep() : setArr();
+        }
+
+        // ============ 3. UI 渲染与交互 ============
+        function initUI() {
+            document.getElementById('cfg-name').value = appData.meta.lineName;
+            document.getElementById('cfg-color').value = appData.meta.themeColor;
+            document.getElementById('cfg-mode').value = appData.meta.mode;
+            updUI();
+        }
+
+        function updUI() {
+            let mode = document.getElementById('cfg-mode').value;
+            let dirSel = document.getElementById('cfg-dir');
+            dirSel.innerHTML = '';
+
+            let s1 = '起点', s2 = '终点';
+            if(appData && appData.stations && appData.stations.length > 0) {
+                s1 = appData.stations[0].name;
+                s2 = appData.stations[appData.stations.length-1].name;
+            }
+
+            if (mode === 'loop') {
+                dirSel.add(new Option('外环 (逆时针)', 'outer'));
+                dirSel.add(new Option('内环 (顺时针)', 'inner'));
+            } else {
+                dirSel.add(new Option(`上行 (${s1} -> ${s2})`, 'up'));
+                dirSel.add(new Option(`下行 (${s2} -> ${s1})`, 'down'));
+            }
+            if (appData.meta.dirType) dirSel.value = appData.meta.dirType;
+        }
+
+        function saveCfg() {
+            appData.meta.lineName = document.getElementById('cfg-name').value;
+            appData.meta.themeColor = document.getElementById('cfg-color').value;
+            appData.meta.mode = document.getElementById('cfg-mode').value;
+            appData.meta.dirType = document.getElementById('cfg-dir').value;
+            
+            updUI();
+            // Re-read dirType in case it changed due to mode change
+            appData.meta.dirType = document.getElementById('cfg-dir').value;
+            sync();
+        }
+
+        function renderAdmin() {
+            const st = appData.stations[rt.idx];
+            document.getElementById('ctrl-cur').innerText = st ? st.name : '未知站点';
+            
+            // Update Label with Direction
+            let dirLabel = 'CURRENT STATION';
+            if (appData && appData.stations && appData.stations.length > 1) {
+                const sFirst = appData.stations[0].name;
+                const sLast = appData.stations[appData.stations.length-1].name;
+                
+                if (appData.meta.dirType === 'up') dirLabel = `${sFirst} ➜ ${sLast}`;
+                else if (appData.meta.dirType === 'down') dirLabel = `${sLast} ➜ ${sFirst}`;
+                else if (appData.meta.dirType === 'outer') dirLabel = '外环 (Outer Loop)';
+                else if (appData.meta.dirType === 'inner') dirLabel = '内环 (Inner Loop)';
+            }
+            document.getElementById('ctrl-lbl').innerText = dirLabel;
+
+            // Update Section Info
+            let infoText = '--';
+            const step = getStep();
+            const len = appData.stations.length;
+            
+            let idxFrom = -1;
+            let idxTo = -1;
+
+            if (rt.state === 0) { 
+                // Arrived at Station: Passed (Prev) -> Arrived (Curr)
+                idxTo = rt.idx;
+                idxFrom = rt.idx - step;
+            } else {
+                // In Transit: Passed (Curr) -> Arriving (Next)
+                idxFrom = rt.idx;
+                idxTo = rt.idx + step;
+            }
+
+            // Handle Loop Wrap
+            if (appData.meta.mode === 'loop') {
+                if (idxFrom < 0) idxFrom = len - 1;
+                if (idxFrom >= len) idxFrom = 0;
+                if (idxTo < 0) idxTo = len - 1;
+                if (idxTo >= len) idxTo = 0;
+            }
+
+            const getName = (i) => {
+                if (i >= 0 && i < len) return appData.stations[i].name;
+                return null;
+            };
+
+            const nameFrom = getName(idxFrom);
+            const nameTo = getName(idxTo);
+
+            if (!nameFrom) infoText = `始发 ➜ ${nameTo}`;
+            else if (!nameTo) infoText = `${nameFrom} ➜ 终点`;
+            else infoText = `${nameFrom} ➜ ${nameTo}`;
+
+            const destEl = document.getElementById('ctrl-dest');
+            if(destEl) destEl.innerText = infoText;
+
+            const statusEl = document.getElementById('ctrl-st');
+            statusEl.innerText = rt.state === 0 ? '进站' : '出站';
+            statusEl.style.background = rt.state === 0 ? '#0984e3' : '#00b894';
+
+            const list = document.getElementById('st-list-box');
+            list.innerHTML = '';
+            appData.stations.forEach((s, i) => {
+                const div = document.createElement('div');
+                div.className = 'item ' + (i === rt.idx ? 'active' : '');
+                div.draggable = true;
+                div.ondragstart = (e) => dragStart(e, i);
+                div.ondragover = (e) => dragOver(e);
+                div.ondrop = (e) => drop(e, i);
+                div.ondragend = (e) => dragEnd(e);
+                
+                let tags = '';
+                if (s.skip) tags += '<span style="background:#e17055;color:#fff;padding:2px 4px;border-radius:4px;font-size:10px;margin-left:5px;">暂缓</span>';
+                
+                let xfers = '';
+                if (s.xfer && s.xfer.length > 0) {
+                    xfers = '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">';
+                    s.xfer.forEach(x => {
+                        xfers += `<span style="background:${x.color};color:#fff;padding:1px 4px;border-radius:2px;font-size:10px;">${x.line}</span>`;
+                    });
+                    xfers += '</div>';
+                }
+
+                div.innerHTML = `
+                    <div class="item-txt" onclick="jumpTo(${i})">
+                        <div>
+                            <span style="font-weight:bold;margin-right:10px;color:#aaa;">[${i+1}]</span>
+                            <span>${s.name}</span> <span style="font-size:11px;color:#999;">${s.en}</span>
+                            ${tags}
+                        </div>
+                        ${xfers}
+                    </div>
+                    <div class="item-act">
+                        <button class="btn b-blue" style="padding:4px 8px; font-size:11px;" onclick="loadEdit(${i})"><i class="fas fa-pencil-alt"></i></button>
+                        <button class="btn b-red" style="padding:4px 8px; font-size:11px;" onclick="del(${i})"><i class="fas fa-times"></i></button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // ============ Drag & Drop Logic ============
+        let dragSrcIdx = -1;
+
+        function dragStart(e, i) {
+            dragSrcIdx = i;
+            e.dataTransfer.effectAllowed = 'move';
+            e.target.style.opacity = '0.4';
+        }
+
+        function dragOver(e) {
+            if (e.preventDefault) e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function dragEnd(e) {
+            e.target.style.opacity = '1';
+        }
+
+        function drop(e, i) {
+            if (e.stopPropagation) e.stopPropagation();
+            if (dragSrcIdx !== -1 && dragSrcIdx !== i) {
+                const item = appData.stations.splice(dragSrcIdx, 1)[0];
+                appData.stations.splice(i, 0, item);
+                
+                // Adjust current index if needed
+                if (rt.idx === dragSrcIdx) rt.idx = i;
+                else if (rt.idx > dragSrcIdx && rt.idx <= i) rt.idx--;
+                else if (rt.idx < dragSrcIdx && rt.idx >= i) rt.idx++;
+                
+                sync();
+            }
+            return false;
+        }
+
+        function renderLineSelector() {
+            const sel = document.getElementById('line-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            store.list.forEach((l, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.innerText = `[${i+1}] ${l.meta.lineName}`;
+                if (i === store.cur) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        }
+
+        function switchLine(val) {
+            val = parseInt(val);
+            store.cur = val;
+            appData = store.list[val];
+            rt = { idx: 0, state: 0 };
+            initUI();
+            sync();
+        }
+
+        function newLine() {
+            const name = prompt('请输入新线路名称 (例如: 3号线)', '新线路');
+            if (!name) return;
+            const newL = JSON.parse(JSON.stringify(DEF));
+            newL.meta.lineName = name;
+            newL.meta.themeColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+            store.list.push(newL);
+            switchLine(store.list.length - 1);
+        }
+
+        function delLine() {
+            if (store.list.length <= 1) return alert('至少保留一条线路！');
+            if (!confirm('确定要删除当前线路 "' + appData.meta.lineName + '" 吗？\n删除后无法恢复！')) return;
+            store.list.splice(store.cur, 1);
+            store.cur = 0;
+            appData = store.list[0];
+            rt = { idx: 0, state: 0 };
+            initUI();
+            sync();
+        }
+
+        // ============ 4. 站点编辑 ============
+        function toggleEdit() {
+            const form = document.getElementById('st-form-container');
+            const icon = document.getElementById('st-edit-icon');
+            const txt = document.getElementById('st-edit-txt');
+            
+            if (form.style.display === 'none') {
+                form.style.display = 'block';
+                icon.className = 'fas fa-chevron-down';
+                if(txt) txt.innerText = '(收起)';
+            } else {
+                form.style.display = 'none';
+                icon.className = 'fas fa-chevron-right';
+                if(txt) txt.innerText = '(展开)';
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('ed-cn').value = '';
+            document.getElementById('ed-en').value = '';
+            document.getElementById('ed-xfer').innerHTML = '';
+            document.getElementById('ed-idx').value = '-1';
+            document.getElementById('btn-txt').innerText = '添加新站点';
+            setDoor('left');
+            setSkip(false);
+        }
+
+        function setDoor(val) {
+            document.getElementById('ed-door').value = val;
+            const btns = document.querySelectorAll('.door-sel:last-child .d-btn'); // Assuming it's the second door-sel group
+            // Better selector strategy:
+            const doorBtns = document.querySelectorAll('[onclick^="setDoor"]');
+            doorBtns.forEach(b => {
+                if (b.getAttribute('onclick').includes(`'${val}'`)) b.classList.add('active');
+                else b.classList.remove('active');
+            });
+        }
+
+        function setSkip(val) {
+            document.getElementById('ed-skip').value = val;
+            const offBtn = document.getElementById('btn-skip-off');
+            const onBtn = document.getElementById('btn-skip-on');
+            if (val) {
+                offBtn.classList.remove('active');
+                onBtn.classList.add('active');
+            } else {
+                offBtn.classList.add('active');
+                onBtn.classList.remove('active');
+            }
+        }
+
+        function addXfer(line='', color='#000000', isSuspended=false) {
+            const box = document.getElementById('ed-xfer');
+            const div = document.createElement('div');
+            div.className = 'xf-row';
+            const btnClass = isSuspended ? 'b-org' : 'b-gray';
+            const btnText = isSuspended ? '暂缓' : '正常';
+            
+            div.innerHTML = `
+                <input value="${line}" class="xl" placeholder="线号" style="margin:0;flex:1">
+                <input type="color" value="${color}" class="xc" style="width:40px;height:38px;padding:0;border:none;">
+                <input type="hidden" class="xs" value="${isSuspended}">
+                <button class="btn ${btnClass} xs-btn" style="padding:0 8px; width:50px; font-size:12px;" onclick="toggleXferSuspended(this)">${btnText}</button>
+                <button class="btn b-red" style="padding:0 8px;" onclick="this.parentElement.remove()">x</button>
+            `;
+            box.appendChild(div);
+        }
+
+        function toggleXferSuspended(btn) {
+            const input = btn.parentElement.querySelector('.xs');
+            const isSuspended = input.value === 'true';
+            const newState = !isSuspended;
+            input.value = newState;
+            
+            if (newState) {
+                btn.classList.remove('b-gray');
+                btn.classList.add('b-org');
+                btn.innerText = '暂缓';
+            } else {
+                btn.classList.remove('b-org');
+                btn.classList.add('b-gray');
+                btn.innerText = '正常';
+            }
+        }
+
+        function loadEdit(i) {
+            // Ensure form is visible
+            const form = document.getElementById('st-form-container');
+            const icon = document.getElementById('st-edit-icon');
+            const txt = document.getElementById('st-edit-txt');
+            if (form.style.display === 'none') {
+                form.style.display = 'block';
+                icon.className = 'fas fa-chevron-down';
+                if(txt) txt.innerText = '(收起)';
+            }
+
+            const s = appData.stations[i];
+            document.getElementById('ed-cn').value = s.name;
+            document.getElementById('ed-en').value = s.en;
+            setSkip(s.skip || false);
+            setDoor(s.door || 'left');
+            const box = document.getElementById('ed-xfer');
+            box.innerHTML = '';
+            if (s.xfer) s.xfer.forEach(x => addXfer(x.line, x.color, x.suspended));
+            document.getElementById('ed-idx').value = i;
+            document.getElementById('btn-txt').innerText = '保存修改';
+        }
+
+        function saveSt() {
+            const name = document.getElementById('ed-cn').value;
+            if (!name) return;
+            const xfers = [];
+            document.querySelectorAll('.xf-row').forEach(row => {
+                const l = row.querySelector('.xl').value;
+                const c = row.querySelector('.xc').value;
+                const s = row.querySelector('.xs').value === 'true';
+                if (l) xfers.push({ line: l, color: c, suspended: s });
+            });
+            const newSt = {
+                name: name,
+                en: document.getElementById('ed-en').value || name,
+                skip: document.getElementById('ed-skip').value === 'true',
+                door: document.getElementById('ed-door').value,
+                xfer: xfers
+            };
+            const idx = parseInt(document.getElementById('ed-idx').value);
+            if (idx === -1) appData.stations.push(newSt);
+            else appData.stations[idx] = newSt;
+            clearForm();
+            sync();
+        }
+
+        function del(i) {
+            if (appData.stations.length <= 1) return alert('至少保留一个站点');
+            if (confirm('确定删除该站点吗？')) {
+                appData.stations.splice(i, 1);
+                if (rt.idx >= appData.stations.length) rt.idx = 0;
+                sync();
+            }
+        }
+
+        // ============ 5. 录制与文件 ============
+        function startRec() {
+            if (isRec) return;
+            const intVal = document.getElementById('rec-int').value;
+            if (intVal <= 0 || intVal % 1 != 0) return alert('单站停留时间必须为正整数');
+            
+            isRec = true;
+            const bps = (parseFloat(document.getElementById('rec-bps').value) || 8) * 1000000;
+            const interval = parseFloat(intVal) * 1000;
+            
+            document.getElementById('rec-mask').style.display = 'flex';
+            
+            // Send start command to display
+            bc.postMessage({ t: 'REC_START', bps: bps });
+            
+            // Start timer
+            recTimer = setInterval(() => {
+                if (!isRec) return clearInterval(recTimer);
+                next();
+            }, interval);
+        }
+
+        function stopRec() {
+            isRec = false;
+            clearInterval(recTimer);
+            document.getElementById('rec-mask').style.display = 'none';
+            bc.postMessage({ t: 'REC_STOP' });
+        }
+
+        function exportData() {
+            const blob = new Blob([JSON.stringify(store)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'metro_store.json';
+            a.click();
+        }
+
+        function importData(el) {
+            const f = el.files[0];
+            if (!f) return;
+            const r = new FileReader();
+            r.onload = e => {
+                try {
+                    const d = JSON.parse(e.target.result);
+                    if (d.list && Array.isArray(d.list)) {
+                        store = d;
+                    } else if (d.stations && d.meta) {
+                        store.list.push(d);
+                    } else {
+                        throw new Error();
+                    }
+                    store.cur = store.list.length - 1;
+                    appData = store.list[store.cur];
+                    rt = { idx: 0, state: 0 };
+                    initUI();
+                    sync();
+                    alert('导入成功');
+                } catch (err) {
+                    alert('文件无效');
+                }
+                el.value = '';
+            };
+            r.readAsText(f);
+        }
+
+        function resetData() {
+            if (confirm("【警告】这将清空所有线路数据并恢复出厂设置，确定吗？")) {
+                localStorage.removeItem('pids_global_store_v1');
+                location.reload();
+            }
+        }
+
+        function openWin() {
+            window.open('display_window.html', 'pids_display_win', 'width=1280,height=720');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,1744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro PIDS V2 - Display</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* ================= 1. 全局定义 ================= */
+        :root { --theme: #00b894; --font: "Microsoft YaHei", sans-serif; --gold: #ffaa00; --dark: #2d3436; }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; outline: none; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: var(--font); }
+
+        /* ================= 2. 显示端 (Display) ================= */
+        #display-app {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #000; z-index: 9999; display: flex; justify-content: center; align-items: center;
+        }
+
+        #scaler {
+            width: 2080px; height: 584px; background: #fff; position: relative; 
+            display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 0 100px #000;
+            transform-origin: center center;
+        }
+
+        /* 顶部 Header 区域 (仿北京地铁) */
+        .header {
+            height: 100px;
+            width: 100%;
+            display: flex;
+            border-bottom: 4px solid #ccc;
+            background: var(--theme); /* Theme Background */
+            flex-shrink: 0;
+        }
+
+        /* 1. 左侧 Logo + 时间 */
+        .h-left {
+            width: 25%;
+            display: flex;
+            align-items: center;
+            padding-left: 20px;
+            border-right: none;
+        }
+        .logo-area {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            margin-right: 20px;
+        }
+        .logo-icon {
+            font-size: 30px;
+            color: var(--contrast-color);
+            margin-bottom: 2px;
+        }
+        .logo-txt {
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--contrast-color);
+            line-height: 1;
+        }
+        .logo-en {
+            font-size: 10px;
+            font-weight: bold;
+            color: var(--contrast-color);
+            letter-spacing: 1px;
+        }
+        /* Line Info (Replaces Datetime) */
+        .line-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto; /* Push to right of h-left if needed, or just margin */
+            padding-right: 20px;
+        }
+        .line-badge {
+            font-size: 36px;
+            font-weight: 900;
+            color: var(--contrast-color);
+            line-height: 1;
+        }
+        /* .line-txt removed */
+
+        /* 2. 下一站 (白框 + 白色描边阴影) */
+        .h-next {
+            width: 35%;
+            background: #fff; /* White */
+            color: #000; /* Black Text */
+            display: flex;
+            flex-direction: row; /* 改为横向排列 */
+            align-items: center;
+            justify-content: space-between;
+            padding-left: 30px;
+            position: relative;
+            /* Removed clip-path for standard box look */
+            border: 3px solid #fff; /* White Border */
+            box-shadow: 0 5px 20px rgba(0,0,0,0.4); /* Stronger Shadow */
+            margin: 10px 0; /* Add some margin */
+            height: 80px; /* Fixed height to fit in header */
+            border-radius: 8px; /* Rounded corners */
+            padding-right: 30px; 
+            z-index: 10;
+        }
+        .h-next .lbl {
+            font-size: 36px;
+            font-weight: bold;
+            line-height: 1.2;
+            text-align: left;
+            flex-shrink: 0;
+            color: #000; /* Label in Black */
+        }
+        .h-next .lbl .en { font-size: 12px; font-weight: normal; opacity: 0.9; display: block; color: #666; }
+        
+        .h-next .val {
+            font-size: 36px;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-top: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: right;
+            flex-grow: 1;
+            color: #000;
+        }
+        .h-next .val .en { font-size: 16px; font-weight: bold; opacity: 0.9; display: block; color: #666; }
+
+        /* 3. 对侧开门 (隐藏) */
+        .h-door {
+            display: none;
+        }
+
+        /* 4. 终点站 (白色背景) -> 改为线路方向 */
+        .h-term {
+            width: 40%;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            padding-right: 30px;
+            padding-left: 50px;
+            color: var(--contrast-color);
+            /* margin-left: -30px; Removed overlap */
+        }
+        .h-term .lbl { font-size: 24px; font-weight: bold; line-height: 1.2; text-align: right; margin-right: 15px; color: var(--contrast-color); }
+        .h-term .lbl .en { font-size: 12px; font-weight: normal; display: block; color: var(--contrast-color); opacity: 0.8; }
+        .h-term .val { font-size: 36px; font-weight: 900; line-height: 1; color: var(--contrast-color); }
+        .h-term .val .en { font-size: 14px; font-weight: bold; display: block; color: var(--contrast-color); opacity: 0.8; }
+
+        /* Route Arrows Animation */
+        .route-arrows { display: flex; gap: 20px; margin: 0 40px; }
+        .route-arrows i { font-size: 28px; color: var(--contrast-color); opacity: 0.3; animation: r-arrow-anim 1.5s infinite; }
+        .route-arrows .a1 { animation-delay: 0s; }
+        .route-arrows .a2 { animation-delay: 0.25s; }
+        .route-arrows .a3 { animation-delay: 0.5s; }
+        @keyframes r-arrow-anim {
+            0%, 100% { opacity: 0.3; transform: scale(1); color: var(--contrast-color); }
+            50% { opacity: 1; transform: scale(1.3); color: var(--contrast-color); }
+        }
+        
+        @keyframes pulse-yellow {
+            0% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.7); transform: scale(1); }
+            50% { box-shadow: 0 0 20px 0 rgba(241, 196, 15, 0.6); transform: scale(1.2); }
+            100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); transform: scale(1); }
+        }
+
+        @keyframes pulse-yellow-centered {
+            0% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.7); transform: translate(-50%, -50%) scale(1); }
+            50% { box-shadow: 0 0 20px 0 rgba(241, 196, 15, 0.6); transform: translate(-50%, -50%) scale(1.2); }
+            100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); transform: translate(-50%, -50%) scale(1); }
+        }
+
+        @keyframes spin-inner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin-outer { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+
+
+        /* Marquee Styles */
+        .marquee-box {
+            overflow: hidden;
+            white-space: nowrap;
+            position: relative;
+            display: block;
+            max-width: 100%;
+        }
+        .marquee-content {
+            display: inline-block;
+            white-space: nowrap;
+        }
+        .marquee-content.scrolling {
+            animation: marquee-scroll 8s linear infinite;
+            padding-right: 50px; /* Gap between repeats */
+        }
+        @keyframes marquee-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        /* ============ 底部地图区域 ============ */
+        .btm-map { 
+            flex: 1; 
+            width: 100%; 
+            background: #fff; 
+            position: relative; 
+            overflow: hidden; 
+            scrollbar-width: none; 
+            display: flex;
+            align-items: center;
+            padding-bottom: 100px; /* 整体上移 */
+        }
+        .btm-map::-webkit-scrollbar { display: none; }
+        
+        /* 通用节点样式 (Loop模式仍使用旧样式) */
+        .node { position: absolute; z-index: 10; transition: left 0.5s, top 0.5s; }
+        .node .dot { 
+            width: 24px; height: 24px; 
+            background: #fff; 
+            border: 4px solid var(--theme); 
+            border-radius: 50%; 
+            position: absolute; 
+            left: 50%; top: 50%; 
+            transform: translate(-50%,-50%); 
+            transition: 0.3s; 
+            z-index: 2; 
+        }
+        .node .n-txt { 
+            position: absolute; left: 50%; transform: translateX(-50%); 
+            background: none; color: #333; text-shadow: none;
+            padding: 5px 0; text-align: center; font-weight: bold; 
+            transition: 0.3s; min-width: 140px; z-index: 1; font-size: 18px;
+        }
+        .node .n-txt .en { font-size: 12px; font-weight: normal; color: #666; margin-top: 2px; }
+        .node .n-txt .x-tag { font-size: 10px; padding: 1px 4px; border-radius: 3px; margin: 1px; color: #fff; vertical-align: middle; }
+
+        /* ============ 线性地图新样式 (Linear Map) ============ */
+        .map-l { padding-left: 100px; overflow-x: auto; align-items: center; }
+        .l-box { position: relative; height: 100%; display: flex; align-items: center; }
+        
+        /* 节点容器 */
+        .l-node { 
+            width: 90px; /* 减少间距 */
+            height: 100%; 
+            flex-shrink: 0; 
+            position: relative; 
+            z-index: 5; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+        }
+        
+        /* 双线轨道 */
+        .track-double {
+            position: absolute; left: 0; width: 100%; top: 50%; transform: translateY(-50%);
+            height: 18px; /* 加粗 */
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            z-index: 0;
+        }
+
+        /* 线性模式下的圆点 */
+        .l-node .dot { 
+            position: relative; 
+            width: 30px; height: 30px; /* 加大 */
+            background: #fff; border: 5px solid var(--theme); border-radius: 50%; 
+            z-index: 10;
+            margin: 0;
+            transition: 0.3s;
+        }
+
+        /* 上方：换乘信息 */
+        .l-node .info-top {
+            position: absolute; bottom: 50%; left: 50%; transform: translateX(-50%);
+            margin-bottom: 30px;
+            display: flex; flex-direction: column-reverse; /* 向上堆叠 */
+            align-items: center;
+            gap: 4px;
+            z-index: 5;
+        }
+        .l-node .info-top .x-tag {
+            font-size: 14px; padding: 3px 8px; border-radius: 4px; color: #fff; font-weight: bold;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .l-node .info-top .x-tag.suspended {
+            background: #f0f0f0 !important;
+            color: #999 !important;
+            border: 1px solid #ccc;
+            box-shadow: none;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .l-node .info-top .x-tag.suspended .sub {
+            font-size: 10px;
+            background: #999;
+            color: #fff;
+            padding: 0 2px;
+            border-radius: 2px;
+            margin-left: 2px;
+        }
+
+        /* 下方：站点名称 */
+        .l-node .info-btm {
+            position: absolute; top: 50%; left: 50%; transform: translateX(-50%);
+            margin-top: 30px;
+            display: flex; flex-direction: column;
+            align-items: center;
+            z-index: 5;
+            writing-mode: vertical-rl; /* 竖排文字 */
+        }
+        .l-node .info-btm .name {
+            font-size: 26px; font-weight: bold; color: #333; letter-spacing: 2px;
+            margin-bottom: -5px; /* 负边距拉近距离 */
+            line-height: 1;
+            white-space: nowrap;
+            transition: 0.3s;
+        }
+        .l-node .info-btm .en {
+            font-size: 16px; color: #666; font-weight: normal;
+            writing-mode: vertical-rl; 
+            text-orientation: sideways; /* 使用原生竖排侧向旋转，避免 transform 造成的布局间隙 */
+            margin: 0;
+            transition: 0.3s;
+        }
+        .l-node .info-top .defer {
+            font-size: 12px; background: #95a5a6; color: #fff; padding: 2px 6px; border-radius: 4px;
+            font-weight: bold;
+        }
+
+        /* 状态样式 */
+        .l-node.passed .dot { background: #fff; border-color: #ccc; }
+        .l-node.passed .name { color: #999; }
+        .l-node.passed .en { color: #ccc; }
+        
+        /* 环形地图 SVG */
+        .map-r { display: flex; justify-content: center; align-items: center; }
+        
+        /* 箭头样式 */
+        .arr { 
+            position: absolute; 
+            top: 50%; 
+            width: 40px; 
+            height: 40px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            font-size: 32px; 
+            z-index: 15; 
+            filter: drop-shadow(0 0 5px rgba(241, 196, 15, 0.8)); 
+        }
+        
+        #rec-tip { position: absolute; top: 10px; left: 10px; background: #fff; color: red; padding: 5px 15px; border-radius: 20px; font-weight: bold; animation: blink 1s infinite; display: none; z-index: 9999; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+        /* ============ Arrival Screen Styles (Jinan Style) ============ */
+        #arrival-screen {
+            width: 100%; flex: 1; display: none; flex-direction: column;
+            background: #fff; font-family: "Microsoft YaHei", sans-serif;
+            overflow: hidden;
+        }
+        
+        /* AS Header Removed - Using Global Header */
+        
+        /* AS Body */
+        .as-body { flex: 1; display: flex; background: #fff; padding: 0; gap: 0; overflow: hidden; }
+        
+        /* AS Left Panel: Doors & Carriages */
+        .as-panel-left {
+            width: 35%; display: flex; flex-direction: column; 
+            padding: 10px;
+        }
+        .as-door-area {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 15px;
+        }
+        .as-door-graphic {
+            display: flex; align-items: center; justify-content: center;
+        }
+        .as-door-img { 
+            font-size: 120px; 
+            color: var(--theme); 
+            filter: drop-shadow(0 5px 15px rgba(0,0,0,0.2));
+            animation: pulse-door 2s infinite;
+            z-index: 2;
+        }
+        .door-arrow {
+            font-size: 80px;
+            color: #ddd;
+            opacity: 0.3;
+            transition: 0.3s;
+            margin: 0 20px;
+        }
+        .door-arrow.active {
+            color: var(--theme);
+            opacity: 1;
+        }
+        .door-arrow.l-arrow.active { animation: arrow-move-left 2s infinite; }
+        .door-arrow.r-arrow.active { animation: arrow-move-right 2s infinite; }
+
+        @keyframes arrow-move-left {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-20px); }
+        }
+        @keyframes arrow-move-right {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(20px); }
+        }
+        @keyframes pulse-door {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .as-door-text { text-align: center; }
+        .as-door-t-cn { font-size: 42px; font-weight: bold; margin-bottom: 5px; color: #333; }
+        .as-door-t-en { font-size: 18px; color: #666; }
+
+        .as-car-area {
+            height: 150px; display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .as-car-diag { display: flex; gap: 2px; margin-top: 10px; }
+        .as-car { 
+            width: 60px; height: 40px; border: 2px solid #999; 
+            display: flex; justify-content: center; align-items: center;
+            font-weight: bold; color: #666; font-size: 18px;
+        }
+        .as-car-exits { display: flex; gap: 2px; margin-bottom: 5px; width: 100%; justify-content: center; }
+        .as-exit-tag { 
+            background: #f39c12; color: #fff; font-size: 12px; padding: 2px 5px; border-radius: 2px;
+            position: relative; top: 0px; margin: 0 10px;
+        }
+
+        /* AS Right Panel: Map */
+        .as-panel-right {
+            flex: 1; padding: 0 40px;
+            display: flex; align-items: center; overflow: hidden; position: relative;
+        }
+        .as-map-track {
+            position: absolute; top: 50%; left: 0; width: 100%; 
+            height: 18px; /* Match Style 1 */
+            background: none;
+            border-top: 5px solid var(--theme);
+            border-bottom: 5px solid var(--theme);
+            transform: translateY(-50%); z-index: 0;
+        }
+        /* Removed ::after arrows */
+        .as-map-nodes {
+            display: flex; align-items: center; width: 100%; z-index: 1;
+            justify-content: space-around;
+        }
+        
+        /* Arrival Screen Map Overrides (Horizontal Text) */
+        #arrival-screen .l-node { width: 160px; }
+        #arrival-screen .l-node .info-btm { 
+            writing-mode: horizontal-tb; 
+            margin-top: 15px; 
+            width: 100%;
+        }
+        #arrival-screen .l-node .info-btm .name { 
+            margin-bottom: 5px; 
+            font-size: 22px;
+            white-space: normal;
+            text-align: center;
+        }
+        #arrival-screen .l-node .info-btm .en { 
+            writing-mode: horizontal-tb; 
+            text-orientation: mixed;
+            font-size: 14px;
+            text-align: center;
+            white-space: normal;
+            line-height: 1.1;
+        }
+
+        .as-m-node {
+            display: flex; flex-direction: column; align-items: center; position: relative;
+            min-width: 100px;
+        }
+        .as-m-dot {
+            width: 30px; height: 30px; background: #fff; border: 5px solid #005bac; border-radius: 50%;
+            margin: 20px 0; z-index: 2; transition: 0.3s;
+        }
+        .as-m-node.past .as-m-dot { background: #ccc; border-color: #999; }
+        .as-m-node.curr .as-m-dot { 
+            width: 50px; height: 50px; background: #fff; border: 5px solid #f39c12;
+            box-shadow: 0 0 15px #f39c12; border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .as-m-node.curr .as-m-dot::after {
+            content: "\f239"; font-family: "Font Awesome 6 Free"; font-weight: 900;
+            color: #f39c12; font-size: 24px;
+        }
+        .as-m-name { font-size: 20px; font-weight: bold; color: #333; text-align: center; }
+        .as-m-en { font-size: 12px; color: #999; text-align: center; }
+        .as-m-node.past .as-m-name { color: #999; }
+        
+        .as-xfer-row { position: absolute; top: -30px; display: flex; gap: 5px; }
+        .as-xfer-badge { background: #f39c12; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div id="display-app">
+        <div id="scaler">
+            <div id="rec-tip"><i class="fas fa-circle"></i> REC</div>
+            
+            <!-- Header -->
+            <div class="header">
+                <div class="h-left">
+                    <div class="logo-area">
+                        <div class="logo-icon"><i class="fas fa-subway"></i></div>
+                    </div>
+                    <div class="line-info">
+                        <div class="line-badge" id="d-line-no">--</div>
+                    </div>
+                </div>
+                <div class="h-next">
+                    <div class="lbl">下一站:<br><span class="en">Next Station:</span></div>
+                    <div class="val" id="d-next-st">--<br><span class="en">--</span></div>
+                </div>
+                <div class="h-door">
+                    <div class="door-icon"><i class="fas fa-arrow-circle-left"></i></div>
+                    <div class="door-txt">左侧开门<br><span class="en">Doors open on the left</span></div>
+                </div>
+                <div class="h-term">
+                    <div class="lbl">终点站:<br><span class="en">Terminal:</span></div>
+                    <div class="val" id="d-term-st">--<br><span class="en">--</span></div>
+                </div>
+            </div>
+
+            <!-- Map -->
+            <div class="btm-map" id="d-map"></div>
+
+            <!-- Arrival Screen (Jinan Style) -->
+            <div id="arrival-screen">
+                <!-- Header Removed -->
+                
+                <div class="as-body">
+                    <div class="as-panel-left">
+                        <div class="as-door-area">
+                            <div class="as-door-graphic">
+                                <div class="door-arrow l-arrow"><i class="fas fa-chevron-left"></i></div>
+                                <div class="as-door-img"><i class="fas fa-door-open"></i></div>
+                                <div class="door-arrow r-arrow"><i class="fas fa-chevron-right"></i></div>
+                            </div>
+                            <div class="as-door-text">
+                                <div class="as-door-t-cn" id="as-door-msg-cn">本侧开门</div>
+                                <div class="as-door-t-en" id="as-door-msg-en">Doors will be opened on this side</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="as-panel-right">
+                        <div class="as-map-track"></div>
+                        <div class="as-map-nodes" id="as-map-nodes">
+                            <!-- Dynamic Nodes -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const bc = new BroadcastChannel('metro_pids_v3');
+        let appData = null;
+        let rt = { idx: 0, state: 0 };
+        let recorder = null;
+        let chunks = [];
+        let asViewMode = 0; // 0: Map, 1: Big Name
+        let arrivalTimer = null;
+        let lastArrivalIdx = -1;
+
+        window.onload = () => {
+            fitScreen();
+            window.onresize = fitScreen;
+            
+            // Clock
+            setInterval(updateClock, 1000);
+            updateClock();
+
+            // Request initial data
+            bc.postMessage({ t: 'REQ' });
+
+            bc.onmessage = (e) => {
+                if (e.data.t === 'SYNC') {
+                    appData = e.data.d;
+                    rt = e.data.r;
+                    renderDisp();
+                }
+                if (e.data.t === 'REC_START') {
+                    startRec(e.data.bps);
+                }
+                if (e.data.t === 'REC_STOP') {
+                    stopRec();
+                }
+            };
+
+            // Keyboard shortcuts forwarding
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') e.preventDefault();
+                const validCodes = ['Space', 'KeyA', 'KeyD', 'ArrowRight', 'ArrowLeft'];
+                if (validCodes.includes(e.code)) {
+                    bc.postMessage({ t: 'CMD_KEY', code: e.code });
+                }
+            });
+        };
+
+        function updateClock() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            
+            const dEl = document.getElementById('date');
+            const tEl = document.getElementById('time');
+            if(dEl) dEl.innerText = `${y}-${m}-${d}`;
+            if(tEl) tEl.innerText = `${hh}:${mm}`;
+        }
+
+        function fitScreen() {
+            const scaler = document.getElementById('scaler');
+            const scale = Math.min(window.innerWidth / 2080, window.innerHeight / 584);
+            scaler.style.transform = `scale(${scale})`;
+        }
+
+        function getNextValidSt(currentIdx, step) {
+            if (!appData) return currentIdx;
+            let stations = appData.stations;
+            let len = stations.length;
+            let dir = step > 0 ? 1 : -1;
+            let nextIdx = currentIdx;
+            
+            // Determine Range
+            let sIdx = (appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1) ? appData.meta.startIdx : 0;
+            let eIdx = (appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1) ? appData.meta.termIdx : len - 1;
+            let minIdx = Math.min(sIdx, eIdx);
+            let maxIdx = Math.max(sIdx, eIdx);
+
+            for(let i=0; i<len; i++) {
+                nextIdx += dir;
+                
+                if (appData.meta.mode === 'loop') {
+                    if (nextIdx >= len) nextIdx = 0;
+                    if (nextIdx < 0) nextIdx = len - 1;
+                } else {
+                    // Linear Mode Boundary Check (Short Turn)
+                    if (nextIdx > maxIdx) return maxIdx;
+                    if (nextIdx < minIdx) return minIdx;
+                }
+                
+                if (!stations[nextIdx].skip) return nextIdx;
+                
+                // If we hit the boundary and it's a skip station, we might be stuck?
+                // But usually start/end stations are not skipped.
+                if (appData.meta.mode !== 'loop') {
+                    if (nextIdx === minIdx || nextIdx === maxIdx) return nextIdx;
+                }
+            }
+            return nextIdx;
+        }
+
+        function mkNode(st, i, mode) {
+            let node = document.createElement('div');
+            node.className = mode === 'loop' ? 'node' : 'l-node';
+            
+            let isPassed = false;
+            let isCurr = false;
+            let idx = rt.idx;
+            let state = rt.state;
+            let dir = appData.meta.dirType;
+
+            if (mode === 'loop') {
+                if (i === idx) {
+                     if (state === 0) isCurr = true;
+                     else isPassed = true; 
+                }
+            } else {
+                if (dir === 'up' || dir === 'outer') {
+                    if (i < idx) isPassed = true;
+                    else if (i === idx && state === 1) isPassed = true;
+                } else {
+                    if (i > idx) isPassed = true;
+                    else if (i === idx && state === 1) isPassed = true;
+                }
+                if (i === idx && state === 0) isCurr = true;
+            }
+            
+            if (isPassed) node.classList.add('passed');
+            if (isCurr) node.classList.add('curr');
+            
+            // Transfer Info
+            let xferHTML = '';
+            if (st.xfer) {
+                st.xfer.forEach(x => {
+                    if (x.suspended) {
+                        xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${x.line}<span class="sub">暂缓</span></span>`;
+                    } else {
+                        xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
+                    }
+                });
+            }
+            
+            // Name Info
+            let nameStyle = '';
+            let deferTag = '';
+            if (st.skip) {
+                nameStyle = 'color:#999; opacity:0.7;';
+                deferTag = '<div class="defer">暂缓</div>';
+            }
+
+            if (mode === 'loop') {
+                // Loop mode structure (Old)
+                node.innerHTML = `<div class="dot"></div><div class="n-txt"><div style="${nameStyle}">${st.name}</div><div class="en">${st.en}</div>${deferTag}<div class="x-box">${xferHTML}</div></div>`;
+            } else {
+                // Linear mode structure (New)
+                node.innerHTML = `
+                    <div class="info-top">${deferTag}${xferHTML}</div>
+                    <div class="dot"></div>
+                    <div class="info-btm">
+                        <div class="name" style="${nameStyle}">${st.name}</div>
+                        <div class="en">${st.en}</div>
+                    </div>
+                `;
+            }
+            
+            return node;
+        }
+
+        function getContrastColor(hex) {
+            if (!hex) return '#fff';
+            var shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+            hex = hex.replace(shorthandRegex, function(m, r, g, b) {
+                return r + r + g + g + b + b;
+            });
+            var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            if (!result) return '#fff';
+            var r = parseInt(result[1], 16);
+            var g = parseInt(result[2], 16);
+            var b = parseInt(result[3], 16);
+            var yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+            return (yiq >= 128) ? '#000' : '#fff';
+        }
+
+        function renderDisp() {
+            if (!appData || !appData.stations.length) return;
+
+            const meta = appData.meta;
+            document.documentElement.style.setProperty('--theme', meta.themeColor);
+            document.documentElement.style.setProperty('--contrast-color', getContrastColor(meta.themeColor));
+            const sts = appData.stations;
+
+            const mapDiv = document.getElementById('d-map');
+            const arrivalScreen = document.getElementById('arrival-screen');
+            const globalHeader = document.querySelector('.header');
+
+            // Always update header info (and map content)
+            renderNormalScreen(sts, meta);
+
+            if (rt.state === 0) {
+                // ARRIVAL MODE
+                // Check if new station arrival
+                if (rt.idx !== lastArrivalIdx) {
+                    lastArrivalIdx = rt.idx;
+                    asViewMode = 0; // Reset to Map view
+                    
+                    // Restart Timer
+                    if (arrivalTimer) clearInterval(arrivalTimer);
+                    arrivalTimer = setInterval(() => {
+                        asViewMode = (asViewMode + 1) % 2;
+                        if (appData) {
+                             renderArrivalScreen(appData.stations, appData.meta);
+                        }
+                    }, 5000);
+                } else if (!arrivalTimer) {
+                    // Ensure timer is running if we are in arrival mode but timer is missing
+                    arrivalTimer = setInterval(() => {
+                        asViewMode = (asViewMode + 1) % 2;
+                        if (appData) {
+                             renderArrivalScreen(appData.stations, appData.meta);
+                        }
+                    }, 5000);
+                }
+
+                mapDiv.style.display = 'none';
+                if(globalHeader) globalHeader.style.display = 'flex'; // Keep global header
+                arrivalScreen.style.display = 'flex';
+                renderArrivalScreen(sts, meta);
+            } else {
+                // NORMAL MODE
+                if (arrivalTimer) {
+                    clearInterval(arrivalTimer);
+                    arrivalTimer = null;
+                }
+                lastArrivalIdx = -1;
+
+                mapDiv.style.display = 'flex';
+                if(globalHeader) globalHeader.style.display = 'flex'; // Show global header
+                arrivalScreen.style.display = 'none';
+            }
+        }
+
+        function renderArrivalScreen(sts, meta) {
+            const st = sts[rt.idx];
+            
+            // 1. Header Info (Handled by Global Header now)
+            // document.getElementById('as-st-curr-cn').innerText = st.name;
+            // document.getElementById('as-st-curr-en').innerText = st.en;
+
+            // Next & Terminal removed from header
+            /*
+            // Route Info (Origin -> Terminal)
+            let startSt, termSt;
+            
+            // Helper to find first/last valid station
+            const getFirst = () => {
+                for(let i=0; i<sts.length; i++) if(!sts[i].skip) return sts[i];
+                return sts[0];
+            };
+            const getLast = () => {
+                for(let i=sts.length-1; i>=0; i--) if(!sts[i].skip) return sts[i];
+                return sts[sts.length-1];
+            };
+
+            if (meta.dirType === 'up' || meta.dirType === 'outer') {
+                startSt = getFirst();
+                termSt = getLast();
+            } else {
+                startSt = getLast();
+                termSt = getFirst();
+            }
+            
+            // Display Origin -> Terminal
+            document.getElementById('as-next-cn').innerText = startSt.name;
+            document.getElementById('as-next-en').innerText = startSt.en;
+            
+            document.getElementById('as-term-cn').innerText = termSt.name;
+            document.getElementById('as-term-en').innerText = termSt.en;
+            */
+
+            // 2. Door Info
+            const doorSide = st.door || 'left';
+            const doorCn = document.getElementById('as-door-msg-cn');
+            const doorEn = document.getElementById('as-door-msg-en');
+            const doorIcon = document.querySelector('.as-door-img i');
+            const lArrow = document.querySelector('.l-arrow');
+            const rArrow = document.querySelector('.r-arrow');
+            
+            // Reset icon state
+            if(doorIcon) {
+                doorIcon.className = 'fas fa-door-open';
+                doorIcon.style.transform = 'none';
+            }
+            if(lArrow) lArrow.classList.remove('active');
+            if(rArrow) rArrow.classList.remove('active');
+
+            if (doorSide === 'right') {
+                doorCn.innerText = '右侧开门';
+                doorEn.innerText = 'Doors will be opened on the right side';
+                if(doorIcon) doorIcon.style.transform = 'scaleX(-1)'; // Flip for right
+                if(rArrow) rArrow.classList.add('active');
+            } else if (doorSide === 'both') {
+                doorCn.innerText = '双侧开门';
+                doorEn.innerText = 'Doors will be opened on both sides';
+                if(doorIcon) doorIcon.className = 'fas fa-dungeon'; // Double doors/Gate style
+                if(lArrow) lArrow.classList.add('active');
+                if(rArrow) rArrow.classList.add('active');
+            } else {
+                doorCn.innerText = '左侧开门';
+                doorEn.innerText = 'Doors will be opened on this side'; 
+                // Default fa-door-open is left-hinged
+                if(lArrow) lArrow.classList.add('active');
+            }
+
+            // 3. Map Nodes (Unified with Style 1)
+            const mapPanel = document.querySelector('.as-panel-right');
+            mapPanel.innerHTML = '';
+            
+            // Toggle View: 0 = Map, 1 = Big Name
+            if (asViewMode === 1) {
+                mapPanel.style.display = 'flex';
+                mapPanel.style.flexDirection = 'column';
+                mapPanel.style.justifyContent = 'center';
+                mapPanel.style.alignItems = 'center';
+                mapPanel.style.padding = '0';
+                mapPanel.style.overflowX = 'hidden';
+                
+                // Dynamic Font Size based on length
+                let len = st.name.length;
+                let cnSize = 140; // Default for <= 3 chars
+                if (len === 4) cnSize = 110;
+                else if (len >= 5 && len <= 7) cnSize = 90;
+                else if (len > 7) cnSize = 70;
+                
+                let enSize = Math.max(30, cnSize * 0.5);
+
+                mapPanel.innerHTML = `
+                    <div style="font-size: ${cnSize}px; font-weight: 900; color: #000; line-height: 1.2; letter-spacing: 5px; text-align: center;">${st.name}</div>
+                    <div style="font-size: ${enSize}px; font-weight: bold; color: #666; font-family: Arial, sans-serif; margin-top: 20px; text-align: center; max-width: 95%; word-wrap: break-word;">${st.en}</div>
+                `;
+                return;
+            }
+
+            // Map Mode
+            mapPanel.style.display = 'block'; // Reset to block for l-box
+            mapPanel.style.padding = '0 20px';
+            mapPanel.style.overflowX = 'auto'; // Allow scrolling if needed
+            mapPanel.style.alignItems = 'center';
+            
+            let box = document.createElement('div');
+            box.className = 'l-box';
+            box.style.minWidth = '100%';
+            
+            // Double Track
+            let track = document.createElement('div');
+            track.className = 'track-double';
+            box.appendChild(track);
+            
+            let nextStep = (meta.dirType === 'up' || meta.dirType === 'outer') ? 1 : -1;
+            let prevStep = (meta.dirType === 'up' || meta.dirType === 'outer') ? -1 : 1;
+
+            // Show a slice of stations: Dynamic balancing
+            // Target: 7 stations total (1 Curr + others)
+            let displaySts = [];
+            let curr = rt.idx;
+            let targetTotal = 7;
+            
+            let futureSts = [];
+            let pastSts = [];
+            
+            // 1. Try to get up to 5 Future stations
+            let temp = curr;
+            for(let i=0; i<5; i++) {
+                let next = getNextValidSt(temp, nextStep);
+                if (next === temp || next === curr || futureSts.includes(sts[next])) break;
+                futureSts.push(sts[next]);
+                temp = next;
+            }
+            
+            // 2. Fill remaining slots with Past stations (if Future is short)
+            let neededPast = targetTotal - 1 - futureSts.length;
+            temp = curr;
+            for(let i=0; i<neededPast; i++) {
+                let prev = getNextValidSt(temp, prevStep);
+                if (prev === temp || prev === curr || pastSts.includes(sts[prev]) || futureSts.includes(sts[prev])) break;
+                pastSts.push(sts[prev]);
+                temp = prev;
+            }
+            
+            // 3. If still short (Start of Line case), try adding more Future
+            let currentTotal = 1 + futureSts.length + pastSts.length;
+            if (currentTotal < targetTotal) {
+                let neededFuture = targetTotal - currentTotal;
+                // Resume from last future station
+                let lastFutureSt = futureSts.length > 0 ? futureSts[futureSts.length-1] : sts[curr];
+                let lastFutureIdx = sts.indexOf(lastFutureSt);
+                
+                temp = lastFutureIdx;
+                for(let i=0; i<neededFuture; i++) {
+                    let next = getNextValidSt(temp, nextStep);
+                    if (next === temp || next === curr || futureSts.includes(sts[next]) || pastSts.includes(sts[next])) break;
+                    futureSts.push(sts[next]);
+                    temp = next;
+                }
+            }
+            
+            // Combine: Past (reversed) + Curr + Future
+            pastSts.reverse();
+            displaySts = [...pastSts, sts[curr], ...futureSts];
+
+            // ADAPT TO DIRECTION: Reverse list if Down/Inner
+            let isReversed = (meta.dirType === 'down' || meta.dirType === 'inner');
+            if (isReversed) {
+                displaySts.reverse();
+            }
+
+            // Apply Gradient to Track (Style 2)
+            // We need to know where Current is in the slice (displaySts)
+            track.style.border = 'none';
+            track.style.height = '18px';
+            let currPos = displaySts.indexOf(sts[curr]);
+            let pct = (currPos + 0.5) / displaySts.length * 100;
+            
+            if (isReversed) {
+                // Down/Inner: Future(Left) -> Past(Right)
+                track.style.background = `linear-gradient(to right, var(--theme) ${pct}%, #ccc ${pct}%)`;
+            } else {
+                // Up/Outer: Past(Left) -> Future(Right)
+                track.style.background = `linear-gradient(to right, #ccc ${pct}%, var(--theme) ${pct}%)`;
+            }
+
+            displaySts.forEach(st => {
+                // Find real index for mkNode to work correctly
+                let realIdx = sts.indexOf(st);
+                let node = mkNode(st, realIdx, 'linear');
+                
+                // Apply Style 1 "Current" effect if this is the current station
+                if (realIdx === rt.idx) {
+                    let dot = node.querySelector('.dot');
+                    if (dot) {
+                        dot.style.background = '#f1c40f'; 
+                        dot.style.borderColor = '#fff';
+                        dot.style.boxShadow = '0 0 10px #f1c40f';
+                        dot.style.animation = 'pulse-yellow 2s infinite';
+                    }
+                    let name = node.querySelector('.name');
+                    if(name) name.style.color = '#000';
+                }
+                
+                box.appendChild(node);
+            });
+
+            // Arrows for Style 2 (All segments)
+            for (let i = 0; i < displaySts.length - 1; i++) {
+                let arrowCenter = (i + 1) * 160; 
+                
+                for (let k = -1; k <= 1; k++) {
+                    let wrapper = document.createElement('div');
+                    wrapper.style.position = 'absolute';
+                    wrapper.style.left = (arrowCenter + k * 20) + 'px'; // Compact
+                    wrapper.style.top = '50%';
+                    wrapper.style.zIndex = '10';
+                    
+                    let baseTransform = 'translate(-50%, -50%)';
+                    if (isReversed) baseTransform += ' rotate(180deg)';
+                    wrapper.style.transform = baseTransform;
+                    
+                    let arrow = document.createElement('div');
+                    arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+                    arrow.style.color = '#fff';
+                    arrow.style.fontSize = '24px';
+                    
+                    wrapper.appendChild(arrow);
+                    box.appendChild(wrapper);
+                }
+            }
+            
+            mapPanel.appendChild(box);
+        }
+
+        function renderNormalScreen(sts, meta) {
+            // 0. Line Info
+            const lineEl = document.getElementById('d-line-no');
+            if(lineEl) lineEl.innerText = meta.lineName || '--';
+
+            // 1. Route Info (Start -> End) instead of just Terminal
+            let startSt, termSt;
+            const getFirst = () => { for(let i=0; i<sts.length; i++) if(!sts[i].skip) return sts[i]; return sts[0]; };
+            const getLast = () => { for(let i=sts.length-1; i>=0; i--) if(!sts[i].skip) return sts[i]; return sts[sts.length-1]; };
+
+            if (meta.mode === 'loop') {
+                const dirMap = { 'outer': '外环运行', 'inner': '内环运行' };
+                // Outer=CCW (Undo), Inner=CW (Redo)
+                const iconClass = meta.dirType === 'outer' ? 'fas fa-undo' : 'fas fa-redo';
+                const anim = meta.dirType === 'outer' ? 'spin-outer 3s linear infinite' : 'spin-inner 3s linear infinite';
+                
+                const termBox = document.querySelector('.h-term');
+                termBox.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:15px; height:100%;">
+                        <div style="
+                            width: 54px; height: 54px; 
+                            background: var(--contrast-color); 
+                            border-radius: 50%; 
+                            display: flex; justify-content: center; align-items: center;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                            flex-shrink: 0;
+                        ">
+                            <i class="${iconClass}" style="font-size: 38px; color: var(--theme); animation: ${anim};"></i>
+                        </div>
+                        <div style="display:flex; flex-direction:column; align-items:flex-start; justify-content:center;">
+                            <div style="font-size:36px; font-weight:900; color:var(--contrast-color); line-height:1.1;">${dirMap[meta.dirType] || '--'}</div>
+                            <div style="font-size:14px; font-weight:bold; color:var(--contrast-color); opacity:0.8;">${meta.dirType ? meta.dirType.toUpperCase() + ' LOOP' : '--'}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Fixed: Left is always First, Right is always Last
+                startSt = getFirst();
+                termSt = getLast();
+
+                // Big/Small Routing Logic (Short Turn)
+                if (meta.startIdx !== undefined && meta.startIdx !== -1) {
+                    const s = sts[meta.startIdx];
+                    if (s) startSt = s;
+                }
+                if (meta.termIdx !== undefined && meta.termIdx !== -1) {
+                    const t = sts[meta.termIdx];
+                    if (t) termSt = t;
+                }
+                
+                let arrowHTML = '';
+                if (meta.dirType === 'up' || meta.dirType === 'outer') {
+                    // Up: Left -> Right
+                    arrowHTML = `
+                        <i class="fas fa-chevron-right a1"></i>
+                        <i class="fas fa-chevron-right a2"></i>
+                        <i class="fas fa-chevron-right a3"></i>
+                    `;
+                } else {
+                    // Down: Right -> Left
+                    // a1(0s), a2(0.25s), a3(0.5s) -> We want Rightmost to light first.
+                    arrowHTML = `
+                        <i class="fas fa-chevron-left a3"></i>
+                        <i class="fas fa-chevron-left a2"></i>
+                        <i class="fas fa-chevron-left a1"></i>
+                    `;
+                }
+                
+                // Render Route in .h-term
+                const termBox = document.querySelector('.h-term');
+                termBox.innerHTML = ''; // Clear first
+
+                // Helper to create scrolling text block
+                const createScrollBlock = (st) => {
+                    const wrapper = document.createElement('div');
+                    wrapper.style.textAlign = 'center';
+                    wrapper.style.minWidth = '140px';
+                    wrapper.style.maxWidth = '260px'; // Limit width to force scroll
+                    
+                    // Name
+                    const nameBox = document.createElement('div');
+                    nameBox.className = 'marquee-box';
+                    nameBox.style.fontSize = '32px';
+                    nameBox.style.fontWeight = '900';
+                    nameBox.style.color = 'var(--contrast-color)';
+                    nameBox.style.lineHeight = '1';
+                    
+                    const nameContent = document.createElement('span');
+                    nameContent.className = 'marquee-content';
+                    nameContent.innerText = st.name;
+                    nameBox.appendChild(nameContent);
+                    
+                    // En
+                    const enBox = document.createElement('div');
+                    enBox.className = 'marquee-box';
+                    enBox.style.fontSize = '14px';
+                    enBox.style.color = 'var(--contrast-color)';
+                    enBox.style.opacity = '0.8';
+                    enBox.style.fontWeight = 'bold';
+                    
+                    const enContent = document.createElement('span');
+                    enContent.className = 'marquee-content';
+                    enContent.innerText = st.en;
+                    enBox.appendChild(enContent);
+
+                    wrapper.appendChild(nameBox);
+                    wrapper.appendChild(enBox);
+                    
+                    // Check overflow after append
+                    setTimeout(() => {
+                        if (nameContent.offsetWidth > nameBox.offsetWidth) {
+                            let w = nameContent.offsetWidth;
+                            nameContent.innerHTML = `${st.name}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${st.name}`;
+                            nameContent.classList.add('scrolling');
+                            // Speed control: 50px/s
+                            let dur = (w + 50) / 50; 
+                            if(dur < 3) dur = 3;
+                            nameContent.style.animationDuration = `${dur}s`;
+                        }
+                        if (enContent.offsetWidth > enBox.offsetWidth) {
+                            let w = enContent.offsetWidth;
+                            enContent.innerHTML = `${st.en}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${st.en}`;
+                            enContent.classList.add('scrolling');
+                            // Speed control: 40px/s (Slightly slower for small text)
+                            let dur = (w + 50) / 40; 
+                            if(dur < 3) dur = 3;
+                            enContent.style.animationDuration = `${dur}s`;
+                        }
+                    }, 0);
+                    
+                    return wrapper;
+                };
+
+                termBox.appendChild(createScrollBlock(startSt));
+                
+                const arrows = document.createElement('div');
+                arrows.className = 'route-arrows';
+                arrows.innerHTML = arrowHTML;
+                termBox.appendChild(arrows);
+                
+                termBox.appendChild(createScrollBlock(termSt));
+            }
+
+            // 2. Next Station / Arriving
+            let targetSt;
+            let isArriving = (rt.state === 0);
+            
+            // Determine if we are at the terminal (Short Turn)
+            let isAtTerm = false;
+            if (meta.mode !== 'loop') {
+                let eIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? meta.termIdx : sts.length - 1;
+                let sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? meta.startIdx : 0;
+                // Check if current index is the destination
+                if (meta.dirType === 'up' || meta.dirType === 'outer') {
+                    // Moving towards eIdx (assuming eIdx > sIdx for 'up', but logic handles direction)
+                    // Actually, for 'up', we move index + 1. If current is eIdx, we are done.
+                    // But wait, 'up' usually means increasing index? Not necessarily, depends on definition.
+                    // Let's rely on getNextValidSt returning the same index if we can't move.
+                }
+                
+                // Simpler check: If getNextValidSt returns same index, we are at terminal
+                let checkNext;
+                if (meta.mode === 'loop') {
+                     if (meta.dirType === 'outer') checkNext = getNextValidSt(rt.idx, 1);
+                     else checkNext = getNextValidSt(rt.idx, -1);
+                } else {
+                     if (meta.dirType === 'up') checkNext = getNextValidSt(rt.idx, 1);
+                     else checkNext = getNextValidSt(rt.idx, -1);
+                }
+                
+                if (checkNext === rt.idx && !isArriving) {
+                    // We are departing but cannot move further -> We are at terminal
+                    isAtTerm = true;
+                }
+            }
+
+            if (isArriving) {
+                targetSt = sts[rt.idx];
+                document.querySelector('.h-next .lbl').innerHTML = '到达站:<br><span class="en">Arriving Station:</span>';
+            } else {
+                let nextIdx;
+                if (meta.mode === 'loop') {
+                    if (meta.dirType === 'outer') nextIdx = getNextValidSt(rt.idx, 1);
+                    else nextIdx = getNextValidSt(rt.idx, -1);
+                } else {
+                    if (meta.dirType === 'up') nextIdx = getNextValidSt(rt.idx, 1);
+                    else nextIdx = getNextValidSt(rt.idx, -1);
+                }
+                
+                // If next is same as current (Terminal reached), keep showing current as "Arrived" or "Terminal"
+                if (nextIdx === rt.idx) {
+                    targetSt = sts[rt.idx];
+                    document.querySelector('.h-next .lbl').innerHTML = '终点站:<br><span class="en">Terminal Station:</span>';
+                } else {
+                    targetSt = sts[nextIdx];
+                    document.querySelector('.h-next .lbl').innerHTML = '下一站:<br><span class="en">Next Station:</span>';
+                }
+            }
+            
+            // Update Next Station with Marquee Logic
+            const nextStBox = document.getElementById('d-next-st');
+            nextStBox.innerHTML = '';
+            
+            const nWrapper = document.createElement('div');
+            nWrapper.className = 'marquee-box';
+            nWrapper.style.width = '100%';
+            nWrapper.style.textAlign = 'right'; // Align right for next station
+            
+            const nContent = document.createElement('span');
+            nContent.className = 'marquee-content';
+            nContent.innerHTML = `${targetSt.name}<br><span class="en" style="font-size:16px; font-weight:bold; color:#666;">${targetSt.en}</span>`;
+            // Note: Marquee usually works best on single line. For dual line, we might need to scroll the whole block or just the name.
+            // Let's try scrolling just the name if it's too long, but the structure is Name<br>En.
+            // Better approach: Separate Name and En for scrolling check.
+            
+            // Re-implement Next Station structure for better control
+            nWrapper.innerHTML = ''; // Clear
+            nWrapper.style.display = 'flex';
+            nWrapper.style.flexDirection = 'column';
+            nWrapper.style.alignItems = 'flex-end';
+            
+            // Name Line
+            const nNameBox = document.createElement('div');
+            nNameBox.className = 'marquee-box';
+            nNameBox.style.maxWidth = '100%';
+            nNameBox.style.height = '40px'; // Fixed height for name
+            
+            const nNameContent = document.createElement('span');
+            nNameContent.className = 'marquee-content';
+            nNameContent.style.fontSize = '36px';
+            nNameContent.style.fontWeight = '900';
+            nNameContent.style.lineHeight = '1.1';
+            nNameContent.innerText = targetSt.name;
+            
+            nNameBox.appendChild(nNameContent);
+            
+            // En Line
+            const nEnBox = document.createElement('div');
+            nEnBox.className = 'marquee-box';
+            nEnBox.style.maxWidth = '100%';
+            nEnBox.style.fontSize = '16px';
+            nEnBox.style.fontWeight = 'bold';
+            nEnBox.style.color = '#666';
+            
+            const nEnContent = document.createElement('span');
+            nEnContent.className = 'marquee-content';
+            nEnContent.innerText = targetSt.en;
+            nEnBox.appendChild(nEnContent);
+            
+            nWrapper.appendChild(nNameBox);
+            nWrapper.appendChild(nEnBox);
+            nextStBox.appendChild(nWrapper);
+            
+            setTimeout(() => {
+                if (nNameContent.offsetWidth > nNameBox.offsetWidth) {
+                    let w = nNameContent.offsetWidth;
+                    nNameContent.innerHTML = `${targetSt.name}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${targetSt.name}`;
+                    nNameContent.classList.add('scrolling');
+                    // Speed control: 50px/s
+                    let dur = (w + 50) / 50; 
+                    if(dur < 3) dur = 3;
+                    nNameContent.style.animationDuration = `${dur}s`;
+                }
+                if (nEnContent.offsetWidth > nEnBox.offsetWidth) {
+                    let w = nEnContent.offsetWidth;
+                    nEnContent.innerHTML = `${targetSt.en}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${targetSt.en}`;
+                    nEnContent.classList.add('scrolling');
+                    // Speed control: 40px/s
+                    let dur = (w + 50) / 40; 
+                    if(dur < 3) dur = 3;
+                    nEnContent.style.animationDuration = `${dur}s`;
+                }
+            }, 0);
+
+            // Door Side (Hidden in Style 1 now)
+            // const doorSide = targetSt.door || 'left';
+            // ... code removed ...
+
+            // 3. Map
+            const mapBox = document.getElementById('d-map');
+            if (meta.mode === 'linear') drawLinear(mapBox, sts, meta);
+            else drawRing(mapBox, sts, meta);
+        }
+
+        function drawLinear(c, sts, m) {
+            c.innerHTML = '';
+            c.className = 'btm-map map-l';
+            c.style.paddingBottom = '200px'; // Raise map higher
+            
+            let box = document.createElement('div');
+            box.className = 'l-box';
+            
+            // Determine Range (Short Turn)
+            let sIdx = (m.startIdx !== undefined && m.startIdx !== -1) ? parseInt(m.startIdx) : 0;
+            let eIdx = (m.termIdx !== undefined && m.termIdx !== -1) ? parseInt(m.termIdx) : sts.length - 1;
+            let rangeStart = Math.min(sIdx, eIdx);
+            let rangeEnd = Math.max(sIdx, eIdx);
+
+            // Double Track
+            let track = document.createElement('div');
+            track.className = 'track-double';
+            
+            // Calculate Gradient for Track
+            track.style.border = 'none';
+            track.style.height = '18px';
+            
+            let total = sts.length;
+            let pStart = (rangeStart + 0.5) / total * 100;
+            let pEnd = (rangeEnd + 0.5) / total * 100;
+            let pCurr = (rt.idx + 0.5) / total * 100;
+            
+            let grad = `linear-gradient(to right, #ccc 0%, #ccc 100%)`;
+            
+            if (m.dirType === 'up' || m.dirType === 'outer') {
+                // Up: Left -> Right. Theme from max(pCurr, pStart) to pEnd
+                let tStart = Math.max(pCurr, pStart);
+                let tEnd = pEnd;
+                if (tStart < tEnd) {
+                    grad = `linear-gradient(to right, #ccc 0%, #ccc ${tStart}%, var(--theme) ${tStart}%, var(--theme) ${tEnd}%, #ccc ${tEnd}%, #ccc 100%)`;
+                }
+            } else {
+                // Down: Right -> Left. Theme from pStart to min(pCurr, pEnd)
+                let tStart = pStart;
+                let tEnd = Math.min(pCurr, pEnd);
+                if (tStart < tEnd) {
+                    grad = `linear-gradient(to right, #ccc 0%, #ccc ${tStart}%, var(--theme) ${tStart}%, var(--theme) ${tEnd}%, #ccc ${tEnd}%, #ccc 100%)`;
+                }
+            }
+            track.style.background = grad;
+            
+            box.appendChild(track);
+            
+            let spacing = 90; // Compact spacing
+            let targetIdx = rt.idx;
+            
+            if (rt.state === 1) { 
+                if (m.dirType === 'up' || m.dirType === 'outer') targetIdx = getNextValidSt(rt.idx, 1);
+                else targetIdx = getNextValidSt(rt.idx, -1);
+            } else { 
+                targetIdx = rt.idx;
+            }
+
+            sts.forEach((st, i) => {
+                let node = mkNode(st, i, 'linear');
+                let dot = node.querySelector('.dot');
+                let name = node.querySelector('.name');
+                let en = node.querySelector('.en');
+                
+                // Inactive (Outside Short Turn Range)
+                if (i < rangeStart || i > rangeEnd) {
+                    node.style.opacity = '0.3';
+                    dot.style.background = '#fff';
+                    dot.style.borderColor = '#ccc';
+                    if(name) name.style.color = '#ccc';
+                    if(en) en.style.color = '#eee';
+                    // Remove 'passed' or 'curr' classes if mkNode added them
+                    node.classList.remove('passed', 'curr');
+                } else {
+                    if (st.skip) {
+                        dot.style.background = '#fff';
+                        dot.style.borderColor = '#ccc';
+                        dot.style.width = '30px';
+                        dot.style.height = '30px';
+                    } else if (i === targetIdx) {
+                        // Target/Current: Yellow/Gold
+                        dot.style.background = '#f1c40f'; 
+                        dot.style.borderColor = '#fff';
+                        dot.style.boxShadow = '0 0 10px #f1c40f';
+                        if(name) name.style.color = '#000';
+                    } 
+                }
+                
+                box.appendChild(node);
+            });
+            
+            c.appendChild(box);
+            
+            // Arrows (Only in active range)
+            for (let i = 0; i < sts.length - 1; i++) {
+                if (i < rangeStart || i >= rangeEnd) continue;
+
+                let arrowCenter = (i + 1) * spacing;
+                
+                // Determine if this segment is the current active segment
+                let isCurrSeg = false;
+                if (rt.state === 1) {
+                    if (m.dirType === 'up' || m.dirType === 'outer') {
+                        if (i === rt.idx) isCurrSeg = true;
+                    } else {
+                        if (i === rt.idx - 1) isCurrSeg = true;
+                    }
+                }
+
+                for (let k = -1; k <= 1; k++) {
+                    let wrapper = document.createElement('div');
+                    wrapper.style.position = 'absolute';
+                    wrapper.style.left = (arrowCenter + k * 20) + 'px';
+                    wrapper.style.top = '50%';
+                    wrapper.style.zIndex = '10';
+                    
+                    let rot = '';
+                    if (m.dirType === 'down' || m.dirType === 'inner') rot = 'rotate(180deg)';
+                    wrapper.style.transform = `translate(-50%, -50%) ${rot}`;
+                    
+                    let arrow = document.createElement('div');
+                    arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+                    arrow.style.color = isCurrSeg ? '#f1c40f' : '#fff'; // Yellow if current, else White
+                    arrow.style.fontSize = '24px';
+                    
+                    wrapper.appendChild(arrow);
+                    box.appendChild(wrapper);
+                }
+            }
+            
+            setTimeout(() => {
+                c.scrollTo({
+                    left: rt.idx * spacing - 2080 / 2 + 45,
+                    behavior: 'smooth'
+                });
+            }, 50);
+        }
+
+        function drawRing(c, sts, m) {
+            // ... (Keep existing Ring logic, it uses mkNode with 'loop' mode) ...
+            c.innerHTML = '';
+            c.className = 'btm-map map-r';
+            c.style.overflowX = 'auto';
+            c.style.justifyContent = 'flex-start'; 
+            c.style.display = 'flex'; 
+            c.style.paddingBottom = '0'; // Reset padding to avoid vertical offset
+
+            const H = 360;
+            const trackGap = 100; 
+            const cornerR = 30; 
+            
+            let totalSt = sts.length;
+            let topCount = Math.ceil(totalSt / 2);
+            let btmCount = totalSt - topCount;
+            
+            let minSpacing = 160; 
+            let minTotalW = 1400;
+            let w = Math.max(minTotalW, topCount * minSpacing);
+            
+            let ringWidth = w + 2 * (cornerR + 20); 
+            let W = Math.max(2080, ringWidth + 300); 
+            
+            let cx = W / 2, cy = H / 2;
+            let x1 = cx - w / 2, x2 = cx + w / 2;
+            let y1 = cy - trackGap / 2, y2 = cy + trackGap / 2;
+            
+            let d = `M ${x1} ${y1} 
+                     L ${x2} ${y1} 
+                     A ${cornerR} ${cornerR} 0 0 1 ${x2+cornerR} ${y1+cornerR}
+                     L ${x2+cornerR} ${y2-cornerR}
+                     A ${cornerR} ${cornerR} 0 0 1 ${x2} ${y2}
+                     L ${x1} ${y2}
+                     A ${cornerR} ${cornerR} 0 0 1 ${x1-cornerR} ${y2-cornerR}
+                     L ${x1-cornerR} ${y1+cornerR}
+                     A ${cornerR} ${cornerR} 0 0 1 ${x1} ${y1} Z`;
+            
+            // Create Wrapper to ensure SVG and Nodes share the same coordinate system
+            let wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            wrapper.style.width = W + 'px';
+            wrapper.style.height = H + 'px';
+            wrapper.style.flexShrink = '0';
+            c.appendChild(wrapper);
+
+            let svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+            svg.style.position = 'absolute';
+            svg.style.left = '0';
+            svg.style.top = '0';
+            
+            let vertLen = trackGap - 2 * cornerR;
+            let arcLen = Math.PI * cornerR + vertLen;
+            let perimeter = 2 * w + 2 * arcLen;
+            
+            // Align top and bottom stations by using the same step size
+            let step = topCount > 0 ? w / topCount : 0;
+            let topStep = step;
+            let btmStep = step;
+
+            function getStDist(k) {
+                if (k < topCount) return topStep * k + topStep / 2;
+                else {
+                    let kb = k - topCount;
+                    return (w + arcLen) + (btmStep * kb + btmStep / 2);
+                }
+            }
+
+            let splitDist = getStDist(rt.idx);
+            
+            let trackBase = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            trackBase.setAttribute('d', d);
+            trackBase.setAttribute('fill', 'none');
+            trackBase.setAttribute('stroke-width', '18');
+            
+            let trackOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            trackOverlay.setAttribute('d', d);
+            trackOverlay.setAttribute('fill', 'none');
+            trackOverlay.setAttribute('stroke-width', '18');
+            
+            if (m.dirType === 'outer') {
+                trackBase.setAttribute('stroke', m.themeColor);
+                trackOverlay.setAttribute('stroke', '#ccc');
+                trackOverlay.setAttribute('stroke-dasharray', `${splitDist} ${perimeter}`);
+            } else {
+                trackBase.setAttribute('stroke', '#ccc');
+                trackOverlay.setAttribute('stroke', m.themeColor);
+                trackOverlay.setAttribute('stroke-dasharray', `${splitDist} ${perimeter}`);
+            }
+            
+            svg.appendChild(trackBase);
+            svg.appendChild(trackOverlay);
+
+            let targetIdx = rt.idx;
+            let prevIdx = -1;
+            
+            if (rt.state === 1) { 
+                prevIdx = rt.idx;
+                if (m.dirType === 'outer') targetIdx = getNextValidSt(rt.idx, 1);
+                else targetIdx = getNextValidSt(rt.idx, -1);
+            } else {
+                targetIdx = rt.idx;
+                prevIdx = -1;
+            }
+            
+            let measurePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            measurePath.setAttribute('d', d);
+            measurePath.style.display = 'none';
+            svg.appendChild(measurePath);
+            
+            sts.forEach((st, i) => {
+                let dist = getStDist(i);
+                let pt = measurePath.getPointAtLength(dist);
+                let node = mkNode(st, i, 'loop');
+                node.style.left = pt.x + 'px';
+                node.style.top = pt.y + 'px';
+                
+                let label = node.querySelector('.n-txt');
+                if (pt.y < cy) {
+                    label.style.bottom = '45px';
+                    label.style.top = 'auto';
+                } else {
+                    label.style.top = '45px';
+                    label.style.bottom = 'auto';
+                }
+
+                let dot = node.querySelector('.dot');
+                
+                if (st.skip) {
+                    dot.style.background = '#fff';
+                    dot.style.borderColor = '#ccc';
+                    dot.style.width = '24px';
+                    dot.style.height = '24px';
+                    if(label) label.style.opacity = '0.6';
+                } else if (i === targetIdx) {
+                    dot.style.background = '#f1c40f'; 
+                    dot.style.borderColor = '#fff';
+                    dot.style.boxShadow = '0 0 10px #f1c40f';
+                    dot.style.animation = 'pulse-yellow-centered 1.5s infinite';
+                    if(label) label.style.color = '#000';
+                } else if (i === prevIdx) {
+                    dot.style.background = '#fff';
+                    dot.style.borderColor = '#ccc';
+                    dot.style.boxShadow = 'none';
+                    if(label) label.style.color = '#999';
+                }
+                wrapper.appendChild(node);
+
+                // --- Add Arrows for this segment (i -> i+1) ---
+                let nextI = (i + 1) % sts.length;
+                let d1 = dist;
+                let d2 = getStDist(nextI);
+                if (d2 < d1) d2 += perimeter;
+                
+                let segLen = d2 - d1;
+                
+                // Determine if this is the current active segment
+                let isCurrentSeg = false;
+                if (rt.state === 1) {
+                    // Check if this segment connects prevIdx and targetIdx
+                    // Note: prevIdx/targetIdx are indices in sts array
+                    if ((prevIdx === i && targetIdx === nextI) || (prevIdx === nextI && targetIdx === i)) {
+                        isCurrentSeg = true;
+                    }
+                }
+
+                // 3 Arrows per segment (Compact spacing)
+                [0.38, 0.5, 0.62].forEach(r => {
+                    let aDist = (d1 + segLen * r) % perimeter;
+                    let ptArr = measurePath.getPointAtLength(aDist);
+                    
+                    // Calculate angle
+                    let pA = measurePath.getPointAtLength((aDist - 2 + perimeter) % perimeter);
+                    let pB = measurePath.getPointAtLength((aDist + 2) % perimeter);
+                    let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
+                    
+                    if (m.dirType === 'inner') angle += 180;
+                    
+                    let arrow = document.createElement('div');
+                    arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+                    arrow.style.position = 'absolute';
+                    arrow.style.left = ptArr.x + 'px';
+                    arrow.style.top = ptArr.y + 'px';
+                    arrow.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+                    arrow.style.color = isCurrentSeg ? '#f1c40f' : '#fff';
+                    arrow.style.fontSize = '20px';
+                    arrow.style.zIndex = '6'; // Below nodes
+                    
+                    wrapper.appendChild(arrow);
+                });
+            });
+
+            wrapper.appendChild(svg);
+
+            let focusDist = 0;
+            if (rt.state === 1) {
+                let d1 = getStDist(prevIdx);
+                let d2 = getStDist(targetIdx);
+                
+                if (m.dirType === 'outer') {
+                    if (d2 < d1) d2 += perimeter;
+                } else {
+                    if (d1 < d2) d1 += perimeter;
+                }
+                
+                let midDist = (d1 + d2) / 2;
+                midDist %= perimeter;
+                
+                let distDiff = Math.abs(d2 - d1);
+                if (distDiff > perimeter / 2) distDiff = perimeter - distDiff;
+                
+                let avgStep = perimeter / sts.length;
+                
+                if (distDiff > avgStep * 1.5) {
+                    if (m.dirType === 'outer') midDist += avgStep * 0.5;
+                    else midDist -= avgStep * 0.5;
+                    midDist = (midDist % perimeter + perimeter) % perimeter;
+                }
+
+                focusDist = midDist;
+            } else {
+                focusDist = getStDist(targetIdx);
+            }
+
+            let focusPt = measurePath.getPointAtLength(focusDist);
+            setTimeout(() => {
+                c.scrollTo({
+                    left: focusPt.x - 2080 / 2,
+                    behavior: 'smooth'
+                });
+            }, 50);
+        }
+
+        async function startRec(bps) {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { displaySurface: 'browser', frameRate: 60 },
+                    audio: false
+                });
+                
+                document.getElementById('rec-tip').style.display = 'block';
+                
+                const options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: bps };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options.mimeType = 'video/webm';
+                }
+                
+                recorder = new MediaRecorder(stream, options);
+                chunks = [];
+                
+                recorder.ondataavailable = e => {
+                    if (e.data.size > 0) chunks.push(e.data);
+                };
+                
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'MetroPIDS_' + new Date().toISOString().replace(/[:.]/g,'-') + '.webm';
+                    a.click();
+                    document.getElementById('rec-tip').style.display = 'none';
+                };
+                
+                recorder.start();
+                bc.postMessage({t: 'REC_STARTED'});
+            } catch (err) {
+                console.error(err);
+                alert('录制启动失败，请检查浏览器权限');
+                bc.postMessage({t: 'REC_STOP_ERR'});
+            }
+        }
+
+        function stopRec() {
+            if (recorder && recorder.state !== 'inactive') {
+                recorder.stop();
+            }
+        }
+    </script>
+</body>
+</html>
+ 
