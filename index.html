@@ -1,0 +1,1998 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro PIDS V2 - Control Panel</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* ================= 1. 全局定义 ================= */
+        :root { --theme: #00b894; --font: "Microsoft YaHei", sans-serif; --gold: #ffaa00; --dark: #2d3436;
+            /* Light theme variables */
+            --bg: #f0f2f5;
+            --card: #ffffff;
+            --card-border: #f0f0f0;
+            --text: #2d3436;
+            --muted: #9aa0a6;
+            --rail-bg: #ffffff;
+            --rail-border: rgba(0,0,0,0.04);
+            --panel-bg: #ffffff;
+            --accent: #00b894;
+            /* Button semantic colors (light theme defaults) */
+            --btn-blue-bg: #1677ff;
+            --btn-green-bg: var(--accent);
+            --btn-org-bg: #ff9f5a;
+            --btn-red-bg: #ff6b6b;
+            --btn-gray-bg: #d9dde0;
+            --btn-gray-text: var(--text);
+            --btn-gray-border: rgba(0,0,0,0.08);
+            --btn-text: #ffffff;
+            /* helper visual vars */
+            --rail-hover: rgba(0,0,0,0.04);
+            --rail-active: rgba(0,0,0,0.06);
+            --rail-hover-shadow: 0 8px 20px rgba(0,0,0,0.06);
+            --rail-active-shadow: 0 10px 28px rgba(0,0,0,0.06);
+            --win-btn-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            --win-close-bg: linear-gradient(90deg,#ff6b6b,#ff4d4d);
+            --win-close-color: #fff;
+        }
+
+        /* Dark theme overrides (applied when <html> has class 'dark') */
+        html.dark {
+            --bg: #0b1116;
+            --card: #091018;
+            --card-border: rgba(255,255,255,0.04);
+            --text: #e6eef6;
+            --muted: #9aa6b2;
+            --rail-bg: #071018;
+            --rail-item-bg: rgba(255,255,255,0.02);
+            --rail-item-border: rgba(255,255,255,0.035);
+            --rail-item-active-bg: rgba(255,255,255,0.035);
+            --rail-border: rgba(255,255,255,0.03);
+            --panel-bg: #09151b;
+            --accent: #22c1a3;
+            --card-shadow: 0 8px 24px rgba(2,6,23,0.6);
+            --panel-header-bg: rgba(255,255,255,0.02);
+            --divider: rgba(255,255,255,0.04);
+            --rail-hover: rgba(255,255,255,0.02);
+            --rail-active: rgba(255,255,255,0.04);
+            --rail-hover-shadow: 0 6px 16px rgba(0,0,0,0.2);
+            --rail-active-shadow: 0 8px 22px rgba(0,0,0,0.22);
+            --win-btn-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            --win-close-bg: linear-gradient(90deg,#ff6b6b,#ff4d4d);
+            --win-close-color: #fff;
+        }
+
+        /* Dark variant: soft (low contrast, muted accents) */
+        html.dark[data-dark-variant="soft"] {
+            --card: #0b1220;
+            --rail-bg: #071018;
+            --panel-bg: #09151b;
+            --text: #dfe8f2;
+            --muted: #8f99a3;
+            --divider: rgba(255,255,255,0.03);
+            --card-border: rgba(255,255,255,0.02);
+            --card-shadow: 0 6px 20px rgba(2,6,23,0.55);
+            --accent: #1fb79f;
+            --btn-blue-bg: #0a6fb7;
+            --btn-green-bg: #1fb79f;
+            --btn-org-bg: #ff9f5a;
+            --btn-red-bg: #ff6b6b;
+            --btn-gray-bg: #2a3136;
+            --btn-text: #ffffff;
+            --rail-hover: rgba(255,255,255,0.035);
+            --rail-active: rgba(255,255,255,0.06);
+            --rail-hover-shadow: 0 6px 16px rgba(0,0,0,0.18);
+            --rail-active-shadow: 0 8px 22px rgba(0,0,0,0.2);
+        }
+
+        /* Dark variant: contrast (strong contrasts, brighter accents) */
+        html.dark[data-dark-variant="contrast"] {
+            --card: #071019;
+            --rail-bg: #041217;
+            --panel-bg: #05141a;
+            --text: #f6fbff;
+            --muted: #9fb0bd;
+            --divider: rgba(255,255,255,0.06);
+            --card-border: rgba(255,255,255,0.06);
+            --card-shadow: 0 10px 28px rgba(2,6,23,0.7);
+            --accent: #2ee0b1;
+            --btn-blue-bg: #1080da;
+            --btn-green-bg: #2ee0b1;
+            --btn-org-bg: #ffb86b;
+            --btn-red-bg: #ff5a6a;
+            --btn-gray-bg: #111518;
+            --btn-text: #ffffff;
+            --rail-hover: rgba(255,255,255,0.03);
+            --rail-active: rgba(255,255,255,0.05);
+            --rail-hover-shadow: 0 8px 22px rgba(0,0,0,0.22);
+            --rail-active-shadow: 0 10px 30px rgba(0,0,0,0.28);
+        }
+
+        /* Base elements should use variables for consistent theming */
+        body, html { background: var(--bg); color: var(--text); }
+        #admin-app { background: var(--bg); }
+        .card { background: var(--card); border-color: var(--card-border); color: var(--text); box-shadow: var(--card-shadow, 0 6px 18px rgba(2,6,23,0.06)); }
+        .adm-side { background: var(--rail-bg); border-right: 1px solid var(--rail-border); color: var(--text); }
+        #leftRail { background: var(--rail-bg); }
+        #slidePanel { background: var(--panel-bg); }
+        /* autoplay control helpers */
+        .ap-btn { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; }
+        .ap-btn.gray{ background:var(--btn-gray-bg); color:var(--btn-text); }
+        .ap-btn.red{ background:var(--btn-red-bg, #d9534f); color:#fff; }
+        .ap-input.kbd { padding:8px 10px; border-radius:8px; border:1px solid var(--card-border); background:var(--card); color:var(--text); }
+        /* Switch (toggle) styles */
+        .ap-switch { display:inline-flex; align-items:center; vertical-align:middle; }
+        .ap-switch input { display:none; }
+        .ap-switch .track { width:46px; height:26px; background:var(--card-border); border-radius:999px; position:relative; transition:background .18s; display:inline-block; }
+        .ap-switch .track .thumb { width:20px; height:20px; background:#fff; border-radius:50%; position:absolute; top:50%; left:3px; transform: translateY(-50%) translateX(0); box-shadow:0 2px 6px rgba(0,0,0,0.12); transition:transform .18s, box-shadow .12s; }
+        .ap-switch input:checked + .track { background:var(--btn-blue-bg); }
+        .ap-switch input:checked + .track .thumb { transform: translateY(-50%) translateX(17px); }
+        /* settings modal removed; settings now in slide panel */
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; outline: none; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: var(--font); }
+
+        /* ================= 3. Admin 控制台 ================= */
+        /* Reserve 44px at top for the draggable topbar so content isn't obscured */
+        #admin-app { width: 100vw; height: calc(100vh - 44px); display: flex; background: var(--bg); color: var(--text); padding-top:44px; }
+        /* B站风格侧边栏视觉（仅样式改动，保留现有 HTML/JS 选择器与行为） */
+        .adm-side {
+            position: fixed; left: 72px; top: 44px; bottom: 0; height: calc(100vh - 44px); width: 320px;
+            background: linear-gradient(180deg, var(--rail-bg) 0%, var(--rail-bg) 100%);
+            border-right: 1px solid rgba(0,0,0,0.04);
+            box-shadow: none;
+            z-index: 5; display: flex; flex-direction: column; gap: 12px; padding: 18px; overflow-y: auto;
+            transform: translateX(0); transition: transform .28s cubic-bezier(.2,.9,.2,1), width .2s ease;
+            border-top-right-radius: 10px; border-bottom-right-radius: 10px;
+        }
+        /* When adm-side is moved into the slide panel, adapt its layout */
+        .adm-side.in-panel{
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            bottom: auto !important;
+            height: 100% !important;
+            width: 100% !important;
+            transform: none !important;
+            transition: none !important;
+            box-shadow: none !important;
+            border-right: none !important;
+            border-top-right-radius: 0 !important;
+            border-bottom-right-radius: 0 !important;
+            padding: 12px !important;
+            overflow: auto !important;
+            z-index: auto !important;
+        }
+        /* Slide panel adjustments when hosting the adm-side */
+        #slidePanel .adm-side { background: transparent; border: none; box-shadow: none; padding: 0; }
+        /* Reserve 72px for the left rail; when side is present add 320px more */
+        .adm-main { flex: 1; padding: 28px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; margin-left: calc(72px + 320px); transition: margin-left .28s cubic-bezier(.2,.9,.2,1); max-height: calc(100vh - 44px); }
+
+        /* 折叠态：侧边栏缩小并微移，主内容调整边距 */
+        #admin-app.sidebar-collapsed .adm-side { transform: translateX(-252px); width: 72px; }
+        /* When collapsed, main keeps left rail width (72px) */
+        #admin-app.sidebar-collapsed .adm-main { margin-left: 72px }
+        /* When the adm-side is moved into the slide panel, keep main margin to left-rail only */
+        #admin-app.side-in-panel .adm-main { margin-left: 72px }
+
+        /* 图标样式：圆角、粉色高亮、悬浮效果 */
+        .adm-side .adm-item{ width: 48px; height: 48px; margin: 6px 0; border-radius: 12px; display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted); transition: transform .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease; }
+        .adm-side .adm-item:hover{ transform: translateX(6px); background: var(--rail-hover, rgba(0,0,0,0.04)); color: var(--accent); box-shadow: var(--rail-hover-shadow, 0 8px 20px rgba(0,0,0,0.06)); }
+        .adm-side .adm-item.active{ background: var(--rail-active, rgba(0,0,0,0.06)); color: var(--accent); box-shadow: var(--rail-active-shadow, 0 10px 28px rgba(0,0,0,0.06)); }
+
+        .adm-side .label{ font-size:11px;color:var(--muted);margin-top:6px }
+
+        /* Toggle 按钮视觉：粉色主题点缀 */
+        /* Place toggle below the topbar so it doesn't overlap */
+        #sidebarToggle { position: fixed; left: 90px; top: 52px; z-index: 160; width: 46px; height: 46px; border-radius: 10px; display:flex;align-items:center;justify-content:center; cursor:pointer; box-shadow: var(--sidebar-toggle-shadow, 0 10px 28px rgba(16,24,40,0.06)); background:var(--card); border:1px solid var(--card-border); color:var(--accent); font-size:18px }
+        #admin-app.sidebar-collapsed #sidebarToggle { left: 90px; }
+        /* windowControls lives inside #topbar now; do not use fixed positioning */
+        #windowControls{ display:flex; gap:8px; -webkit-app-region: no-drag }
+
+        /* 滚动条样式 */
+        .adm-side::-webkit-scrollbar { width: 6px; }
+        .adm-side::-webkit-scrollbar-thumb { background: var(--scroll-thumb, rgba(0,0,0,0.06)); border-radius: 6px }
+        #admin-app.sidebar-collapsed .adm-side { overflow: hidden }
+        
+        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: var(--card-shadow, 0 4px 12px rgba(0,0,0,0.05)); border: 1px solid var(--card-border); }
+        .head { font-size: 15px; font-weight: 800; border-bottom: 2px solid var(--divider, #f5f5f5); padding-bottom: 10px; margin-bottom: 15px; color: var(--text); display: flex; justify-content: space-between; align-items: center; }
+        
+        .btn { border: none; padding: 10px 16px; border-radius: 8px; background: var(--accent); color: var(--btn-text); font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 13px; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+        .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .b-blue { background: var(--btn-blue-bg); } .b-green { background: var(--btn-green-bg); } .b-org { background: var(--btn-org-bg); } .b-red { background: var(--btn-red-bg); } .b-gray { background: var(--btn-gray-bg); color: var(--btn-gray-text); border: 1px solid var(--btn-gray-border); }
+
+        .st-list { border: 1px solid var(--divider); flex: 1; overflow-y: auto; border-radius: 8px; margin-top: 10px; background: var(--card); }
+        .item { padding: 10px; border-bottom: 1px solid var(--divider); display: flex; align-items: center; gap: 10px; transition: 0.2s; }
+        .item:hover { background: var(--item-hover, rgba(0,0,0,0.02)); } 
+        .item.active { background: var(--item-active, rgba(8,132,227,0.06)); border-left: 4px solid var(--btn-blue-bg); }
+        
+        .item-txt { flex: 1; cursor: pointer; font-size: 14px; font-weight: 500; }
+        .item-act { display: flex; gap: 5px; opacity: 0.6; transition: 0.2s; }
+        .item:hover .item-act { opacity: 1; }
+
+        input, select { width: 100%; padding: 10px; border: 1px solid var(--card-border); border-radius: 6px; margin-bottom: 10px; background: var(--card); color: var(--text); transition: 0.2s; }
+        input:focus, select:focus { border-color: var(--theme); outline: none; box-shadow: 0 0 0 3px var(--focus-ring, rgba(0,184,148,0.1)); }
+        
+        .xf-edit { background: var(--card); padding: 10px; border: 1px dashed var(--card-border); max-height: 150px; overflow-y: auto; margin-bottom: 10px; border-radius: 6px; }
+        .xf-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        
+        .door-sel { display: flex; border: 1px solid var(--card-border); border-radius: 6px; overflow: hidden; margin-bottom: 0; }
+        .d-btn { flex: 1; border: none; background: var(--card); padding: 6px 10px; cursor: pointer; font-size: 12px; transition: 0.2s; border-right: 1px solid var(--divider); color: var(--muted); }
+        .d-btn:last-child { border-right: none; }
+        .d-btn:hover { background: var(--d-btn-hover, rgba(0,0,0,0.03)); }
+        .d-btn.active { background: var(--btn-blue-bg); color: var(--btn-text); font-weight: bold; }
+
+        #rec-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--rec-mask-bg, rgba(0,0,0,0.9)); z-index: 2000; display: none; flex-direction: column; justify-content: center; align-items: center; color: var(--rec-mask-color, #fff); backdrop-filter: blur(5px); }
+        /* Window control buttons */
+        #windowControls{ position: fixed; right: 12px; top: 8px; z-index: 160; display:flex; gap:8px; -webkit-app-region: no-drag }
+        #windowControls .win-btn{ width:36px; height:32px; border-radius:6px; display:flex;align-items:center;justify-content:center; background:var(--card); border:1px solid var(--card-border); cursor:pointer; color:var(--text); box-shadow: var(--win-btn-shadow, 0 4px 12px rgba(0,0,0,0.06)); font-weight:700 }
+        #windowControls .win-btn:hover{ background:var(--card); transform: translateY(-1px) }
+        #windowControls .win-btn.close{ background: var(--win-close-bg, linear-gradient(90deg,#ff6b6b,#ff4d4d)); color:var(--win-close-color, #fff); border:none }
+        /* Titlebar drag region for frameless window */
+        .titlebar{ position: fixed; left:0; right:0; top:0; height:44px; z-index:110; -webkit-app-region: drag; display:flex; align-items:center; padding:0 12px; }
+        .titlebar .title-left{ display:flex; align-items:center; gap:8px }
+        /* Ensure controls are clickable (no-drag) */
+        #windowControls .win-btn{ -webkit-app-region: no-drag }
+        /* Dark mode variables */
+        :root { --bg: #f0f2f5; --card: #fff; --text: #333; --muted: #666; --accent: #ff4870 }
+        .dark { --bg: #0f1720; --card: #0b1220; --text: #e6eef8; --muted: #9aa6b2; --accent: #ff7a9a }
+        body, html { background: var(--bg); color: var(--text); }
+        .card { background: var(--card); }
+        .head { color: var(--accent); }
+
+        /* Slide panel header and content tweaks: remove dividers */
+        #slidePanel > div { border-bottom: none !important; background: var(--panel-header-bg, transparent); }
+        #slideContent h3 { margin: 0; padding: 0; border: none; font-size: 16px; }
+
+        /* dark-mode scrollbar tweaks */
+        html.dark ::-webkit-scrollbar { background: transparent; }
+        html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); }
+
+        /* Left-rail floating tool buttons (small square buttons) */
+        .ft-btn { width:48px; height:48px; border-radius:12px; display:flex;align-items:center;justify-content:center; border:none; background: var(--btn-gray-bg); color: var(--btn-gray-text); font-weight:700; cursor:pointer; transition: transform .18s ease, background .18s ease, color .18s ease; }
+        .ft-btn:hover { transform: translateX(6px); }
+
+        /* Dark-mode overrides for left-rail float buttons */
+        html.dark .ft-btn { background: var(--rail-item-bg) !important; color: var(--text) !important; border: 1px solid var(--rail-item-border) !important; box-shadow: none !important; }
+        html.dark .ft-btn:hover { color: var(--accent) !important; background: var(--rail-hover) !important; box-shadow: var(--rail-hover-shadow) !important; }
+        /* Stronger anchors for left-rail in case of inline styles or specificity issues */
+        html.dark #leftRail .ft-btn, html.dark #railInner .ft-btn { color: var(--text) !important; background: var(--rail-item-bg) !important; border: 1px solid var(--rail-item-border) !important; }
+        html.dark #leftRail .ft-btn i, html.dark #leftRail .ft-btn svg, html.dark #railInner .ft-btn i { color: inherit !important; }
+
+        /* Settings modal */
+        /* Settings panel now lives in slide-out panel (panel-3) */
+        .settings-panel { background: var(--card); border-radius: 12px; padding: 18px; box-shadow: 0 12px 40px rgba(2,6,23,0.45); }
+        .settings-panel h2{ margin-bottom:12px }
+        .setting-row{ display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px dashed rgba(0,0,0,0.04) }
+        .setting-row:last-child{ border-bottom:none }
+        .kbd { font-family: monospace; background: rgba(0,0,0,0.06); padding:4px 8px; border-radius:6px }
+        .badge { display:inline-block; padding:2px 6px; border-radius:4px; font-size:10px; color:#fff; background:var(--accent); }
+        html.dark .btn { background: transparent; border: 1px solid rgba(255,255,255,0.04); color: var(--text); }
+        /* Additional dark-mode overrides for inline-styled elements */
+        html.dark .adm-side, html.dark #railInner, html.dark #railFooter { background: var(--rail-bg) !important; }
+        html.dark #topbar { background: linear-gradient(var(--card), var(--card)) !important; box-shadow: 0 1px 0 rgba(255,255,255,0.03) !important; }
+        html.dark .card, html.dark .st-list, html.dark .item, html.dark input, html.dark select, html.dark .panel.card { background: var(--card) !important; color: var(--text) !important; border-color: var(--card-border) !important; }
+        html.dark .item { border-bottom-color: var(--divider) !important; }
+        html.dark input, html.dark select { background: var(--card) !important; color: var(--text) !important; }
+        /* In dark mode, neutral d-btn / btn become card-like; colored buttons keep their variable colors */
+        html.dark .d-btn, html.dark .btn { background: var(--card) !important; color: var(--text) !important; box-shadow: none !important; }
+        html.dark .btn.b-blue { background: var(--btn-blue-bg) !important; color: var(--btn-text) !important; }
+        html.dark .btn.b-green { background: var(--btn-green-bg) !important; color: var(--btn-text) !important; }
+        html.dark .btn.b-org { background: var(--btn-org-bg) !important; color: var(--btn-text) !important; }
+        html.dark .btn.b-red { background: var(--btn-red-bg) !important; color: var(--btn-text) !important; }
+        html.dark .btn.b-gray { background: var(--btn-gray-bg) !important; color: var(--btn-text) !important; }
+        html.dark .card[style*="linear-gradient"] { background: var(--card) !important; }
+        html.dark #leftRail { background: var(--rail-bg) !important; }
+        html.dark #railSettingsBtn { background: var(--card) !important; box-shadow: var(--rail-settings-shadow, 0 6px 16px rgba(0,0,0,0.2)) !important; color: var(--text) !important; }
+        html.dark .head { color: var(--text) !important; }
+        html.dark .item.active { background: rgba(255,255,255,0.02) !important; }
+        /* Ensure left-rail buttons contrast on dark backgrounds, including when adm-side is inside slide panel */
+        html.dark .adm-side .adm-item {
+            color: var(--text) !important;
+            background: var(--rail-item-bg) !important;
+            border: 1px solid var(--rail-item-border) !important;
+            box-shadow: none !important;
+        }
+        html.dark .adm-side .adm-item:hover {
+            color: var(--accent) !important;
+            background: var(--rail-hover) !important;
+            border-color: var(--rail-item-border) !important;
+            box-shadow: var(--rail-hover-shadow) !important;
+            transform: translateX(6px);
+        }
+        html.dark .adm-side .adm-item.active {
+            color: var(--accent) !important;
+            background: var(--rail-item-active-bg) !important;
+            border-color: var(--rail-item-border) !important;
+            box-shadow: var(--rail-active-shadow) !important;
+            transform: translateX(6px);
+        }
+        /* When adm-side is hosted inside slide panels, ensure same contrast rules apply */
+        html.dark #slidePanel .adm-side .adm-item { color: var(--text) !important; background: var(--rail-item-bg) !important; border: 1px solid var(--rail-item-border) !important; }
+        html.dark #slidePanel .adm-side .adm-item:hover { color: var(--accent) !important; background: var(--rail-hover) !important; }
+        html.dark #slidePanel .adm-side .adm-item.active { color: var(--accent) !important; background: var(--rail-item-active-bg) !important; }
+    </style>
+</head>
+
+<body>
+    <div id="sidebarToggle" title="切换侧边栏" onclick="toggleSidebar()">☰</div>
+    <div id="topbar" style="position:fixed; left:0; right:0; top:0; height:44px; z-index:400; display:flex; align-items:center; padding:0 12px 0 84px; -webkit-app-region: drag; background: linear-gradient(90deg,var(--card),var(--card)); box-shadow: 0 1px 0 rgba(0,0,0,0.04);">
+        <div style="display:flex; align-items:center; gap:8px; -webkit-app-region: no-drag;">
+            <div id="topbar-logo" style="width:28px; height:28px; border-radius:6px; background:var(--accent); display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;">B</div>
+            <div id="topbar-title" style="font-weight:700; font-size:14px; color:var(--text);">Metro PIDS</div>
+        </div>
+        <div style="flex:1"></div>
+        <div id="windowControls" aria-hidden="false" style="-webkit-app-region: no-drag; display:flex; gap:8px; align-items:center; height:36px;">
+            <div class="win-btn" id="win-min" title="最小化" onclick="winMin()">—</div>
+            <div class="win-btn" id="win-max" title="最大化" onclick="winMax()">▢</div>
+            <div class="win-btn close" id="win-close" title="关闭" onclick="winClose()">✕</div>
+        </div>
+    </div>
+    <!-- 左侧页面条（垂直条，从上到下） -->
+    <div id="leftRail" style="position:fixed; left:0; top:0; bottom:0; width:72px; z-index:420; display:flex; flex-direction:column; align-items:center; padding-top:56px; background: var(--rail-bg); border-right:none; box-shadow:none;">
+        <!-- 可放置 logo / 快捷按钮等 -->
+        <div id="railInner" style="width:100%; display:flex; flex-direction:column; align-items:center; gap:12px;">
+
+                <div id="floatTools" style="width:100%; display:flex; flex-direction:column; gap:10px; align-items:center;">
+                </button>
+                <button class="ft-btn" data-panel="panel-1" title="PIDS 控制台" aria-label="控制台">
+                    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                        <g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd">
+                            <circle cx="10" cy="38" r="6"></circle>
+                            <circle cx="38" cy="10" r="6"></circle>
+                            <rect x="12.5" y="27.5" width="23" height="5" rx="2.5" transform="rotate(-45 12.5 27.5)" />
+                        </g>
+                    </svg>
+                </button>
+                <button class="ft-btn" data-panel="panel-2" title="面板二">2</button>
+                <button class="ft-btn" data-panel="panel-3" title="面板三">3</button>
+                <button class="ft-btn" id="openPIDSBtn" title="打开显示端" onclick="openWin()" aria-label="打开显示端">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                        <rect x="3" y="4" width="18" height="12" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none" />
+                        <rect x="8" y="17" width="8" height="1.6" rx="0.8" fill="currentColor" />
+                    </svg>
+                </button>
+                <button class="ft-btn" title="Project on GitHub" aria-label="GitHub" onclick="window.open('https://github.com/tanzhouxkong/Metro-PIDS-','_blank')">
+                    <i class="fab fa-github" style="font-size:18px;"></i>
+                </button>
+                <button class="ft-btn" data-panel="panel-4" title="设置"><i class="fas fa-cog"></i></button>
+            </div>
+            <div id="railFooter" style="margin-top:auto; padding:12px 0; width:100%; display:flex; align-items:center; justify-content:center;">
+                <!-- footer reserved -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 滑出面板：独立于覆盖层，z-index 设置为低于左侧页面条，使动画下方显示 -->
+    <div id="slidePanel" style="position:fixed; left:auto; top:44px; bottom:0; width:420px; z-index:220; background:var(--card); box-shadow: var(--slide-panel-shadow, 6px 0 30px rgba(0,0,0,0.12)); transform: translateX(-420px); transition: transform 0.32s cubic-bezier(.2,.9,.2,1); overflow:auto;">
+        <div style="padding:16px; display:flex; justify-content:space-between; align-items:center;"></div>
+        <div id="panel-1" class="panel-body" style="padding:0 16px 16px; display:block;">
+            <div class="adm-side in-panel">
+                <div style="text-align:center; padding-bottom:10px; border-bottom:1px solid var(--divider); margin-bottom:10px;">
+                    <h2 style="color:var(--text);">PIDS 控制台</h2>
+                    <div style="font-size:12px; color:var(--muted); font-weight:bold;">V2-Multi Stable</div>
+                </div>
+
+                <!-- 新增：多线路管理 -->
+                <div class="card" style="border-left: 5px solid var(--btn-org-bg); background: var(--card);">
+                    <div class="head" style="color:var(--btn-org-bg)">多线路切换 (Multi-Line)</div>
+                    <select id="line-select" onchange="switchLine(this.value)" style="font-weight:bold; color:var(--text); border-color:var(--accent);"></select>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn b-org" style="flex:1;" onclick="newLine()"><i class="fas fa-plus"></i> 新建</button>
+                        <button class="btn b-red" style="flex:1" onclick="delLine()"><i class="fas fa-trash"></i> 删除</button>
+                    </div>
+                </div>
+
+                <div class="card" style="border-left: 5px solid var(--accent);">
+                    <div class="head" style="color:var(--accent)">线路设置</div>
+                    <input id="cfg-name" placeholder="线路名称 (如: 2号线)" oninput="saveCfg()">
+                    <div style="display:flex; gap:10px;">
+                        <input type="color" id="cfg-color" style="height:42px; padding:2px; flex:1" title="主题色" oninput="saveCfg()">
+                        <select id="cfg-mode" onchange="saveCfg()" style="flex:2"><option value="loop">环线 (Loop)</option><option value="linear">单线 (Linear)</option></select>
+                    </div>
+                    <select id="cfg-dir" onchange="saveCfg()"></select>
+                </div>
+
+                <div class="card" style="border-left: 5px solid var(--btn-gray-bg);">
+                    <div class="head" style="color:var(--muted)">线路存储设置</div>
+                    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                        <button class="btn b-gray" style="flex:1 1 30%" onclick="refreshLinesFromFolder()"><i class="fas fa-sync-alt"></i> 刷新线路</button>
+                        <button class="btn b-gray" style="flex:1 1 30%" onclick="openLinesFolder()"><i class="fas fa-folder-open"></i> 打开文件夹</button>
+                        <button class="btn b-gray" style="flex:1 1 30%" onclick="saveCurrentLine()"><i class="fas fa-save"></i> 保存当前线路</button>
+                        <button class="btn b-red" style="flex:1 1 100%; margin-top:6px; opacity:0.9" onclick="resetData()"><i class="fas fa-trash-alt"></i> 重置数据</button>
+                    </div>
+                </div>
+                    <div class="card" style="border-left: 5px solid var(--btn-blue-bg); margin-top:12px;">
+                    <div class="head">自动播放</div>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="font-size:13px; color:var(--muted); width:80px">自动播放</div>
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <label class="ap-switch" style="margin-right:0;">
+                                    <input type="checkbox" id="autoplay-enabled">
+                                    <span class="track"><span class="thumb"></span></span>
+                                </label>
+                                <div style="font-size:13px; color:var(--text);">启用</div>
+                                <div style="font-size:13px; color:var(--muted); margin-left:8px;">间隔：</div>
+                                <input id="autoplay-interval" type="number" min="1" step="1" placeholder="8" class="ap-input" style="width:110px; padding:8px; border-radius:6px;">
+                            </div>
+                        </div>
+                        <!-- 快捷键已移至设置面板 -->
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <div id="autoplay-status-side" style="font-size:13px; color:var(--muted);">状态：已停止</div>
+                            <div id="autoplay-countdown-side" style="font-size:13px; color:var(--muted);"></div>
+                        </div>
+                        <div style="font-size:12px; color:var(--muted);">建议间隔不低于 8 秒以保证显示稳定。可将快捷键改为其他键（默认 空格）。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="panel-2" class="panel-body" style="padding:16px; display:none;"><h3>面板二</h3><p>这是面板二的示例内容。</p></div>
+        <div id="panel-3" class="panel-body" style="padding:16px; display:none;"><h3>面板三</h3><p>这是面板三的示例内容。</p></div>
+        <div id="panel-4" class="panel-body" style="padding:16px; display:none;">
+            <div class="head">设置</div>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <div class="card">
+                        <div class="head">应用外观</div>
+                        <div style="margin-top:8px;">
+                            <select id="theme-mode-select" style="width:100%; padding:8px; border-radius:8px; background:var(--card); color:var(--text); border:1px solid var(--card-border);">
+                                <option value="system">跟随系统</option>
+                                <option value="light">浅色模式</option>
+                                <option value="dark">深色模式</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 深色样式选项已移除，由内部设置保留 darkVariant 值（不再提供 UI 切换） -->
+
+                    <div class="card">
+                        <div class="head">快捷键设置</div>
+                        <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                            <div style="display:flex; gap:8px; align-items:center;"><div style="width:140px">下一步</div><input id="key-arrdep" class="kbd" placeholder="Enter" readonly><button class="btn b-gray" style="margin-left:8px; padding:6px 8px; font-size:12px;" onclick="resetArrdep()">重置</button></div>
+                            <div style="display:flex; gap:8px; align-items:center;"><div style="width:140px">上一站</div><input id="key-prev" class="kbd" placeholder="ArrowLeft" readonly><button class="btn b-gray" style="margin-left:8px; padding:6px 8px; font-size:12px;" onclick="resetPrev()">重置</button></div>
+                            <div style="display:flex; gap:8px; align-items:center;"><div style="width:140px">下一站</div><input id="key-next" class="kbd" placeholder="ArrowRight" readonly><button class="btn b-gray" style="margin-left:8px; padding:6px 8px; font-size:12px;" onclick="resetNext()">重置</button></div>
+                            <div style="display:flex; gap:8px; align-items:center;"><div style="width:140px">自动播放 快捷键</div><input id="autoplay-key" class="kbd ap-input" placeholder="Space" readonly style="width:160px"><button class="btn b-gray" style="margin-left:8px; padding:6px 8px; font-size:12px;" onclick="resetAutoplayKey()">重置</button></div>
+                        </div>
+                       <div style="font-size:12px; color:var(--muted); margin-top:8px;">按下输入框并按希望绑定的按键；点击“重置”恢复默认绑定</div>
+                    </div>
+
+                    <!-- autoplay card moved to control area -->
+
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 滑出面板覆盖层（只用于右侧遮罩），保留高 z-index 以盖住主内容右侧，但不覆盖左侧 rail/侧边栏 -->
+    <div id="slideOverlay" style="position:fixed; left:0; top:44px; bottom:0; right:0; display:none; z-index:180; pointer-events:none;">
+        <div id="slideBackdrop" style="position:absolute; left:0; top:0; right:0; bottom:0; background:transparent; z-index:170;" onclick="closeSlide()"></div>
+    </div>
+    <!-- ================= 控制端 ================= -->
+    <div id="admin-app">
+        <div id="rec-mask">
+            <div style="font-size:60px; color:var(--accent); margin-bottom:20px;"><i class="fas fa-video"></i></div>
+            <h1 style="margin-bottom:10px;">正在录制中...</h1>
+            <p style="opacity:0.7; margin-bottom:30px;">请保持此窗口在前台，切勿最小化。</p>
+            <button class="btn b-red" style="padding:12px 40px; font-size:16px;" onclick="stopRec()">停止录制</button>
+        </div>
+
+        <div class="adm-main">
+            <!-- 状态仪表盘 -->
+                <div class="card" style="display:flex; justify-content:space-between; align-items:center; border-left:6px solid var(--btn-blue-bg); background: var(--card);">
+                <div>
+                    <div id="ctrl-lbl" style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px;">Current Station</div>
+                    <div style="font-size:24px; font-weight:800; color:var(--text);" id="ctrl-cur">--</div>
+                    <div id="ctrl-dest" style="font-size:14px; color:var(--accent); margin-top:4px; font-weight:600;">Destination: --</div>
+                </div>
+                <div id="ctrl-st" style="background:var(--btn-blue-bg); color:var(--btn-text); padding:8px 16px; border-radius:30px; font-weight:800; font-size:14px; box-shadow: var(--ctrl-st-shadow, 0 4px 10px rgba(9,132,227,0.18));">WAITING</div>
+            </div>
+
+            <!-- 控制按钮组 -->
+            <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-bottom:20px;">
+                <button class="btn b-gray" style="height:50px; font-size:12px; padding:0 2px;" onclick="move(-1)"><i class="fas fa-chevron-left"></i> 上一站</button>
+                <button class="btn b-org" style="height:50px; font-size:12px; padding:0 2px;" onclick="setArr()"><i class="fas fa-sign-in-alt"></i> 进站</button>
+                <button class="btn b-blue" style="height:50px; font-size:12px; padding:0 2px;" onclick="setDep()"><i class="fas fa-sign-out-alt"></i> 出站</button>
+                <button class="btn b-gray" style="height:50px; font-size:12px; padding:0 2px;" onclick="move(1)">下一站 <i class="fas fa-chevron-right"></i></button>
+                <button class="btn b-green" style="height:50px; font-size:12px; padding:0 2px; font-weight:bold;" onclick="next()"><i class="fas fa-step-forward"></i> 下一步</button>
+            </div>
+
+            
+
+            <!-- 站点编辑区域 -->
+            <div class="card" id="st-edit-card" style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:400px; transition:all 0.3s;">
+                <div class="head" onclick="toggleEdit()" style="cursor:pointer; user-select:none;">
+                    <span><i class="fas fa-edit"></i> 站点管理 <span id="st-edit-txt" style="font-size:12px; color:var(--muted); margin-left:5px;">(展开)</span> <i id="st-edit-icon" class="fas fa-chevron-right" style="font-size:12px;"></i></span>
+                    <button class="btn b-gray" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); clearForm()">清空表单</button>
+                </div>
+                
+                <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+                <div id="st-form-container" style="display:none; background:var(--card); padding:15px; border:1px solid var(--card-border); border-radius:8px; margin-bottom:15px;">
+                    <div style="display:flex; gap:10px; margin-bottom:10px;">
+                        <input id="ed-cn" placeholder="中文站名 (例如: 人民广场)" style="flex:1">
+                        <input id="ed-en" placeholder="English Name" style="flex:1">
+                    </div>
+                    <div style="margin-bottom:10px; display:flex; gap:10px;">
+                        <div style="flex:1">
+                            <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">站点状态 (Status)</div>
+                            <div class="door-sel">
+                                <input type="hidden" id="ed-skip" value="false">
+                                <button class="d-btn active" id="btn-skip-off" onclick="setSkip(false)">正常</button>
+                                <button class="d-btn" id="btn-skip-on" onclick="setSkip(true)">暂缓</button>
+                            </div>
+                        </div>
+                        <div style="flex:1">
+                            <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">开门方向 (Door)</div>
+                            <div class="door-sel">
+                                <input type="hidden" id="ed-door" value="left">
+                                <button class="d-btn active" onclick="setDoor('left')">左侧</button>
+                                <button class="d-btn" onclick="setDoor('right')">右侧</button>
+                                <button class="d-btn" onclick="setDoor('both')">双侧</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-size:12px;color:var(--muted);margin-bottom:8px; display:flex; justify-content:space-between;">
+                        <span>换乘线路</span>
+                        <a href="#" onclick="addXfer()" style="color:var(--accent); text-decoration:none;">+ 添加换乘</a>
+                    </div>
+                    <div id="ed-xfer" class="xf-edit"></div>
+                    <button class="btn b-green" style="width:100%" id="btn-save" onclick="saveSt()">
+                        <i class="fas fa-check"></i> <span id="btn-txt">添加新站点</span>
+                    </button>
+                    <input type="hidden" id="ed-idx" value="-1">
+                </div>
+                
+                <div class="st-list" id="st-list-box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============ 1. 全局变量与初始化 ============
+        const bc = new BroadcastChannel('metro_pids_v3');
+        let store = { cur: 0, list: [] };
+        let appData = null;
+        let rt = { idx: 0, state: 0 }; // state: 0=Arriving/Waiting, 1=Departing
+        let isRec = false;
+        let recTimer = null;
+
+        // 默认数据 (如果 localStorage 为空)
+        const DEF = {"meta":{"lineName":"2号线","themeColor":"#00ff4c","mode":"linear","dirType":"up"},"stations":[{"name":"浦东1号2号航站楼","en":"Pudong Airport Terminal 1 & 2","xfer":[{"line":"磁浮线","color":"#808080"},{"line":"机场联络线","color":"#808080"}]},{"name":"海天三路","en":"Haitian Sanlu","xfer":[]},{"name":"远东大道","en":"Yuandong Dadao","xfer":[]},{"name":"凌空路","en":"Lingkong Lu","xfer":[]},{"name":"川沙","en":"Chuansha","xfer":[]},{"name":"华夏东路","en":"Huaxia Donglu","xfer":[]},{"name":"创新中路","en":"Chuangxin Zhonglu","xfer":[]},{"name":"唐镇","en":"Tangzhen","xfer":[]},{"name":"广兰路","en":"Guanglan Lu","xfer":[]},{"name":"金科路","en":"Jinke Lu","xfer":[]},{"name":"张江高科","en":"Zhangjiang Hi-Tech Park","xfer":[]},{"name":"龙阳路","en":"Longyang Lu","xfer":[{"line":"7号线","color":"#FF6900"},{"line":"16号线","color":"#99CC66"},{"line":"18号线","color":"#D7000F"},{"line":"磁浮线","color":"#808080"}]},{"name":"世纪公园","en":"Century Park","xfer":[]},{"name":"上海科技馆","en":"Shanghai Science & Technology Museum","xfer":[]},{"name":"世纪大道","en":"Century Avenue","xfer":[{"line":"4号线","color":"#52c41a"},{"line":"6号线","color":"#D9027D"},{"line":"9号线","color":"#71C5E8"}]},{"name":"浦东南路","en":"Pudong Nanlu","xfer":[{"line":"14号线","color":"#8A2BE2"},{"line":"19号线","color":"#808080"}]},{"name":"陆家嘴","en":"Lujiazui","xfer":[{"line":"14号线","color":"#8A2BE2"}]},{"name":"南京东路","en":"East Nanjing Road","xfer":[{"line":"10号线","color":"#C0A8D1"}]},{"name":"人民广场","en":"People's Square","xfer":[{"line":"1号线","color":"#ED3229"},{"line":"8号线","color":"#0099CC"}]},{"name":"南京西路","en":"West Nanjing Road","xfer":[{"line":"12号线","color":"#007B65"},{"line":"13号线","color":"#F19D00"}]},{"name":"静安寺","en":"Jing'an Temple","xfer":[{"line":"7号线","color":"#FF6900"},{"line":"14号线","color":"#8A2BE2"}]},{"name":"江苏路","en":"Jiangsu Road","xfer":[{"line":"11号线","color":"#882E91"}]},{"name":"中山公园","en":"Zhongshan Park","xfer":[{"line":"3号线","color":"#FFD700"},{"line":"4号线","color":"#52c41a"}]},{"name":"娄山关路","en":"Loushanguan Lu","xfer":[{"line":"15号线","color":"#BBA786"}]},{"name":"威宁路","en":"Weining Lu","xfer":[]},{"name":"北新泾","en":"Beixinjing","xfer":[]},{"name":"淞虹路","en":"Songhong Lu","xfer":[]},{"name":"虹桥2号航站楼","en":"Hongqiao Airport Terminal 2","xfer":[{"line":"10号线","color":"#C0A8D1"},{"line":"机场联络线","color":"#808080"}]},{"name":"虹桥火车站","en":"Hongqiao Railway Station","xfer":[{"line":"10号线","color":"#C0A8D1"},{"line":"17号线","color":"#B5BD00"}]},{"name":"国家会展中心","en":"National Exhibition and Convention Center","xfer":[{"line":"13号线","color":"#F19D00"},{"line":"17号线","color":"#B5BD00"}]},{"name":"蟠祥路•国家会计学院站","en":"Panxiang Road·Shanghai National Accounting Institute Station","xfer":[]}]};
+
+        // If true, the control console (.adm-side) will be locked to the slide panel
+        const LOCK_CONSOLE_IN_PANEL = true;
+
+        window.onload = () => {
+            loadSafe();
+            initUI();
+            renderAdmin();
+            renderLineSelector();
+            sync();
+            // Restore sidebar state
+            const collapsed = localStorage.getItem('pids_sidebar_collapsed') === '1';
+            if (collapsed) document.getElementById('admin-app').classList.add('sidebar-collapsed');
+            // If configured, lock the console into the slide panel on startup
+            if (LOCK_CONSOLE_IN_PANEL) {
+                try { lockConsoleToPanel(); } catch(e){ console.warn('lockConsoleToPanel failed', e); }
+                // hide the sidebar toggle as it's no longer applicable
+                const tb = document.getElementById('sidebarToggle'); if (tb) tb.style.display = 'none';
+            }
+
+            // 键盘监听
+            document.onkeydown = (e) => {
+                if (!isRec && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+                    handleKey(e.code, e);
+                }
+            };
+
+            // 监听来自 Display 的消息
+            bc.onmessage = (e) => {
+                if (e.data.t === 'REQ') sync();
+                if (e.data.t === 'REC_STOP_ERR') {
+                    isRec = false;
+                    clearInterval(recTimer);
+                    document.getElementById('rec-mask').style.display = 'none';
+                    alert('录制出错');
+                }
+                if (e.data.t === 'CMD_KEY') {
+                    try {
+                        console.debug('control <- CMD_KEY', e.data);
+                        // normalize for logging
+                        const incomingCode = normalizeKeyNameGlobal(e.data.code || e.data.key);
+                        const incomingKey = normalizeKeyNameGlobal(e.data.key || e.data.code || null);
+                        console.debug('control <- CMD_KEY normalized', { incomingCode, incomingKey });
+                    } catch (err) {}
+                    // prefer normalized payload from display when available
+                    const usedCode = e.data.normCode || e.data.code || e.data.key;
+                    const usedEventLike = { code: e.data.normCode || e.data.code || null, key: e.data.normKey || e.data.key || null, preventDefault: function(){} };
+                    handleKey(usedCode, usedEventLike);
+                }
+            };
+        };
+
+        // Ensure layout class if adm-side already in panel on initial load
+        try {
+            const side = document.querySelector('.adm-side.in-panel');
+            const app = document.getElementById('admin-app');
+            if (side && app) app.classList.add('side-in-panel');
+        } catch(e) {}
+        // Subscribe to maximize/unmaximize events (Electron frameless support)
+        try {
+            if (window.electronAPI && typeof window.electronAPI.onMaxState === 'function') {
+                window.electronAPI.onMaxState((isMax) => {
+                    const btn = document.getElementById('win-max');
+                    if (!btn) return;
+                    btn.innerText = isMax ? '❐' : '▢';
+                    // slight visual change when maximized
+                    const tb = document.querySelector('.titlebar');
+                    if (tb) tb.style.boxShadow = isMax ? 'var(--titlebar-max-shadow, inset 0 -1px 0 rgba(255,255,255,0.02))' : '';
+                });
+            }
+        } catch (e) {}
+        // Double-click titlebar to toggle maximize (native behavior)
+        try {
+            const tb = document.querySelector('.titlebar');
+            if (tb) tb.addEventListener('dblclick', async (ev)=>{ ev.preventDefault(); await winMax(); });
+        } catch(e) {}
+
+        function toggleSidebar() {
+            // no-op when console is locked into panel
+            if (typeof LOCK_CONSOLE_IN_PANEL !== 'undefined' && LOCK_CONSOLE_IN_PANEL) return;
+            const app = document.getElementById('admin-app');
+            if (app.classList.contains('sidebar-collapsed')) {
+                app.classList.remove('sidebar-collapsed');
+                localStorage.setItem('pids_sidebar_collapsed', '0');
+            } else {
+                app.classList.add('sidebar-collapsed');
+                localStorage.setItem('pids_sidebar_collapsed', '1');
+            }
+        }
+
+        // Window control handlers (use electron API when available)
+        async function winMin() {
+            if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.minimize) {
+                await window.electronAPI.windowControls.minimize();
+                return;
+            }
+            // Fallback: blur window as pseudo-minimize
+            try { window.blur(); } catch(e){}
+        }
+
+        async function winMax() {
+            if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.toggleMax) {
+                const r = await window.electronAPI.windowControls.toggleMax();
+                return r;
+            }
+            // Fallback: toggle browser fullscreen
+            if (!document.fullscreenElement) {
+                try { await document.documentElement.requestFullscreen(); } catch(e){}
+            } else {
+                try { await document.exitFullscreen(); } catch(e){}
+            }
+        }
+
+        async function winClose() {
+            if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.close) {
+                await window.electronAPI.windowControls.close();
+                return;
+            }
+            // Fallback: attempt to close window (may be blocked in browsers)
+            try { window.close(); } catch(e){ alert('无法在此环境下关闭窗口'); }
+        }
+
+        function loadSafe() {
+            try {
+                const saved = localStorage.getItem('pids_global_store_v1');
+                if (saved) {
+                    store = JSON.parse(saved);
+                    if (!store.list || !Array.isArray(store.list) || store.list.length === 0) throw new Error();
+                } else {
+                    throw new Error();
+                }
+            } catch (e) {
+                console.log('初始化默认数据...');
+                store = { cur: 0, list: [JSON.parse(JSON.stringify(DEF))] };
+            }
+            if (store.cur < 0 || store.cur >= store.list.length) store.cur = 0;
+            appData = store.list[store.cur];
+        }
+
+        async function openLinesFolder() {
+            if (!(window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.openFolder === 'function')) {
+                alert('仅 Electron 环境支持打开保存目录');
+                return;
+            }
+            const res = await window.electronAPI.lines.openFolder();
+            if (!res || !res.ok) alert('打开失败: ' + (res && res.error));
+        }
+
+        async function saveCurrentLine() {
+            const cur = store.list[store.cur];
+            if (!cur || !cur.meta || !cur.meta.lineName) {
+                alert('当前线路数据无效，无法保存');
+                return;
+            }
+            const filename = cur.meta.lineName + '.json';
+            // Electron API path
+            if (window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.save === 'function') {
+                try {
+                    const normalized = normalizeLine(JSON.parse(JSON.stringify(cur)));
+                    const res = await window.electronAPI.lines.save(filename, normalized);
+                    if (res && res.ok) {
+                        alert('线路已保存: ' + res.path);
+                    } else {
+                        alert('保存失败: ' + (res && res.error));
+                    }
+                } catch (e) { alert('保存失败: ' + e.message); }
+                return;
+            }
+            // No host API available — inform the user to open/select a folder first
+            alert('无法保存：未检测到宿主文件保存接口。请先使用“打开文件夹”选择一个线路文件夹，再保存。');
+        }
+
+        function sync() {
+            store.list[store.cur] = appData;
+            localStorage.setItem('pids_global_store_v1', JSON.stringify(store));
+            bc.postMessage({ t: 'SYNC', d: appData, r: rt });
+            renderAdmin();
+            renderLineSelector();
+        }
+
+        // ============ 2. 逻辑控制 ============
+        function getStep() {
+            const meta = appData.meta;
+            if (meta.mode === 'loop' && meta.dirType === 'inner') return -1;
+            if (meta.mode === 'linear' && meta.dirType === 'down') return -1;
+            return 1;
+        }
+
+        function handleKey(code, e) {
+            const step = getStep();
+            // use global normalizer for consistency
+            const normalizeKeyName = (name) => normalizeKeyNameGlobal(name);
+
+            // Prefer configured keymap when available
+            const km = window.__pids_keymap || (loadSettings && loadSettings().keys) || { arrdep: 'Enter', prev: 'ArrowLeft', next: 'ArrowRight' };
+            // helper to compare normalized names ignoring case
+            const matches = (incoming, expected) => {
+                if (!incoming || !expected) return false;
+                const inN = normalizeKeyName(incoming);
+                const exN = normalizeKeyName(expected);
+                try { if (inN === exN) return true; } catch(e){}
+                try { if (String(inN).toLowerCase() === String(exN).toLowerCase()) return true; } catch(e){}
+                return false;
+            };
+            const incomingCode = normalizeKeyName(code);
+            const incomingKey = normalizeKeyName(e && e.key ? e.key : null);
+            try {
+                if (matches(incomingCode, km.arrdep) || matches(incomingKey, km.arrdep)) {
+                    console.debug('handleKey: matched arrdep', { incomingCode, incomingKey, km });
+                    if (e && e.preventDefault) try { e.preventDefault(); } catch(e2){}
+                    return next();
+                }
+                if (matches(incomingCode, km.prev) || matches(incomingKey, km.prev)) { console.debug('handleKey: matched prev', { incomingCode, incomingKey, km }); return move(-step); }
+                if (matches(incomingCode, km.next) || matches(incomingKey, km.next)) { console.debug('handleKey: matched next', { incomingCode, incomingKey, km }); return move(step); }
+            } catch (err) { /* fallthrough to legacy handling */ }
+
+            // Legacy/hardcoded fallbacks (also check incomingKey)
+            if (matches(incomingCode, 'Enter') || matches(incomingKey, 'Enter')) { if (e && e.preventDefault) try { e.preventDefault(); } catch(e2){}; next(); }
+            if (matches(incomingCode, 'KeyA') || matches(incomingKey, 'a')) setArr();
+            if (matches(incomingCode, 'KeyD') || matches(incomingKey, 'd')) setDep();
+            if (matches(incomingCode, 'ArrowRight') || matches(incomingKey, 'ArrowRight')) move(step);
+            if (matches(incomingCode, 'ArrowLeft') || matches(incomingKey, 'ArrowLeft')) move(-step);
+        }
+
+        function move(delta) {
+            let nextIdx = rt.idx;
+            const len = appData.stations.length;
+            const isLoop = appData.meta.mode === 'loop';
+            let count = 0;
+
+            while (count < len) {
+                nextIdx += delta;
+                
+                if (isLoop) {
+                    if (nextIdx >= len) nextIdx = 0;
+                    if (nextIdx < 0) nextIdx = len - 1;
+                } else {
+                    if (nextIdx >= len || nextIdx < 0) return; // Hit boundary
+                }
+
+                if (!appData.stations[nextIdx].skip) {
+                    rt.idx = nextIdx;
+                    rt.state = 0;
+                    sync();
+                    return;
+                }
+                count++;
+            }
+        }
+
+        function jumpTo(idx) {
+            rt.idx = idx;
+            rt.state = 0;
+            sync();
+        }
+
+        function setArr() {
+            if (rt.state === 1) move(getStep());
+            rt.state = 0;
+            sync();
+        }
+
+        function setDep() {
+            rt.state = 1;
+            sync();
+        }
+
+        function next() {
+            rt.state === 0 ? setDep() : setArr();
+        }
+
+        // ============ 3. UI 渲染与交互 ============
+        function initUI() {
+            document.getElementById('cfg-name').value = appData.meta.lineName;
+            document.getElementById('cfg-color').value = appData.meta.themeColor;
+            document.getElementById('cfg-mode').value = appData.meta.mode;
+            updUI();
+        }
+
+        function updUI() {
+            let mode = document.getElementById('cfg-mode').value;
+            let dirSel = document.getElementById('cfg-dir');
+            dirSel.innerHTML = '';
+
+            let s1 = '起点', s2 = '终点';
+            if(appData && appData.stations && appData.stations.length > 0) {
+                s1 = appData.stations[0].name;
+                s2 = appData.stations[appData.stations.length-1].name;
+            }
+
+            if (mode === 'loop') {
+                dirSel.add(new Option('外环 (逆时针)', 'outer'));
+                dirSel.add(new Option('内环 (顺时针)', 'inner'));
+            } else {
+                dirSel.add(new Option(`上行 (${s1} -> ${s2})`, 'up'));
+                dirSel.add(new Option(`下行 (${s2} -> ${s1})`, 'down'));
+            }
+            if (appData.meta.dirType) dirSel.value = appData.meta.dirType;
+        }
+
+        function saveCfg() {
+            appData.meta.lineName = document.getElementById('cfg-name').value;
+            appData.meta.themeColor = document.getElementById('cfg-color').value;
+            appData.meta.mode = document.getElementById('cfg-mode').value;
+            appData.meta.dirType = document.getElementById('cfg-dir').value;
+            
+            updUI();
+            // Re-read dirType in case it changed due to mode change
+            appData.meta.dirType = document.getElementById('cfg-dir').value;
+            sync();
+        }
+
+        function renderAdmin() {
+            const st = appData.stations[rt.idx];
+            document.getElementById('ctrl-cur').innerText = st ? st.name : '未知站点';
+            
+            // Update Label with Direction
+            let dirLabel = 'CURRENT STATION';
+            if (appData && appData.stations && appData.stations.length > 1) {
+                const sFirst = appData.stations[0].name;
+                const sLast = appData.stations[appData.stations.length-1].name;
+                
+                if (appData.meta.dirType === 'up') dirLabel = `${sFirst} ➜ ${sLast}`;
+                else if (appData.meta.dirType === 'down') dirLabel = `${sLast} ➜ ${sFirst}`;
+                else if (appData.meta.dirType === 'outer') dirLabel = '外环 (Outer Loop)';
+                else if (appData.meta.dirType === 'inner') dirLabel = '内环 (Inner Loop)';
+            }
+            document.getElementById('ctrl-lbl').innerText = dirLabel;
+
+            // Update Section Info
+            let infoText = '--';
+            const step = getStep();
+            const len = appData.stations.length;
+            
+            let idxFrom = -1;
+            let idxTo = -1;
+
+            if (rt.state === 0) { 
+                // Arrived at Station: Passed (Prev) -> Arrived (Curr)
+                idxTo = rt.idx;
+                idxFrom = rt.idx - step;
+            } else {
+                // In Transit: Passed (Curr) -> Arriving (Next)
+                idxFrom = rt.idx;
+                idxTo = rt.idx + step;
+            }
+
+            // Handle Loop Wrap
+            if (appData.meta.mode === 'loop') {
+                if (idxFrom < 0) idxFrom = len - 1;
+                if (idxFrom >= len) idxFrom = 0;
+                if (idxTo < 0) idxTo = len - 1;
+                if (idxTo >= len) idxTo = 0;
+            }
+
+            const getName = (i) => {
+                if (i >= 0 && i < len) return appData.stations[i].name;
+                return null;
+            };
+
+            const nameFrom = getName(idxFrom);
+            const nameTo = getName(idxTo);
+
+            if (!nameFrom) infoText = `始发 ➜ ${nameTo}`;
+            else if (!nameTo) infoText = `${nameFrom} ➜ 终点`;
+            else infoText = `${nameFrom} ➜ ${nameTo}`;
+
+            const destEl = document.getElementById('ctrl-dest');
+            if(destEl) destEl.innerText = infoText;
+
+            const statusEl = document.getElementById('ctrl-st');
+            statusEl.innerText = rt.state === 0 ? '进站' : '出站';
+            statusEl.style.background = 'var(' + (rt.state === 0 ? '--btn-blue-bg' : '--btn-green-bg') + ')';
+            statusEl.style.boxShadow = 'var(--ctrl-st-shadow)';
+
+            const list = document.getElementById('st-list-box');
+            list.innerHTML = '';
+            appData.stations.forEach((s, i) => {
+                const div = document.createElement('div');
+                div.className = 'item ' + (i === rt.idx ? 'active' : '');
+                div.draggable = true;
+                div.ondragstart = (e) => dragStart(e, i);
+                div.ondragover = (e) => dragOver(e);
+                div.ondrop = (e) => drop(e, i);
+                div.ondragend = (e) => dragEnd(e);
+                
+                let tags = '';
+                if (s.skip) tags += '<span class="badge" style="background:var(--btn-org-bg);margin-left:5px;">暂缓</span>';
+                
+                let xfers = '';
+                if (s.xfer && s.xfer.length > 0) {
+                    xfers = '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">';
+                    s.xfer.forEach(x => {
+                        xfers += `<span class="badge" style="background:${x.color};padding:1px 4px;border-radius:2px;font-size:10px;">${x.line}</span>`;
+                    });
+                    xfers += '</div>';
+                }
+
+                div.innerHTML = `
+                    <div class="item-txt" onclick="jumpTo(${i})">
+                        <div>
+                            <span style="font-weight:bold;margin-right:10px;color:var(--muted);">[${i+1}]</span>
+                            <span>${s.name}</span> <span style="font-size:11px;color:var(--muted);">${s.en}</span>
+                            ${tags}
+                        </div>
+                        ${xfers}
+                    </div>
+                    <div class="item-act">
+                        <button class="btn b-blue" style="padding:4px 8px; font-size:11px;" onclick="loadEdit(${i})"><i class="fas fa-pencil-alt"></i></button>
+                        <button class="btn b-red" style="padding:4px 8px; font-size:11px;" onclick="del(${i})"><i class="fas fa-times"></i></button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // ============ Drag & Drop Logic ============
+        let dragSrcIdx = -1;
+
+        function dragStart(e, i) {
+            dragSrcIdx = i;
+            e.dataTransfer.effectAllowed = 'move';
+            e.target.style.opacity = '0.4';
+        }
+
+        function dragOver(e) {
+            if (e && typeof e.preventDefault === 'function') try { e.preventDefault(); } catch(_){}
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function dragEnd(e) {
+            e.target.style.opacity = '1';
+        }
+
+        function drop(e, i) {
+            if (e.stopPropagation) e.stopPropagation();
+            if (dragSrcIdx !== -1 && dragSrcIdx !== i) {
+                const item = appData.stations.splice(dragSrcIdx, 1)[0];
+                appData.stations.splice(i, 0, item);
+                
+                // Adjust current index if needed
+                if (rt.idx === dragSrcIdx) rt.idx = i;
+                else if (rt.idx > dragSrcIdx && rt.idx <= i) rt.idx--;
+                else if (rt.idx < dragSrcIdx && rt.idx >= i) rt.idx++;
+                
+                sync();
+            }
+            return false;
+        }
+
+        function renderLineSelector() {
+            const sel = document.getElementById('line-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            store.list.forEach((l, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.innerText = `[${i+1}] ${l.meta.lineName}`;
+                if (i === store.cur) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        }
+
+        function switchLine(val) {
+            val = parseInt(val);
+            store.cur = val;
+            appData = store.list[val];
+            rt = { idx: 0, state: 0 };
+            initUI();
+            sync();
+        }
+
+        function newLine() {
+            const name = prompt('请输入新线路名称 (例如: 3号线)', '新线路');
+            if (!name) return;
+            const newL = JSON.parse(JSON.stringify(DEF));
+            newL.meta.lineName = name;
+            newL.meta.themeColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+            store.list.push(newL);
+            switchLine(store.list.length - 1);
+        }
+
+        function delLine() {
+            if (store.list.length <= 1) return alert('至少保留一条线路！');
+            if (!confirm('确定要删除当前线路 "' + appData.meta.lineName + '" 吗？\n删除后无法恢复！')) return;
+            store.list.splice(store.cur, 1);
+            store.cur = 0;
+            appData = store.list[0];
+            rt = { idx: 0, state: 0 };
+            initUI();
+            sync();
+        }
+
+        // ============ 4. 站点编辑 ============
+        function toggleEdit() {
+            const form = document.getElementById('st-form-container');
+            const icon = document.getElementById('st-edit-icon');
+            const txt = document.getElementById('st-edit-txt');
+            
+            if (form.style.display === 'none') {
+                form.style.display = 'block';
+                icon.className = 'fas fa-chevron-down';
+                if(txt) txt.innerText = '(收起)';
+            } else {
+                form.style.display = 'none';
+                icon.className = 'fas fa-chevron-right';
+                if(txt) txt.innerText = '(展开)';
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('ed-cn').value = '';
+            document.getElementById('ed-en').value = '';
+            document.getElementById('ed-xfer').innerHTML = '';
+            document.getElementById('ed-idx').value = '-1';
+            document.getElementById('btn-txt').innerText = '添加新站点';
+            setDoor('left');
+            setSkip(false);
+        }
+
+        function setDoor(val) {
+            document.getElementById('ed-door').value = val;
+            const btns = document.querySelectorAll('.door-sel:last-child .d-btn'); // Assuming it's the second door-sel group
+            // Better selector strategy:
+            const doorBtns = document.querySelectorAll('[onclick^="setDoor"]');
+            doorBtns.forEach(b => {
+                if (b.getAttribute('onclick').includes(`'${val}'`)) b.classList.add('active');
+                else b.classList.remove('active');
+            });
+        }
+
+        function setSkip(val) {
+            document.getElementById('ed-skip').value = val;
+            const offBtn = document.getElementById('btn-skip-off');
+            const onBtn = document.getElementById('btn-skip-on');
+            if (val) {
+                offBtn.classList.remove('active');
+                onBtn.classList.add('active');
+            } else {
+                offBtn.classList.add('active');
+                onBtn.classList.remove('active');
+            }
+        }
+
+        function addXfer(line='', color, isSuspended=false) {
+            color = color || getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#000000';
+            const box = document.getElementById('ed-xfer');
+            const div = document.createElement('div');
+            div.className = 'xf-row';
+            const btnClass = isSuspended ? 'b-org' : 'b-gray';
+            const btnText = isSuspended ? '暂缓' : '正常';
+            
+            div.innerHTML = `
+                <input value="${line}" class="xl" placeholder="线号" style="margin:0;flex:1">
+                <input type="color" value="${color}" class="xc" style="width:40px;height:38px;padding:0;border:none;">
+                <input type="hidden" class="xs" value="${isSuspended}">
+                <button class="btn ${btnClass} xs-btn" style="padding:0 8px; width:50px; font-size:12px;" onclick="toggleXferSuspended(this)">${btnText}</button>
+                <button class="btn b-red" style="padding:0 8px;" onclick="this.parentElement.remove()">x</button>
+            `;
+            box.appendChild(div);
+        }
+
+        function toggleXferSuspended(btn) {
+            const input = btn.parentElement.querySelector('.xs');
+            const isSuspended = input.value === 'true';
+            const newState = !isSuspended;
+            input.value = newState;
+            
+            if (newState) {
+                btn.classList.remove('b-gray');
+                btn.classList.add('b-org');
+                btn.innerText = '暂缓';
+            } else {
+                btn.classList.remove('b-org');
+                btn.classList.add('b-gray');
+                btn.innerText = '正常';
+            }
+        }
+
+        function loadEdit(i) {
+            // Ensure form is visible
+            const form = document.getElementById('st-form-container');
+            const icon = document.getElementById('st-edit-icon');
+            const txt = document.getElementById('st-edit-txt');
+            if (form.style.display === 'none') {
+                form.style.display = 'block';
+                icon.className = 'fas fa-chevron-down';
+                if(txt) txt.innerText = '(收起)';
+            }
+
+            const s = appData.stations[i];
+            document.getElementById('ed-cn').value = s.name;
+            document.getElementById('ed-en').value = s.en;
+            setSkip(s.skip || false);
+            setDoor(s.door || 'left');
+            const box = document.getElementById('ed-xfer');
+            box.innerHTML = '';
+            if (s.xfer) s.xfer.forEach(x => addXfer(x.line, x.color, x.suspended));
+            document.getElementById('ed-idx').value = i;
+            document.getElementById('btn-txt').innerText = '保存修改';
+        }
+
+        function saveSt() {
+            const name = document.getElementById('ed-cn').value;
+            if (!name) return;
+            const xfers = [];
+            document.querySelectorAll('.xf-row').forEach(row => {
+                const l = row.querySelector('.xl').value;
+                const c = row.querySelector('.xc').value;
+                const s = row.querySelector('.xs').value === 'true';
+                if (l) xfers.push({ line: l, color: c, suspended: s });
+            });
+            const newSt = {
+                name: name,
+                en: document.getElementById('ed-en').value || name,
+                skip: document.getElementById('ed-skip').value === 'true',
+                door: document.getElementById('ed-door').value,
+                xfer: xfers
+            };
+            const idx = parseInt(document.getElementById('ed-idx').value);
+            if (idx === -1) appData.stations.push(newSt);
+            else appData.stations[idx] = newSt;
+            clearForm();
+            sync();
+        }
+
+        function del(i) {
+            if (appData.stations.length <= 1) return alert('至少保留一个站点');
+            if (confirm('确定删除该站点吗？')) {
+                appData.stations.splice(i, 1);
+                if (rt.idx >= appData.stations.length) rt.idx = 0;
+                sync();
+            }
+        }
+
+        // ============ 5. 录制与文件 ============
+        function startRec() {
+            if (isRec) return;
+            const intVal = document.getElementById('rec-int').value;
+            if (intVal <= 0 || intVal % 1 != 0) return alert('单站停留时间必须为正整数');
+            
+            isRec = true;
+            const bps = (parseFloat(document.getElementById('rec-bps').value) || 8) * 1000000;
+            const interval = parseFloat(intVal) * 1000;
+            
+            document.getElementById('rec-mask').style.display = 'flex';
+            
+            // Send start command to display
+            bc.postMessage({ t: 'REC_START', bps: bps });
+            
+            // Start timer
+            recTimer = setInterval(() => {
+                if (!isRec) return clearInterval(recTimer);
+                next();
+            }, interval);
+        }
+
+        function stopRec() {
+            isRec = false;
+            clearInterval(recTimer);
+            document.getElementById('rec-mask').style.display = 'none';
+            bc.postMessage({ t: 'REC_STOP' });
+        }
+
+        function exportData() {
+            // If running in Electron, save the current line as a separate file
+            if (window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.save === 'function') {
+                const cur = store.list[store.cur];
+                if (!cur || !cur.meta || !cur.meta.lineName) {
+                    alert('当前线路数据无效，无法保存');
+                    return;
+                }
+                const filename = cur.meta.lineName;
+                const normalizedCur = normalizeLine(JSON.parse(JSON.stringify(cur)));
+                window.electronAPI.lines.save(filename, normalizedCur).then(res => {
+                    if (res && res.ok) alert('线路已保存: ' + res.path);
+                    else alert('保存失败: ' + (res && res.error));
+                });
+                return;
+            }
+            // Fallback: download full store
+            const blob = new Blob([JSON.stringify(store)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'metro_store.json';
+            a.click();
+        }
+
+        function importData(el) {
+            const f = el.files[0];
+            if (!f) return;
+            const r = new FileReader();
+            r.onload = e => {
+                try {
+                    const d = JSON.parse(e.target.result);
+                    if (d.list && Array.isArray(d.list)) {
+                        // normalize all lines
+                        d.list = d.list.map(l => normalizeLine(l));
+                        store = d;
+                    } else if (d.stations && d.meta) {
+                        store.list.push(normalizeLine(d));
+                    } else {
+                        throw new Error();
+                    }
+                    store.cur = store.list.length - 1;
+                    appData = store.list[store.cur];
+                    rt = { idx: 0, state: 0 };
+                    initUI();
+                    sync();
+                    alert('导入成功');
+                } catch (err) {
+                    alert('文件无效');
+                }
+                el.value = '';
+            };
+            r.readAsText(f);
+        }
+
+        // Ensure a loaded line has expected fields (stations have door and skip)
+        function normalizeLine(line) {
+            if (!line || !line.meta) return line;
+            if (!Array.isArray(line.stations)) line.stations = [];
+            line.stations = line.stations.map(s => {
+                if (typeof s !== 'object' || s === null) s = { name: String(s || ''), en: '', xfer: [] };
+                if (!('door' in s)) s.door = 'left';
+                if (!('skip' in s)) s.skip = false;
+                if (!('xfer' in s) || !Array.isArray(s.xfer)) s.xfer = [];
+                if (!('en' in s)) s.en = '';
+                if (!('name' in s)) s.name = '';
+                return s;
+            });
+            // ensure meta has a lineName
+            if (!line.meta.lineName) line.meta.lineName = '线路';
+            return line;
+        }
+
+        function resetData() {
+            if (confirm("【警告】这将清空所有线路数据并恢复出厂设置，确定吗？")) {
+                localStorage.removeItem('pids_global_store_v1');
+                location.reload();
+            }
+        }
+
+        function openWin() {
+            if (window.electronAPI && typeof window.electronAPI.openDisplay === 'function') {
+                window.electronAPI.openDisplay();
+                return;
+            }
+            window.open('display_window.html', 'pids_display_win', 'width=1900,height=620');
+        }
+
+        // Load list of saved line files (Electron) and prompt user to choose one to import
+        async function loadLineFiles() {
+            if (!(window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.list === 'function')) {
+                alert('仅 Electron 环境支持从线路文件夹加载');
+                return;
+            }
+            const items = await window.electronAPI.lines.list();
+            if (!Array.isArray(items) || items.length === 0) {
+                alert('未发现已保存的线路文件');
+                return;
+            }
+            // Build simple choice string
+            const names = items.map((it, i) => `${i+1}. ${it.name} ${it.version?('(v'+it.version+')'):''}`).join('\n');
+            const sel = prompt('请选择要导入的线路编号:\n' + names);
+            if (!sel) return;
+            const idx = parseInt(sel) - 1;
+            if (isNaN(idx) || idx < 0 || idx >= items.length) { alert('选择无效'); return; }
+            const filename = items[idx].name;
+            const res = await window.electronAPI.lines.read(filename);
+            if (res && res.ok && res.content) {
+                store.list.push(normalizeLine(res.content));
+                store.cur = store.list.length - 1;
+                appData = store.list[store.cur];
+                rt = { idx: 0, state: 0 };
+                initUI(); sync();
+                alert('导入线路成功: ' + filename);
+            } else {
+                alert('读取失败: ' + (res && res.error));
+            }
+        }
+
+        // Refresh lines by scanning the saved lines folder and importing any new/updated files
+        async function refreshLinesFromFolder() {
+            if (!(window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.list === 'function')) {
+                alert('仅 Electron 环境支持从线路文件夹刷新');
+                return;
+            }
+            try {
+                const items = await window.electronAPI.lines.list();
+                if (!Array.isArray(items) || items.length === 0) {
+                    alert('未发现已保存的线路文件');
+                    return;
+                }
+                const detected = await detectLinesInFolder(items);
+                if (!detected || detected.length === 0) {
+                    alert('未检测到有效线路文件');
+                    return;
+                }
+                // Merge detected into store, replacing by name if exists, otherwise append
+                let added = 0, updated = 0;
+                for (const it of detected) {
+                    const idx = store.list.findIndex(s => s.meta && s.meta.lineName === (it.meta && it.meta.lineName));
+                    if (idx >= 0) {
+                        store.list[idx] = it; updated++; 
+                    } else {
+                        store.list.push(it); added++; 
+                    }
+                }
+                store.cur = Math.max(0, store.list.length - 1);
+                appData = store.list[store.cur];
+                rt = { idx: 0, state: 0 };
+                initUI(); sync();
+                alert('刷新完成，新增: ' + added + '，更新: ' + updated);
+            } catch (e) {
+                console.error(e);
+                alert('刷新失败: ' + (e && e.message));
+            }
+        }
+
+        // Given a listing (from electronAPI.lines.list), read and parse candidate files
+        async function detectLinesInFolder(items) {
+            const out = [];
+            for (const it of items) {
+                try {
+                    // it.name expected to be filename
+                    const res = await window.electronAPI.lines.read(it.name);
+                    if (res && res.ok && res.content) {
+                        const d = res.content;
+                        // Basic heuristic: must have meta and stations array
+                        if (d && d.meta && Array.isArray(d.stations)) {
+                            out.push(normalizeLine(d));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('读取文件失败', it.name, e);
+                }
+            }
+            return out;
+        }
+    </script>
+    <!-- Settings moved into slide panel (panel-3) -->
+
+    <script>
+        // Settings management (dark mode + shortcut mapping)
+        const DEFAULT_SETTINGS = { dark: false, themeMode: 'system', darkVariant: 'soft', keys: { arrdep: 'Enter', prev: 'ArrowLeft', next: 'ArrowRight' }, autoplay: { enabled: false, intervalSec: 8, key: 'Space' } };
+        // Normalize key names for consistent storage and matching
+        function normalizeKeyNameGlobal(name) {
+            if (!name) return name;
+            const s = String(name);
+            if (s === 'NumpadEnter') return 'Enter';
+            if (s === ' ' || s.toLowerCase() === 'spacebar') return 'Space';
+            if (/^space$/i.test(s)) return 'Space';
+            if (/^[a-zA-Z]$/.test(s)) return 'Key' + s.toUpperCase();
+            return s;
+        }
+        // prevent programmatic UI updates from triggering save/behavior
+        window.__pids_settings_loading = false;
+
+        function openSettings() {
+            loadSettingsToUI();
+            openSlide('panel-4');
+        }
+        function closeSettings() { closeSlide(); }
+
+        function loadSettings() {
+            try {
+                const s = JSON.parse(localStorage.getItem('pids_settings_v1') || 'null');
+                return s ? s : DEFAULT_SETTINGS;
+            } catch (e) { return DEFAULT_SETTINGS; }
+        }
+
+        function loadSettingsToUI() {
+            window.__pids_settings_loading = true;
+            const s = loadSettings();
+            const mode = s.themeMode || (s.dark ? 'dark' : 'light');
+            const sel = document.getElementById('theme-mode-select');
+            if (sel) sel.value = mode;
+            // darkVariant is stored but no longer exposed via UI
+            // preserved for applyThemeMode and future use
+            document.getElementById('key-arrdep').value = s.keys.arrdep || DEFAULT_SETTINGS.keys.arrdep;
+            const prev = s.keys.prev || DEFAULT_SETTINGS.keys.prev;
+            const next = s.keys.next || DEFAULT_SETTINGS.keys.next;
+            const elPrev = document.getElementById('key-prev'); if (elPrev) elPrev.value = prev;
+            const elNext = document.getElementById('key-next'); if (elNext) elNext.value = next;
+            // autoplay
+            const apEn = document.getElementById('autoplay-enabled'); if (apEn) apEn.checked = !!(s.autoplay && s.autoplay.enabled);
+            const apInt = document.getElementById('autoplay-interval'); if (apInt) apInt.value = (s.autoplay && s.autoplay.intervalSec) ? s.autoplay.intervalSec : DEFAULT_SETTINGS.autoplay.intervalSec;
+            const apKey = document.getElementById('autoplay-key'); if (apKey) apKey.value = (s.autoplay && s.autoplay.key) ? s.autoplay.key : DEFAULT_SETTINGS.autoplay.key;
+            // allow clicking the input to capture a new key
+            if (apKey) {
+                apKey.onclick = (ev) => { ev.preventDefault(); captureAutoplayKey(); };
+            }
+            // finished programmatic update
+            window.__pids_settings_loading = false;
+        }
+
+        // Apply a theme mode: 'dark'|'light'|'system'
+        // optional darkVariant: 'soft'|'contrast'
+        function applyThemeMode(mode, darkVariant) {
+            function setDark(on) { if (on) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); }
+            function setDarkVariant(v) { if (!v) v = 'soft'; document.documentElement.setAttribute('data-dark-variant', v); }
+            // clear previous listener
+            if (applyThemeMode._mql && applyThemeMode._mqlListener) {
+                try { applyThemeMode._mql.removeListener(applyThemeMode._mqlListener); } catch(e) { try { applyThemeMode._mql.removeEventListener('change', applyThemeMode._mqlListener); } catch(e){} }
+                applyThemeMode._mql = null; applyThemeMode._mqlListener = null;
+            }
+            if (mode === 'system') {
+                if (window.matchMedia) {
+                    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+                    setDark(mql.matches);
+                    // for system mode, use stored darkVariant if present
+                    const s = loadSettings(); setDarkVariant(s.darkVariant || 'soft');
+                    const listener = (e) => setDark(e.matches);
+                    try { mql.addListener(listener); } catch(e) { try { mql.addEventListener('change', listener); } catch(e){} }
+                    applyThemeMode._mql = mql; applyThemeMode._mqlListener = listener;
+                } else {
+                    setDark(false);
+                }
+            } else if (mode === 'dark') {
+                setDark(true);
+                setDarkVariant(darkVariant || (loadSettings().darkVariant || 'soft'));
+            } else {
+                setDark(false);
+            }
+        }
+
+        function saveSettings() {
+            const sel = document.getElementById('theme-mode-select');
+            const themeMode = sel ? sel.value : DEFAULT_SETTINGS.themeMode;
+            // darkVariant is preserved from existing stored settings; no UI to change it
+            const existing = loadSettings();
+            const darkVariant = existing.darkVariant || DEFAULT_SETTINGS.darkVariant;
+            // keys: arrdep is single key (Enter), prev/next are stored separately
+            const arrdep = document.getElementById('key-arrdep').value || DEFAULT_SETTINGS.keys.arrdep;
+            const prev = (document.getElementById('key-prev') && document.getElementById('key-prev').value) || DEFAULT_SETTINGS.keys.prev;
+            const next = (document.getElementById('key-next') && document.getElementById('key-next').value) || DEFAULT_SETTINGS.keys.next;
+            // autoplay values
+            const apEnEl = document.getElementById('autoplay-enabled');
+            const apIntEl = document.getElementById('autoplay-interval');
+            const apKeyEl = document.getElementById('autoplay-key');
+            const autoplay = { enabled: !!(apEnEl && apEnEl.checked), intervalSec: (apIntEl && Number(apIntEl.value)) || DEFAULT_SETTINGS.autoplay.intervalSec, key: (apKeyEl && apKeyEl.value) ? apKeyEl.value : DEFAULT_SETTINGS.autoplay.key };
+            // If user set interval < 8, ask for confirmation but allow it if user confirms
+            if (autoplay.intervalSec < 8) {
+                const ok = confirm('你设定的播放间隔低于推荐的 8 秒，这可能会导致显示/性能问题。是否确认使用较低间隔？');
+                if (!ok) {
+                    // revert to default 8
+                    autoplay.intervalSec = DEFAULT_SETTINGS.autoplay.intervalSec;
+                    if (apIntEl) apIntEl.value = autoplay.intervalSec;
+                }
+            }
+            // normalize keys before saving
+            const s = { themeMode, darkVariant, keys: { arrdep: normalizeKeyNameGlobal(arrdep), prev: normalizeKeyNameGlobal(prev), next: normalizeKeyNameGlobal(next) }, autoplay: { enabled: autoplay.enabled, intervalSec: autoplay.intervalSec, key: normalizeKeyNameGlobal(autoplay.key) } };
+            localStorage.setItem('pids_settings_v1', JSON.stringify(s));
+            try { applyThemeMode(s.themeMode, s.darkVariant); } catch(e){}
+            try { bindShortcuts(s.keys); } catch(e){}
+            try { if (s.autoplay && s.autoplay.enabled) startAutoplay(s.autoplay.intervalSec, true); else stopAutoplay(); } catch(e){}
+            // Auto-save: do not close the panel or show alerts
+        }
+
+        function resetAutoplayKey() {
+            const el = document.getElementById('autoplay-key'); if (!el) return;
+            el.value = DEFAULT_SETTINGS.autoplay.key;
+            saveSettings();
+        }
+
+        // Autoplay implementation with delay and UI lock
+        let __pids_autoplay_interval = null;
+        let __pids_autoplay_delay = null;
+        let __pids_autoplay_countdown_timer = null;
+        let __pids_autoplay_next_in = null; // seconds until next action
+        function enableAutoplayLock() {
+            const app = document.getElementById('admin-app'); if (!app) return;
+            try { app.style.position = app.style.position || 'relative'; } catch(e){}
+            if (document.getElementById('autoplay-blocker')) return;
+            const ov = document.createElement('div');
+            ov.id = 'autoplay-blocker';
+            ov.style.position = 'absolute'; ov.style.left = '0'; ov.style.top = '0'; ov.style.right = '0'; ov.style.bottom = '0';
+            ov.style.background = 'rgba(0,0,0,0.02)'; ov.style.zIndex = '999'; ov.style.pointerEvents = 'auto';
+            ov.style.display = 'flex'; ov.style.alignItems = 'center'; ov.style.justifyContent = 'center';
+            // determine the configured key name for display
+            const cfg = loadSettings();
+            const keyName = (cfg && cfg.autoplay && cfg.autoplay.key) ? cfg.autoplay.key : DEFAULT_SETTINGS.autoplay.key;
+            ov.innerHTML = `
+                <div style="background:rgba(0,0,0,0.55); color:#fff; padding:12px 16px; border-radius:10px; display:flex; gap:12px; align-items:center;">
+                    <div id="autoplay-status" style="font-weight:700;">自动播放：进行中</div>
+                    <div id="autoplay-countdown" style="font-size:14px; color:#fff; opacity:0.9;">下次：--s</div>
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <button id="autoplay-pause-btn" class="btn b-gray" title="暂停/恢复 (${keyName})" style="padding:6px 10px; font-size:16px;">⏸</button>
+                        <div style="font-size:12px; color:rgba(255,255,255,0.85);">暂停 (${keyName})</div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <button id="autoplay-stop-confirm-btn" class="btn b-red" title="停止自动播放" style="padding:6px 10px; font-size:16px;">⏹</button>
+                        <div style="font-size:12px; color:rgba(255,255,255,0.85);">停止</div>
+                    </div>
+                </div>
+            `;
+            app.appendChild(ov);
+            const pauseBtn = document.getElementById('autoplay-pause-btn'); if (pauseBtn) pauseBtn.addEventListener('click', ()=>{ toggleAutoplayPause(); });
+            const stopConfirm = document.getElementById('autoplay-stop-confirm-btn'); if (stopConfirm) stopConfirm.addEventListener('click', ()=>{
+                if (!confirm('确认停止自动播放并退出？')) return; stopAutoplay(); try { const apEn = document.getElementById('autoplay-enabled'); if (apEn) apEn.checked = false; saveSettings(); } catch(e){}
+            });
+            // spacebar toggles pause/resume when autoplay active and focus not in an input
+            const configuredKey = (cfg && cfg.autoplay && cfg.autoplay.key) ? cfg.autoplay.key : DEFAULT_SETTINGS.autoplay.key;
+            const spaceHandler = (ev) => {
+                // use code name or key comparison; ignore when focus in input/textarea
+                if (['INPUT','TEXTAREA'].includes(document.activeElement && document.activeElement.tagName)) return;
+                try {
+                    if (ev.code === configuredKey || ev.key === configuredKey || ev.key.toLowerCase() === configuredKey.toLowerCase()) {
+                        ev.preventDefault(); toggleAutoplayPause();
+                    }
+                } catch(e){}
+            };
+            document.addEventListener('keydown', spaceHandler);
+            // store handler so it can be removed later if needed
+            enableAutoplayLock._spaceHandler = spaceHandler;
+            // start countdown updater
+            try { startAutoplayCountdown(); } catch(e){}
+        }
+        function disableAutoplayLock() {
+            const ov = document.getElementById('autoplay-blocker'); if (ov && ov.parentElement) ov.parentElement.removeChild(ov);
+            try { stopAutoplayCountdown(); } catch(e){}
+            // update sidebar status
+            const st = document.getElementById('autoplay-status-side'); if (st) st.innerText = '已停止';
+            const cd = document.getElementById('autoplay-countdown-side'); if (cd) cd.innerText = '';
+            // remove space handler
+            try { if (enableAutoplayLock._spaceHandler) document.removeEventListener('keydown', enableAutoplayLock._spaceHandler); enableAutoplayLock._spaceHandler = null; } catch(e){}
+            // reset pause UI
+            const pb = document.getElementById('autoplay-pause-btn'); if (pb) pb.innerText = '⏸';
+        }
+
+        let __pids_autoplay_paused = false;
+        function toggleAutoplayPause() {
+            // only toggle if autoplay is running
+            const running = !!(__pids_autoplay_interval || __pids_autoplay_delay);
+            if (!running) return;
+            __pids_autoplay_paused = !__pids_autoplay_paused;
+            const pb = document.getElementById('autoplay-pause-btn'); if (pb) pb.innerText = __pids_autoplay_paused ? '▶' : '⏸';
+            const sideStatus = document.getElementById('autoplay-status-side'); if (sideStatus) sideStatus.innerText = __pids_autoplay_paused ? '已暂停' : '进行中';
+            if (__pids_autoplay_paused) {
+                // pause: stop interval but keep countdown running (frozen)
+                if (__pids_autoplay_interval) { clearInterval(__pids_autoplay_interval); __pids_autoplay_interval = null; }
+            } else {
+                // resume: restart interval with current remaining seconds
+                const apIntEl = document.getElementById('autoplay-interval');
+                const intervalSec = (apIntEl && Number(apIntEl.value)) || DEFAULT_SETTINGS.autoplay.intervalSec;
+                // ensure __pids_autoplay_next_in is set
+                if (!__pids_autoplay_next_in) __pids_autoplay_next_in = intervalSec;
+                __pids_autoplay_interval = setInterval(()=>{ try{ next(); __pids_autoplay_next_in = intervalSec; } catch(e){ console.error('autoplay next error', e); } }, intervalSec * 1000);
+            }
+        }
+
+        function startAutoplayCountdown() {
+            stopAutoplayCountdown();
+            // set initial next-in based on interval (if an interval exists)
+            const apIntEl = document.getElementById('autoplay-interval');
+            let sec = (apIntEl && Number(apIntEl.value)) || DEFAULT_SETTINGS.autoplay.intervalSec;
+            __pids_autoplay_next_in = sec;
+            const update = ()=>{
+                const ov = document.getElementById('autoplay-countdown');
+                if (ov) ov.innerText = '下次：' + Math.max(0, __pids_autoplay_next_in) + 's';
+                const ovSide = document.getElementById('autoplay-countdown-side'); if (ovSide) ovSide.innerText = __pids_autoplay_next_in + 's';
+                __pids_autoplay_next_in -= 1;
+            };
+            update();
+            __pids_autoplay_countdown_timer = setInterval(()=>{
+                try { update(); } catch(e){}
+            }, 1000);
+        }
+
+        function stopAutoplayCountdown() {
+            if (__pids_autoplay_countdown_timer) { clearInterval(__pids_autoplay_countdown_timer); __pids_autoplay_countdown_timer = null; }
+            __pids_autoplay_next_in = null;
+        }
+        function startAutoplay(intervalSec, withDelay = true) {
+            try { stopAutoplay(); } catch(e){}
+            if (!intervalSec) intervalSec = DEFAULT_SETTINGS.autoplay.intervalSec;
+            // intervalSec may be <8 (user allowed) — caller should have confirmed if so
+            if (withDelay) {
+                // open display window first
+                try { openWin(); } catch(e){}
+                // 5 second delay before starting
+                __pids_autoplay_delay = setTimeout(()=>{
+                    __pids_autoplay_delay = null;
+                    try { enableAutoplayLock(); } catch(e){}
+                    // initialize countdown next-in as intervalSec
+                    __pids_autoplay_next_in = intervalSec;
+                    const sideStatus = document.getElementById('autoplay-status-side'); if (sideStatus) sideStatus.innerText = '进行中';
+                    __pids_autoplay_interval = setInterval(()=>{ try{ next(); __pids_autoplay_next_in = intervalSec; } catch(e){ console.error('autoplay next error', e); } }, intervalSec * 1000);
+                }, 5000);
+            } else {
+                try { enableAutoplayLock(); } catch(e){}
+                __pids_autoplay_next_in = intervalSec;
+                const sideStatus = document.getElementById('autoplay-status-side'); if (sideStatus) sideStatus.innerText = '进行中';
+                __pids_autoplay_interval = setInterval(()=>{ try{ next(); __pids_autoplay_next_in = intervalSec; } catch(e){ console.error('autoplay next error', e); } }, intervalSec * 1000);
+            }
+        }
+        function stopAutoplay() {
+            if (__pids_autoplay_delay) { clearTimeout(__pids_autoplay_delay); __pids_autoplay_delay = null; }
+            if (__pids_autoplay_interval) { clearInterval(__pids_autoplay_interval); __pids_autoplay_interval = null; }
+            try { disableAutoplayLock(); } catch(e){}
+            // update side status
+            const sideStatus = document.getElementById('autoplay-status-side'); if (sideStatus) sideStatus.innerText = '已停止';
+        }
+
+        function bindShortcuts(keys) {
+            // existing binding for other shortcuts
+            try { window.__pids_autoplay_key = (loadSettings() && loadSettings().autoplay && loadSettings().autoplay.key) ? normalizeKeyNameGlobal(loadSettings().autoplay.key) : DEFAULT_SETTINGS.autoplay.key; } catch(e) { window.__pids_autoplay_key = DEFAULT_SETTINGS.autoplay.key; }
+
+            // normalize provided keys and store globally for handler use
+            try {
+                const km = { arrdep: normalizeKeyNameGlobal(keys.arrdep), prev: normalizeKeyNameGlobal(keys.prev), next: normalizeKeyNameGlobal(keys.next) };
+                window.__pids_keymap = km;
+            } catch (e) { window.__pids_keymap = keys; }
+        }
+
+        function captureAutoplayKey() {
+            const el = document.getElementById('autoplay-key'); if (!el) return;
+            el.value = '按键中...';
+            const onKey = (ev) => {
+                try { ev.preventDefault(); } catch(e){}
+                const raw = ev.code || ev.key || String(ev.key);
+                const code = normalizeKeyNameGlobal(raw);
+                el.value = code;
+                document.removeEventListener('keydown', onKey);
+                if (!window.__pids_settings_loading) try { saveSettings(); } catch(e){}
+                try { window.__pids_autoplay_key = code; } catch(e){}
+            };
+            document.addEventListener('keydown', onKey);
+        }
+
+        // install a global handler for the autoplay toggle key when shortcuts are bound
+        (function(){
+            // remove previous if exists
+            if (window.__pids_autoplay_key_handler) try { document.removeEventListener('keydown', window.__pids_autoplay_key_handler); } catch(e){}
+            const handler = (ev) => {
+                // ignore when focus in input/textarea
+                if (['INPUT','TEXTAREA'].includes(document.activeElement && document.activeElement.tagName)) return;
+                const cfgKey = (loadSettings() && loadSettings().autoplay && loadSettings().autoplay.key) ? loadSettings().autoplay.key : DEFAULT_SETTINGS.autoplay.key;
+                try {
+                    if (ev.code === cfgKey || ev.key === cfgKey || (ev.key && ev.key.toLowerCase() === String(cfgKey).toLowerCase())) {
+                        // if overlay is present, let overlay handler manage to avoid double toggle
+                        if (document.getElementById('autoplay-blocker')) return;
+                        try { ev.preventDefault(); } catch(e){}
+                        // only toggle when autoplay is active
+                        if (__pids_autoplay_interval || __pids_autoplay_delay) toggleAutoplayPause();
+                    }
+                } catch(e){}
+            };
+            window.__pids_autoplay_key_handler = handler;
+            document.addEventListener('keydown', handler);
+        })();
+
+        function resetPrev() {
+            const def = DEFAULT_SETTINGS.keys.prev;
+            const el = document.getElementById('key-prev'); if (!el) return;
+            el.value = def;
+            try { saveSettings(); } catch(e){}
+        }
+
+        function resetNext() {
+            const def = DEFAULT_SETTINGS.keys.next;
+            const el = document.getElementById('key-next'); if (!el) return;
+            el.value = def;
+            try { saveSettings(); } catch(e){}
+        }
+
+        function resetArrdep() {
+            const def = DEFAULT_SETTINGS.keys.arrdep;
+            const el = document.getElementById('key-arrdep'); if (!el) return;
+            el.value = def;
+            try { saveSettings(); } catch(e){}
+        }
+
+        // Shortcut UI capture (allow user to focus input and press a key)
+        document.addEventListener('DOMContentLoaded', () => {
+            ['key-arrdep','key-prev','key-next'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('focus', (e)=>{
+                    el.value = '按键中...';
+                    const onKey = (ev) => {
+                        try { ev.preventDefault(); } catch(e){}
+                        const raw = ev.code || ev.key;
+                        const code = normalizeKeyNameGlobal(raw);
+                        el.value = code;
+                        document.removeEventListener('keydown', onKey);
+                        if (!window.__pids_settings_loading) try { saveSettings(); } catch(e){}
+                    };
+                    document.addEventListener('keydown', onKey);
+                });
+                el.addEventListener('blur', ()=>{ if (el.value === '按键中...') loadSettingsToUI(); });
+            });
+
+            // Ensure overlay/backdrop clickable to close panels
+            const overlayEl = document.getElementById('slideOverlay');
+            const backdropEl = document.getElementById('slideBackdrop');
+            if (overlayEl) {
+                overlayEl.style.pointerEvents = 'none';
+                overlayEl.addEventListener('click', (ev)=>{
+                    // only close when clicking on the overlay area (not inside panel)
+                    if (ev.target === overlayEl || ev.target === backdropEl) {
+                        closeSlide();
+                    }
+                });
+            }
+            // wire autoplay control changes to autosave
+            const apEn = document.getElementById('autoplay-enabled');
+            const apInt = document.getElementById('autoplay-interval');
+            if (apEn) apEn.addEventListener('change', ()=>{ try { if (!window.__pids_settings_loading) saveSettings(); } catch(e){} });
+            if (apInt) {
+                const sanitize = ()=>{
+                    try {
+                        let v = apInt.value;
+                        if (v === '' || v === null) return;
+                        // remove decimals and force integer
+                        let n = Number(v);
+                        if (!isFinite(n) || n <= 0) { apInt.value = DEFAULT_SETTINGS.autoplay.intervalSec; return; }
+                        n = Math.floor(Math.abs(n));
+                        if (n <= 0) n = DEFAULT_SETTINGS.autoplay.intervalSec;
+                        apInt.value = n;
+                    } catch(e){ apInt.value = DEFAULT_SETTINGS.autoplay.intervalSec; }
+                };
+                apInt.addEventListener('input', ()=>{ try { sanitize(); } catch(e){} });
+                apInt.addEventListener('blur', ()=>{ try { sanitize(); if (!window.__pids_settings_loading) saveSettings(); } catch(e){} });
+            }
+            // load settings into UI on DOM ready so controls reflect current persistence
+            try { loadSettingsToUI(); } catch(e){}
+        });
+
+        // On load, apply saved settings (themes, shortcuts, autoplay)
+        try {
+            const _s = loadSettings();
+                window.__pids_settings_loading = true;
+                const s = loadSettings();
+                window.__pids_settings_loading = false;
+                // allow clicking the input to capture a new key
+                if (apKey) apKey.onclick = (ev) => { ev.preventDefault(); captureAutoplayKey(); };
+        } catch(e){}
+
+        // Override handleKey to use custom keymap if present
+        const _orig_handleKey = handleKey;
+        function _mapped_handleKey(code, e) {
+            const km = window.__pids_keymap || DEFAULT_SETTINGS.keys;
+            if (code === (km.arrdep || 'Enter')) { if (e && typeof e.preventDefault === 'function') try { e.preventDefault(); } catch(_){}; next(); return; }
+            if (code === (km.prev || 'ArrowLeft')) { move(-getStep()); return; }
+            if (code === (km.next || 'ArrowRight')) { move(getStep()); return; }
+            // fallback to original mappings
+            _orig_handleKey(code, e);
+        }
+        // assign the mapped handler at runtime (ensures _orig_handleKey points to original)
+        handleKey = _mapped_handleKey;
+        // ===== Float toolbar & slide panel logic =====
+        let __currentSlidePanel = null;
+
+        function openSlide(panelId) {
+            const overlayEl = document.getElementById('slideOverlay');
+            const panel = document.getElementById('slidePanel');
+            const content1 = document.getElementById('panel-1');
+            const content2 = document.getElementById('panel-2');
+            const content3 = document.getElementById('panel-3');
+            if (!overlayEl || !panel) return;
+            // Toggle: if same panel is open, close it (unless panel-1 is locked)
+            if (overlayEl.style.display === 'block' && __currentSlidePanel === panelId) {
+                if (panelId === 'panel-1' && (typeof LOCK_CONSOLE_IN_PANEL !== 'undefined' && LOCK_CONSOLE_IN_PANEL)) {
+                    // If console is locked into panel-1, keep it open on repeated clicks
+                    return;
+                }
+                closeSlide();
+                return;
+            }
+            // Compute alignment so the animation starts from the right edge of the sidebar when present
+            const LEFT_RAIL_W = 72;
+            const SIDE_W = 320;
+            const sideEl = document.querySelector('.adm-side');
+            let panelLeft = LEFT_RAIL_W;
+            if (sideEl && !sideEl.classList.contains('in-panel')) {
+                // place panel so its right edge aligns with sidebar right edge
+                panelLeft = LEFT_RAIL_W + SIDE_W;
+            } else {
+                // align panel to left rail
+                panelLeft = LEFT_RAIL_W;
+            }
+            panel.style.left = panelLeft + 'px';
+            // Ensure the panel starts hidden just behind the left rail (right edge at LEFT_RAIL_W)
+            const w = panel.offsetWidth || 420;
+            // Temporarily disable transition to place it correctly, then animate
+            panel.style.transition = 'none';
+            panel.style.transform = 'translateX(-' + w + 'px)';
+            // force reflow
+            void panel.offsetWidth;
+            // Position backdrop so it only covers area to the right of the panel (don't dim left rail/sidebar)
+            const backdrop = document.getElementById('slideBackdrop');
+            if (backdrop && overlayEl) {
+                // Use computed panelLeft + width (avoids transform timing issues)
+                const panelLeftVal = parseInt(panel.style.left || '0', 10) || 0;
+                const backdropLeft = panelLeftVal + (w || panel.offsetWidth || 420);
+                backdrop.style.left = (backdropLeft) + 'px';
+                backdrop.style.right = '0px';
+                backdrop.style.top = '0px';
+                backdrop.style.bottom = '0px';
+                backdrop.style.position = 'absolute';
+                backdrop.style.cursor = 'default';
+                // enable clicks only on the visible backdrop area (allow overlay to be pointer-events:none)
+                overlayEl.style.display = 'block';
+                overlayEl.style.pointerEvents = 'none';
+                backdrop.style.pointerEvents = 'auto';
+            }
+            // Show target panel: hide all panels then reveal the requested one
+            document.querySelectorAll('#slidePanel .panel-body').forEach(c => { if (c) c.style.display = 'none'; });
+            const targetPanel = document.getElementById(panelId);
+            if (targetPanel) {
+                // When opening panel-1, move .adm-side into a dedicated holder to avoid wiping other panel content
+                if (panelId === 'panel-1') {
+                    const side = document.querySelector('.adm-side');
+                    if (side && !side.classList.contains('in-panel')) {
+                        let ph = document.getElementById('adm-side-placeholder');
+                        if (!ph) { ph = document.createElement('div'); ph.id = 'adm-side-placeholder'; ph.style.width = '0px'; ph.style.height = '0px'; ph.style.display = 'none'; side.parentElement.insertBefore(ph, side); }
+                        const main = document.querySelector('.adm-main'); if (main) main.style.marginLeft = '72px';
+                        let holder = document.getElementById('panel-1-side');
+                        if (!holder) { holder = document.createElement('div'); holder.id = 'panel-1-side'; holder.style.width = '100%'; holder.style.height = '100%'; holder.style.display = 'block'; targetPanel.insertBefore(holder, targetPanel.firstChild); }
+                        holder.appendChild(side);
+                        side.classList.add('in-panel');
+                    }
+                }
+                targetPanel.style.display = 'block';
+            }
+            overlayEl.style.display = 'block';
+            __currentSlidePanel = panelId;
+            // enable pointer events on overlay so clicking outside closes the panel
+            overlayEl.style.pointerEvents = 'auto';
+            // enable transition and animate into view
+            panel.style.transition = 'transform 0.32s cubic-bezier(.2,.9,.2,1)';
+            requestAnimationFrame(()=>{ panel.style.transform = 'translateX(0)'; });
+        }
+
+        function closeSlide() {
+            const overlay = document.getElementById('slideOverlay');
+            const panel = document.getElementById('slidePanel');
+            const backdrop = document.getElementById('slideBackdrop');
+            if (!overlay || !panel) return;
+            // If adm-side is inside panel-1, restore it (unless locked)
+            const side = document.querySelector('.adm-side.in-panel');
+            if (side) {
+                if (typeof LOCK_CONSOLE_IN_PANEL !== 'undefined' && LOCK_CONSOLE_IN_PANEL) {
+                    // keep side in panel
+                } else {
+                    const ph = document.getElementById('adm-side-placeholder');
+                    if (ph && ph.parentElement) ph.parentElement.insertBefore(side, ph);
+                    if (ph) ph.remove();
+                    side.classList.remove('in-panel');
+                    const app = document.getElementById('admin-app'); if (app) app.classList.remove('side-in-panel');
+                }
+            }
+            const w = panel.offsetWidth || 420;
+            panel.style.transition = 'transform 0.32s cubic-bezier(.2,.9,.2,1)';
+            panel.style.transform = 'translateX(-' + w + 'px)';
+            setTimeout(()=>{
+                // hide overlay/backdrop area and disable pointer-events
+                if (overlay) { overlay.style.display = 'none'; overlay.style.pointerEvents = 'none'; }
+                if (backdrop) { backdrop.style.pointerEvents = 'none'; }
+                // do not modify main content margin on open/close; layout remains static
+                // reset current panel marker
+                __currentSlidePanel = null;
+                // If adm-side is locked in panel, keep panel.left as is; otherwise reset to auto to allow recompute
+                if (!(typeof LOCK_CONSOLE_IN_PANEL !== 'undefined' && LOCK_CONSOLE_IN_PANEL)) {
+                    panel.style.left = 'auto';
+                }
+                // also reset backdrop to full (left:0) to clear previous settings
+                if (backdrop) { backdrop.style.left = '0px'; backdrop.style.right = '0px'; }
+            }, 320);
+        }
+
+        // Move adm-side into slide panel and lock it there (keeps event handlers)
+        function lockConsoleToPanel() {
+            const panel = document.getElementById('slidePanel');
+            // per-panel containers (panel-1/2/3) are used instead of a shared slideContent
+            if (!panel) return;
+            const side = document.querySelector('.adm-side');
+            if (!side) return;
+            if (side.classList.contains('in-panel')) {
+                // already moved into panel (e.g. initial HTML); ensure layout class is present
+                const app = document.getElementById('admin-app'); if (app) app.classList.add('side-in-panel');
+                return; // already moved
+            }
+            // create placeholder if missing
+            let ph = document.getElementById('adm-side-placeholder');
+            if (!ph) { ph = document.createElement('div'); ph.id = 'adm-side-placeholder'; ph.style.width='0px'; ph.style.height='0px'; ph.style.display='none'; side.parentElement.insertBefore(ph, side); }
+            // move side into panel
+            const content1 = document.getElementById('panel-1');
+            if (content1) content1.innerHTML = '';
+            // ensure panel sits after left rail when hosting the side
+            panel.style.left = '72px';
+            if (content1) content1.appendChild(side);
+            side.classList.add('in-panel');
+            // when side is moved into panel, mark app so CSS reduces main margin
+            const app = document.getElementById('admin-app'); if (app) app.classList.add('side-in-panel');
+        }
+
+        // bind float toolbar buttons
+        document.addEventListener('DOMContentLoaded', ()=>{
+            const ftButtons = document.querySelectorAll('.ft-btn');
+                document.querySelectorAll('.ft-btn').forEach(b=>{
+                    b.style.width = '48px'; b.style.height = '48px'; b.style.borderRadius = '10px'; b.style.border='none'; b.style.boxShadow='var(--rail-settings-shadow, 0 6px 16px rgba(0,0,0,0.06))';
+                    b.style.cursor = 'pointer'; b.style.display='flex'; b.style.alignItems='center'; b.style.justifyContent='center'; b.style.fontWeight='700';
+                    b.style.margin = '0 auto';
+                    b.style.color = 'var(--text)';
+                        b.addEventListener('click', ()=> {
+                                const pid = b.getAttribute('data-panel');
+                                if (pid) {
+                                    // toggle: open if closed, close if same open
+                                    if (__currentSlidePanel === pid) return closeSlide();
+                                    openSlide(pid);
+                                }
+                            });
+                });
+            // Activate first button but do NOT auto-open the panel on startup
+            if (ftButtons && ftButtons.length > 0) {
+                const first = ftButtons[0];
+                first.classList.add('active');
+                // NOTE: opening the slide panel on startup was removed to avoid
+                // unexpected popups. To re-enable auto-open, set a saved setting
+                // `pids_settings_v1.openPanelOnStart = true` and call openSlide here.
+            }
+
+            // rail settings button binding
+            const railBtn = document.getElementById('railSettingsBtn');
+            if (railBtn) railBtn.addEventListener('click', ()=> openSettings());
+
+            // Live preview for theme select inside settings
+            const themeSel = document.getElementById('theme-mode-select');
+            if (themeSel) themeSel.addEventListener('change', (ev)=>{ try { applyThemeMode(ev.target.value); saveSettings(); } catch(e){} });
+        });
+    </script>
+</body>
+</html>

@@ -5,21 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Metro PIDS V2 - Display</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script>
+        // normalize helper (shared behavior with control)
+        function normalizeKeyNameGlobal(name) {
+            if (!name) return name;
+            const s = String(name);
+            if (s === 'NumpadEnter') return 'Enter';
+            if (s === ' ' || s.toLowerCase() === 'spacebar') return 'Space';
+            if (/^space$/i.test(s)) return 'Space';
+            if (/^[a-zA-Z]$/.test(s)) return 'Key' + s.toUpperCase();
+            return s;
+        }
+        const SCALER_W = 1900;
+        const SCALER_H = 620;
+    </script>
     <style>
         /* ================= 1. 全局定义 ================= */
         :root { --theme: #00b894; --font: "Microsoft YaHei", sans-serif; --gold: #ffaa00; --dark: #2d3436; }
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; outline: none; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: var(--font); }
+     /*   body, html { width: 100%; height: 100%; overflow: hidden; background: transparent; font-family: var(--font); } */
 
         /* ================= 2. 显示端 (Display) ================= */
         #display-app {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #000; z-index: 9999; display: flex; justify-content: center; align-items: center;
+            background: transparent; z-index: 9999; display: flex; justify-content: center; align-items: center;
         }
 
         #scaler {
-            width: 2080px; height: 584px; background: #fff; position: relative; 
-            display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 0 100px #000;
+            width: 1900px; height: 620px; background: #fff; position: relative; 
+            display: flex; flex-direction: column; overflow: hidden; box-shadow: none;
             transform-origin: center center;
         }
 
@@ -231,7 +245,7 @@
         .node .n-txt .x-tag { font-size: 10px; padding: 1px 4px; border-radius: 3px; margin: 1px; color: #fff; vertical-align: middle; }
 
         /* ============ 线性地图新样式 (Linear Map) ============ */
-        .map-l { padding-left: 100px; overflow-x: auto; align-items: center; }
+        .map-l { padding-left: 0; overflow-x: auto; align-items: center; }
         .l-box { position: relative; height: 100%; display: flex; align-items: center; }
         
         /* 节点容器 */
@@ -592,12 +606,21 @@
             };
 
             // Keyboard shortcuts forwarding
+            // Forward most non-modifier keys to the control via BroadcastChannel
             document.addEventListener('keydown', (e) => {
-                if (e.code === 'Space') e.preventDefault();
-                const validCodes = ['Space', 'KeyA', 'KeyD', 'ArrowRight', 'ArrowLeft'];
-                if (validCodes.includes(e.code)) {
-                    bc.postMessage({ t: 'CMD_KEY', code: e.code });
-                }
+                const tgt = e.target && e.target.tagName;
+                if (tgt && ['INPUT', 'TEXTAREA', 'SELECT'].includes(tgt)) return; // don't intercept typing
+                // prevent default for keys that might scroll or activate browser behavior
+                if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
+                // ignore pure modifier keys
+                const ignore = new Set(['ShiftLeft','ShiftRight','ControlLeft','ControlRight','AltLeft','AltRight','MetaLeft','MetaRight','CapsLock','NumLock','ScrollLock','ContextMenu']);
+                if (ignore.has(e.code)) return;
+                try {
+                    const normCode = normalizeKeyNameGlobal(e.code || e.key);
+                    const normKey = normalizeKeyNameGlobal(e.key || e.code || null);
+                    console.debug('display -> forwarding key', { code: e.code, key: e.key, normCode, normKey });
+                    bc.postMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey });
+                } catch (err) { /* ignore */ }
             });
         };
 
@@ -617,7 +640,7 @@
 
         function fitScreen() {
             const scaler = document.getElementById('scaler');
-            const scale = Math.min(window.innerWidth / 2080, window.innerHeight / 584);
+            const scale = Math.min(window.innerWidth / SCALER_W, window.innerHeight / SCALER_H);
             scaler.style.transform = `scale(${scale})`;
         }
 
@@ -1424,8 +1447,9 @@
                         dot.style.background = '#f1c40f'; 
                         dot.style.borderColor = '#fff';
                         dot.style.boxShadow = '0 0 10px #f1c40f';
+                        dot.style.animation = 'pulse-yellow 2s infinite';
                         if(name) name.style.color = '#000';
-                    } 
+                    }
                 }
                 
                 box.appendChild(node);
@@ -1536,14 +1560,16 @@
             let arcLen = Math.PI * cornerR + vertLen;
             let perimeter = 2 * w + 2 * arcLen;
             
-            // Align top and bottom stations by using the same step size
-            let step = topCount > 0 ? w / topCount : 0;
-            let topStep = step;
-            let btmStep = step;
+            // Use independent spacing for top and bottom rows (cancel alignment)
+            let topStep = topCount > 0 ? w / topCount : 0;
+            let btmStep = btmCount > 0 ? w / btmCount : 0;
 
             function getStDist(k) {
-                if (k < topCount) return topStep * k + topStep / 2;
-                else {
+                if (k < topCount) {
+                    // Top row: distribute across [0, w]
+                    return topStep * k + topStep / 2;
+                } else {
+                    // Bottom row: place after the top segment + arc
                     let kb = k - topCount;
                     return (w + arcLen) + (btmStep * kb + btmStep / 2);
                 }
