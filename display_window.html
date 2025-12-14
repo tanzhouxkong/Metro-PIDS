@@ -344,6 +344,7 @@
             font-weight: bold;
         }
 
+
         /* 状态样式 */
         .l-node.passed .dot { background: #fff; border-color: #ccc; }
         .l-node.passed .name { color: #999; }
@@ -717,10 +718,17 @@
             
             // Transfer Info
             let xferHTML = '';
+            // 如果启用了短交路（startIdx/termIdx），则不显示“暂缓”标签，仅显示换乘名
+            const shortTurnEnabled = appData && appData.meta && ((appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1) || (appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1));
             if (st.xfer) {
                 st.xfer.forEach(x => {
                     if (x.suspended) {
-                        xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${x.line}<span class="sub">暂缓</span></span>`;
+                        if (shortTurnEnabled) {
+                            // 当短交路启用时，隐藏暂缓标记，仅显示线路名称样式
+                            xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
+                        } else {
+                            xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${x.line}<span class="sub">暂缓</span></span>`;
+                        }
                     } else {
                         xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
                     }
@@ -732,7 +740,8 @@
             let deferTag = '';
             if (st.skip) {
                 nameStyle = 'color:#999; opacity:0.7;';
-                deferTag = '<div class="defer">暂缓</div>';
+                // 在短交路启用时不显示站点暂缓标签
+                if (!shortTurnEnabled) deferTag = '<div class="defer">暂缓</div>';
             }
 
             if (mode === 'loop') {

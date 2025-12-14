@@ -335,7 +335,6 @@
         <div id="railInner" style="width:100%; display:flex; flex-direction:column; align-items:center; gap:12px;">
 
                 <div id="floatTools" style="width:100%; display:flex; flex-direction:column; gap:10px; align-items:center;">
-                </button>
                 <button class="ft-btn" data-panel="panel-1" title="PIDS 控制台" aria-label="控制台">
                     <svg width="28" height="28" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                         <g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd">
@@ -345,8 +344,8 @@
                         </g>
                     </svg>
                 </button>
-                <button class="ft-btn" data-panel="panel-2" title="面板二">2</button>
-                <button class="ft-btn" data-panel="panel-3" title="面板三">3</button>
+              <!--   <button class="ft-btn" data-panel="panel-2" title="面板二">2</button> -->
+              <!--   <button class="ft-btn" data-panel="panel-3" title="面板三">3</button> -->
                 <button class="ft-btn" id="openPIDSBtn" title="打开显示端" onclick="openWin()" aria-label="打开显示端">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                         <rect x="3" y="4" width="18" height="12" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none" />
@@ -392,6 +391,23 @@
                         <select id="cfg-mode" onchange="saveCfg()" style="flex:2"><option value="loop">环线 (Loop)</option><option value="linear">单线 (Linear)</option></select>
                     </div>
                     <select id="cfg-dir" onchange="saveCfg()"></select>
+                    <div id="shortturn-area" style="border-top:1px dashed var(--divider); margin-top:10px; padding-top:10px;">
+                        <div style="font-size:12px;color:var(--muted); margin-bottom:6px;">短交路设置</div>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <div style="width:80px; color:var(--muted);">起点</div>
+                                <select id="cfg-startidx" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--card-border); background:var(--card); color:var(--text);"></select>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <div style="width:80px; color:var(--muted);">终点</div>
+                                <select id="cfg-termidx" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--card-border); background:var(--card); color:var(--text);"></select>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center; justify-content:flex-end;">
+                                <button class="btn b-gray" id="btn-short-clear" style="padding:6px 14px; font-size:13px;" onclick="onClearShortTurn();">清除</button>
+                                <button class="btn b-green" id="btn-short-apply" style="padding:6px 14px; font-size:13px;" onclick="onApplyShortTurn();">应用</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="card" style="border-left: 5px solid var(--btn-gray-bg);">
@@ -501,11 +517,10 @@
             <!-- 站点编辑区域 -->
             <div class="card" id="st-edit-card" style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:400px; transition:all 0.3s;">
                 <div class="head" onclick="toggleEdit()" style="cursor:pointer; user-select:none;">
-                    <span><i class="fas fa-edit"></i> 站点管理 <span id="st-edit-txt" style="font-size:12px; color:var(--muted); margin-left:5px;">(展开)</span> <i id="st-edit-icon" class="fas fa-chevron-right" style="font-size:12px;"></i></span>
-                    <button class="btn b-gray" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); clearForm()">清空表单</button>
-                </div>
-                
-                <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+                    <span></i> 站点管理 <span id="st-edit-txt" style="font-size:12px; color:var(--muted); margin-left:5px;"></span> </i></span>
+                    <button class="btn b-org" onclick="openStModalForNew()"><i class="fas fa-plus"></i> 新建站点</button>
+                </div>         
+                <!-- In-page legacy form hidden; editing now uses modal -->
                 <div id="st-form-container" style="display:none; background:var(--card); padding:15px; border:1px solid var(--card-border); border-radius:8px; margin-bottom:15px;">
                     <div style="display:flex; gap:10px; margin-bottom:10px;">
                         <input id="ed-cn" placeholder="中文站名 (例如: 人民广场)" style="flex:1">
@@ -546,6 +561,118 @@
             </div>
         </div>
     </div>
+
+    <!-- Station Edit Modal -->
+    <div id="st-edit-modal" style="display:none; position:fixed; inset:0; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:10001;">
+        <div style="background:var(--card); padding:18px; border-radius:8px; width:680px; max-width:95%; max-height:80vh; overflow:auto; box-shadow:0 8px 28px rgba(0,0,0,0.3);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-weight:800;">站点编辑</div>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn b-gray" onclick="closeStModal()">取消</button>
+                    <button class="btn b-green" id="st-modal-save" onclick="saveStFromModal()">保存</button>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <input id="modal-ed-cn" placeholder="中文站名 (例如: 人民广场)" style="flex:1">
+                <input id="modal-ed-en" placeholder="English Name" style="flex:1">
+            </div>
+            <div style="margin-bottom:10px; display:flex; gap:10px;">
+                <div style="flex:1">
+                    <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">站点状态 (Status)</div>
+                    <div class="door-sel">
+                        <input type="hidden" id="modal-ed-skip" value="false">
+                        <button class="d-btn active" id="modal-btn-skip-off" onclick="modalSetSkip(false)">正常</button>
+                        <button class="d-btn" id="modal-btn-skip-on" onclick="modalSetSkip(true)">暂缓</button>
+                    </div>
+                </div>
+                <div style="flex:1">
+                    <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">开门方向 (Door)</div>
+                    <div class="door-sel">
+                        <input type="hidden" id="modal-ed-door" value="left">
+                        <button class="d-btn active" onclick="modalSetDoor('left')">左侧</button>
+                        <button class="d-btn" onclick="modalSetDoor('right')">右侧</button>
+                        <button class="d-btn" onclick="modalSetDoor('both')">双侧</button>
+                    </div>
+                </div>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px; display:flex; justify-content:space-between;">
+                <span>换乘线路</span>
+                <a href="#" onclick="modalAddXfer();return false;" style="color:var(--accent); text-decoration:none;">+ 添加换乘</a>
+            </div>
+            <div id="modal-ed-xfer" class="xf-edit"></div>
+            <input type="hidden" id="modal-ed-idx" value="-1">
+        </div>
+    </div>
+
+    <!-- Load Line Selection Modal -->
+    <div id="loadline-modal" style="display:none; position:fixed; left:0;top:0;right:0;bottom:0;align-items:center;justify-content:center; background:rgba(0,0,0,0.45); z-index:9999;">
+        <div style="background:var(--card); padding:12px; border-radius:8px; width:420px; max-height:60vh; overflow:auto; box-shadow:0 8px 28px rgba(0,0,0,0.3);">
+            <div style="font-weight:700;margin-bottom:8px;">选择要导入的线路</div>
+            <div id="loadline-list" style="border:1px solid var(--card-border); border-radius:6px; overflow:auto; max-height:50vh;"></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+                <button class="btn b-gray" onclick="document.getElementById('loadline-modal').style.display='none'">关闭</button>
+            </div>
+        </div>
+    </div>
+    <!-- Unified Dialogs: alert / confirm / prompt -->
+    <div id="unified-dialogs" style="display:none; position:fixed; inset:0; align-items:center; justify-content:center; z-index:10000;">
+        <div id="ud-backdrop" style="position:absolute; inset:0; background:rgba(0,0,0,0.45);"></div>
+        <div id="ud-box" style="position:relative; background:var(--card); padding:18px; border-radius:8px; width:420px; max-width:90%; box-shadow:0 8px 28px rgba(0,0,0,0.3);">
+            <div id="ud-title" style="font-weight:800; margin-bottom:8px;">提示</div>
+            <div id="ud-msg" style="margin-bottom:12px; color:var(--text);"></div>
+            <input id="ud-input" style="width:100%; padding:8px; margin-bottom:12px; border:1px solid var(--card-border); border-radius:6px; display:none;" />
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button id="ud-btn-cancel" class="btn b-gray" style="display:none;">取消</button>
+                <button id="ud-btn-ok" class="btn b-green">确定</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Unified dialog helpers
+        function showAlert(msg, title) {
+            return new Promise((resolve) => {
+                const ud = document.getElementById('unified-dialogs');
+                const box = document.getElementById('ud-box');
+                document.getElementById('ud-title').innerText = title || '提示';
+                document.getElementById('ud-msg').innerText = msg || '';
+                const input = document.getElementById('ud-input'); input.style.display = 'none';
+                const btnCancel = document.getElementById('ud-btn-cancel'); btnCancel.style.display = 'none';
+                const btnOk = document.getElementById('ud-btn-ok'); btnOk.innerText = '确定';
+                ud.style.display = 'flex';
+                btnOk.onclick = () => { ud.style.display = 'none'; resolve(); };
+            });
+        }
+
+        function showConfirm(msg, title) {
+            return new Promise((resolve) => {
+                const ud = document.getElementById('unified-dialogs');
+                document.getElementById('ud-title').innerText = title || '确认';
+                document.getElementById('ud-msg').innerText = msg || '';
+                const input = document.getElementById('ud-input'); input.style.display = 'none';
+                const btnCancel = document.getElementById('ud-btn-cancel'); btnCancel.style.display = 'inline-block';
+                const btnOk = document.getElementById('ud-btn-ok'); btnOk.innerText = '确认';
+                ud.style.display = 'flex';
+                btnOk.onclick = () => { ud.style.display = 'none'; resolve(true); };
+                btnCancel.onclick = () => { ud.style.display = 'none'; resolve(false); };
+            });
+        }
+
+        function showPrompt(msg, defaultValue, title) {
+            return new Promise((resolve) => {
+                const ud = document.getElementById('unified-dialogs');
+                document.getElementById('ud-title').innerText = title || '输入';
+                document.getElementById('ud-msg').innerText = msg || '';
+                const input = document.getElementById('ud-input'); input.style.display = 'block'; input.value = defaultValue || '';
+                const btnCancel = document.getElementById('ud-btn-cancel'); btnCancel.style.display = 'inline-block';
+                const btnOk = document.getElementById('ud-btn-ok'); btnOk.innerText = '确认';
+                ud.style.display = 'flex';
+                input.focus(); input.select();
+                btnOk.onclick = () => { ud.style.display = 'none'; resolve(input.value); };
+                btnCancel.onclick = () => { ud.style.display = 'none'; resolve(null); };
+                input.onkeydown = (e) => { if (e.key === 'Enter') { btnOk.click(); } };
+            });
+        }
+    </script>
 
     <script>
         // ============ 1. 全局变量与初始化 ============
@@ -677,7 +804,7 @@
                 return;
             }
             // Fallback: attempt to close window (may be blocked in browsers)
-            try { window.close(); } catch(e){ alert('无法在此环境下关闭窗口'); }
+            try { window.close(); } catch(e){ showAlert('无法在此环境下关闭窗口'); }
         }
 
         function loadSafe() {
@@ -699,17 +826,17 @@
 
         async function openLinesFolder() {
             if (!(window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.openFolder === 'function')) {
-                alert('仅 Electron 环境支持打开保存目录');
+                await showAlert('仅 Electron 环境支持打开保存目录');
                 return;
             }
             const res = await window.electronAPI.lines.openFolder();
-            if (!res || !res.ok) alert('打开失败: ' + (res && res.error));
+            if (!res || !res.ok) await showAlert('打开失败: ' + (res && res.error));
         }
 
         async function saveCurrentLine() {
             const cur = store.list[store.cur];
             if (!cur || !cur.meta || !cur.meta.lineName) {
-                alert('当前线路数据无效，无法保存');
+                await showAlert('当前线路数据无效，无法保存');
                 return;
             }
             const filename = cur.meta.lineName + '.json';
@@ -719,15 +846,15 @@
                     const normalized = normalizeLine(JSON.parse(JSON.stringify(cur)));
                     const res = await window.electronAPI.lines.save(filename, normalized);
                     if (res && res.ok) {
-                        alert('线路已保存: ' + res.path);
+                        await showAlert('线路已保存: ' + res.path);
                     } else {
-                        alert('保存失败: ' + (res && res.error));
+                        await showAlert('保存失败: ' + (res && res.error));
                     }
-                } catch (e) { alert('保存失败: ' + e.message); }
+                } catch (e) { await showAlert('保存失败: ' + e.message); }
                 return;
             }
             // No host API available — inform the user to open/select a folder first
-            alert('无法保存：未检测到宿主文件保存接口。请先使用“打开文件夹”选择一个线路文件夹，再保存。');
+            await showAlert('无法保存：未检测到宿主文件保存接口。请先使用“打开文件夹”选择一个线路文件夹，再保存。');
         }
 
         function sync() {
@@ -744,6 +871,40 @@
             if (meta.mode === 'loop' && meta.dirType === 'inner') return -1;
             if (meta.mode === 'linear' && meta.dirType === 'down') return -1;
             return 1;
+        }
+
+        // Find the next valid station respecting short-turn (startIdx/termIdx) and skip flags
+        function getNextValidStControl(currentIdx, step) {
+            if (!appData) return currentIdx;
+            const stations = appData.stations || [];
+            const len = stations.length;
+            const dir = step > 0 ? 1 : -1;
+            let nextIdx = currentIdx;
+
+            // Determine Range (short-turn)
+            const sIdx = (appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1) ? parseInt(appData.meta.startIdx) : 0;
+            const eIdx = (appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1) ? parseInt(appData.meta.termIdx) : len - 1;
+            const minIdx = Math.min(sIdx, eIdx);
+            const maxIdx = Math.max(sIdx, eIdx);
+
+            for (let i = 0; i < len; i++) {
+                nextIdx += dir;
+
+                if (appData.meta.mode === 'loop') {
+                    if (nextIdx >= len) nextIdx = 0;
+                    if (nextIdx < 0) nextIdx = len - 1;
+                } else {
+                    if (nextIdx > maxIdx) return maxIdx;
+                    if (nextIdx < minIdx) return minIdx;
+                }
+
+                if (!stations[nextIdx].skip) return nextIdx;
+
+                if (appData.meta.mode !== 'loop') {
+                    if (nextIdx === minIdx || nextIdx === maxIdx) return nextIdx;
+                }
+            }
+            return nextIdx;
         }
 
         function handleKey(code, e) {
@@ -783,29 +944,11 @@
         }
 
         function move(delta) {
-            let nextIdx = rt.idx;
-            const len = appData.stations.length;
-            const isLoop = appData.meta.mode === 'loop';
-            let count = 0;
-
-            while (count < len) {
-                nextIdx += delta;
-                
-                if (isLoop) {
-                    if (nextIdx >= len) nextIdx = 0;
-                    if (nextIdx < 0) nextIdx = len - 1;
-                } else {
-                    if (nextIdx >= len || nextIdx < 0) return; // Hit boundary
-                }
-
-                if (!appData.stations[nextIdx].skip) {
-                    rt.idx = nextIdx;
-                    rt.state = 0;
-                    sync();
-                    return;
-                }
-                count++;
-            }
+            const nextIdx = getNextValidStControl(rt.idx, delta);
+            if (nextIdx === rt.idx) return;
+            rt.idx = nextIdx;
+            rt.state = 0;
+            sync();
         }
 
         function jumpTo(idx) {
@@ -856,6 +999,24 @@
                 dirSel.add(new Option(`下行 (${s2} -> ${s1})`, 'down'));
             }
             if (appData.meta.dirType) dirSel.value = appData.meta.dirType;
+
+            // Populate short-turn selects (start/term indexes) — values applied only when 点击“应用”
+            const startSel = document.getElementById('cfg-startidx');
+            const termSel = document.getElementById('cfg-termidx');
+            if (startSel && termSel) {
+                startSel.innerHTML = '';
+                termSel.innerHTML = '';
+                startSel.add(new Option('无', '-1'));
+                termSel.add(new Option('无', '-1'));
+                appData.stations.forEach((s, idx) => {
+                    const txt = `[${idx+1}] ${s.name}`;
+                    startSel.add(new Option(txt, String(idx)));
+                    termSel.add(new Option(txt, String(idx)));
+                });
+                // Initialize selects to current meta values for visual feedback
+                startSel.value = (appData.meta && typeof appData.meta.startIdx !== 'undefined') ? String(appData.meta.startIdx ?? -1) : '-1';
+                termSel.value = (appData.meta && typeof appData.meta.termIdx !== 'undefined') ? String(appData.meta.termIdx ?? -1) : '-1';
+            }
         }
 
         function saveCfg() {
@@ -863,11 +1024,55 @@
             appData.meta.themeColor = document.getElementById('cfg-color').value;
             appData.meta.mode = document.getElementById('cfg-mode').value;
             appData.meta.dirType = document.getElementById('cfg-dir').value;
+            // Save short-turn start/term if present
+            try {
+                const startSel = document.getElementById('cfg-startidx');
+                const termSel = document.getElementById('cfg-termidx');
+                if (startSel) {
+                    const v = parseInt(startSel.value);
+                    appData.meta.startIdx = isNaN(v) ? -1 : v;
+                }
+                if (termSel) {
+                    const v2 = parseInt(termSel.value);
+                    appData.meta.termIdx = isNaN(v2) ? -1 : v2;
+                }
+            } catch (e) {}
             
             updUI();
             // Re-read dirType in case it changed due to mode change
             appData.meta.dirType = document.getElementById('cfg-dir').value;
             sync();
+        }
+
+        // Apply short-turn settings from selects (with confirmation and toast)
+        async function onApplyShortTurn() {
+            const startSel = document.getElementById('cfg-startidx');
+            const termSel = document.getElementById('cfg-termidx');
+            if (!startSel || !termSel) { await showAlert('短交路控件未找到'); return; }
+            const s = parseInt(startSel.value);
+            const t = parseInt(termSel.value);
+            // Basic validation: allow -1 for none; if both specified ensure within range
+            if (!isNaN(s) && !isNaN(t) && s !== -1 && t !== -1 && s === t) {
+                await showAlert('起点与终点不能为同一站点');
+                return;
+            }
+            if (!await showConfirm(`确认应用短交路设置？\n起点: ${startSel.options[startSel.selectedIndex].text}\n终点: ${termSel.options[termSel.selectedIndex].text}`)) return;
+            // apply
+            appData.meta.startIdx = isNaN(s) ? -1 : s;
+            appData.meta.termIdx = isNaN(t) ? -1 : t;
+            sync();
+            await showAlert('短交路设置已应用');
+        }
+        async function onClearShortTurn() {
+            if (!await showConfirm('确认清除短交路设置？')) return;
+            if (appData && appData.meta) {
+                appData.meta.startIdx = -1;
+                appData.meta.termIdx = -1;
+            }
+            const startSel = document.getElementById('cfg-startidx'); if (startSel) startSel.value = '-1';
+            const termSel = document.getElementById('cfg-termidx'); if (termSel) termSel.value = '-1';
+            sync();
+            await showAlert('短交路设置已清除');
         }
 
         function renderAdmin() {
@@ -945,7 +1150,9 @@
                 div.ondragend = (e) => dragEnd(e);
                 
                 let tags = '';
-                if (s.skip) tags += '<span class="badge" style="background:var(--btn-org-bg);margin-left:5px;">暂缓</span>';
+                // 如果短交路启用，则在控制面板站点列表中不显示“暂缓”标签
+                const shortTurnEnabledCtrl = appData && appData.meta && ((appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1) || (appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1));
+                if (s.skip && !shortTurnEnabledCtrl) tags += '<span class="badge" style="background:var(--btn-org-bg);margin-left:5px;">暂缓</span>';
                 
                 let xfers = '';
                 if (s.xfer && s.xfer.length > 0) {
@@ -1032,7 +1239,33 @@
         }
 
         function newLine() {
-            const name = prompt('请输入新线路名称 (例如: 3号线)', '新线路');
+            const modal = document.getElementById('newline-modal');
+            const input = document.getElementById('newline-input');
+            if (!modal || !input) {
+                // If modal not available, use a simple window.prompt only as last resort (non-ideal in Electron)
+                try {
+                    const name = window.prompt ? window.prompt('请输入新线路名称 (例如: 3号线)', '新线路') : null;
+                    if (!name) return;
+                    const newL = JSON.parse(JSON.stringify(DEF));
+                    newL.meta.lineName = name;
+                    newL.meta.themeColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+                    store.list.push(newL);
+                    switchLine(store.list.length - 1);
+                } catch (e) { console.warn('prompt not available', e); }
+                return;
+            }
+            input.value = '新线路';
+            modal.style.display = 'flex';
+            // focus and allow Enter to confirm
+            setTimeout(()=>{ input.focus(); input.select(); }, 10);
+        }
+
+        function confirmNewLine() {
+            const modal = document.getElementById('newline-modal');
+            const input = document.getElementById('newline-input');
+            if (!modal || !input) return;
+            const name = (input.value || '').trim();
+            modal.style.display = 'none';
             if (!name) return;
             const newL = JSON.parse(JSON.stringify(DEF));
             newL.meta.lineName = name;
@@ -1041,9 +1274,14 @@
             switchLine(store.list.length - 1);
         }
 
-        function delLine() {
-            if (store.list.length <= 1) return alert('至少保留一条线路！');
-            if (!confirm('确定要删除当前线路 "' + appData.meta.lineName + '" 吗？\n删除后无法恢复！')) return;
+        function cancelNewLine() {
+            const modal = document.getElementById('newline-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function delLine() {
+            if (store.list.length <= 1) { await showAlert('至少保留一条线路！'); return; }
+            if (!await showConfirm('确定要删除当前线路 "' + appData.meta.lineName + '" 吗？\n删除后无法恢复！')) return;
             store.list.splice(store.cur, 1);
             store.cur = 0;
             appData = store.list[0];
@@ -1054,10 +1292,16 @@
 
         // ============ 4. 站点编辑 ============
         function toggleEdit() {
+            // Open station edit modal as the primary editing experience
+            const modal = document.getElementById('st-edit-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+                return;
+            }
+            // Fallback: toggle in-page form
             const form = document.getElementById('st-form-container');
             const icon = document.getElementById('st-edit-icon');
             const txt = document.getElementById('st-edit-txt');
-            
             if (form.style.display === 'none') {
                 form.style.display = 'block';
                 icon.className = 'fas fa-chevron-down';
@@ -1070,13 +1314,22 @@
         }
 
         function clearForm() {
-            document.getElementById('ed-cn').value = '';
-            document.getElementById('ed-en').value = '';
-            document.getElementById('ed-xfer').innerHTML = '';
-            document.getElementById('ed-idx').value = '-1';
-            document.getElementById('btn-txt').innerText = '添加新站点';
-            setDoor('left');
-            setSkip(false);
+            // Clear both modal and inline forms for compatibility
+            const ids = ['ed-cn','ed-en','ed-xfer','ed-idx','btn-txt'];
+            try { document.getElementById('ed-cn').value = ''; } catch(e){}
+            try { document.getElementById('ed-en').value = ''; } catch(e){}
+            try { document.getElementById('ed-xfer').innerHTML = ''; } catch(e){}
+            try { document.getElementById('ed-idx').value = '-1'; } catch(e){}
+            try { document.getElementById('btn-txt').innerText = '添加新站点'; } catch(e){}
+            try { setDoor('left'); } catch(e){}
+            try { setSkip(false); } catch(e){}
+            // modal fields
+            try { document.getElementById('modal-ed-cn').value = ''; } catch(e){}
+            try { document.getElementById('modal-ed-en').value = ''; } catch(e){}
+            try { document.getElementById('modal-ed-xfer').innerHTML = ''; } catch(e){}
+            try { document.getElementById('modal-ed-idx').value = '-1'; } catch(e){}
+            try { document.getElementById('modal-ed-skip').value = 'false'; } catch(e){}
+            try { document.getElementById('modal-ed-door').value = 'left'; } catch(e){}
         }
 
         function setDoor(val) {
@@ -1086,6 +1339,16 @@
             const doorBtns = document.querySelectorAll('[onclick^="setDoor"]');
             doorBtns.forEach(b => {
                 if (b.getAttribute('onclick').includes(`'${val}'`)) b.classList.add('active');
+                else b.classList.remove('active');
+            });
+        }
+
+        // Modal-specific door setter
+        function modalSetDoor(val) {
+            const inp = document.getElementById('modal-ed-door'); if (inp) inp.value = val;
+            const btns = document.querySelectorAll('#st-edit-modal .door-sel .d-btn');
+            btns.forEach(b => {
+                if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(`'${val}'`)) b.classList.add('active');
                 else b.classList.remove('active');
             });
         }
@@ -1103,6 +1366,16 @@
             }
         }
 
+        function modalSetSkip(val) {
+            const inp = document.getElementById('modal-ed-skip'); if (inp) inp.value = val;
+            const offBtn = document.getElementById('modal-btn-skip-off');
+            const onBtn = document.getElementById('modal-btn-skip-on');
+            if (offBtn && onBtn) {
+                if (val) { offBtn.classList.remove('active'); onBtn.classList.add('active'); }
+                else { offBtn.classList.add('active'); onBtn.classList.remove('active'); }
+            }
+        }
+
         function addXfer(line='', color, isSuspended=false) {
             color = color || getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#000000';
             const box = document.getElementById('ed-xfer');
@@ -1111,6 +1384,25 @@
             const btnClass = isSuspended ? 'b-org' : 'b-gray';
             const btnText = isSuspended ? '暂缓' : '正常';
             
+            div.innerHTML = `
+                <input value="${line}" class="xl" placeholder="线号" style="margin:0;flex:1">
+                <input type="color" value="${color}" class="xc" style="width:40px;height:38px;padding:0;border:none;">
+                <input type="hidden" class="xs" value="${isSuspended}">
+                <button class="btn ${btnClass} xs-btn" style="padding:0 8px; width:50px; font-size:12px;" onclick="toggleXferSuspended(this)">${btnText}</button>
+                <button class="btn b-red" style="padding:0 8px;" onclick="this.parentElement.remove()">x</button>
+            `;
+            box.appendChild(div);
+        }
+
+        // Modal-specific addXfer
+        function modalAddXfer(line='', color, isSuspended=false) {
+            color = color || getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#000000';
+            const box = document.getElementById('modal-ed-xfer');
+            if (!box) return addXfer(line, color, isSuspended);
+            const div = document.createElement('div');
+            div.className = 'xf-row';
+            const btnClass = isSuspended ? 'b-org' : 'b-gray';
+            const btnText = isSuspended ? '暂缓' : '正常';
             div.innerHTML = `
                 <input value="${line}" class="xl" placeholder="线号" style="margin:0;flex:1">
                 <input type="color" value="${color}" class="xc" style="width:40px;height:38px;padding:0;border:none;">
@@ -1140,6 +1432,23 @@
 
         function loadEdit(i) {
             // Ensure form is visible
+            // Prefer modal editor when available
+            const modal = document.getElementById('st-edit-modal');
+            const s = appData.stations[i];
+            if (modal) {
+                modal.style.display = 'flex';
+                document.getElementById('modal-ed-cn').value = s.name;
+                document.getElementById('modal-ed-en').value = s.en || s.name;
+                modalSetSkip(s.skip || false);
+                modalSetDoor(s.door || 'left');
+                const box = document.getElementById('modal-ed-xfer');
+                box.innerHTML = '';
+                if (s.xfer) s.xfer.forEach(x => modalAddXfer(x.line, x.color, x.suspended));
+                document.getElementById('modal-ed-idx').value = i;
+                return;
+            }
+
+            // Fallback to inline form
             const form = document.getElementById('st-form-container');
             const icon = document.getElementById('st-edit-icon');
             const txt = document.getElementById('st-edit-txt');
@@ -1149,7 +1458,6 @@
                 if(txt) txt.innerText = '(收起)';
             }
 
-            const s = appData.stations[i];
             document.getElementById('ed-cn').value = s.name;
             document.getElementById('ed-en').value = s.en;
             setSkip(s.skip || false);
@@ -1185,9 +1493,56 @@
             sync();
         }
 
-        function del(i) {
-            if (appData.stations.length <= 1) return alert('至少保留一个站点');
-            if (confirm('确定删除该站点吗？')) {
+        // Save from modal editor
+        function saveStFromModal() {
+            const name = document.getElementById('modal-ed-cn').value;
+            if (!name) return;
+            const xfers = [];
+            const box = document.getElementById('modal-ed-xfer');
+            if (box) {
+                box.querySelectorAll('.xf-row').forEach(row => {
+                    const l = row.querySelector('.xl').value;
+                    const c = row.querySelector('.xc').value;
+                    const s = row.querySelector('.xs').value === 'true';
+                    if (l) xfers.push({ line: l, color: c, suspended: s });
+                });
+            }
+            const newSt = {
+                name: name,
+                en: document.getElementById('modal-ed-en').value || name,
+                skip: document.getElementById('modal-ed-skip').value === 'true',
+                door: document.getElementById('modal-ed-door').value || 'left',
+                xfer: xfers
+            };
+            const idx = parseInt(document.getElementById('modal-ed-idx').value || -1);
+            if (isNaN(idx) || idx === -1) appData.stations.push(newSt);
+            else appData.stations[idx] = newSt;
+            closeStModal();
+            clearForm();
+            sync();
+        }
+
+        function openStModalForNew() {
+            const modal = document.getElementById('st-edit-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            document.getElementById('modal-ed-cn').value = '';
+            document.getElementById('modal-ed-en').value = '';
+            document.getElementById('modal-ed-xfer').innerHTML = '';
+            document.getElementById('modal-ed-idx').value = -1;
+            modalSetSkip(false);
+            modalSetDoor('left');
+            setTimeout(()=>{ try{ document.getElementById('modal-ed-cn').focus(); }catch(e){} },50);
+        }
+
+        function closeStModal() {
+            const modal = document.getElementById('st-edit-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function del(i) {
+            if (appData.stations.length <= 1) { await showAlert('至少保留一个站点'); return; }
+            if (await showConfirm('确定删除该站点吗？')) {
                 appData.stations.splice(i, 1);
                 if (rt.idx >= appData.stations.length) rt.idx = 0;
                 sync();
@@ -1195,10 +1550,10 @@
         }
 
         // ============ 5. 录制与文件 ============
-        function startRec() {
+        async function startRec() {
             if (isRec) return;
             const intVal = document.getElementById('rec-int').value;
-            if (intVal <= 0 || intVal % 1 != 0) return alert('单站停留时间必须为正整数');
+                if (intVal <= 0 || intVal % 1 != 0) { await showAlert('单站停留时间必须为正整数'); return; }
             
             isRec = true;
             const bps = (parseFloat(document.getElementById('rec-bps').value) || 8) * 1000000;
@@ -1223,20 +1578,19 @@
             bc.postMessage({ t: 'REC_STOP' });
         }
 
-        function exportData() {
+        async function exportData() {
             // If running in Electron, save the current line as a separate file
             if (window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.save === 'function') {
                 const cur = store.list[store.cur];
                 if (!cur || !cur.meta || !cur.meta.lineName) {
-                    alert('当前线路数据无效，无法保存');
+                    await showAlert('当前线路数据无效，无法保存');
                     return;
                 }
                 const filename = cur.meta.lineName;
                 const normalizedCur = normalizeLine(JSON.parse(JSON.stringify(cur)));
-                window.electronAPI.lines.save(filename, normalizedCur).then(res => {
-                    if (res && res.ok) alert('线路已保存: ' + res.path);
-                    else alert('保存失败: ' + (res && res.error));
-                });
+                const res = await window.electronAPI.lines.save(filename, normalizedCur);
+                if (res && res.ok) await showAlert('线路已保存: ' + res.path);
+                else await showAlert('保存失败: ' + (res && res.error));
                 return;
             }
             // Fallback: download full store
@@ -1293,11 +1647,23 @@
             });
             // ensure meta has a lineName
             if (!line.meta.lineName) line.meta.lineName = '线路';
+            // ensure short-turn fields exist
+            if (!('startIdx' in line.meta)) line.meta.startIdx = -1;
+            if (!('termIdx' in line.meta)) line.meta.termIdx = -1;
             return line;
         }
 
-        function resetData() {
-            if (confirm("【警告】这将清空所有线路数据并恢复出厂设置，确定吗？")) {
+        function clearShortTurn() {
+            if (!appData || !appData.meta) return;
+            appData.meta.startIdx = -1;
+            appData.meta.termIdx = -1;
+            const s = document.getElementById('cfg-startidx'); if (s) s.value = '-1';
+            const t = document.getElementById('cfg-termidx'); if (t) t.value = '-1';
+            sync();
+        }
+
+        async function resetData() {
+            if (await showConfirm("【警告】这将清空所有线路数据并恢复出厂设置，确定吗？")) {
                 localStorage.removeItem('pids_global_store_v1');
                 location.reload();
             }
@@ -1322,41 +1688,72 @@
                 alert('未发现已保存的线路文件');
                 return;
             }
-            // Build simple choice string
-            const names = items.map((it, i) => `${i+1}. ${it.name} ${it.version?('(v'+it.version+')'):''}`).join('\n');
-            const sel = prompt('请选择要导入的线路编号:\n' + names);
-            if (!sel) return;
-            const idx = parseInt(sel) - 1;
-            if (isNaN(idx) || idx < 0 || idx >= items.length) { alert('选择无效'); return; }
-            const filename = items[idx].name;
-            const res = await window.electronAPI.lines.read(filename);
-            if (res && res.ok && res.content) {
-                store.list.push(normalizeLine(res.content));
-                store.cur = store.list.length - 1;
-                appData = store.list[store.cur];
-                rt = { idx: 0, state: 0 };
-                initUI(); sync();
-                alert('导入线路成功: ' + filename);
-            } else {
-                alert('读取失败: ' + (res && res.error));
+            // Show a simple selection modal
+            const modal = document.getElementById('loadline-modal');
+            const listBox = document.getElementById('loadline-list');
+            if (!modal || !listBox) {
+                // Fallback to prompt-like UI
+                const names = items.map((it, i) => `${i+1}. ${it.name} ${it.version?('(v'+it.version+')'):''}`).join('\n');
+                const sel = await showPrompt('请选择要导入的线路编号:\n' + names, '1');
+                if (!sel) return;
+                const idx = parseInt(sel) - 1;
+                if (isNaN(idx) || idx < 0 || idx >= items.length) { await showAlert('选择无效'); return; }
+                const filename = items[idx].name;
+                const res = await window.electronAPI.lines.read(filename);
+                if (res && res.ok && res.content) {
+                    store.list.push(normalizeLine(res.content));
+                    store.cur = store.list.length - 1;
+                    appData = store.list[store.cur];
+                    rt = { idx: 0, state: 0 };
+                    initUI(); sync();
+                    await showAlert('导入线路成功: ' + filename);
+                } else {
+                    await showAlert('读取失败: ' + (res && res.error));
+                }
+                return;
             }
+            // populate list
+            listBox.innerHTML = '';
+            items.forEach((it, i) => {
+                const row = document.createElement('div');
+                row.style.padding = '6px 8px';
+                row.style.borderBottom = '1px solid rgba(0,0,0,0.04)';
+                row.style.cursor = 'pointer';
+                row.innerText = `${i+1}. ${it.name} ${it.version?('(v'+it.version+')'):''}`;
+                row.onclick = async () => {
+                    const res = await window.electronAPI.lines.read(it.name);
+                    if (res && res.ok && res.content) {
+                        store.list.push(normalizeLine(res.content));
+                        store.cur = store.list.length - 1;
+                        appData = store.list[store.cur];
+                        rt = { idx: 0, state: 0 };
+                        initUI(); sync();
+                        alert('导入线路成功: ' + it.name);
+                    } else {
+                        alert('读取失败: ' + (res && res.error));
+                    }
+                    modal.style.display = 'none';
+                };
+                listBox.appendChild(row);
+            });
+            modal.style.display = 'flex';
         }
 
         // Refresh lines by scanning the saved lines folder and importing any new/updated files
         async function refreshLinesFromFolder() {
             if (!(window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.list === 'function')) {
-                alert('仅 Electron 环境支持从线路文件夹刷新');
+                await showAlert('仅 Electron 环境支持从线路文件夹刷新');
                 return;
             }
             try {
                 const items = await window.electronAPI.lines.list();
                 if (!Array.isArray(items) || items.length === 0) {
-                    alert('未发现已保存的线路文件');
+                    await showAlert('未发现已保存的线路文件');
                     return;
                 }
                 const detected = await detectLinesInFolder(items);
                 if (!detected || detected.length === 0) {
-                    alert('未检测到有效线路文件');
+                    await showAlert('未检测到有效线路文件');
                     return;
                 }
                 // Merge detected into store, replacing by name if exists, otherwise append
@@ -1373,10 +1770,10 @@
                 appData = store.list[store.cur];
                 rt = { idx: 0, state: 0 };
                 initUI(); sync();
-                alert('刷新完成，新增: ' + added + '，更新: ' + updated);
+                await showAlert('刷新完成，新增: ' + added + '，更新: ' + updated);
             } catch (e) {
                 console.error(e);
-                alert('刷新失败: ' + (e && e.message));
+                await showAlert('刷新失败: ' + (e && e.message));
             }
         }
 
@@ -1401,6 +1798,18 @@
             return out;
         }
     </script>
+
+    <!-- New Line Modal (for Electron safe input) -->
+    <div id="newline-modal" style="display:none; position:fixed; left:0;top:0;right:0;bottom:0;align-items:center;justify-content:center; background:rgba(0,0,0,0.45); z-index:9999;">
+        <div style="background:var(--card); padding:18px; border-radius:8px; width:320px; box-shadow:0 8px 28px rgba(0,0,0,0.3);">
+            <div style="font-weight:700;margin-bottom:8px;">新建线路</div>
+            <input id="newline-input" placeholder="请输入线路名称 (例如: 3号线)" onkeydown="if(event.key==='Enter')confirmNewLine()" style="width:100%; padding:8px; margin-bottom:8px; border:1px solid var(--card-border); border-radius:6px;">
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn b-gray" onclick="cancelNewLine()">取消</button>
+                <button class="btn b-green" onclick="confirmNewLine()">确认</button>
+            </div>
+        </div>
+    </div>
     <!-- Settings moved into slide panel (panel-3) -->
 
     <script>
