@@ -5,37 +5,37 @@ import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useSettings } from '../composables/useSettings.js'
 import dialogService from '../utils/dialogService.js'
-import { ref } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import ColorPicker from './ColorPicker.js'
 
 export default {
   name: 'SlidePanel',
+  components: { ColorPicker },
   setup() {
     const { uiState, closePanel } = useUIState()
         const { state: pidsState, sync: syncState } = usePidsState()
         const { next: controllerNext, sync, getStep } = useController()
 
-        // shouldStop: stop autoplay if we've reached a terminal station
+        // shouldStop：到达终点站时停止自动播放
         function shouldStop() {
             try {
                 if (!pidsState || !pidsState.appData) return false;
                 const meta = pidsState.appData.meta || {};
                 const idx = (pidsState.rt && typeof pidsState.rt.idx === 'number') ? pidsState.rt.idx : 0;
-                // Determine the allowed range for linear mode (short-turn)
+                // 计算单线/短交路可行索引范围
                 const sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx) : 0;
                 const eIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx) : (pidsState.appData.stations ? pidsState.appData.stations.length - 1 : 0);
                 const minIdx = Math.min(sIdx, eIdx);
                 const maxIdx = Math.max(sIdx, eIdx);
 
-                // If loop mode, do not auto-stop
+                // 环线模式不自动停止
                 if (meta.mode === 'loop') return false;
 
-                // Determine travel direction: getStep > 0 means moving towards higher indexes
+                // 根据 getStep 判定方向（>0 向后，<0 向前）
                 const step = (typeof getStep === 'function') ? getStep() : 1;
                 const terminalIdx = step > 0 ? maxIdx : minIdx;
 
-                // Only stop when current index equals the terminal in travel direction
-                // and we are in the 'arrived' state (rt.state === 0). This avoids
-                // immediately stopping if autoplay starts at the starting station.
+                // 仅当当前索引抵达方向终点且处于到站态(rt.state===0)才停止，避免刚启动即停
                 const rtState = pidsState.rt && (typeof pidsState.rt.state === 'number') ? pidsState.rt.state : 0;
                 if (idx === terminalIdx && rtState === 0) return true;
             } catch (e) {
@@ -53,11 +53,90 @@ export default {
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
     const promptUser = async (msg, defaultValue, title) => dialogService.prompt(msg, defaultValue, title)
 
+    // 检查是否有 Electron API
+    const hasElectronAPI = computed(() => {
+      return typeof window !== 'undefined' && window.electronAPI && window.electronAPI.startColorPick;
+    });
+    
+    // 颜色选择器
+    const showColorPicker = ref(false);
+    const colorPickerInitialColor = ref('#000000');
+    
+    // 打开颜色选择器
+    function openColorPicker() {
+      colorPickerInitialColor.value = pidsState.appData.meta.themeColor || '#000000';
+      showColorPicker.value = true;
+    }
+    
+    // 确认颜色选择
+    function onColorConfirm(color) {
+      pidsState.appData.meta.themeColor = color;
+      saveCfg();
+    }
+    
+    // 取色功能：打开颜色选择器弹窗
+    function pickColor() {
+      openColorPicker();
+    }
+
+    // 兼容旧数据，补齐 serviceMode
+    if (!pidsState.appData.meta.serviceMode) pidsState.appData.meta.serviceMode = 'normal';
+
+    function changeServiceMode(mode) {
+        const meta = pidsState.appData.meta || {};
+        meta.serviceMode = mode;
+        // 直达车：强制起终点为首尾
+        if (mode === 'direct' && pidsState.appData.stations && pidsState.appData.stations.length > 0) {
+            meta.startIdx = 0;
+            meta.termIdx = pidsState.appData.stations.length - 1;
+        }
+        saveCfg();
+    }
+
+    const serviceModeLabel = computed(() => {
+        const mode = (pidsState.appData.meta && pidsState.appData.meta.serviceMode) ? pidsState.appData.meta.serviceMode : 'normal';
+        if (mode === 'express') return '大站车';
+        if (mode === 'direct') return '直达';
+        return '普通';
+    });
+
     function switchLine(idx) {
         pidsState.store.cur = parseInt(idx);
         pidsState.appData = pidsState.store.list[pidsState.store.cur];
         pidsState.rt = { idx: 0, state: 0 };
+        // 更新当前文件的路径信息
+        if (pidsState.appData && pidsState.appData.meta && pidsState.appData.meta.lineName) {
+            const filePath = pidsState.lineNameToFilePath[pidsState.appData.meta.lineName];
+            if (filePath) {
+                pidsState.currentFilePath = filePath;
+            } else {
+                pidsState.currentFilePath = null; // 如果没有找到路径，清空
+            }
+        }
         sync();
+    }
+
+    // 通过线路名称切换线路
+    async function switchLineByName(lineName) {
+        // 先刷新线路列表
+        await fileIO.refreshLinesFromFolder(true);
+        
+        // 查找线路（移除颜色标记后比较）
+        const cleanName = (name) => {
+            if (!name) return '';
+            return String(name).replace(/<[^>]+>([^<]*)<\/>/g, '$1');
+        };
+        const cleanRequestName = cleanName(lineName);
+        
+        const idx = pidsState.store.list.findIndex(l => {
+            if (!l.meta || !l.meta.lineName) return false;
+            const cleanLineName = cleanName(l.meta.lineName);
+            return cleanLineName === cleanRequestName || l.meta.lineName === lineName;
+        });
+        
+        if (idx >= 0) {
+            switchLine(idx);
+        }
     }
 
     async function newLine() {
@@ -66,6 +145,9 @@ export default {
         const newL = JSON.parse(JSON.stringify(pidsState.DEF));
         newL.meta.lineName = name;
         newL.meta.themeColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+        if (!newL.meta.serviceMode) newL.meta.serviceMode = 'normal';
+        // 清空站点列表
+        newL.stations = [];
         pidsState.store.list.push(newL);
         switchLine(pidsState.store.list.length - 1);
     }
@@ -73,10 +155,26 @@ export default {
     async function delLine() {
         if (pidsState.store.list.length <= 1) { await showMsg('至少保留一条线路！'); return; }
         if (!await askUser('确定要删除当前线路 "' + pidsState.appData.meta.lineName + '" 吗？\n删除后无法恢复！')) return;
+        const deletedLineName = pidsState.appData.meta.lineName;
         pidsState.store.list.splice(pidsState.store.cur, 1);
         pidsState.store.cur = 0;
         pidsState.appData = pidsState.store.list[0];
         pidsState.rt = { idx: 0, state: 0 };
+        // 清理删除的线路的路径信息
+        if (deletedLineName && pidsState.lineNameToFilePath[deletedLineName]) {
+            delete pidsState.lineNameToFilePath[deletedLineName];
+        }
+        // 更新当前文件的路径信息
+        if (pidsState.appData && pidsState.appData.meta && pidsState.appData.meta.lineName) {
+            const filePath = pidsState.lineNameToFilePath[pidsState.appData.meta.lineName];
+            if (filePath) {
+                pidsState.currentFilePath = filePath;
+            } else {
+                pidsState.currentFilePath = null;
+            }
+        } else {
+            pidsState.currentFilePath = null;
+        }
         sync();
     }
 
@@ -96,6 +194,149 @@ export default {
             pidsState.appData.meta.startIdx = -1;
             pidsState.appData.meta.termIdx = -1;
             saveCfg();
+        }
+    }
+
+    // 短交路预设管理
+    const shortTurnPresets = ref([]);
+    
+    async function loadShortTurnPresets() {
+        if (!window.electronAPI || !window.electronAPI.shortturns) {
+            return;
+        }
+        try {
+            const currentLineName = pidsState.appData?.meta?.lineName || null;
+            const presets = await window.electronAPI.shortturns.list(currentLineName);
+            shortTurnPresets.value = Array.isArray(presets) ? presets : [];
+        } catch (e) {
+            console.error('加载短交路预设失败:', e);
+            shortTurnPresets.value = [];
+        }
+    }
+
+    async function saveShortTurnPreset() {
+        if (!window.electronAPI || !window.electronAPI.shortturns) {
+            await showMsg('仅 Electron 环境支持保存短交路预设');
+            return;
+        }
+        const startIdx = pidsState.appData.meta.startIdx;
+        const termIdx = pidsState.appData.meta.termIdx;
+        if (startIdx === -1 || termIdx === -1) {
+            await showMsg('请先设置短交路的起点和终点');
+            return;
+        }
+        const presetName = await promptUser('请输入预设名称', '短交路预设');
+        if (!presetName) return;
+        try {
+            const presetData = {
+                lineName: pidsState.appData.meta.lineName,
+                startIdx: startIdx,
+                termIdx: termIdx,
+                startStationName: pidsState.appData.stations[startIdx]?.name || '',
+                termStationName: pidsState.appData.stations[termIdx]?.name || '',
+                createdAt: new Date().toISOString()
+            };
+            const res = await window.electronAPI.shortturns.save(presetName, presetData);
+            if (res && res.ok) {
+                await showMsg('预设已保存');
+                await loadShortTurnPresets();
+            } else {
+                await showMsg('保存失败: ' + (res && res.error));
+            }
+        } catch (e) {
+            await showMsg('保存失败: ' + e.message);
+        }
+    }
+
+    async function loadShortTurnPreset(presetName) {
+        if (!window.electronAPI || !window.electronAPI.shortturns) {
+            await showMsg('仅 Electron 环境支持加载短交路预设');
+            return;
+        }
+        try {
+            const res = await window.electronAPI.shortturns.read(presetName);
+            if (res && res.ok && res.content) {
+                const preset = res.content;
+                // 验证当前线路名称是否匹配
+                if (preset.lineName && preset.lineName !== pidsState.appData.meta.lineName) {
+                    if (!(await askUser(`此预设属于线路"${preset.lineName}"，当前线路是"${pidsState.appData.meta.lineName}"，是否继续加载？`))) {
+                        return;
+                    }
+                }
+                // 验证索引有效性
+                const stationCount = pidsState.appData.stations?.length || 0;
+                if (preset.startIdx < 0 || preset.startIdx >= stationCount || preset.termIdx < 0 || preset.termIdx >= stationCount) {
+                    await showMsg('预设的站点索引超出当前线路范围，无法加载');
+                    return;
+                }
+                pidsState.appData.meta.startIdx = preset.startIdx;
+                pidsState.appData.meta.termIdx = preset.termIdx;
+                saveCfg();
+                await showMsg(`已加载预设: ${presetName}\n起点: ${preset.startStationName || pidsState.appData.stations[preset.startIdx]?.name}\n终点: ${preset.termStationName || pidsState.appData.stations[preset.termIdx]?.name}`);
+            } else {
+                await showMsg('加载失败: ' + (res && res.error));
+            }
+        } catch (e) {
+            await showMsg('加载失败: ' + e.message);
+        }
+    }
+
+    async function deleteShortTurnPreset(presetName) {
+        if (!window.electronAPI || !window.electronAPI.shortturns) {
+            await showMsg('仅 Electron 环境支持删除短交路预设');
+            return;
+        }
+        if (!(await askUser(`确定要删除预设"${presetName}"吗？`))) {
+            return;
+        }
+        try {
+            const res = await window.electronAPI.shortturns.delete(presetName);
+            if (res && res.ok) {
+                await showMsg('预设已删除');
+                await loadShortTurnPresets();
+            } else {
+                await showMsg('删除失败: ' + (res && res.error));
+            }
+        } catch (e) {
+            await showMsg('删除失败: ' + e.message);
+        }
+    }
+
+    // 监听线路切换，自动加载预设列表
+    watch(() => pidsState.appData?.meta?.lineName, async () => {
+        if (window.electronAPI && window.electronAPI.shortturns) {
+            await loadShortTurnPresets();
+        }
+    }, { immediate: true });
+
+    // 监听来自线路管理器的线路切换请求
+    onMounted(async () => {
+        if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onSwitchLineRequest) {
+            try {
+                window.electronAPI.onSwitchLineRequest(async (lineName) => {
+                    await switchLineByName(lineName);
+                });
+            } catch (e) {
+                console.warn('无法设置线路切换监听:', e);
+            }
+        }
+        
+        // 初始化预设线路文件（仅在首次启动时）
+        try {
+            await fileIO.initDefaultLines();
+        } catch (e) {
+            console.warn('初始化预设线路失败:', e);
+        }
+    });
+
+    // 打开线路管理器
+    async function openLineManagerWindow() {
+        if (window.electronAPI && window.electronAPI.openLineManager) {
+            await window.electronAPI.openLineManager();
+        } else {
+            // 浏览器环境，使用弹窗
+            const url = 'line_manager_window.html';
+            window.open(url, '_blank', 'width=900,height=600');
         }
     }
 
@@ -125,8 +366,8 @@ export default {
         }
     }
 
-        // Update UI state
-        const updateState = ref({ checking: false, available: false, downloading: false, progress: 0, info: null });
+        // 更新模块状态（检查中/可用/下载中/已下载）
+    const updateState = ref({ checking: false, available: false, downloading: false, downloaded: false, progress: 0, info: null, error: null, isLatest: false });
 
         const version = ref('未知');
         (async () => {
@@ -138,53 +379,72 @@ export default {
             } catch (e) {}
         })();
 
-        // Setup update listeners (if running in Electron)
+        // 配置主进程日志监听（用于调试）
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            try {
+                window.electronAPI.onMainConsoleLog && window.electronAPI.onMainConsoleLog((msg) => {
+                    console.log('[MAIN]', msg);
+                });
+                window.electronAPI.onMainConsoleError && window.electronAPI.onMainConsoleError((msg) => {
+                    console.error('[MAIN]', msg);
+                });
+            } catch (e) {
+                console.warn('无法设置主进程日志监听:', e);
+            }
+        }
+        
+        // 配置更新事件监听（仅在 Electron 环境）
         if (typeof window !== 'undefined' && window.electronAPI) {
             try {
                 window.electronAPI.onUpdateAvailable((info) => {
                     updateState.value.checking = false;
                     updateState.value.available = true;
+                    updateState.value.downloaded = false;
                     updateState.value.info = info || null;
-                    askUser(`发现新版本 ${info && info.version ? info.version : ''}，是否下载更新？`).then(async (ok) => {
-                        if (ok) {
-                            updateState.value.downloading = true;
-                            const r = await window.electronAPI.downloadUpdate();
-                            if (!r || !r.ok) {
-                                showMsg('下载失败：' + (r && r.error ? r.error : '未知错误'));
-                                updateState.value.downloading = false;
-                            }
-                        }
-                    });
+                    // 不再自动弹出对话框，由用户手动点击下载
                 });
 
-                window.electronAPI.onUpdateNotAvailable(() => {
+                window.electronAPI.onUpdateNotAvailable((info) => {
                     updateState.value.checking = false;
-                    showMsg('当前已是最新版本');
+                    updateState.value.isLatest = true; // 标记为最新版本
+                    const currentVersion = version.value || '未知';
+                    console.log('[SlidePanel] 收到 update-not-available 事件', info);
+                    // 不显示弹窗，只在界面上显示状态（避免频繁弹窗干扰用户）
                 });
 
                 window.electronAPI.onUpdateError((err) => {
                     updateState.value.checking = false;
-                    showMsg('更新错误：' + String(err));
+                    updateState.value.downloading = false;
+                    const errorMsg = String(err);
+                    updateState.value.error = errorMsg;
+                    console.error('[SlidePanel] 收到更新错误事件:', err);
+                    
+                    // 对于校验和错误，提供更友好的提示
+                    let userFriendlyMsg = errorMsg;
+                    if (errorMsg.includes('checksum') || errorMsg.includes('sha512')) {
+                        userFriendlyMsg = '文件校验失败，可能是下载的文件损坏。\n\n建议：\n1. 检查网络连接\n2. 重新尝试下载\n3. 如果问题持续，请从GitHub手动下载';
+                    }
+                    
+                    showMsg('更新错误：' + userFriendlyMsg);
                 });
 
                 window.electronAPI.onUpdateProgress((p) => {
                     try {
                         if (p && p.percent) updateState.value.progress = Math.round(p.percent);
                         else if (p && p.transferred && p.total) updateState.value.progress = Math.round((p.transferred / p.total) * 100);
+                        updateState.value.downloaded = false;
                     } catch (e) {}
                 });
 
                 window.electronAPI.onUpdateDownloaded((info) => {
                     updateState.value.downloading = false;
                     updateState.value.progress = 100;
-                    askUser('更新已下载，是否现在重启并安装？').then((ok) => {
-                        if (ok) {
-                            window.electronAPI.installUpdate();
-                        }
-                    });
+                    updateState.value.downloaded = true;
+                    updateState.value.info = info || updateState.value.info;
+                    // 不再自动弹出对话框，由用户手动点击安装
                 });
             } catch (e) {
-                // ignore
+                // 可忽略监听安装异常
             }
         }
 
@@ -195,52 +455,185 @@ export default {
             }
             updateState.value.checking = true;
             updateState.value.available = false;
+            updateState.value.downloaded = false;
+            updateState.value.error = null; // 清除之前的错误
+            updateState.value.isLatest = false; // 清除之前的"已是最新"状态
+            
+            console.log('[SlidePanel] 开始检查更新...');
+            
             try {
                 const r = await window.electronAPI.checkForUpdates();
+                console.log('[SlidePanel] checkForUpdates 返回:', r);
+                
                 if (!r || !r.ok) {
                     updateState.value.checking = false;
-                    showMsg('检查更新失败：' + (r && r.error ? r.error : '未知'));
+                    const errorMsg = (r && r.error) ? r.error : '未知错误';
+                    updateState.value.error = errorMsg;
+                    console.error('[SlidePanel] 检查更新失败:', errorMsg);
+                    showMsg('检查更新失败：' + errorMsg);
+                } else {
+                    console.log('[SlidePanel] 检查更新请求已发送，等待事件响应...');
+                    // 不在这里设置 checking = false，等待事件响应
                 }
             } catch (e) {
                 updateState.value.checking = false;
-                showMsg('检查更新出错：' + String(e));
+                const errorMsg = String(e);
+                updateState.value.error = errorMsg;
+                console.error('[SlidePanel] 检查更新异常:', e);
+                showMsg('检查更新失败：' + errorMsg);
             }
         }
 
-    // Display SDK / Third-party helpers
-    // display preview / third-party helpers removed
+    async function downloadUpdateNow() {
+        if (!window.electronAPI) return;
+        updateState.value.downloading = true;
+        updateState.value.downloaded = false;
+        updateState.value.error = null; // 清除之前的错误
+        
+        try {
+            const r = await window.electronAPI.downloadUpdate();
+            if (!r || !r.ok) {
+                updateState.value.downloading = false;
+                const errorMsg = r && r.error ? r.error : '未知错误';
+                updateState.value.error = errorMsg;
+                
+                    // 对于校验和错误，提供更友好的提示
+                    let userFriendlyMsg = errorMsg;
+                    const attempts = r.attempts || 1;
+                    const isChecksumError = errorMsg.includes('checksum') || errorMsg.includes('sha512') || r.isChecksumError;
+                    
+                    if (isChecksumError) {
+                        if (attempts >= 3) {
+                            userFriendlyMsg = `文件校验失败，已自动重试 ${attempts} 次。\n\n可能原因：\n1. 网络不稳定导致下载文件损坏\n2. 代理服务器干扰下载\n3. GitHub Releases 的校验和信息可能有误\n\n建议：\n1. 检查网络连接或尝试关闭VPN/代理\n2. 点击"清除缓存并重新下载"手动重试\n3. 点击"从GitHub手动下载"按钮手动下载安装包`;
+                        } else {
+                            userFriendlyMsg = `文件校验失败，已重试 ${attempts} 次。系统会自动重试...`;
+                        }
+                    }
+                    
+                    // 只有在不是自动重试中时才显示错误消息
+                    if (attempts >= 3 || !isChecksumError) {
+                        showMsg('下载失败：' + userFriendlyMsg);
+                    }
+            }
+        } catch (e) {
+            updateState.value.downloading = false;
+            const errorMsg = String(e);
+            updateState.value.error = errorMsg;
+            showMsg('下载失败：' + errorMsg);
+        }
+    }
 
-    // Autoplay start wrapper that locks UI and shows modal warning
+    async function clearCacheAndRedownload() {
+        if (!window.electronAPI) return;
+        if (!window.electronAPI.clearCacheAndDownload) {
+            // 如果没有清除缓存功能，回退到普通下载
+            return downloadUpdateNow();
+        }
+        
+        updateState.value.downloading = true;
+        updateState.value.downloaded = false;
+        updateState.value.error = null;
+        
+        try {
+            const r = await window.electronAPI.clearCacheAndDownload();
+            if (!r || !r.ok) {
+                updateState.value.downloading = false;
+                const errorMsg = r && r.error ? r.error : '未知错误';
+                updateState.value.error = errorMsg;
+                showMsg('重新下载失败：' + errorMsg);
+            }
+        } catch (e) {
+            updateState.value.downloading = false;
+            const errorMsg = String(e);
+            updateState.value.error = errorMsg;
+            showMsg('重新下载失败：' + errorMsg);
+        }
+    }
+
+    async function installDownloadedUpdate() {
+        if (!window.electronAPI) return;
+        updateState.value.downloading = false;
+        await window.electronAPI.installUpdate();
+    }
+
+    async function skipThisVersion() {
+        if (!window.electronAPI || !updateState.value.info) return;
+        const version = updateState.value.info.version;
+        if (version) {
+            const r = await window.electronAPI.skipVersion(version);
+            if (r && r.ok) {
+                updateState.value.available = false;
+                updateState.value.downloaded = false;
+                showMsg('已跳过此版本，下次有更高版本时会再次提示');
+            } else {
+                showMsg('跳过版本失败：' + (r && r.error ? r.error : '未知错误'));
+            }
+        }
+    }
+
+    async function openGitHubReleases() {
+        const url = 'https://github.com/tanzhouxkong/Metro-PIDS-/releases';
+        try {
+            if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
+                const res = await window.electronAPI.openExternal(url);
+                if (!res || (res.ok === false)) {
+                    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
+                }
+            } else {
+                try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
+            }
+        } catch (e) {
+            try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e2) { console.warn('Failed to open external URL', e2); }
+        }
+    }
+
+    // 显示端/第三方相关辅助（展示预览已移除）
+
+    // 自动播放包装：先锁定界面并提示
+    // 确保显示端已开启；若未开启则尝试按设置分辨率拉起
+    async function ensureDisplayOpen() {
+        try {
+            // Electron 原生窗口
+            if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openDisplay === 'function') {
+                const dw = (settings.display && settings.display.width) ? Number(settings.display.width) : 1900;
+                const dh = (settings.display && settings.display.height) ? Number(settings.display.height) : 600;
+                await window.electronAPI.openDisplay(dw, dh);
+                return true;
+            }
+        } catch (e) {}
+
+        // 浏览器弹窗
+        try {
+            const hasPopup = window.__metro_pids_display_popup && !window.__metro_pids_display_popup.closed;
+            let url = '';
+            if (settings.display.source === 'builtin') url = 'display_window.html';
+            else if (settings.display.source === 'gitee') url = settings.display.url || '';
+            else url = settings.display.url || '';
+            if (!hasPopup && url) {
+                const w = window.open(url, '_blank');
+                if (w) {
+                    window.__metro_pids_display_popup = w;
+                    window.__metro_pids_display_popup_ready = false;
+                    try { await waitForPopupReady(w, 3000); } catch (e) {}
+                    return true;
+                }
+            }
+            return hasPopup;
+        } catch (e) {
+            return false;
+        }
+    }
+
     async function startWithLock(intervalSec = 8) {
         if (uiState.autoLocked) return;
         const ok = await askUser('开启自动播放将锁定控制面板，期间请不要操作控制界面，是否继续？');
         if (!ok) return;
         uiState.autoLocked = true;
         try {
-            // Ensure display window is opened and bound
-            try {
-                let url = '';
-                if (settings.display.source === 'builtin') url = 'display_window.html';
-                else if (settings.display.source === 'gitee') url = settings.display.url || '';
-                else url = settings.display.url || '';
-                if (url) {
-                    try {
-                        const w = window.open(url, '_blank');
-                        if (w) {
-                            // expose reference for postMessage fallback
-                            try { window.__metro_pids_display_popup = w; window.__metro_pids_display_popup_ready = false; } catch(e){}
-                            // wait for popup to be ready before initial sync
-                            try {
-                                await waitForPopupReady(w, 3000);
-                            } catch (e) {
-                                // ignore timeout or cross-origin issues
-                            }
-                        }
-                    } catch(e) {}
-                }
-            } catch (e) {}
+            // 确保显示端已打开并绑定
+            await ensureDisplayOpen();
 
-            // send initial sync to ensure display shows current state
+            // 发送初次同步，确保显示端状态最新
             try { sync(); } catch(e){}
 
             start(intervalSec);
@@ -250,9 +643,7 @@ export default {
         }
     }
 
-    // Wait for popup window to finish loading. For same-origin popups we can
-    // listen to 'load' or check document.readyState. For cross-origin popups
-    // access to document will throw, so we fall back to a short delay.
+    // 等待弹窗加载：同源可监听 load/readyState，跨域无法读 document 时退回短延时
     function waitForPopupReady(winRef, timeoutMs = 2000) {
         return new Promise((resolve, reject) => {
             if (!winRef) return reject(new Error('no window'));
@@ -264,11 +655,11 @@ export default {
                 resolve(true);
             };
             try {
-                // Try attach load listener (works for same-origin)
+                // 同源情况下尝试绑定 load 事件
                 if (winRef.addEventListener) {
                     winRef.addEventListener('load', onLoad, { once: true });
                 }
-                // Also poll readyState for same-origin
+                // 同源情况下轮询 readyState
                 let elapsed = 0;
                 const step = 100;
                 const poll = setInterval(() => {
@@ -284,13 +675,13 @@ export default {
                         elapsed += step;
                         if (elapsed >= timeoutMs) {
                             clearInterval(poll);
-                            // fall back: mark ready false but resolve to continue
+                            // 超时则标记未就绪但继续
                             try { window.__metro_pids_display_popup_ready = false; } catch (e) {}
                             return resolve(false);
                         }
                     } catch (e) {
                         clearInterval(poll);
-                        // cross-origin; fallback
+                        // 跨域则直接走回退
                         try { window.__metro_pids_display_popup_ready = false; } catch (ee) {}
                         return resolve(false);
                     }
@@ -307,11 +698,11 @@ export default {
         uiState.autoLocked = false;
     }
 
-    // Start recording but first check if a display is connected
+    // 录制前先检查是否已连接显示端
     async function startRecordingWithCheck(bps = 800000, timeoutMs = 1500) {
         try {
             const hasBroadcast = !!(pidsState && pidsState.bcWrap && typeof pidsState.bcWrap.post === 'function');
-            // quick check: if no broadcast wrapper, request via postMessage to popup windows
+            // 快速检测：若无广播包装，改用 postMessage 询问弹窗
             let responded = false;
 
             const onResp = (data) => {
@@ -321,27 +712,27 @@ export default {
                 }
             };
 
-            // Listen on BroadcastChannel wrapper if available
+            // 若有 BroadcastChannel 包装则监听其消息
             if (hasBroadcast) {
                 try {
                     pidsState.bcWrap.onMessage((msg) => onResp(msg));
                 } catch (e) {}
             }
 
-            // Also listen to window messages
+            // 同时监听 window message
             const winHandler = (ev) => { try { onResp(ev.data); } catch(e){} };
             if (typeof window !== 'undefined') window.addEventListener('message', winHandler);
 
-            // send REQ to ask display to respond
+            // 发送 REQ 请求显示端回应
             try {
                 if (hasBroadcast) pidsState.bcWrap.post({ t: 'REQ' });
                 else if (typeof window !== 'undefined' && window.postMessage) window.postMessage({ t: 'REQ' }, '*');
             } catch (e) {}
 
-            // wait for a short timeout
+            // 等待短暂超时
             await new Promise((res) => setTimeout(res, timeoutMs));
 
-            // cleanup listeners
+            // 清理监听
             try { if (hasBroadcast) {/* wrapper listener will naturally persist; not removing here for simplicity */} } catch(e){}
             if (typeof window !== 'undefined') window.removeEventListener('message', winHandler);
 
@@ -350,13 +741,13 @@ export default {
                 return false;
             }
 
-            // send REC_START
+            // 发送 REC_START
             try {
                 if (hasBroadcast) pidsState.bcWrap.post({ t: 'REC_START', bps });
                 else if (typeof window !== 'undefined' && window.postMessage) window.postMessage({ t: 'REC_START', bps }, '*');
             } catch (e) {}
 
-            // update local state if needed
+            // 更新本地状态标记
             try { pidsState.isRec = true; } catch (e) {}
             await showMsg('已向显示端发送录制开始命令');
             return true;
@@ -367,6 +758,81 @@ export default {
         }
     }
 
+        // 更新日志相关
+        const showReleaseNotes = ref(false);
+        const releaseNotes = ref([]);
+        const loadingNotes = ref(false);
+
+        // 加载更新日志
+        const loadReleaseNotes = async () => {
+            if (loadingNotes.value || releaseNotes.value.length > 0) return;
+            loadingNotes.value = true;
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getGitHubReleases) {
+                    const result = await window.electronAPI.getGitHubReleases();
+                    if (result && result.ok && result.releases) {
+                        releaseNotes.value = result.releases;
+                    }
+                }
+            } catch (e) {
+                console.error('加载更新日志失败:', e);
+            } finally {
+                loadingNotes.value = false;
+            }
+        }
+
+        // 打开更新日志弹窗
+        const openReleaseNotes = async () => {
+            await loadReleaseNotes();
+            showReleaseNotes.value = true;
+        }
+
+        // 关闭更新日志弹窗
+        const closeReleaseNotes = () => {
+            showReleaseNotes.value = false;
+        }
+
+        // 格式化更新日志内容（将Markdown转换为简单的HTML）
+        const formatReleaseBody = (body, release) => {
+            if (!body) return '';
+            const githubRepo = 'tanzhouxkong/Metro-PIDS-';
+            const githubBaseUrl = 'https://github.com';
+            const githubRawBaseUrl = 'https://raw.githubusercontent.com';
+            
+            let formatted = body;
+            
+            // 处理图片：![alt](url) 或 ![alt](url "title")
+            formatted = formatted.replace(/!\[([^\]]*)\]\(([^)]+)(?:\s+"[^"]*")?\)/g, (match, alt, url) => {
+                let imageUrl = url.trim();
+                
+                // 如果是相对路径，转换为GitHub releases assets URL
+                if (!imageUrl.match(/^https?:\/\//)) {
+                    // 相对路径，假设是release assets中的文件
+                    const tagName = release?.tag_name || '';
+                    if (tagName) {
+                        imageUrl = `${githubBaseUrl}/${githubRepo}/releases/download/${tagName}/${imageUrl}`;
+                    } else {
+                        // 如果没有tag，使用raw.githubusercontent.com（如果图片在repo根目录）
+                        imageUrl = `${githubRawBaseUrl}/${githubRepo}/main/${imageUrl}`;
+                    }
+                }
+                
+                // 返回img标签，支持响应式和样式
+                return `<img src="${imageUrl}" alt="${alt || ''}" style="max-width:100%; height:auto; border-radius:6px; margin:12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:block;" onerror="this.style.display='none';">`;
+            });
+            
+            // 简单的Markdown转换（在图片处理之后）
+            formatted = formatted
+                .replace(/\n## (.*)/g, '<h4 style="margin-top:16px; margin-bottom:8px; font-weight:bold; color:var(--text);">$1</h4>')
+                .replace(/\n### (.*)/g, '<h5 style="margin-top:12px; margin-bottom:6px; font-weight:bold; color:var(--text);">$1</h5>')
+                .replace(/\n- (.*)/g, '<div style="margin-left:16px; margin-top:4px;">• $1</div>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+            
+            return formatted;
+        }
+
         return {
             uiState,
             closePanel,
@@ -374,11 +840,16 @@ export default {
             isPlaying, isPaused, nextIn, start, stop, togglePause,
             fileIO,
             pidsState,
-            switchLine, newLine, delLine, saveCfg, clearShortTurn, applyShortTurn,
+            switchLine, switchLineByName, newLine, delLine, saveCfg, clearShortTurn, applyShortTurn,
             settings, saveSettings, keyMapDisplay, recordKey, clearKey, resetKeys,
-            updateState, checkForUpdateClicked,
-            version,
-            startWithLock, stopWithUnlock, startRecordingWithCheck
+            updateState, checkForUpdateClicked, downloadUpdateNow, clearCacheAndRedownload, installDownloadedUpdate, skipThisVersion, openGitHubReleases,
+            version, hasElectronAPI, pickColor, openColorPicker,
+            showColorPicker, colorPickerInitialColor, onColorConfirm,
+            startWithLock, stopWithUnlock, startRecordingWithCheck,
+            changeServiceMode, serviceModeLabel,
+            showReleaseNotes, releaseNotes, loadingNotes, openReleaseNotes, closeReleaseNotes, formatReleaseBody,
+            shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
+            openLineManagerWindow
         }
     },
   template: `
@@ -391,6 +862,8 @@ export default {
         <div style="font-size:20px; font-weight:800; margin-bottom:10px;">自动播放进行中 — 整个应用已锁定</div>
         <div style="font-size:14px; opacity:0.95; margin-bottom:18px; text-align:center; max-width:680px;">为避免干扰演示，请勿操作控制面板或其他窗口内容。若需停止自动播放，请使用下面的按钮。</div>
         <div style="display:flex; gap:10px;">
+            <button class="btn" v-if="!isPaused" style="background:#ffa502; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold;" @click="togglePause()">暂停</button>
+            <button class="btn" v-else style="background:#1e90ff; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold;" @click="togglePause()">继续</button>
             <button class="btn" style="background:#ff6b6b; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold;" @click="stopWithUnlock()">停止自动播放</button>
         </div>
     </div>
@@ -401,31 +874,62 @@ export default {
       <div v-if="uiState.activePanel === 'panel-1'" class="panel-body" style="padding:24px 16px;">
         
         <!-- Header -->
-        <div style="text-align:center; margin-bottom:24px;">
-            <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">PIDS 控制台</div>
-            <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">V2-Multi Stable</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
+            <div style="text-align:left;">
+                <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">PIDS 控制台</div>
+                <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">V2-Multi Stable</div>
+            </div>
         </div>
         
-        <!-- Multi-Line Management -->
+        <!-- Folder & Line Management -->
         <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#FF9F43; font-weight:bold; margin-bottom:12px; font-size:15px;">多线路切换 (Multi-Line)</div>
-            <select :value="pidsState.store.cur" @change="switchLine($event.target.value)" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:16px; font-weight:bold; color:var(--text); background:var(--card);">
-                <option v-for="(l, i) in pidsState.store.list" :key="i" :value="i">[{{i+1}}] {{ l.meta.lineName }}</option>
-            </select>
+            <div style="color:#FF9F43; font-weight:bold; margin-bottom:12px; font-size:15px;">线路管理器</div>
+            
+            <!-- 当前线路显示 -->
+            <div style="margin-bottom:12px; padding:12px; background:var(--card); border-radius:8px; border:2px solid var(--divider);">
+                <div style="font-size:14px; color:var(--muted); margin-bottom:4px;">当前线路</div>
+                <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
+            </div>
+            
             <div style="display:flex; gap:12px;">
-                <button class="btn" style="flex:1; background:#FF9F43; color:white; border:none; border-radius:6px; padding:10px; font-weight:bold;" @click="newLine()"><i class="fas fa-plus"></i> 新建</button>
-                <button class="btn" style="flex:1; background:#FF6B6B; color:white; border:none; border-radius:6px; padding:10px; font-weight:bold;" @click="delLine()"><i class="fas fa-trash"></i> 删除</button>
+                <button class="btn" style="flex:1; background:#FF9F43; color:white; border:none; border-radius:6px; padding:12px; font-weight:bold; font-size:14px;" @click="openLineManagerWindow()">
+                    <i class="fas fa-folder-open"></i> 打开管理器
+                </button>
             </div>
         </div>
 
         <!-- Line Settings -->
         <div class="card" style="border-left: 6px solid #FF4757; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#FF4757; font-weight:bold; margin-bottom:12px; font-size:15px;">线路设置</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <div style="color:#FF4757; font-weight:bold; font-size:15px;">线路设置</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:12px; color:var(--muted);">运营模式</span>
+                    <div style="display:flex; gap:6px;">
+                        <span v-if="pidsState.appData.meta.serviceMode==='express'" style="padding:4px 8px; border-radius:4px; border:1px solid #ffa502; color:#ffa502; font-weight:bold; background:rgba(255,165,2,0.12);">大站车</span>
+                        <span v-else-if="pidsState.appData.meta.serviceMode==='direct'" style="padding:4px 8px; border-radius:4px; border:1px solid #ff4757; color:#ff4757; font-weight:bold; background:rgba(255,71,87,0.12);">直达</span>
+                        <span v-else style="padding:4px 8px; border-radius:4px; border:1px solid var(--divider); color:var(--text); font-weight:bold; background:var(--card);">普通</span>
+                    </div>
+                </div>
+            </div>
             
             <input v-model="pidsState.appData.meta.lineName" placeholder="线路名称" @input="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:12px; background:var(--card); color:var(--text);">
             
             <div style="display:flex; gap:12px; margin-bottom:12px;">
-                <input type="color" v-model="pidsState.appData.meta.themeColor" style="height:42px; width:60px; padding:0; border:none; border-radius:6px; cursor:pointer;" title="主题色" @input="saveCfg()">
+                <div style="position:relative; width:60px; height:42px;">
+                    <input 
+                        v-if="!hasElectronAPI"
+                        type="color" 
+                        v-model="pidsState.appData.meta.themeColor" 
+                        style="position:absolute; top:0; left:0; width:100%; height:100%; padding:0; margin:0; border:none; border-radius:6px; cursor:pointer; opacity:0; z-index:2;" 
+                        title="主题色" 
+                        @input="saveCfg()"
+                    >
+                    <div 
+                        :style="{position:'absolute', top:0, left:0, width:'100%', height:'100%', borderRadius:'6px', border:'2px solid var(--divider)', backgroundColor:pidsState.appData.meta.themeColor || '#00b894', pointerEvents:hasElectronAPI ? 'auto' : 'none', zIndex:1, cursor:'pointer'}"
+                        title="主题色"
+                        @click="pickColor"
+                    ></div>
+                </div>
                 <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--card); color:var(--text);">
                     <option value="loop">环线 (Loop)</option>
                     <option value="linear">单线 (Linear)</option>
@@ -442,6 +946,45 @@ export default {
                     <option value="down">下行 ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</option>
                 </template>
             </select>
+
+            <div style="margin-bottom:16px;">
+                <div style="font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">运营模式</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn" :style="{
+                        padding:'10px 14px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.serviceMode==='normal' ? 'var(--btn-blue-bg)' : 'var(--card)',
+                        color: pidsState.appData.meta.serviceMode==='normal' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.serviceMode==='normal' ? '0 4px 12px rgba(22,119,255,0.25)' : 'none',
+                        fontWeight:'bold',
+                        minWidth:'92px'
+                    }" @click="changeServiceMode('normal')">普通</button>
+                    <button class="btn" :style="{
+                        padding:'10px 14px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.serviceMode==='express' ? '#ffa502' : 'var(--card)',
+                        color: pidsState.appData.meta.serviceMode==='express' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.serviceMode==='express' ? '0 4px 12px rgba(255,165,2,0.25)' : 'none',
+                        fontWeight:'bold',
+                        minWidth:'92px'
+                    }" @click="changeServiceMode('express')">大站车</button>
+                    <button class="btn" :style="{
+                        padding:'10px 14px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.serviceMode==='direct' ? '#ff4757' : 'var(--card)',
+                        color: pidsState.appData.meta.serviceMode==='direct' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.serviceMode==='direct' ? '0 4px 12px rgba(255,71,87,0.25)' : 'none',
+                        fontWeight:'bold',
+                        minWidth:'92px'
+                    }" @click="changeServiceMode('direct')">直达</button>
+                </div>
+                <div style="font-size:12px; color:var(--muted); margin-top:8px; line-height:1.5;">
+                    普通：全停；大站车：首末及换乘站停；直达：仅首末站。
+                </div>
+            </div>
 
             <!-- Short Turn Settings -->
             <div style="font-size:13px; color:var(--muted); margin-bottom:12px; font-weight:bold;">短交路设置</div>
@@ -462,9 +1005,41 @@ export default {
                 </select>
             </div>
             
-            <div style="display:flex; justify-content:flex-end; gap:10px;">
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px;">
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">清除</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#FF4757; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">应用</button>
+            </div>
+
+            <!-- 短交路预设管理 -->
+            <div style="font-size:13px; color:var(--muted); margin-bottom:12px; font-weight:bold;">预设管理</div>
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+                <button @click="saveShortTurnPreset()" class="btn" style="flex:1; background:#5F27CD; color:white; border:none; padding:8px; border-radius:6px; font-size:13px;">
+                    <i class="fas fa-save"></i> 保存预设
+                </button>
+                <button @click="loadShortTurnPresets()" class="btn" style="flex:1; background:#00D2D3; color:white; border:none; padding:8px; border-radius:6px; font-size:13px;">
+                    <i class="fas fa-sync-alt"></i> 刷新
+                </button>
+            </div>
+            <div v-if="shortTurnPresets.length > 0" style="max-height:200px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:12px;">
+                <div v-for="preset in shortTurnPresets" :key="preset.name" style="display:flex; align-items:center; justify-content:space-between; padding:8px; margin-bottom:4px; background:var(--card); border-radius:4px;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:2px;">{{ preset.name }}</div>
+                        <div style="font-size:11px; color:var(--muted);">
+                            {{ preset.startStationName || ('站点' + (preset.startIdx + 1)) }} → {{ preset.termStationName || ('站点' + (preset.termIdx + 1)) }}
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button @click="loadShortTurnPreset(preset.name)" class="btn" style="background:#2ED573; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px;" title="加载">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button @click="deleteShortTurnPreset(preset.name)" class="btn" style="background:#FF6B6B; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px;" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div v-else style="padding:12px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--divider); border-radius:6px; margin-bottom:12px;">
+                暂无预设，点击"保存预设"保存当前短交路设置
             </div>
         </div>
 
@@ -578,10 +1153,50 @@ export default {
                 <div style="font-size:14px; color:var(--text);">当前版本</div>
                 <div style="font-weight:bold; color:var(--muted);">{{ version }}</div>
             </div>
-            <div style="display:flex; gap:12px; align-items:center;">
+            <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
                 <button class="btn" style="flex:0 0 auto; background:#2d98da; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="checkForUpdateClicked()">检查更新</button>
+                <button class="btn" style="flex:0 0 auto; background:#95a5a6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="openReleaseNotes()">
+                    <i class="fas fa-list-alt"></i> 查看日志
+                </button>
                 <div v-if="updateState.checking" style="font-size:12px; color:var(--muted);">检查中...</div>
-                <div v-if="updateState.downloading" style="font-size:12px; color:var(--muted);">下载中 {{ updateState.progress }}%</div>
+                <div v-else-if="updateState.error" style="font-size:12px; color:#e74c3c;">错误：{{ updateState.error }}</div>
+                <div v-else-if="updateState.isLatest" style="font-size:12px; color:#2ed573;">✓ 当前已是最新版本</div>
+                <div v-else-if="updateState.available && !updateState.downloading && !updateState.downloaded" style="font-size:12px; color:#4b7bec;">发现新版本 {{ (updateState.info && updateState.info.version) ? updateState.info.version : '' }}</div>
+                <div v-else-if="updateState.downloaded" style="font-size:12px; color:#2ed573;">更新包已下载</div>
+                <div v-else-if="updateState.downloading" style="font-size:12px; color:var(--muted);">
+                    下载中 {{ updateState.progress }}%
+                    <span v-if="updateState.error && (updateState.error.includes('checksum') || updateState.error.includes('sha512'))" style="color:#ffa502; margin-left:8px;">
+                        <i class="fas fa-sync-alt" style="animation:spin 1s linear infinite;"></i> 自动重试中...
+                    </span>
+                </div>
+            </div>
+            <div v-if="updateState.available && !updateState.downloaded" style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+                <button class="btn" style="background:#3867d6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="downloadUpdateNow()" :disabled="updateState.downloading">
+                    <i class="fas fa-download"></i> 下载更新
+                </button>
+                <button v-if="updateState.error && (updateState.error.includes('checksum') || updateState.error.includes('sha512'))" class="btn" style="background:#ffa502; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="clearCacheAndRedownload()" :disabled="updateState.downloading">
+                    <i class="fas fa-redo"></i> 清除缓存并重新下载
+                </button>
+                <button class="btn" style="background:#2ecc71; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="openGitHubReleases()" title="如果自动下载失败，可以从GitHub手动下载">
+                    <i class="fab fa-github"></i> 从GitHub手动下载
+                </button>
+                <button class="btn" style="background:#95a5a6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="skipThisVersion()" :disabled="updateState.downloading">
+                    <i class="fas fa-times"></i> 跳过此版本
+                </button>
+            </div>
+            <div v-if="updateState.downloaded" style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                <button class="btn" style="background:#20bf6b; color:white; padding:8px 12px; border-radius:6px; border:none; font-weight:bold;" @click="installDownloadedUpdate()">
+                    <i class="fas fa-check-circle"></i> 立即安装并重启
+                </button>
+            </div>
+            <div v-if="updateState.downloading" style="margin-top:10px;">
+                <div style="width:100%; height:12px; background:rgba(0,0,0,0.08); border-radius:6px; overflow:hidden; margin-bottom:6px;">
+                    <div :style="{ width: updateState.progress + '%', height:'100%', background:'linear-gradient(90deg, #4b7bec 0%, #2d98da 100%)', transition:'width .3s ease', boxShadow:'0 0 10px rgba(75,123,236,0.3)' }"></div>
+                </div>
+                <div style="text-align:center; font-size:12px; color:var(--muted);">
+                    下载进度: {{ updateState.progress }}% 
+                    <span v-if="updateState.info && updateState.info.version">(版本 {{ updateState.info.version }})</span>
+                </div>
             </div>
         </div>
 
@@ -589,6 +1204,44 @@ export default {
 
       <!-- Panel 5 removed: third-party display integration hidden -->
 
+    </div>
+
+    <!-- Color Picker Dialog -->
+    <ColorPicker 
+      v-model="showColorPicker" 
+      :initial-color="colorPickerInitialColor"
+      @confirm="onColorConfirm"
+    />
+
+
+    <!-- Release Notes Dialog -->
+    <div v-if="showReleaseNotes" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px);" @click.self="closeReleaseNotes">
+        <div style="background:var(--card); border-radius:12px; padding:24px; max-width:800px; max-height:80vh; width:90%; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0; font-size:20px; font-weight:bold; color:var(--text);">更新日志</h2>
+                <button @click="closeReleaseNotes" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:24px; padding:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:6px; transition:background 0.2s;" @mouseover="$event.target.style.background='var(--bg)'" @mouseout="$event.target.style.background='none'">&times;</button>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding-right:8px;">
+                <div v-if="loadingNotes" style="text-align:center; padding:40px; color:var(--muted);">加载中...</div>
+                <div v-else-if="releaseNotes.length === 0" style="text-align:center; padding:40px; color:var(--muted);">暂无更新日志</div>
+                <div v-else style="display:flex; flex-direction:column; gap:24px;">
+                    <div v-for="(release, index) in releaseNotes" :key="index" style="border-bottom:1px solid var(--divider); padding-bottom:20px;" :style="index === releaseNotes.length - 1 ? 'border-bottom:none;' : ''">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                            <div>
+                                <h3 style="margin:0; font-size:18px; font-weight:bold; color:var(--text);">{{ release.name || release.tag_name }}</h3>
+                                <div style="font-size:12px; color:var(--muted); margin-top:4px;">{{ new Date(release.published_at).toLocaleDateString('zh-CN') }}</div>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span v-if="release.prerelease" style="background:#ffa502; color:white; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">预发布</span>
+                                <span v-if="release.draft" style="background:#95a5a6; color:white; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">草稿</span>
+                                <a :href="release.html_url" target="_blank" style="color:var(--btn-blue-bg); text-decoration:none; font-size:12px;">查看详情 →</a>
+                            </div>
+                        </div>
+                        <div style="color:var(--text); line-height:1.6; white-space:pre-wrap; font-size:14px;" v-html="formatReleaseBody(release.body, release)"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
   `
 }

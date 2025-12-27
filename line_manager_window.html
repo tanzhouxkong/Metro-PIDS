@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>线路管理器</title>
+  <script>
+    (function(){
+      var cdn = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = cdn;
+      document.head.appendChild(link);
+    })();
+  </script>
+  <style>
+    /* ================= 全局定义 ================= */
+    :root { 
+      --theme: #00b894; 
+      --font: "Microsoft YaHei", sans-serif; 
+      --gold: #ffaa00; 
+      --dark: #2d3436;
+      /* 浅色主题变量 */
+      --bg: #f0f2f5;
+      --card: #ffffff;
+      --card-border: #f0f0f0;
+      --text: #2d3436;
+      --muted: #9aa0a6;
+      --rail-bg: rgba(255,255,255,0.65);
+      --rail-border: rgba(0,0,0,0.04);
+      --panel-bg: #ffffff;
+      --accent: #00b894;
+      --btn-blue-bg: #1677ff;
+      --btn-green-bg: var(--accent);
+      --btn-org-bg: #ff9f5a;
+      --btn-red-bg: #ff6b6b;
+      --btn-gray-bg: #d9dde0;
+      --btn-gray-text: var(--text);
+      --btn-text: #ffffff;
+      --win-close-bg: linear-gradient(90deg,#ff6b6b,#ff4d4d);
+      --win-close-color: #fff;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: var(--font);
+      color: var(--text);
+    }
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      outline: none;
+    }
+    #app {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    /* 窗口控制按钮样式 */
+    .win-btn {
+      transition: background 0.2s, color 0.2s;
+    }
+    .win-btn:hover {
+      background: rgba(0,0,0,0.1);
+    }
+    .win-btn:active {
+      background: rgba(0,0,0,0.2);
+    }
+    .win-btn.close:hover {
+      background: #e81123;
+      color: #fff;
+    }
+    .win-btn.close:active {
+      background: #bf0f1d;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="./src/lineManagerWindow.js"></script>
+</body>
+</html>
+

@@ -1,22 +1,32 @@
 import { useUIState } from '../composables/useUIState.js'
 import { usePidsState } from '../composables/usePidsState.js'
+import { useSettings } from '../composables/useSettings.js'
 import { cloneDisplayState } from '../utils/displayStateSerializer.js'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 export default {
     name: 'LeftRail',
     setup() {
         const { uiState, togglePanel } = useUIState()
         const { state } = usePidsState()
+        const { settings } = useSettings()
+        const hasUpdate = ref(false)
+        const showReleaseNotes = ref(false)
+        const releaseNotes = ref([])
+        const loadingNotes = ref(false)
         const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot'
-        const W = 1900;
-        const H = 600;
+        const getDisplaySize = () => {
+            const w = settings && settings.display && settings.display.width ? Number(settings.display.width) : 1900;
+            const h = settings && settings.display && settings.display.height ? Number(settings.display.height) : 600;
+            return { w: Math.max(100, w), h: Math.max(100, h) };
+        };
         const hasNativeDisplay =
             typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openDisplay === 'function'
         let displayWindowUrl = 'display_window.html'
         try {
             displayWindowUrl = new URL('../../display_window.html', import.meta.url).href
         } catch (error) {
-            // Fallback to relative path when import.meta is unavailable
+            // import.meta 不可用时回退到相对路径
         }
         let browserDisplayWindow = null
         let lastSentDirType = null;
@@ -81,7 +91,7 @@ export default {
                 d: cloneDisplayState(state.appData),
                 r: cloneDisplayState(state.rt)
             }
-            // compute effective door for current arrival station only for 'pre' turnback
+            // 仅在折返类型为 pre 时，为当前到站计算有效车门
             try {
                 const app = payload.d;
                 const rt = payload.r || {};
@@ -104,11 +114,11 @@ export default {
                             st._effectiveDoor = invertDoor(st.door || 'left');
                         }
                     }
-                    // update lastSentDirType after building payload so next call can compare
+                    // 构建 payload 后再更新 lastSentDirType 以便下次比较
                     lastSentDirType = meta.dirType || lastSentDirType;
                 }
             } catch (e) {
-                // ignore any errors building effective door
+                // 构建有效车门失败可忽略
             }
             persistDisplaySnapshot(payload)
             try {
@@ -124,7 +134,8 @@ export default {
                 sendStateToDisplay(browserDisplayWindow)
                 return browserDisplayWindow
             }
-            const displayFeatures = 'width=1900,height=600,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no';
+            const { w, h } = getDisplaySize();
+            const displayFeatures = `width=${w},height=${h},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`;
             const win = window.open(displayWindowUrl, 'metro-pids-display', displayFeatures)
             if (win) {
                 win.addEventListener('beforeunload', () => {
@@ -132,11 +143,10 @@ export default {
                     browserDisplayWindow = null
                 }, { once: true })
                 sendStateToDisplay(win)
-                // Inform popup that it was opened by this controller (helps popup avoid
-                // attempting to call window.close() when not allowed)
+                // 告知弹窗由控制端打开（避免在不允许时调用 window.close）
                 try { win.postMessage({ t: 'METRO_PIDS_OPENED_BY', src: 'controller' }, '*'); } catch (e) {}
                 win.addEventListener('load', () => sendStateToDisplay(win), { once: true })
-                    // Listen for requests from the popup to close itself
+                    // 监听弹窗请求自闭
                     const popupCloseHandler = (ev) => {
                         try {
                             const data = ev && ev.data;
@@ -147,7 +157,7 @@ export default {
                         } catch (err) {}
                     };
                     window.addEventListener('message', popupCloseHandler);
-                    // Remember to remove handler when the window unloads
+                    // 弹窗卸载时移除监听
                     win.addEventListener('beforeunload', () => {
                         try { window.removeEventListener('message', popupCloseHandler); } catch(e) {}
                     }, { once: true })
@@ -158,7 +168,12 @@ export default {
 
         const handleDisplayAction = () => {
             if (hasNativeDisplay) {
-                try { window.electronAPI.openDisplay(W, H); } catch (e) { try { window.electronAPI.openDisplay(); } catch (e) {} }
+                try {
+                    const { w, h } = getDisplaySize();
+                    window.electronAPI.openDisplay(w, h);
+                } catch (e) {
+                    try { window.electronAPI.openDisplay(); } catch (e) {}
+                }
                 return
             }
 
@@ -179,7 +194,7 @@ export default {
                 if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
                     try {
                         const res = await window.electronAPI.openExternal(url);
-                        // if electron cannot open externally, fall back to window.open
+                        // 若 Electron 无法外链打开，则回退到 window.open
                         if (!res || (res.ok === false)) {
                             try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
                         }
@@ -192,13 +207,106 @@ export default {
             try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
         }
 
+        // 加载更新日志
+        const loadReleaseNotes = async () => {
+            if (loadingNotes.value || releaseNotes.value.length > 0) return;
+            loadingNotes.value = true;
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getGitHubReleases) {
+                    const result = await window.electronAPI.getGitHubReleases();
+                    if (result && result.ok && result.releases) {
+                        releaseNotes.value = result.releases;
+                    }
+                }
+            } catch (e) {
+                console.error('加载更新日志失败:', e);
+            } finally {
+                loadingNotes.value = false;
+            }
+        }
+
+        // 打开更新日志弹窗
+        const openReleaseNotes = async () => {
+            await loadReleaseNotes();
+            showReleaseNotes.value = true;
+        }
+
+        // 关闭更新日志弹窗
+        const closeReleaseNotes = () => {
+            showReleaseNotes.value = false;
+        }
+
+        // 格式化更新日志内容（将Markdown转换为简单的HTML）
+        const formatReleaseBody = (body, release) => {
+            if (!body) return '';
+            const githubRepo = 'tanzhouxkong/Metro-PIDS-';
+            const githubBaseUrl = 'https://github.com';
+            const githubRawBaseUrl = 'https://raw.githubusercontent.com';
+            
+            let formatted = body;
+            
+            // 处理图片：![alt](url) 或 ![alt](url "title")
+            formatted = formatted.replace(/!\[([^\]]*)\]\(([^)]+)(?:\s+"[^"]*")?\)/g, (match, alt, url) => {
+                let imageUrl = url.trim();
+                
+                // 如果是相对路径，转换为GitHub releases assets URL
+                if (!imageUrl.match(/^https?:\/\//)) {
+                    // 相对路径，假设是release assets中的文件
+                    const tagName = release?.tag_name || '';
+                    if (tagName) {
+                        imageUrl = `${githubBaseUrl}/${githubRepo}/releases/download/${tagName}/${imageUrl}`;
+                    } else {
+                        // 如果没有tag，使用raw.githubusercontent.com（如果图片在repo根目录）
+                        imageUrl = `${githubRawBaseUrl}/${githubRepo}/main/${imageUrl}`;
+                    }
+                }
+                
+                // 返回img标签，支持响应式和样式
+                return `<img src="${imageUrl}" alt="${alt || ''}" style="max-width:100%; height:auto; border-radius:6px; margin:12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:block;" onerror="this.style.display='none';">`;
+            });
+            
+            // 简单的Markdown转换（在图片处理之后）
+            formatted = formatted
+                .replace(/\n## (.*)/g, '<h4 style="margin-top:16px; margin-bottom:8px; font-weight:bold; color:var(--text);">$1</h4>')
+                .replace(/\n### (.*)/g, '<h5 style="margin-top:12px; margin-bottom:6px; font-weight:bold; color:var(--text);">$1</h5>')
+                .replace(/\n- (.*)/g, '<div style="margin-left:16px; margin-top:4px;">• $1</div>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+            
+            return formatted;
+        }
+
+        // 监听更新事件
+        let updateListenerCleanup = null;
+        onMounted(() => {
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onUpdateHasUpdate) {
+                updateListenerCleanup = window.electronAPI.onUpdateHasUpdate((data) => {
+                    hasUpdate.value = true;
+                });
+            }
+        });
+
+        onUnmounted(() => {
+            if (updateListenerCleanup) {
+                updateListenerCleanup();
+            }
+        });
+
         return {
             uiState,
             togglePanel,
             btnStyle,
             displayBtnStyle,
             handleDisplayAction,
-            openGithub
+            openGithub,
+            hasUpdate,
+            showReleaseNotes,
+            releaseNotes,
+            loadingNotes,
+            openReleaseNotes,
+            closeReleaseNotes,
+            formatReleaseBody
         }
     },
     template: `
@@ -230,14 +338,24 @@ export default {
 
       <!-- Bottom Section -->
       <div style="width:100%; display:flex; flex-direction:column; align-items:center; gap:12px;">
-         <button 
-            class="ft-btn" 
-            :style="btnStyle('panel-4')"
-            @click="togglePanel('panel-4')" 
-            title="设置"
-        >
-            <i class="fas fa-cog" style="font-size:20px;"></i>
-        </button>
+         <div style="position:relative;">
+            <button 
+                class="ft-btn" 
+                :style="btnStyle('panel-4')"
+                @click="togglePanel('panel-4')" 
+                title="设置"
+            >
+                <i class="fas fa-cog" style="font-size:20px;"></i>
+            </button>
+            <div 
+                v-if="hasUpdate" 
+                @click.stop="openReleaseNotes()"
+                style="position:absolute; top:-6px; right:-6px; background:#ff4757; color:white; padding:2px 6px; border-radius:8px; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(255,71,87,0.4); z-index:10; white-space:nowrap;"
+                title="查看更新日志"
+            >
+                NEW
+            </div>
+        </div>
         <button
             type="button"
             class="ft-btn"

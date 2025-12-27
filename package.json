@@ -1,8 +1,12 @@
 {
   "name": "metro-pids",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Metro-PIDS ",
   "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tanzhouxkong/Metro-PIDS-.git"
+  },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -13,16 +17,27 @@
   },
   "build": {
     "appId": "com.Metro-PIDS.myapp",
-    "productName": "metro-pids",
+    "productName": "Metro-PIDS",
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "shortcutName": "Metro-PIDS",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh"
+    },
     "publish": [
-      {
-        "provider": "generic",
-        "url": "https://gitee.com/tanzhouxkong/Metro-PIDS-/raw/pages/releases/"
-      },
       {
         "provider": "github",
         "owner": "tanzhouxkong",
-        "repo": "Metro-PIDS-"
+        "repo": "Metro-PIDS-",
+        "releaseType": "release",
+        "vPrefixedTagName": true
       }
     ],
     "directories": {
@@ -30,24 +45,54 @@
     },
     "files": [
       "**/*",
-      "!dist"
+      "!dist",
+      "!node_modules/electron",
+      "!node_modules/electron-builder"
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "tanzhouxkong",
+          "repo": "Metro-PIDS-",
+          "vPrefixedTagName": true
+        }
+      ]
     },
     "mac": {
       "target": "dmg",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "tanzhouxkong",
+          "repo": "Metro-PIDS-",
+          "vPrefixedTagName": true
+        }
+      ]
     },
     "linux": {
       "target": "AppImage",
-      "icon": "build"
+      "icon": "build/icon.png",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "tanzhouxkong",
+          "repo": "Metro-PIDS-",
+          "vPrefixedTagName": true
+        }
+      ]
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.7.3",
+    "electron-log": "^5.4.3",
+    "electron-store": "^11.0.2"
   },
   "devDependencies": {
     "electron": "^25.0.0",
-    "electron-builder": "^24.13.3",
-    "electron-updater": "^5.4.3"
+    "electron-builder": "^24.13.3"
   }
 }

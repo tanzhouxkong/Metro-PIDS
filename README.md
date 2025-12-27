@@ -35,6 +35,9 @@ npm run build
 # 或者
 npm start
 ```
+```
+npx electron-builder --publish=always --win
+```
 
 > 如果在 Electron 环境中运行，请确保 `window.electronAPI` 提供文件读写、打开文件夹等能力。
 
