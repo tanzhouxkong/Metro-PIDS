@@ -36,6 +36,33 @@ npm run build
 npm start
 ```
 
+### 发布到 GitHub Releases
+
+项目配置为自动发布到 GitHub Releases。发布前请确保：
+
+1. **GitHub Token 已设置**（通过环境变量）：
+   - `GH_TOKEN` 或 `GITHUB_TOKEN` 环境变量已配置
+   - Token 需要 `repo` 权限
+
+2. **发布命令**：
+```powershell
+# 使用 npm 脚本
+npm run publish:gh
+
+# 或直接使用 electron-builder
+npx electron-builder --publish=always --win
+```
+
+**注意**：如果遇到 SSL 证书验证错误（`unable to verify the first certificate`），可能是企业网络环境的 SSL 拦截导致的。可以：
+
+1. **手动上传**（推荐）：构建完成后，手动将 `dist/Metro-PIDS-Setup-{version}.exe` 上传到 GitHub Releases
+
+2. **临时禁用 SSL 验证**（仅用于测试，不安全）：
+```powershell
+$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+npx electron-builder --publish=always --win
+```
+
 > 如果在 Electron 环境中运行，请确保 `window.electronAPI` 提供文件读写、打开文件夹等能力。
 
 ## 快速使用说明
@@ -87,11 +114,7 @@ https://github.com/tanzhouxkong/Metro-PIDS-
 npx http-server . -p 8080
 # 然后在浏览器打开 http://localhost:8080/index.html
 ```
-### 更新日志
 
-- 优化了内存占用。
-- 统一了直线与环线模式下，从到达站前往目标站的方向箭头动画。
-- 支持站点停靠方向（`双向` / `上行` / `下行`）。
 
 ## 显示端 SDK（兼容第三方显示端）
 

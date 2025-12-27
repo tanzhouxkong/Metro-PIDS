@@ -1,3 +1,87 @@
+// 判断站点是否因运营模式被跳过
+/**
+ * 解析颜色标记文本，将 <color>文字</> 转换为带颜色的HTML
+ * 支持颜色名称、十六进制、RGB格式
+ * @param {string} text - 包含颜色标记的文本
+ * @returns {string} - 转换后的HTML字符串
+ */
+function parseColorMarkup(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // 匹配 <color>文字</> 格式，支持颜色名称、十六进制、RGB
+  // 正则表达式：<([^>]+)>([^<]*)</>
+  const regex = /<([^>]+)>([^<]*)<\/>/g;
+  
+  let result = text;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    const colorValue = match[1].trim();
+    const content = match[2];
+    const fullMatch = match[0];
+    
+    // 验证颜色值是否有效
+    let isValidColor = false;
+    let cssColor = '';
+    
+    // 检查是否是有效的颜色名称（常见颜色）
+    const colorNames = {
+      'red': 'red', 'blue': 'blue', 'green': 'green', 'yellow': 'yellow',
+      'orange': 'orange', 'purple': 'purple', 'pink': 'pink', 'black': 'black',
+      'white': 'white', 'gray': 'gray', 'grey': 'grey', 'brown': 'brown',
+      'cyan': 'cyan', 'magenta': 'magenta', 'lime': 'lime', 'navy': 'navy',
+      'olive': 'olive', 'teal': 'teal', 'aqua': 'aqua', 'silver': 'silver',
+      'maroon': 'maroon', 'fuchsia': 'fuchsia'
+    };
+    
+    if (colorNames[colorValue.toLowerCase()]) {
+      isValidColor = true;
+      cssColor = colorNames[colorValue.toLowerCase()];
+    }
+    // 检查是否是十六进制颜色 (#fff, #ffffff, #FFF, #FFFFFF)
+    else if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(colorValue)) {
+      isValidColor = true;
+      cssColor = colorValue;
+    }
+    // 检查是否是RGB格式 (rgb(255,0,0) 或 rgba(255,0,0,1))
+    else if (/^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(,\s*[\d.]+\s*)?\)$/.test(colorValue)) {
+      isValidColor = true;
+      cssColor = colorValue;
+    }
+    
+    if (isValidColor) {
+      // 转义HTML特殊字符
+      const escapedContent = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+      
+      const coloredSpan = `<span style="color: ${cssColor};">${escapedContent}</span>`;
+      result = result.replace(fullMatch, coloredSpan);
+    }
+  }
+  
+  return result;
+}
+
+function isSkippedByService(st, idx, len, meta) {
+  if (!st) return true;
+  if (st.skip) return true;
+  const mode = (meta && meta.serviceMode) || 'normal';
+  const expressKeep = st.expressStop !== undefined ? !!st.expressStop : false; // 默认不保留停靠，需要明确设置
+  const isEnd = idx === 0 || idx === len - 1;
+  if (mode === 'direct') {
+    return !isEnd;
+  }
+  if (mode === 'express') {
+    if (isEnd) return false;
+    // 大站车模式下：只有明确设置 expressStop 为 true 的站点才停靠
+    return !expressKeep;
+  }
+  return false;
+}
 const SCALER_W = 1900;
 const SCALER_H = 600;
 const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot';
@@ -24,13 +108,23 @@ const displayStyleSheet = `
     --gold: #ffaa00;
     --dark: #2d3436;
     --contrast-color: #fff;
-    width: 100%;
-    height: 100%;
+    width: 100vw;
+    height: 100vh;
     font-family: var(--font);
     display: flex;
     justify-content: center;
     align-items: center;
-    background: transparent;
+    background: #090d12;
+    /* 确保在高DPI下正确显示 */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 #display-statusbar {
   position: absolute;
@@ -78,6 +172,9 @@ const displayStyleSheet = `
     overflow: hidden;
     box-shadow: none;
     transform-origin: center center;
+    /* 确保在高DPI下渲染清晰 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 #display-app .header {
   height: 100px;
@@ -133,6 +230,9 @@ const displayStyleSheet = `
     font-weight: 900;
     color: var(--contrast-color);
     line-height: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 100%;
 }
 #display-app .h-next {
     width: 35%;
@@ -358,9 +458,10 @@ const displayStyleSheet = `
     height: 100%;
     display: flex;
     align-items: center;
+    overflow: visible;
 }
 #display-app .l-node {
-    width: 90px;
+    width: 110px;
     height: 100%;
     flex-shrink: 0;
     position: relative;
@@ -368,6 +469,7 @@ const displayStyleSheet = `
     display: flex;
     justify-content: center;
     align-items: center;
+    overflow: visible;
 }
 #display-app .track-double {
     position: absolute;
@@ -404,17 +506,22 @@ const displayStyleSheet = `
   left: 50%;
   /* shift up from center by half dot + border + further reduced gap to bring closer to track */
   transform: translate(-50%, calc(-1 * (calc(var(--dot-inner-size) / 2) + var(--dot-border) + var(--dot-gap) - 10px)));
+  transform-origin: center bottom;
   margin-bottom: 0;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   align-items: center;
-  gap: 1px;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 110px;
+  max-width: 110px;
+  overflow: hidden;
   z-index: 5;
 }
 #display-app .l-node .info-top .x-tag {
-    font-size: 14px;
-    padding: 3px 8px;
-    border-radius: 4px;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 3px;
     color: #fff;
     font-weight: bold;
     white-space: nowrap;
@@ -430,7 +537,7 @@ const displayStyleSheet = `
     gap: 2px;
 }
 #display-app .l-node .info-top .x-tag.suspended .sub {
-    font-size: 10px;
+    font-size: 9px;
     background: #999;
     color: #fff;
     padding: 0 2px;
@@ -458,7 +565,6 @@ const displayStyleSheet = `
   color: #333;
   letter-spacing: 2px;
   margin: 0;
-  
   margin-bottom: -5px;
   line-height: 1;
   white-space: nowrap;
@@ -474,12 +580,14 @@ const displayStyleSheet = `
   transition: 0.3s;
 }
 #display-app .l-node .info-top .defer {
-    font-size: 12px;
+    font-size: 11px;
     background: #95a5a6;
     color: #fff;
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 2px 5px;
+    border-radius: 3px;
     font-weight: bold;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 #display-app .l-node.passed .dot { background: #fff; border-color: #ccc; }
 #display-app .l-node.passed .name { color: #999; }
@@ -582,6 +690,58 @@ const displayStyleSheet = `
 @keyframes pulse-door { 0% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.1); opacity: 0.8; }
     100% { transform: scale(1); opacity: 1; }
+}
+#display-app #watermark {
+    position: fixed;
+    bottom: 8px;
+    right: 8px;
+    z-index: 10000;
+    font-size: 11px;
+    color: rgba(0, 0, 0, 0.3);
+    font-family: "Microsoft YaHei", sans-serif;
+    pointer-events: none;
+    user-select: none;
+    background: rgba(255, 255, 255, 0.6);
+    padding: 4px 8px;
+    border-radius: 4px;
+    backdrop-filter: blur(2px);
+    line-height: 1.4;
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+}
+#display-app #watermark > div {
+    white-space: nowrap;
+}
+#display-app #display-warning {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10001;
+    background: rgba(255, 87, 34, 0.95);
+    color: #fff;
+    padding: 20px 40px;
+    border-radius: 8px;
+    font-family: "Microsoft YaHei", sans-serif;
+    font-size: 18px;
+    font-weight: bold;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    user-select: none;
+}
+#display-app #display-warning.show {
+    display: flex;
+}
+#display-app #display-warning .warning-icon {
+    font-size: 24px;
+}
+#display-app #display-warning .warning-text {
+    white-space: nowrap;
 }
 #display-app .as-door-text {
     text-align: center;
@@ -814,22 +974,25 @@ function getNextValidSt(currentIdx, step, appData) {
     }
     const candidate = stations[nextIdx];
     if (!candidate) continue;
-    // Respect dock restriction: if candidate has dock set to 'up' or 'down',
-    // it only allows docking when direction matches. If 'both' or missing, allow.
+    
+    // 遵守站台 dock 限制：仅方向匹配才允许上下客；缺省或 both 则放行
     const dirType = appData && appData.meta ? appData.meta.dirType : null;
     if (candidate.dock && candidate.dock !== 'both') {
       if (candidate.dock === 'up' && !(dirType === 'up' || dirType === 'outer')) {
-        // not allowed in this direction
         continue;
       }
       if (candidate.dock === 'down' && !(dirType === 'down' || dirType === 'inner')) {
         continue;
       }
     }
-    if (!candidate.skip) return nextIdx;
-    if (meta.mode !== 'loop') {
-      if (nextIdx === minIdx || nextIdx === maxIdx) return nextIdx;
+    
+    // 如果站点被跳过（暂缓或运营模式），跳过该站点
+    if (isSkippedByService(candidate, nextIdx, len, appData.meta)) {
+      continue;
     }
+    
+    // 站点未被跳过，可以停靠
+    return nextIdx;
   }
   return nextIdx;
 }
@@ -863,11 +1026,7 @@ function mkNode(st, i, mode, appData, rtState) {
   if (st.xfer) {
     st.xfer.forEach((x) => {
       if (x.suspended) {
-        if (shortTurnEnabled) {
-          xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
-        } else {
           xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${x.line}<span class="sub">暂缓</span></span>`;
-        }
       } else {
         xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
       }
@@ -876,33 +1035,384 @@ function mkNode(st, i, mode, appData, rtState) {
   let nameStyle = '';
   let deferTag = '';
   let dockTag = '';
-  if (st.skip) {
+  let expressStopTag = '';
+  let dotStyle = '';
+  const limitedDock = st.dock && st.dock !== 'both';
+  const isDirMatch =
+    (st.dock === 'up' && (dir === 'up' || dir === 'outer')) ||
+    (st.dock === 'down' && (dir === 'down' || dir === 'inner')) ||
+    (!st.dock || st.dock === 'both');
+  const skipByMode = isSkippedByService(st, i, (appData.stations || []).length, appData.meta);
+  const serviceMode = (appData.meta && appData.meta.serviceMode) ? appData.meta.serviceMode : 'normal';
+  // 站点本身被标记为暂缓（st.skip）时，无论什么模式都显示"暂缓"标签
+  // 因运营模式被跳过（skipByMode）时，只有普通模式才显示"暂缓"标签
+  const shouldShowDeferTag = !shortTurnEnabled && (st.skip || (skipByMode && serviceMode === 'normal'));
+  if (st.skip || skipByMode) {
     nameStyle = 'color:#999; opacity:0.7;';
-    if (!shortTurnEnabled) deferTag = '<div class="defer">暂缓</div>';
+    // 站点本身被标记为暂缓时，无论什么模式都显示暂缓标签
+    if (st.skip) {
+      deferTag = '<span class="defer">暂缓</span>';
+    } else if (shouldShowDeferTag) {
+      deferTag = '<span class="defer">暂缓</span>';
+    }
   }
-  if (st.dock && st.dock !== 'both') {
+  if (limitedDock) {
     const txt = st.dock === 'up' ? '仅上行' : (st.dock === 'down' ? '仅下行' : '');
-    if (txt) dockTag = `<div style="margin-top:4px;"><span class=\"x-tag\" style=\"background:#444; padding:4px 6px; font-size:12px; border-radius:3px;\">${txt}</span></div>`;
+    if (!isDirMatch) {
+      if (!nameStyle) nameStyle = 'color:#999; opacity:0.7;';
+      // 圆点保持与暂缓站一致的默认样式，仅文字压暗
+    }
+    if (txt) dockTag = `<span class="x-tag" style="background:${isDirMatch ? '#1e90ff' : '#444'}; padding:2px 5px; font-size:11px; border-radius:3px; color:#fff;">${txt}</span>`;
   }
+  // 大站停靠标签：常驻显示，只要站点设置了expressStop就显示
+  if (st.expressStop !== false) {
+    expressStopTag = `<span class="x-tag" style="background:#ffa502; padding:2px 5px; font-size:11px; border-radius:3px; color:#fff;">大站停靠</span>`;
+  }
+  
+  // 计算标签数量：换乘站、暂缓、进上下行停靠、大站停靠
   if (mode === 'loop') {
-    node.innerHTML = `<div class="dot"></div><div class="n-txt"><div style="${nameStyle}">${st.name}</div><div class="en">${st.en}</div>${deferTag}${dockTag}<div class="x-box">${xferHTML}</div></div>`;
+    const parsedName = parseColorMarkup(st.name);
+    const parsedEn = parseColorMarkup(st.en);
+    // 环线模式：换乘标签也需要根据数量和文字长度智能排列
+    let xferHTMLFormatted = '';
+    if (st.xfer && st.xfer.length > 0) {
+      const fontSize = 10;
+      const padding = '1px 4px';
+      const borderRadius = 3;
+      const maxLengthPerRow = 4; // 超过4个字单独一行
+      const xferTags = [];
+      st.xfer.forEach((x) => {
+        let tagHTML = '';
+        let textLength = x.line.length;
+        if (x.suspended) {
+          tagHTML = `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:inline-flex; align-items:center; gap:2px; margin:1px;">${x.line}<span class="sub" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
+          textLength += 2; // 加上"暂缓"2个字
+        } else {
+          tagHTML = `<span class="x-tag" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff;">${x.line}</span>`;
+        }
+        xferTags.push({ html: tagHTML, length: textLength });
+      });
+      
+      // 按照每行2个标签分组，但如果标签字数过多则单独一行
+      if (xferTags.length > 0) {
+        const rows = [];
+        let i = 0;
+        while (i < xferTags.length) {
+          const currentTag = xferTags[i];
+          
+          // 如果当前标签字数过多，单独一行
+          if (currentTag.length > maxLengthPerRow) {
+            rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:140px; overflow:hidden;">${currentTag.html}</div>`);
+            i++;
+          } else if (i + 1 < xferTags.length) {
+            // 检查下一个标签
+            const nextTag = xferTags[i + 1];
+            // 如果下一个标签字数过多，当前标签单独一行
+            if (nextTag.length > maxLengthPerRow) {
+              rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:140px; overflow:hidden;">${currentTag.html}</div>`);
+              i++;
+            } else {
+              // 两个标签都可以放在一行
+              rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:140px; overflow:hidden;">${currentTag.html}${nextTag.html}</div>`);
+              i += 2;
+            }
+          } else {
+            // 最后一个标签，单独一行
+            rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:140px; overflow:hidden;">${currentTag.html}</div>`);
+            i++;
+          }
+        }
+        xferHTMLFormatted = rows.join('');
+      }
+    }
+    // 默认顺序：名字在前，换乘标签在后（在drawRing中会根据上下半环调整）
+    node.innerHTML = `<div class="dot"${dotStyle}></div><div class="n-txt"><div style="${nameStyle}">${parsedName}</div><div class="en">${parsedEn}</div>${deferTag}${dockTag}${expressStopTag}<div class="x-box">${xferHTMLFormatted}</div></div>`;
   } else {
+    // 线性模式：标签按偶数左右排布（每行2个）
+    // 首先收集所有标签的文本信息，用于计算动态样式
+    const tagInfos = [];
+    
+    // 收集换乘标签信息
+    if (st.xfer && st.xfer.length > 0) {
+      st.xfer.forEach((x) => {
+        if (x.suspended) {
+          // 暂缓的换乘标签，只计算换乘线路名的长度，"暂缓"是子标签
+          tagInfos.push({ text: x.line, type: 'xfer-suspended', bgColor: '#ccc', textColor: '#666', hasSub: true });
+        } else {
+          tagInfos.push({ text: x.line, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });
+        }
+      });
+    }
+    
+    // 收集进上下行停靠标签信息
+    if (limitedDock) {
+      const txt = st.dock === 'up' ? '仅上行' : (st.dock === 'down' ? '仅下行' : '');
+      if (txt) {
+        tagInfos.push({ text: txt, type: 'dock', bgColor: isDirMatch ? '#1e90ff' : '#444', textColor: '#fff', hasSub: false });
+      }
+    }
+    
+    // 收集大站停靠标签信息
+    if (st.expressStop !== false) {
+      tagInfos.push({ text: '大站停靠', type: 'express', bgColor: '#ffa502', textColor: '#fff', hasSub: false });
+    }
+    
+    // 收集暂缓标签信息
+    if (deferTag) {
+      tagInfos.push({ text: '暂缓', type: 'defer', bgColor: '#95a5a6', textColor: '#fff', hasSub: false });
+    }
+    
+    // 固定样式设置
+    const fontSize = 12;
+    const padding = '2px 6px';
+    const borderRadius = 3;
+    const maxLengthPerRow = 4; // 超过4个字单独一行
+    
+    // 生成标签HTML和字数信息
+    const tags = [];
+    tagInfos.forEach(info => {
+      // 计算标签字数（暂缓标签如果有子标签，需要加上"暂缓"2个字）
+      let textLength = info.text.length;
+      if (info.type === 'xfer-suspended' && info.hasSub) {
+        textLength += 2; // 加上"暂缓"2个字
+      }
+      
+      let tagHTML = '';
+      if (info.type === 'xfer-suspended' && info.hasSub) {
+        // 暂缓的换乘标签
+        const subFontSize = Math.max(7, fontSize - 2);
+        tagHTML = `<span class="x-tag suspended" style="background:${info.bgColor}; color:${info.textColor}; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
+      } else if (info.type === 'defer') {
+        // 暂缓标签
+        tagHTML = `<span class="defer" style="font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; background:${info.bgColor}; color:${info.textColor}; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${info.text}</span>`;
+      } else {
+        // 其他标签
+        tagHTML = `<span class="x-tag" style="background:${info.bgColor}; color:${info.textColor}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${info.text}</span>`;
+      }
+      
+      tags.push({ html: tagHTML, length: textLength });
+    });
+    
+    // 按照每行2个标签分组，但如果标签字数过多则单独一行
+    let tagsContent = '';
+    if (tags.length > 0) {
+      const rows = [];
+      let i = 0;
+      while (i < tags.length) {
+        const currentTag = tags[i];
+        
+        // 如果当前标签字数过多，单独一行
+        if (currentTag.length > maxLengthPerRow) {
+          rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:110px; overflow:hidden;">${currentTag.html}</div>`);
+          i++;
+        } else if (i + 1 < tags.length) {
+          // 检查下一个标签
+          const nextTag = tags[i + 1];
+          // 如果下一个标签字数过多，当前标签单独一行
+          if (nextTag.length > maxLengthPerRow) {
+            rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:110px; overflow:hidden;">${currentTag.html}</div>`);
+            i++;
+          } else {
+            // 两个标签都可以放在一行
+            rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:110px; overflow:hidden;">${currentTag.html}${nextTag.html}</div>`);
+            i += 2;
+          }
+        } else {
+          // 最后一个标签，单独一行
+          rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:110px; overflow:hidden;">${currentTag.html}</div>`);
+          i++;
+        }
+      }
+      tagsContent = rows.join('');
+    }
+    
+    const parsedName = parseColorMarkup(st.name);
+    const parsedEn = parseColorMarkup(st.en);
     node.innerHTML = `
-      <div class="info-top">${dockTag}${deferTag}${xferHTML}</div>
-      <div class="dot"></div>
+      <div class="info-top">${tagsContent}</div>
+      <div class="dot"${dotStyle}></div>
       <div class="info-btm">
-        <div class="name" style="${nameStyle}">${st.name}</div>
-        <div class="en">${st.en}</div>
+        <div class="name" style="${nameStyle}">${parsedName}</div>
+        <div class="en">${parsedEn}</div>
       </div>
     `;
   }
   return node;
 }
 
+// 检测运行环境
+function detectEnvironment() {
+  try {
+    // 检测 Electron 环境 - 多种方式检测
+    if (typeof window !== 'undefined') {
+      // 方式1: 检查 window.process
+      if (window.process && window.process.type) {
+        return 'Electron';
+      }
+      // 方式2: 检查 window.electronAPI (如果有 preload 脚本暴露)
+      if (window.electronAPI) {
+        return 'Electron';
+      }
+      // 方式3: 检查 window.require (Electron 中可能可用)
+      if (typeof window.require === 'function') {
+        try {
+          const { app } = window.require('electron');
+          if (app) return 'Electron';
+        } catch (e) {
+          // require 存在但无法加载 electron，可能是 Node.js 环境但不是 Electron
+        }
+      }
+      // 方式4: 检测用户代理
+      if (typeof navigator !== 'undefined' && navigator.userAgent) {
+        const ua = navigator.userAgent.toLowerCase();
+        if (ua.includes('electron')) {
+          return 'Electron';
+        }
+      }
+    }
+    return 'Browser';
+  } catch (e) {
+    return 'Browser';
+  }
+}
+
+// 获取版本号
+function getAppVersion() {
+  try {
+    // 尝试从 window 对象获取版本号（如果 Electron 提供了的话）
+    if (typeof window !== 'undefined' && window.APP_VERSION) {
+      return window.APP_VERSION;
+    }
+    // 尝试从 package.json 或者 meta 标签获取
+    if (typeof document !== 'undefined') {
+      const metaVersion = document.querySelector('meta[name="app-version"]');
+      if (metaVersion) {
+        return metaVersion.content;
+      }
+    }
+    // 默认版本号（可以从 package.json 读取，但这里先写死，后续可以通过构建脚本注入）
+    return '1.3.9';
+  } catch (e) {
+    return '1.3.9';
+  }
+}
+
+// 创建警告提示
+function createWarningMessage(root) {
+  const warning = document.createElement('div');
+  warning.id = 'display-warning';
+  warning.innerHTML = `
+    <div class="warning-icon">⚠️</div>
+    <div class="warning-text">软件UI显示异常，请重启软件</div>
+  `;
+  
+  const container = root || document.body;
+  if (container) {
+    container.appendChild(warning);
+  }
+  
+  return warning;
+}
+
+// 创建水印
+function createWatermark(root) {
+  const watermark = document.createElement('div');
+  watermark.id = 'watermark';
+  
+  const env = detectEnvironment();
+  const version = getAppVersion();
+  
+  // 获取物理分辨率
+  // window.screen.width 返回的是逻辑像素（受缩放影响），需要乘以 devicePixelRatio 得到物理分辨率
+  const logicalWidth = window.screen.width || window.innerWidth;
+  const logicalHeight = window.screen.height || window.innerHeight;
+  const scaleFactor = window.devicePixelRatio || 1.0;
+  const physicalWidth = Math.round(logicalWidth * scaleFactor);
+  const physicalHeight = Math.round(logicalHeight * scaleFactor);
+  const resolution = `${physicalWidth} × ${physicalHeight}`;
+  
+  // 获取缩放比例
+  const scalePercent = Math.round(scaleFactor * 100);
+  
+  watermark.innerHTML = `
+    <div>环境: ${env === 'Electron' ? 'Electron' : '浏览器'}</div>
+    <div>版本: v${version}</div>
+    <div>分辨率: ${resolution}</div>
+    <div>缩放: ${scalePercent}%</div>
+  `;
+  
+  // 如果根元素存在，添加到根元素，否则添加到 body
+  const container = root || document.body;
+  if (container) {
+    container.appendChild(watermark);
+  }
+  
+  return watermark;
+}
+
 export function initDisplayWindow(rootElement) {
   const root = rootElement || document.getElementById('display-app');
   if (!root) return () => {};
   injectDisplayStyles();
+  
+  // 创建水印
+  createWatermark(root);
+  
+  // 创建警告提示
+  const warningElement = createWarningMessage(root);
+  
+  // 存储初始分辨率和缩放比例
+  let initialScreenWidth = window.screen.width;
+  let initialScreenHeight = window.screen.height;
+  let initialDevicePixelRatio = window.devicePixelRatio || 1.0;
+  
+  // 检查并显示警告的函数
+  const checkAndShowWarning = () => {
+    const currentScreenWidth = window.screen.width;
+    const currentScreenHeight = window.screen.height;
+    const currentDevicePixelRatio = window.devicePixelRatio || 1.0;
+    
+    // 检查分辨率是否变化
+    const resolutionChanged = (currentScreenWidth !== initialScreenWidth || currentScreenHeight !== initialScreenHeight);
+    
+    // 检查缩放比例是否变化
+    const scaleChanged = Math.abs(currentDevicePixelRatio - initialDevicePixelRatio) > 0.01;
+    
+    // 如果分辨率或缩放变化，显示警告
+    if (resolutionChanged || scaleChanged) {
+      if (warningElement) {
+        warningElement.classList.add('show');
+      }
+    } else {
+      if (warningElement) {
+        warningElement.classList.remove('show');
+      }
+    }
+  };
+  
+  // 初始检查
+  checkAndShowWarning();
+  
+  // 监听窗口大小变化（可能表示分辨率或缩放变化）
+  const resizeHandler = () => {
+    checkAndShowWarning();
+  };
+  
+  window.addEventListener('resize', resizeHandler);
+  
+  // 定期检查（因为某些缩放变化可能不会触发resize事件）
+  const checkInterval = setInterval(() => {
+    checkAndShowWarning();
+  }, 1000);
+  
+  // 清理函数：移除事件监听器和定时器
+  const cleanupWarning = () => {
+    window.removeEventListener('resize', resizeHandler);
+    if (checkInterval) {
+      clearInterval(checkInterval);
+    }
+  };
+  
   const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('metro_pids_v3') : null;
   let appData = null;
   let rt = { idx: 0, state: 0 };
@@ -916,8 +1426,61 @@ export function initDisplayWindow(rootElement) {
   const fitScreen = () => {
     const scaler = root.querySelector('#scaler');
     if (!scaler) return;
-    const scale = Math.min(window.innerWidth / SCALER_W, window.innerHeight / SCALER_H);
+    
+    // 使用多种方式获取窗口尺寸，确保准确性
+    // 优先使用视口单位计算，因为它最准确反映实际可用空间
+    const visualWidth = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+    const visualHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+    
+    // 计算缩放比例
+    // 由于窗口逻辑尺寸固定为1900×600，visualWidth和visualHeight应该也是1900×600
+    // 使用Math.max确保内容能够覆盖整个窗口，消除黑边
+    const scaleX = visualWidth / SCALER_W;
+    const scaleY = visualHeight / SCALER_H;
+    const scale = Math.max(scaleX, scaleY);
+    
+    // 应用缩放，使用transform-origin确保从中心缩放
     scaler.style.transform = `scale(${scale})`;
+    scaler.style.transformOrigin = 'center center';
+    
+    // 确保scaler容器居中并填满整个窗口（消除黑边）
+    const displayApp = root;
+    if (displayApp) {
+      displayApp.style.display = 'flex';
+      displayApp.style.justifyContent = 'center';
+      displayApp.style.alignItems = 'center';
+      displayApp.style.width = '100vw';
+      displayApp.style.height = '100vh';
+      displayApp.style.overflow = 'hidden';
+      displayApp.style.margin = '0';
+      displayApp.style.padding = '0';
+      displayApp.style.position = 'fixed';
+      displayApp.style.top = '0';
+      displayApp.style.left = '0';
+      displayApp.style.right = '0';
+      displayApp.style.bottom = '0';
+    }
+    
+    // 确保body和html也填满窗口
+    if (document.body) {
+      document.body.style.margin = '0';
+      document.body.style.padding = '0';
+      document.body.style.width = '100vw';
+      document.body.style.height = '100vh';
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = '0';
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.bottom = '0';
+    }
+    if (document.documentElement) {
+      document.documentElement.style.margin = '0';
+      document.documentElement.style.padding = '0';
+      document.documentElement.style.width = '100vw';
+      document.documentElement.style.height = '100vh';
+      document.documentElement.style.overflow = 'hidden';
+    }
   };
 
   const updateClock = () => {
@@ -946,7 +1509,7 @@ export function initDisplayWindow(rootElement) {
         bc.postMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey });
       }
     } catch (err) {
-      // ignore
+      // 忽略异常
     }
   };
 
@@ -1002,7 +1565,42 @@ export function initDisplayWindow(rootElement) {
 
   const renderNormalScreen = (sts, meta) => {
     const lineEl = locateId('d-line-no');
-    if (lineEl) lineEl.innerText = meta.lineName || '--';
+    if (lineEl) {
+      const lineName = meta.lineName || '--';
+      const parsedLineName = parseColorMarkup(lineName);
+      
+      // 移除颜色标记来计算纯文本长度（用于判断是否超过5个字）
+      const textOnly = lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1');
+      
+      // 创建滚动容器
+      lineEl.innerHTML = '';
+      const lineBox = document.createElement('div');
+      lineBox.className = 'marquee-box';
+      lineBox.style.fontSize = '36px';
+      lineBox.style.fontWeight = '900';
+      lineBox.style.color = 'var(--contrast-color)';
+      lineBox.style.lineHeight = '1';
+      lineBox.style.width = '100%';
+      lineBox.style.maxWidth = '100%';
+      
+      const lineContent = document.createElement('span');
+      lineContent.className = 'marquee-content';
+      lineContent.innerHTML = parsedLineName;
+      lineBox.appendChild(lineContent);
+      lineEl.appendChild(lineBox);
+      
+      // 检查是否需要滚动：超过5个字就开始滚动
+      setTimeout(() => {
+        if (textOnly.length > 5 || lineContent.offsetWidth > lineBox.offsetWidth) {
+          const w = lineContent.offsetWidth;
+          lineContent.innerHTML = `${parsedLineName}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedLineName}`;
+          lineContent.classList.add('scrolling');
+          let dur = (w + 50) / 50;
+          if (dur < 3) dur = 3;
+          lineContent.style.animationDuration = `${dur}s`;
+        }
+      }, 0);
+    }
     const termBox = locate('.h-term');
     const nextLbl = locate('.h-next .lbl');
     if (!termBox) return;
@@ -1020,7 +1618,9 @@ export function initDisplayWindow(rootElement) {
       nameBox.style.lineHeight = '1';
       const nameContent = document.createElement('span');
       nameContent.className = 'marquee-content';
-      nameContent.innerText = st.name;
+      const parsedName = parseColorMarkup(st.name);
+      const parsedEn = parseColorMarkup(st.en);
+      nameContent.innerHTML = parsedName;
       nameBox.appendChild(nameContent);
       const enBox = document.createElement('div');
       enBox.className = 'marquee-box';
@@ -1030,14 +1630,14 @@ export function initDisplayWindow(rootElement) {
       enBox.style.fontWeight = 'bold';
       const enContent = document.createElement('span');
       enContent.className = 'marquee-content';
-      enContent.innerText = st.en;
+      enContent.innerHTML = parsedEn;
       enBox.appendChild(enContent);
       wrapper.appendChild(nameBox);
       wrapper.appendChild(enBox);
       setTimeout(() => {
         if (nameContent.offsetWidth > nameBox.offsetWidth) {
           const w = nameContent.offsetWidth;
-          nameContent.innerHTML = `${st.name}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${st.name}`;
+          nameContent.innerHTML = `${parsedName}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedName}`;
           nameContent.classList.add('scrolling');
           let dur = (w + 50) / 50;
           if (dur < 3) dur = 3;
@@ -1045,7 +1645,7 @@ export function initDisplayWindow(rootElement) {
         }
         if (enContent.offsetWidth > enBox.offsetWidth) {
           const w = enContent.offsetWidth;
-          enContent.innerHTML = `${st.en}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${st.en}`;
+          enContent.innerHTML = `${parsedEn}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedEn}`;
           enContent.classList.add('scrolling');
           let dur = (w + 50) / 40;
           if (dur < 3) dur = 3;
@@ -1098,8 +1698,7 @@ export function initDisplayWindow(rootElement) {
           <i class="fas fa-chevron-right a3" style="animation-delay:0.5s;"></i>
         `;
       } else {
-        // For left-pointing arrows we want the animation to progress right->left,
-        // so reverse the delays: rightmost (a3) animates first.
+        // 左向箭头需动画从右到左，故将延时反转（a3 最先）
         arrowHTML = `
           <i class="fas fa-chevron-left a1" style="animation-delay:0.5s;"></i>
           <i class="fas fa-chevron-left a2" style="animation-delay:0.25s;"></i>
@@ -1163,7 +1762,9 @@ export function initDisplayWindow(rootElement) {
     nNameContent.style.fontSize = '36px';
     nNameContent.style.fontWeight = '900';
     nNameContent.style.lineHeight = '1.1';
-    nNameContent.innerText = targetSt.name;
+    const parsedTargetName = parseColorMarkup(targetSt.name);
+    const parsedTargetEn = parseColorMarkup(targetSt.en);
+    nNameContent.innerHTML = parsedTargetName;
     nNameBox.appendChild(nNameContent);
     const nEnBox = document.createElement('div');
     nEnBox.className = 'marquee-box';
@@ -1173,7 +1774,7 @@ export function initDisplayWindow(rootElement) {
     nEnBox.style.color = '#666';
     const nEnContent = document.createElement('span');
     nEnContent.className = 'marquee-content';
-    nEnContent.innerText = targetSt.en;
+    nEnContent.innerHTML = parsedTargetEn;
     nEnBox.appendChild(nEnContent);
     nWrapper.appendChild(nNameBox);
     nWrapper.appendChild(nEnBox);
@@ -1181,7 +1782,7 @@ export function initDisplayWindow(rootElement) {
     setTimeout(() => {
       if (nNameContent.offsetWidth > nNameBox.offsetWidth) {
         const w = nNameContent.offsetWidth;
-        nNameContent.innerHTML = `${targetSt.name}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${targetSt.name}`;
+        nNameContent.innerHTML = `${parsedTargetName}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedTargetName}`;
         nNameContent.classList.add('scrolling');
         let dur = (w + 50) / 50;
         if (dur < 3) dur = 3;
@@ -1189,7 +1790,7 @@ export function initDisplayWindow(rootElement) {
       }
       if (nEnContent.offsetWidth > nEnBox.offsetWidth) {
         const w = nEnContent.offsetWidth;
-        nEnContent.innerHTML = `${targetSt.en}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${targetSt.en}`;
+        nEnContent.innerHTML = `${parsedTargetEn}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedTargetEn}`;
         nEnContent.classList.add('scrolling');
         let dur = (w + 50) / 40;
         if (dur < 3) dur = 3;
@@ -1205,6 +1806,86 @@ export function initDisplayWindow(rootElement) {
   const renderArrivalScreen = (sts, meta) => {
     const st = sts[rt.idx];
     if (!st) return;
+    
+    // 更新顶栏中间的到达站显示
+    const nextLbl = locate('.h-next .lbl');
+    const nextStBox = locateId('d-next-st');
+    if (nextLbl && nextStBox) {
+      let isTerminal = false;
+      // 检查是否是终点站
+      if (meta.mode !== 'loop') {
+        let nextIdx;
+        if (meta.dirType === 'up' || meta.dirType === 'outer') {
+          nextIdx = getNextValidSt(rt.idx, 1, appData);
+        } else {
+          nextIdx = getNextValidSt(rt.idx, -1, appData);
+        }
+        if (nextIdx === rt.idx) {
+          isTerminal = true;
+        }
+      }
+      
+      if (isTerminal) {
+        nextLbl.innerHTML = '终点站:<br><span class="en">Terminal Station:</span>';
+      } else {
+        nextLbl.innerHTML = '到达站:<br><span class="en">Arriving Station:</span>';
+      }
+      
+      // 更新站点名称显示
+      nextStBox.innerHTML = '';
+      const nWrapper = document.createElement('div');
+      nWrapper.className = 'marquee-box';
+      nWrapper.style.width = '100%';
+      nWrapper.style.display = 'flex';
+      nWrapper.style.flexDirection = 'column';
+      nWrapper.style.alignItems = 'flex-end';
+      const nNameBox = document.createElement('div');
+      nNameBox.className = 'marquee-box';
+      nNameBox.style.fontSize = '36px';
+      nNameBox.style.fontWeight = '900';
+      nNameBox.style.color = '#000';
+      nNameBox.style.lineHeight = '1.1';
+      const nNameContent = document.createElement('span');
+      nNameContent.className = 'marquee-content';
+      const parsedName = parseColorMarkup(st.name);
+      nNameContent.innerHTML = parsedName;
+      nNameBox.appendChild(nNameContent);
+      const nEnBox = document.createElement('div');
+      nEnBox.className = 'marquee-box';
+      nEnBox.style.fontSize = '16px';
+      nEnBox.style.fontWeight = 'bold';
+      nEnBox.style.color = '#666';
+      nEnBox.style.opacity = '0.9';
+      const nEnContent = document.createElement('span');
+      nEnContent.className = 'marquee-content';
+      const parsedEn = parseColorMarkup(st.en);
+      nEnContent.innerHTML = parsedEn;
+      nEnBox.appendChild(nEnContent);
+      nWrapper.appendChild(nNameBox);
+      nWrapper.appendChild(nEnBox);
+      nextStBox.appendChild(nWrapper);
+      
+      // 处理文字过长时的滚动效果
+      setTimeout(() => {
+        if (nNameContent.offsetWidth > nNameBox.offsetWidth) {
+          const w = nNameContent.offsetWidth;
+          nNameContent.innerHTML = `${parsedName}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedName}`;
+          nNameContent.classList.add('scrolling');
+          let dur = (w + 50) / 50;
+          if (dur < 3) dur = 3;
+          nNameContent.style.animationDuration = `${dur}s`;
+        }
+        if (nEnContent.offsetWidth > nEnBox.offsetWidth) {
+          const w = nEnContent.offsetWidth;
+          nEnContent.innerHTML = `${parsedEn}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedEn}`;
+          nEnContent.classList.add('scrolling');
+          let dur = (w + 50) / 40;
+          if (dur < 3) dur = 3;
+          nEnContent.style.animationDuration = `${dur}s`;
+        }
+      }, 0);
+    }
+    
     const doorCn = locateId('as-door-msg-cn');
     const doorEn = locateId('as-door-msg-en');
     const doorIcon = root.querySelector('.as-door-img i');
@@ -1216,16 +1897,15 @@ export function initDisplayWindow(rootElement) {
     }
     if (lArrow) lArrow.classList.remove('active');
     if (rArrow) rArrow.classList.remove('active');
-    // determine effective door side, considering station-level "turnback" setting
+    // 根据车站 turnback 设置计算有效开门侧
     const invertDoor = (door) => {
       if (!door) return 'left';
       if (door === 'left') return 'right';
       if (door === 'right') return 'left';
-      return door; // 'both' or others
+      return door; // “双侧”或其他保持原样
     };
 
-    // prefer an explicit effective door stored in payload (e.g. _effectiveDoor),
-    // otherwise fall back to configured door and dynamic turnback calculation
+    // 优先使用 payload 中的显式有效车门(如 _effectiveDoor)，否则用配置并结合折返动态判断
     let effectiveDoor = (st._effectiveDoor) ? st._effectiveDoor : (st.door || 'left');
     if (!st._effectiveDoor) {
       try {
@@ -1236,7 +1916,7 @@ export function initDisplayWindow(rootElement) {
           effectiveDoor = invertDoor(effectiveDoor);
         }
       } catch (e) {
-        // ignore and use configured door
+        // 忽略异常，继续使用配置值
       }
     }
 
@@ -1256,7 +1936,7 @@ export function initDisplayWindow(rootElement) {
       if (doorEn) doorEn.innerText = 'Doors will be opened on this side';
       if (lArrow) lArrow.classList.add('active');
     }
-    // Docking note
+    // 上下行提示
     if (st.dock && st.dock !== 'both') {
       if (st.dock === 'up') {
         if (doorCn) doorCn.innerText += '\n(仅上行停靠)';
@@ -1278,13 +1958,15 @@ export function initDisplayWindow(rootElement) {
       mapPanel.style.overflowX = 'hidden';
       const len = st.name.length;
       let cnSize = 140;
-      if (len === 4) cnSize = 110;
-      else if (len >= 5 && len <= 7) cnSize = 90;
+      if (len === 4) cnSize = 130;
+      else if (len >= 5 && len <= 7) cnSize = 130;
       else if (len > 7) cnSize = 70;
       const enSize = Math.max(30, cnSize * 0.5);
+      const parsedName = parseColorMarkup(st.name);
+      const parsedEn = parseColorMarkup(st.en);
       mapPanel.innerHTML = `
-        <div style="font-size: ${cnSize}px; font-weight: 900; color: #000; line-height: 1.2; letter-spacing: 5px; text-align: center;">${st.name}</div>
-        <div style="font-size: ${enSize}px; font-weight: bold; color: #666; font-family: Arial, sans-serif; margin-top: 20px; text-align: center; max-width: 95%; word-wrap: break-word;">${st.en}</div>
+        <div style="font-size: ${cnSize}px; font-weight: 900; color: #000; line-height: 1.2; letter-spacing: 5px; text-align: center;">${parsedName}</div>
+        <div style="font-size: ${enSize}px; font-weight: bold; color: #666; font-family: Arial, sans-serif; margin-top: 20px; text-align: center; max-width: 95%; word-wrap: break-word;">${parsedEn}</div>
       `;
       return;
     }
@@ -1297,6 +1979,10 @@ export function initDisplayWindow(rootElement) {
     box.style.minWidth = '100%';
     const track = document.createElement('div');
     track.className = 'track-double';
+ 
+    
+    // 如果没有箭头（站点数 <= 1），不显示线路条
+    // 注意：这里先创建 track，在后面渲染箭头后再判断是否显示
     box.appendChild(track);
     /* lift the entire track + nodes group up slightly */
     box.style.transform = 'translateY(-22px)';
@@ -1319,7 +2005,70 @@ export function initDisplayWindow(rootElement) {
     };
     const displaySts = [];
     const curr = rt.idx;
-    const targetTotal = 7;
+    
+    // 根据系统缩放比例和分辨率计算最大显示站点数
+    // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%, 3.0 = 300%）
+    const scaleFactor = window.devicePixelRatio || 1.0;
+    
+    // 检测是否为4K或2K分辨率
+    // 注意：在Electron中，window.screen.width/height 返回的是逻辑像素，需要考虑缩放
+    // 使用 window.screen.width 和 window.screen.height 获取屏幕分辨率
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
+    
+    // 计算物理分辨率
+    // 在Electron中，window.screen.width返回的是逻辑像素（受缩放影响）
+    // 物理分辨率 = 逻辑像素 × devicePixelRatio
+    const physicalWidth = Math.round(screenWidth * scaleFactor);
+    const physicalHeight = Math.round(screenHeight * scaleFactor);
+    
+    // 4K分辨率判断：物理宽度3800-3900，高度2100-2200（覆盖3840×2160等4K分辨率）
+    const is4KResolution = physicalWidth >= 3800 && physicalWidth <= 3900 && 
+                           physicalHeight >= 2100 && physicalHeight <= 2200;
+    
+    // 2K分辨率判断：物理宽度2500-2600，高度1400-1500（覆盖2560×1440等2K分辨率）
+    const is2KResolution = physicalWidth >= 2500 && physicalWidth <= 2600 && 
+                           physicalHeight >= 1400 && physicalHeight <= 1500;
+    
+    let targetTotal = 7; // 默认7站（100%缩放）
+    
+    // 4K分辨率特殊处理
+    if (is4KResolution) {
+      if (scaleFactor >= 3.0) {
+        targetTotal = 5; // 4K 300%缩放：最多显示5站
+      } else if (scaleFactor >= 2.5) {
+        targetTotal = 5; // 4K 250%缩放：最多显示5站
+      } else if (scaleFactor >= 2.0) {
+        targetTotal = 6; // 4K 200%缩放：最多显示6站
+      } else if (scaleFactor >= 1.25) {
+        targetTotal = 7; // 4K 125%缩放：最多显示7站
+      } else {
+        targetTotal = 7; // 4K 100%缩放：最多显示7站
+      }
+    } else if (is2KResolution) {
+      // 2K分辨率特殊处理
+      if (scaleFactor >= 1.75) {
+        targetTotal = 6; // 2K 175%缩放：最多显示6站
+      } else if (scaleFactor >= 1.5) {
+        targetTotal = 6; // 2K 150%缩放：最多显示6站
+      } else if (scaleFactor >= 1.25) {
+        targetTotal = 7; // 2K 125%缩放：最多显示7站
+      } else {
+        targetTotal = 7; // 2K 100%缩放：最多显示7站
+      }
+    } else {
+      // 非4K/2K分辨率，使用原有逻辑
+      if (scaleFactor >= 1.75) {
+        targetTotal = 4; // 175%及以上缩放：最多显示4站
+      } else if (scaleFactor >= 1.5) {
+        targetTotal = 5; // 150%缩放：最多显示5站
+      } else if (scaleFactor >= 1.25) {
+        targetTotal = 6; // 125%缩放：最多显示6站
+      } else {
+        targetTotal = 7; // 100%缩放：默认7站
+      }
+    }
+    
     const metaStart = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx) : 0;
     const metaTerm = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx) : sts.length - 1;
     const minIdx = Math.min(metaStart, metaTerm);
@@ -1382,8 +2131,242 @@ export function initDisplayWindow(rootElement) {
     displaySts.push(...pastSts, sts[curr], ...futureSts);
     const isReversed = (meta.dirType === 'down' || meta.dirType === 'inner');
     if (isReversed) displaySts.reverse();
+    
+    // 计算总站点数量（在有效范围内）
+    const total = maxIdx - minIdx + 1;
+    const MAX_POSITIONS = 7;
+    const nodeWidth = 160; // 到达站页面站点宽度
+    let positionMap = null; // 站点索引到位置的映射
+    
+    // 如果开启缩放，检查实际站点数是否小于缩放限制的站点数
+    // 使用较小的值来决定是否使用特殊处理逻辑
+    const effectiveMaxPositions = Math.min(MAX_POSITIONS, targetTotal);
+    
+    // 如果站点数量少于或等于effectiveMaxPositions，创建位置映射，将末站放到指定位置
+    if (total <= effectiveMaxPositions) {
+      // 根据effectiveMaxPositions计算终点站位置（位置索引 = effectiveMaxPositions - 1）
+      const endPosition = effectiveMaxPositions - 1; // 终点站的位置索引
+      
+      // 创建位置映射：将站点均匀分布，起点站在位置0，终点站在指定位置
+      // 使用更精确的浮点数计算，确保站点均匀分布
+      positionMap = new Map();
+      for (let i = minIdx; i <= maxIdx; i++) {
+        const relativeIdx = i - minIdx; // 相对于minIdx的索引
+        if (relativeIdx === 0) {
+          // 第一个站点在位置 0
+          positionMap.set(i, 0);
+        } else if (i === maxIdx) {
+          // 最后一个站点（终点站）在指定位置
+          positionMap.set(i, endPosition);
+        } else {
+          // 其余站点均匀分布：使用精确计算，避免四舍五入导致的分布不均
+          // 使用浮点数计算，最后再四舍五入，确保分布更均匀
+          const position = (relativeIdx / (total - 1)) * endPosition;
+          positionMap.set(i, Math.round(position));
+        }
+      }
+    }
+    
     track.style.border = 'none';
     track.style.height = '18px';
+    
+    // 如果站点数量少于或等于effectiveMaxPositions，使用绝对定位
+    if (total <= effectiveMaxPositions && positionMap) {
+      box.style.position = 'relative';
+      box.style.width = '100%';
+      box.style.height = '100%';
+      
+      // 计算track的实际宽度：需要包含终点站的中心位置
+      const endPositionIndex = effectiveMaxPositions - 1; // 终点站位置索引（最大位置索引）
+      const trackWidth = endPositionIndex * nodeWidth + nodeWidth / 2;
+      track.style.width = trackWidth + 'px';
+      
+      // 计算站点中心位置的辅助函数
+      const getStationCenter = (stationIdx, posIndex) => {
+        // 如果是第一个站点（minIdx），左对齐，中心在 nodeWidth/2
+        if (stationIdx === minIdx) {
+          return nodeWidth / 2;
+        }
+        // 如果是最后一个站点（maxIdx），左对齐，中心在 posIndex * 160 + nodeWidth/2
+        if (stationIdx === maxIdx) {
+          return posIndex * nodeWidth + nodeWidth / 2;
+        }
+        // 中间站点，中心对齐，中心在 posIndex * 160
+        return posIndex * nodeWidth;
+      };
+      
+      // 计算实际显示的站点数量，确保站点均匀分布
+      const displayStsCount = displaySts.length;
+      
+      // 计算可用宽度：从起点站中心到终点站中心
+      const startCenter = nodeWidth / 2; // 起点站中心位置
+      const endCenter = trackWidth - nodeWidth / 2; // 终点站中心位置
+      const availableWidth = endCenter - startCenter; // 可用宽度
+      
+      // 计算每个站点之间的间距（如果只有一个站点，间距为0）
+      const spacing = displayStsCount > 1 ? availableWidth / (displayStsCount - 1) : 0;
+      
+      displaySts.forEach((stNode, displayIdx) => {
+        const realIdx = sts.indexOf(stNode);
+        const node = mkNode(stNode, realIdx, 'linear', appData, rt);
+        node.dataset.realIdx = String(realIdx);
+        
+        // 设置绝对定位
+        node.style.position = 'absolute';
+        
+        // 根据显示索引均匀分布站点
+        if (displayIdx === 0) {
+          // 第一个显示的站点（起点站）：左对齐，位置 0
+          node.style.left = '0px';
+          node.style.transform = 'none';
+        } else if (displayIdx === displayStsCount - 1) {
+          // 最后一个显示的站点（终点站）：使用位置映射确保在正确位置
+          const position = positionMap.get(realIdx);
+          if (position !== undefined) {
+            node.style.left = (position * nodeWidth) + 'px';
+            node.style.transform = 'none'; // 使用左对齐
+          }
+        } else {
+          // 中间站点：均匀分布
+          const centerX = startCenter + (displayIdx * spacing);
+          node.style.left = centerX + 'px';
+          node.style.transform = 'translateX(-50%)'; // 中心对齐
+        }
+        
+        if (realIdx === rt.idx) {
+          const dot = node.querySelector('.dot');
+          if (dot) {
+            dot.style.background = '#f1c40f';
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = '0 0 10px #f1c40f';
+            dot.style.animation = 'pulse-yellow 2s infinite';
+          }
+          const name = node.querySelector('.name');
+          if (name) name.style.color = '#000';
+        }
+        box.appendChild(node);
+      });
+      
+      // 计算渐变位置
+      const travelTerminalIdx = (meta.dirType === 'up' || meta.dirType === 'outer') ? maxIdx : minIdx;
+      
+      // 找到当前站点和终点站在 displaySts 中的索引
+      const currDisplayIdx = displaySts.findIndex(st => sts.indexOf(st) === rt.idx);
+      const termDisplayIdx = displaySts.findIndex(st => sts.indexOf(st) === travelTerminalIdx);
+      
+      let currCenter, termCenter;
+      
+      if (currDisplayIdx >= 0) {
+        if (currDisplayIdx === 0) {
+          currCenter = nodeWidth / 2; // 起点站
+        } else if (currDisplayIdx === displayStsCount - 1) {
+          const currPos = positionMap.get(rt.idx);
+          if (currPos !== undefined) {
+            currCenter = currPos * nodeWidth + nodeWidth / 2; // 终点站
+          } else {
+            currCenter = trackWidth - nodeWidth / 2;
+          }
+        } else {
+          currCenter = startCenter + (currDisplayIdx * spacing); // 中间站点
+        }
+      } else {
+        currCenter = trackWidth / 2; // 默认居中
+      }
+      
+      if (termDisplayIdx >= 0) {
+        if (termDisplayIdx === 0) {
+          termCenter = nodeWidth / 2; // 起点站
+        } else if (termDisplayIdx === displayStsCount - 1) {
+          const termPos = positionMap.get(travelTerminalIdx);
+          if (termPos !== undefined) {
+            termCenter = termPos * nodeWidth + nodeWidth / 2; // 终点站
+          } else {
+            termCenter = trackWidth - nodeWidth / 2;
+          }
+        } else {
+          termCenter = startCenter + (termDisplayIdx * spacing); // 中间站点
+        }
+      } else {
+        termCenter = trackWidth / 2; // 默认居中
+      }
+      
+      const currPct = (currCenter / trackWidth) * 100;
+      const termPct = (termCenter / trackWidth) * 100;
+      const leftPct = Math.min(currPct, termPct);
+      const rightPct = Math.max(currPct, termPct);
+      track.style.background = `linear-gradient(to right, #ccc 0%, #ccc ${leftPct}%, var(--theme) ${leftPct}%, var(--theme) ${rightPct}%, #ccc ${rightPct}%, #ccc 100%)`;
+      
+      // 计算箭头位置
+      const getArrowPosition = (i) => {
+        // i 是 displaySts 中的索引
+        if (i < 0 || i >= displayStsCount - 1) return 0;
+        
+        // 计算当前站点和下一个站点的中心位置
+        let currentCenter, nextCenter;
+        
+        if (i === 0) {
+          // 第一个站点（起点站）：左对齐，中心在 nodeWidth/2
+          currentCenter = nodeWidth / 2;
+        } else if (i === displayStsCount - 1) {
+          // 最后一个站点（终点站）：使用位置映射
+          const currentStIdx = sts.indexOf(displaySts[i]);
+          const position = positionMap.get(currentStIdx);
+          if (position !== undefined) {
+            currentCenter = position * nodeWidth + nodeWidth / 2;
+          } else {
+            currentCenter = trackWidth - nodeWidth / 2;
+          }
+        } else {
+          // 中间站点：使用均匀分布的间距
+          currentCenter = startCenter + (i * spacing);
+        }
+        
+        if (i + 1 === displayStsCount - 1) {
+          // 下一个站点是最后一个站点（终点站）：使用位置映射
+          const nextStIdx = sts.indexOf(displaySts[i + 1]);
+          const nextPos = positionMap.get(nextStIdx);
+          if (nextPos !== undefined) {
+            nextCenter = nextPos * nodeWidth + nodeWidth / 2;
+          } else {
+            nextCenter = trackWidth - nodeWidth / 2;
+          }
+        } else {
+          // 下一个站点是中间站点：使用均匀分布的间距
+          nextCenter = startCenter + ((i + 1) * spacing);
+        }
+        
+        // 箭头在两个中心之间
+        return (currentCenter + nextCenter) / 2;
+      };
+      
+      // 如果没有箭头（站点数 <= 1），不显示线路条
+      if (displaySts.length <= 1) {
+        track.style.display = 'none';
+      } else {
+        for (let i = 0; i < displaySts.length - 1; i++) {
+          const arrowCenter = getArrowPosition(i);
+          for (let k = -1; k <= 1; k++) {
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'absolute';
+            wrapper.style.left = (arrowCenter + k * 20) + 'px';
+            wrapper.style.top = '50%';
+            wrapper.style.zIndex = '10';
+            let baseTransform = 'translate(-50%, -50%)';
+            if (isReversed) baseTransform += ' rotate(180deg)';
+            wrapper.style.transform = baseTransform;
+            const arrow = document.createElement('div');
+            arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+            const arrowI = arrow.firstElementChild;
+            if (arrowI) arrowI.classList.add('track-arrow');
+            arrow.style.fontSize = '24px';
+            wrapper.appendChild(arrow);
+            box.appendChild(wrapper);
+          }
+        }
+      }
+      mapPanel.appendChild(box);
+    } else {
+      // 原有逻辑：站点数量 > 7 时使用 flexbox
     displaySts.forEach((stNode) => {
       const realIdx = sts.indexOf(stNode);
       const node = mkNode(stNode, realIdx, 'linear', appData, rt);
@@ -1429,6 +2412,10 @@ export function initDisplayWindow(rootElement) {
         }
       }
     }
+      // 如果没有箭头（站点数 <= 1），不显示线路条
+      if (displaySts.length <= 1) {
+        track.style.display = 'none';
+      } else {
     for (let i = 0; i < displaySts.length - 1; i++) {
       const arrowCenter = (i + 1) * 160;
       for (let k = -1; k <= 1; k++) {
@@ -1449,6 +2436,10 @@ export function initDisplayWindow(rootElement) {
         box.appendChild(wrapper);
       }
     }
+      }
+    }
+    
+    mapPanel.appendChild(box);
   };
 
   const drawLinear = (c, sts, m) => {
@@ -1466,9 +2457,95 @@ export function initDisplayWindow(rootElement) {
     track.style.border = 'none';
     track.style.height = '18px';
     const total = sts.length;
-    const pStart = (rangeStart + 0.5) / total * 100;
-    const pEnd = (rangeEnd + 0.5) / total * 100;
-    const pCurr = (rt.idx + 0.5) / total * 100;
+    
+    // 根据系统缩放比例和分辨率计算最大位置数
+    // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%）
+    const scaleFactor = window.devicePixelRatio || 1.0;
+    
+    // 检测是否为4K或2K分辨率
+    // 注意：window.screen.width 返回的是逻辑像素，需要考虑缩放
+    // 在Electron中，window.screen.width返回的是逻辑像素（受缩放影响）
+    // 物理分辨率 = 逻辑像素 × devicePixelRatio
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
+    const physicalWidth = Math.round(screenWidth * scaleFactor);
+    const physicalHeight = Math.round(screenHeight * scaleFactor);
+    
+    // 4K分辨率判断：物理宽度3800-3900，高度2100-2200（覆盖3840×2160等4K分辨率）
+    const is4KResolution = physicalWidth >= 3800 && physicalWidth <= 3900 && 
+                           physicalHeight >= 2100 && physicalHeight <= 2200;
+    
+    // 2K分辨率判断：物理宽度2500-2600，高度1400-1500（覆盖2560×1440等2K分辨率）
+    const is2KResolution = physicalWidth >= 2500 && physicalWidth <= 2600 && 
+                           physicalHeight >= 1400 && physicalHeight <= 1500;
+    
+    let targetMaxPositions = 17; // 默认17个位置（100%缩放）
+    
+    // 4K分辨率特殊处理
+    if (is4KResolution) {
+      if (scaleFactor >= 3.0) {
+        targetMaxPositions = 11; // 4K 300%缩放：11个位置
+      } else if (scaleFactor >= 2.5) {
+        targetMaxPositions = 11; // 4K 250%缩放：11个位置
+      } else if (scaleFactor >= 1.0) {
+        targetMaxPositions = 17; // 4K 100%-249%缩放：17个位置
+      } else {
+        targetMaxPositions = 17; // 4K 100%以下缩放：17个位置（默认）
+      }
+    } else if (is2KResolution) {
+      // 2K分辨率特殊处理
+      if (scaleFactor >= 1.25 && scaleFactor < 1.5) {
+        targetMaxPositions = 17; // 2K 125%缩放：17个位置
+      } else if (scaleFactor < 1.25) {
+        targetMaxPositions = 17; // 2K 100%缩放：17个位置
+      } else if (scaleFactor >= 1.5) {
+        // 2K 150%及以上缩放
+        if (scaleFactor >= 1.75) {
+          targetMaxPositions = 13; // 2K 175%缩放：13个位置
+        } else {
+          targetMaxPositions = 13; // 2K 150%缩放：13个位置
+        }
+      }
+    } else {
+      // 非4K/2K分辨率，使用原有逻辑
+      if (scaleFactor >= 1.75) {
+        targetMaxPositions = 10; // 175%及以上缩放：10个位置
+      } else if (scaleFactor >= 1.5) {
+        targetMaxPositions = 11; // 150%缩放：11个位置
+      } else if (scaleFactor >= 1.25) {
+        targetMaxPositions = 13; // 125%缩放：13个位置
+      } else {
+        targetMaxPositions = 17; // 100%缩放：17个位置
+      }
+    }
+    
+    const MAX_POSITIONS = targetMaxPositions;
+    let spacing = 110;
+    
+    // 计算渐变位置：如果站点数量少于或等于MAX_POSITIONS，使用flexbox布局；否则使用原始计算
+    let pStart, pEnd, pCurr;
+    
+    // 这些值会在下面的条件分支中计算
+    // 如果使用flexbox布局（total <= MAX_POSITIONS），会在布局代码中重新计算
+    if (total <= MAX_POSITIONS) {
+      // 使用flexbox布局，在布局代码中会重新计算
+      // 这里先设置默认值，稍后会被覆盖
+      const availableWidth = 1900 - 40; // 减去左右padding
+      const trackWidth = availableWidth;
+      const startCenter = (rangeStart / (total - 1)) * trackWidth;
+      const endCenter = (rangeEnd / (total - 1)) * trackWidth;
+      const currCenter = (rt.idx / (total - 1)) * trackWidth;
+      pStart = (startCenter / trackWidth) * 100;
+      pEnd = (endCenter / trackWidth) * 100;
+      pCurr = (currCenter / trackWidth) * 100;
+      track.style.width = trackWidth + 'px';
+    } else {
+      // 原有逻辑：基于站点数量计算百分比
+      pStart = (rangeStart + 0.5) / total * 100;
+      pEnd = (rangeEnd + 0.5) / total * 100;
+      pCurr = (rt.idx + 0.5) / total * 100;
+    }
+    
     let grad = `linear-gradient(to right, #ccc 0%, #ccc 100%)`;
     if (m.dirType === 'up' || m.dirType === 'outer') {
       const tStart = Math.max(pCurr, pStart);
@@ -1484,46 +2561,185 @@ export function initDisplayWindow(rootElement) {
       }
     }
     track.style.background = grad;
+    
+    // 如果没有箭头（范围内站点数 <= 1），不显示线路条
+    const hasArrows = rangeEnd > rangeStart;
+    if (!hasArrows) {
+      track.style.display = 'none';
+    }
+    
     box.appendChild(track);
-    const spacing = 90;
+    
     let targetIdx = rt.idx;
     if (rt.state === 1) {
       targetIdx = (m.dirType === 'up' || m.dirType === 'outer') ? getNextValidSt(rt.idx, 1, appData) : getNextValidSt(rt.idx, -1, appData);
     }
-    sts.forEach((st, i) => {
-      const node = mkNode(st, i, 'linear', appData, rt);
-      const dot = node.querySelector('.dot');
-      const name = node.querySelector('.name');
-      const en = node.querySelector('.en');
-      if (i < rangeStart || i > rangeEnd) {
-        node.style.opacity = '0.3';
-        if (dot) {
-          dot.style.background = '#fff';
-          dot.style.borderColor = '#ccc';
+    
+    // 如果站点数量少于或等于MAX_POSITIONS，使用flexbox均匀分布
+    if (total <= MAX_POSITIONS) {
+      box.style.position = 'relative'; // 确保箭头绝对定位的基准
+      box.style.display = 'flex';
+      box.style.justifyContent = 'space-between';
+      box.style.alignItems = 'center';
+      box.style.width = '100%';
+      box.style.height = '100%';
+      sts.forEach((st, i) => {
+        const node = mkNode(st, i, 'linear', appData, rt);
+        const dot = node.querySelector('.dot');
+        const name = node.querySelector('.name');
+        const en = node.querySelector('.en');
+        
+        // 使用flex布局，不需要绝对定位
+        node.style.position = 'relative';
+        node.style.flexShrink = '0';
+        
+        if (i < rangeStart || i > rangeEnd) {
+          node.style.opacity = '0.3';
+          if (dot) {
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+          }
+          if (name) name.style.color = '#ccc';
+          if (en) en.style.color = '#eee';
+          node.classList.remove('passed', 'curr');
+        } else {
+          if (st.skip && dot) {
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+            dot.style.width = '30px';
+            dot.style.height = '30px';
+          } else if (i === targetIdx && dot) {
+            dot.style.background = '#f1c40f';
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = '0 0 10px #f1c40f';
+            dot.style.animation = 'pulse-yellow 2s infinite';
+            if (name) name.style.color = '#000';
+          }
         }
-        if (name) name.style.color = '#ccc';
-        if (en) en.style.color = '#eee';
-        node.classList.remove('passed', 'curr');
+        box.appendChild(node);
+      });
+      
+      // 重新计算track宽度和渐变位置，基于flexbox布局
+      // 使用justify-content: space-between时，站点均匀分布在整个宽度上
+      // box宽度是100%，实际渲染宽度是1900px（scaler宽度）
+      // track宽度应该与box宽度一致，使用100%或固定值1900px
+      const nodeWidth = 110;
+      const boxWidth = 1900; // box的实际宽度（scaler宽度）
+      const trackWidth = boxWidth; // track宽度与box宽度一致
+      track.style.width = trackWidth + 'px';
+      
+      // 计算站点的实际中心位置（考虑节点宽度）
+      // 使用space-between时，第一个节点的左边缘在0，最后一个节点的右边缘在boxWidth
+      // 第一个站点的中心在 nodeWidth/2，最后一个站点的中心在 boxWidth - nodeWidth/2
+      const firstNodeCenter = nodeWidth / 2; // 55px
+      const lastNodeCenter = boxWidth - nodeWidth / 2; // 1900 - 55 = 1845px
+      
+      // 辅助函数：计算站点的实际中心位置（供箭头和渐变使用）
+      const getStationCenter = (idx) => {
+        if (idx === 0) return firstNodeCenter;
+        if (idx === total - 1) return lastNodeCenter;
+        const ratio = idx / (total - 1);
+        return firstNodeCenter + (lastNodeCenter - firstNodeCenter) * ratio;
+      };
+      
+      // 重新计算渐变位置（基于站点的实际中心位置）
+      const startCenter = getStationCenter(rangeStart);
+      const endCenter = getStationCenter(rangeEnd);
+      const currCenter = getStationCenter(rt.idx);
+      
+      pStart = (startCenter / trackWidth) * 100;
+      pEnd = (endCenter / trackWidth) * 100;
+      pCurr = (currCenter / trackWidth) * 100;
+      
+      // 重新应用渐变（基于新的位置值）
+      let newGrad = `linear-gradient(to right, #ccc 0%, #ccc 100%)`;
+      if (m.dirType === 'up' || m.dirType === 'outer') {
+        const tStart = Math.max(pCurr, pStart);
+        const tEnd = pEnd;
+        if (tStart < tEnd) {
+          newGrad = `linear-gradient(to right, #ccc 0%, #ccc ${tStart}%, var(--theme) ${tStart}%, var(--theme) ${tEnd}%, #ccc ${tEnd}%, #ccc 100%)`;
+        }
       } else {
-        if (st.skip && dot) {
-          dot.style.background = '#fff';
-          dot.style.borderColor = '#ccc';
-          dot.style.width = '30px';
-          dot.style.height = '30px';
-        } else if (i === targetIdx && dot) {
-          dot.style.background = '#f1c40f';
-          dot.style.borderColor = '#fff';
-          dot.style.boxShadow = '0 0 10px #f1c40f';
-          dot.style.animation = 'pulse-yellow 2s infinite';
-          if (name) name.style.color = '#000';
+        const tStart = pStart;
+        const tEnd = Math.min(pCurr, pEnd);
+        if (tStart < tEnd) {
+          newGrad = `linear-gradient(to right, #ccc 0%, #ccc ${tStart}%, var(--theme) ${tStart}%, var(--theme) ${tEnd}%, #ccc ${tEnd}%, #ccc 100%)`;
         }
       }
-      box.appendChild(node);
-    });
+      track.style.background = newGrad;
+    } else {
+      // 原有逻辑：站点数量 >= 17 时使用 flexbox
+      sts.forEach((st, i) => {
+        const node = mkNode(st, i, 'linear', appData, rt);
+        const dot = node.querySelector('.dot');
+        const name = node.querySelector('.name');
+        const en = node.querySelector('.en');
+        if (i < rangeStart || i > rangeEnd) {
+          node.style.opacity = '0.3';
+          if (dot) {
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+          }
+          if (name) name.style.color = '#ccc';
+          if (en) en.style.color = '#eee';
+          node.classList.remove('passed', 'curr');
+        } else {
+          if (st.skip && dot) {
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+            dot.style.width = '30px';
+            dot.style.height = '30px';
+          } else if (i === targetIdx && dot) {
+            dot.style.background = '#f1c40f';
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = '0 0 10px #f1c40f';
+            dot.style.animation = 'pulse-yellow 2s infinite';
+            if (name) name.style.color = '#000';
+          }
+        }
+        box.appendChild(node);
+      });
+    }
     c.appendChild(box);
+    
+    // 计算箭头位置
+    const getArrowPosition = (i) => {
+      if (total <= MAX_POSITIONS) {
+        // 使用flexbox布局时，箭头位置在两个站点中间
+        // 使用space-between时，第一个节点的左边缘在0，最后一个节点的右边缘在boxWidth
+        // 每个节点宽度110px，所以第一个节点中心在55px，最后一个节点中心在(boxWidth-55)px
+        const nodeWidth = 110;
+        const boxWidth = 1900; // box的实际宽度（scaler宽度），与track宽度一致
+        const firstNodeCenter = nodeWidth / 2; // 55px
+        const lastNodeCenter = boxWidth - nodeWidth / 2; // 1900 - 55 = 1845px
+        
+        // 计算第i个和第i+1个站点的中心位置（线性插值）
+        const ratio1 = i / (total - 1);
+        const ratio2 = (i + 1) / (total - 1);
+        const center1 = firstNodeCenter + (lastNodeCenter - firstNodeCenter) * ratio1;
+        const center2 = firstNodeCenter + (lastNodeCenter - firstNodeCenter) * ratio2;
+        
+        // 箭头位置在两个站点中心的中间
+        return (center1 + center2) / 2;
+      } else {
+        return (i + 1) * spacing;
+      }
+    };
+    
+    // 计算当前站点位置（用于滚动）
+    const getCurrentPosition = (idx) => {
+      if (total <= MAX_POSITIONS) {
+        // 使用flexbox布局时，站点位置基于比例计算
+        const availableWidth = 1900 - 40; // 减去左右padding
+        return (idx / (total - 1)) * availableWidth;
+      } else {
+        return idx * spacing;
+      }
+    };
+    
     for (let i = 0; i < sts.length - 1; i++) {
       if (i < rangeStart || i >= rangeEnd) continue;
-      const arrowCenter = (i + 1) * spacing;
+      const arrowCenter = getArrowPosition(i);
       for (let k = -1; k <= 1; k++) {
         const wrapper = document.createElement('div');
         wrapper.style.position = 'absolute';
@@ -1534,9 +2750,15 @@ export function initDisplayWindow(rootElement) {
         if (m.dirType === 'down' || m.dirType === 'inner') rot = 'rotate(180deg)';
         wrapper.style.transform = `translate(-50%, -50%) ${rot}`;
         const arrow = document.createElement('div');
-        let cls = k === -1 ? 'a1' : (k === 0 ? 'a2' : 'a3');
+        let cls, delay;
         if (m.dirType === 'down' || m.dirType === 'inner') {
+          // 下行/内环：反转箭头顺序，让动画从右到左流动
           cls = k === -1 ? 'a3' : (k === 0 ? 'a2' : 'a1');
+          delay = k === -1 ? '0.5s' : (k === 0 ? '0.25s' : '0s');
+        } else {
+          // 上行/外环：正常顺序，动画从左到右流动
+          cls = k === -1 ? 'a1' : (k === 0 ? 'a2' : 'a3');
+          delay = k === -1 ? '0s' : (k === 0 ? '0.25s' : '0.5s');
         }
         const isCurrSeg = (() => {
           if (rt.state === 1) {
@@ -1547,7 +2769,11 @@ export function initDisplayWindow(rootElement) {
           }
           return false;
         })();
-        arrow.innerHTML = `<i class="fas fa-chevron-right ${isCurrSeg ? cls : ''}"></i>`;
+        if (isCurrSeg) {
+          arrow.innerHTML = `<i class="fas fa-chevron-right ${cls}" style="animation-delay:${delay};"></i>`;
+        } else {
+          arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+        }
         const ai = arrow.firstElementChild;
         if (ai) {
           ai.classList.add('segment-arrow');
@@ -1559,8 +2785,9 @@ export function initDisplayWindow(rootElement) {
       }
     }
     setTimeout(() => {
+      const currentPos = getCurrentPosition(rt.idx);
       c.scrollTo({
-        left: rt.idx * spacing - 2080 / 2 + 45,
+        left: currentPos - 2080 / 2 + 45,
         behavior: 'smooth'
       });
     }, 50);
@@ -1656,12 +2883,25 @@ export function initDisplayWindow(rootElement) {
       node.style.left = `${pt.x}px`;
       node.style.top = `${pt.y}px`;
       const label = node.querySelector('.n-txt');
-      if (pt.y < cy) {
-        label.style.bottom = '45px';
-        label.style.top = 'auto';
-      } else {
-        label.style.top = '45px';
+      const isUpperHalf = pt.y < cy;
+      if (isUpperHalf) {
+        label.style.top = '0';
         label.style.bottom = 'auto';
+        label.style.transform = 'translate(-50%, calc(-100% - 10px))';
+        // 上半环：换乘标签在站点名字上方
+        const xBox = label.querySelector('.x-box');
+        // 找到第一个div子元素（名字div）
+        const children = Array.from(label.children);
+        const nameDiv = children.find(child => child.tagName === 'DIV' && child !== xBox && !child.classList.contains('en'));
+        if (xBox && nameDiv) {
+          // 将换乘标签移到名字之前
+          label.insertBefore(xBox, nameDiv);
+        }
+      } else {
+        label.style.top = '28px';
+        label.style.bottom = 'auto';
+        label.style.transform = 'translateX(-50%)';
+        // 下半环：换乘标签在站点名字下方（保持原顺序，不需要调整）
       }
       const dot = node.querySelector('.dot');
       if (st.skip && dot) {
@@ -1682,7 +2922,7 @@ export function initDisplayWindow(rootElement) {
         dot.style.boxShadow = 'none';
         if (label) label.style.color = '#999';
       }
-      //环线代码
+      // 环线绘制
       wrapper.appendChild(node);
       const nextI = (i + 1) % sts.length;
       let d1 = dist;
@@ -1698,10 +2938,10 @@ export function initDisplayWindow(rootElement) {
         let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
         if (m.dirType === 'inner') angle += 180;
         const arrow = document.createElement('div');
-        // If this segment is the current moving segment, give the three arrows staggered animation classes/delays
+        // 若当前段为运行段，为三枚箭头添加错峰动画
         if (isCurrentSeg) {
           let cls, delay;
-          // For inner loops we want the stagger reversed so animation flows the other way
+          // 内环需反转错峰方向，让动画朝反向流动
           if (m.dirType === 'inner' || m.dirType === 'down') {
             cls = ridx === 0 ? 'a3' : (ridx === 1 ? 'a2' : 'a1');
             delay = ridx === 0 ? '0.5s' : (ridx === 1 ? '0.25s' : '0s');
@@ -1859,7 +3099,7 @@ export function initDisplayWindow(rootElement) {
   document.addEventListener('keydown', handleKeyDown);
   renderDisp();
 
-  // Debug helper: call from browser console to render a ring with sample stations
+  // 调试辅助：在浏览器控制台调用可绘制示例环线
   if (typeof window !== 'undefined') {
     window.debugRenderRing = function(count = 18, idx = 2, dir = 'outer') {
       try {
@@ -1868,7 +3108,7 @@ export function initDisplayWindow(rootElement) {
         const m = { dirType: dir, themeColor: getComputedStyle(root).getPropertyValue('--theme') || '#00b894', mode: 'loop' };
         const sts = [];
         for (let i = 0; i < count; i++) sts.push({ name: `站 ${i+1}`, en: `St ${i+1}` });
-        // ensure drawRing is available in this scope
+        // 确保 drawRing 在此作用域可用
         if (typeof drawRing === 'function') drawRing(c, sts, m);
         else console.warn('drawRing() not available');
       } catch (err) { console.warn('debugRenderRing failed', err); }
@@ -1876,6 +3116,9 @@ export function initDisplayWindow(rootElement) {
   }
 
   return () => {
+    // 清理警告相关的事件监听器和定时器
+    cleanupWarning();
+    
     window.removeEventListener('resize', fitScreen);
     document.removeEventListener('keydown', handleKeyDown);
     if (bc) bc.removeEventListener('message', handleBroadcastMessage);
@@ -1888,3 +3131,4 @@ export function initDisplayWindow(rootElement) {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 }
+
