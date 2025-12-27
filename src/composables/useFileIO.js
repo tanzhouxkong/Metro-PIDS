@@ -205,6 +205,9 @@ export function useFileIO(state) {
             state.store.cur = Math.max(0, state.store.list.length - 1);
             state.appData = state.store.list[state.store.cur];
             state.rt = { idx: 0, state: 0 };
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
             // 若可用则触发同步，否则依赖响应式更新
             if (typeof window.sync === 'function') window.sync();

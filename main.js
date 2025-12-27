@@ -3,7 +3,10 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
 <<<<<<< HEAD
+<<<<<<< HEAD
 const crypto = require('crypto');
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 
@@ -30,6 +33,7 @@ try {
   
   autoUpdater = updater.autoUpdater;
 <<<<<<< HEAD
+<<<<<<< HEAD
   
   if (!autoUpdater) {
     console.error('[main] updater.autoUpdater 为 undefined');
@@ -42,10 +46,13 @@ try {
   
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   // 配置日志
   if (logger && autoUpdater) {
     autoUpdater.logger = logger;
   }
+<<<<<<< HEAD
 <<<<<<< HEAD
   
   if (autoUpdater) {
@@ -56,6 +63,8 @@ try {
   
   // 注意：在开发模式下（未打包），electron-updater 默认不会检查更新
   // 这是正常行为，更新功能需要在打包后的应用中测试
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 } catch (e) {
@@ -92,6 +101,7 @@ function createWindow() {
   mainWin.loadURL(controlPath);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
   // 监听来自线路管理器的线路切换请求
   ipcMain.on('switch-line-request', (event, lineName) => {
     if (mainWin && !mainWin.isDestroyed()) {
@@ -126,6 +136,12 @@ function createWindow() {
   // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
   // 仅在创建时生效
 
+=======
+  // 将主窗体设为无边框，以完全替换系统控件
+  // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
+  // 仅在创建时生效
+
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
   // 将主窗体设为无边框，以完全替换系统控件
   // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
@@ -268,6 +284,7 @@ async function ensureDir(dir) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 // 查找 JSON 文件的辅助函数（recursive 参数控制是否递归查找子文件夹）
 async function findJsonFiles(dir, baseDir = null, recursive = false) {
@@ -331,6 +348,8 @@ ipcMain.handle('lines/list', async (event, dir) => {
     // 不递归查找子文件夹，只查找当前文件夹下的 JSON 文件
     const files = await findJsonFiles(base, base, false);
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 // 递归查找 JSON 文件的辅助函数
 async function findJsonFiles(dir, baseDir = null) {
   if (!baseDir) baseDir = dir;
@@ -371,6 +390,9 @@ ipcMain.handle('lines/list', async (event, dir) => {
   await ensureDir(base);
   try {
     const files = await findJsonFiles(base);
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     return files;
   } catch (err) {
@@ -400,6 +422,9 @@ ipcMain.handle('lines/read', async (event, filename, dir) => {
   }
 =======
   const base = getLinesDir(dir);
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   // 如果 filename 包含路径分隔符，说明是子文件夹中的文件
   let fp;
@@ -460,7 +485,11 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir) => {
 });
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 // 删除线路文件（支持子文件夹路径）
+=======
+// 删除线路文件
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 // 删除线路文件
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
@@ -498,6 +527,7 @@ ipcMain.handle('lines/openFolder', async (event, dir) => {
   }
 });
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 // 打开指定的文件夹路径（用于右键菜单）
 ipcMain.handle('lines/folders/open', async (event, folderPath) => {
@@ -919,6 +949,8 @@ ipcMain.handle('utils/calculate-md5', async (event, data) => {
   }
 });
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 // 在默认浏览器打开外部链接
@@ -1347,6 +1379,7 @@ async function initAutoUpdater() {
     autoUpdater.autoDownload = false;
     
 <<<<<<< HEAD
+<<<<<<< HEAD
     // 设置请求头，确保正确的 User-Agent
     autoUpdater.requestHeaders = {
       'User-Agent': `Metro-PIDS-App/${app.getVersion()} (${process.platform})`
@@ -1374,6 +1407,8 @@ async function initAutoUpdater() {
       } else {
         console.error('检查更新失败:', errorDetails);
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     // 错误处理
     autoUpdater.on('error', (err) => {
       const errorMsg = String(err);
@@ -1381,6 +1416,9 @@ async function initAutoUpdater() {
         logger.error(['检查更新失败', errorMsg]);
       } else {
         console.error('检查更新失败:', errorMsg);
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
       }
       try { 
@@ -1390,6 +1428,7 @@ async function initAutoUpdater() {
     
     // 有可用更新
     autoUpdater.on('update-available', (info) => {
+<<<<<<< HEAD
 <<<<<<< HEAD
       const currentVersion = app.getVersion();
       if (logger) {
@@ -1416,6 +1455,8 @@ async function initAutoUpdater() {
         console.error('[main] 发送 update-available 事件失败:', e);
       }
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
       if (logger) {
         logger.info('检查到有更新');
         logger.info(info);
@@ -1423,11 +1464,15 @@ async function initAutoUpdater() {
       try { 
         mainWin && mainWin.webContents.send('update/available', info); 
       } catch (e) {}
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     });
     
     // 没有可用更新
     autoUpdater.on('update-not-available', (info) => {
+<<<<<<< HEAD
 <<<<<<< HEAD
       const currentVersion = app.getVersion();
       if (logger) {
@@ -1466,12 +1511,17 @@ async function initAutoUpdater() {
         console.error('[main] 发送 update-not-available 事件失败:', e);
       }
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
       if (logger) {
         logger.info('没有可用更新');
       }
       try { 
         mainWin && mainWin.webContents.send('update/not-available', info); 
       } catch (e) {}
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     });
     
@@ -1927,6 +1977,7 @@ ipcMain.handle('update/install', async () => {
 });
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 // 获取 GitHub Releases 列表（用于显示更新日志）
 ipcMain.handle('github/get-releases', async () => {
   try {
@@ -1977,6 +2028,8 @@ ipcMain.handle('github/get-releases', async () => {
 
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 // 跳过版本更新
 ipcMain.handle('update/skip-version', async (event, version) => {
   if (store && version) {
@@ -1989,6 +2042,7 @@ ipcMain.handle('update/skip-version', async (event, version) => {
   return { ok: false, error: 'no-store-or-version' };
 });
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 // 自动检查更新：启动时执行（包括开发环境）
 async function scheduleAutoUpdateCheck() {
@@ -2003,16 +2057,22 @@ async function scheduleAutoUpdateCheck() {
   console.log('[main] scheduleAutoUpdateCheck: starting...');
   console.log('[main] app version:', app.getVersion());
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 // 自动检查更新：仅打包且存在 autoUpdater 时执行
 async function scheduleAutoUpdateCheck() {
   if (!autoUpdater) return;
   if (!app.isPackaged) return;
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   
   // 等待 3 秒再检查更新，确保窗口准备完成，用户进入系统
   await sleep(3000);
   
   try {
+<<<<<<< HEAD
 <<<<<<< HEAD
     console.log('[main] scheduleAutoUpdateCheck: calling checkForUpdates...');
     const result = await autoUpdater.checkForUpdates();
@@ -2032,6 +2092,8 @@ async function scheduleAutoUpdateCheck() {
     try { 
       mainWin && mainWin.webContents.send('update/error', String(err)); 
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     await autoUpdater.checkForUpdates();
   } catch (err) {
     const errorMsg = String(err);
@@ -2040,6 +2102,9 @@ async function scheduleAutoUpdateCheck() {
     }
     try { 
       mainWin && mainWin.webContents.send('update/error', errorMsg); 
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     } catch (e) {}
   }
@@ -2091,6 +2156,9 @@ function createDisplayWindow(width, height) {
     width: typeof width === 'number' ? Math.max(100, Math.floor(width)) : 2371,
     height: typeof height === 'number' ? Math.max(100, Math.floor(height)) : 810,
     useContentSize: true,
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     frame: false, // 无边框，移除系统标题栏
     titleBarStyle: 'hidden',

@@ -1,5 +1,6 @@
 // 判断站点是否因运营模式被跳过
 <<<<<<< HEAD
+<<<<<<< HEAD
 /**
  * 解析颜色标记文本，将 <color>文字</> 转换为带颜色的HTML
  * 支持颜色名称、十六进制、RGB格式
@@ -67,6 +68,8 @@ function parseColorMarkup(text) {
   return result;
 }
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 function isSkippedByService(st, idx, len, meta) {
@@ -1051,9 +1054,15 @@ function mkNode(st, i, mode, appData, rtState) {
     // 站点本身被标记为暂缓时，无论什么模式都显示暂缓标签
     if (st.skip) {
 <<<<<<< HEAD
+<<<<<<< HEAD
       deferTag = '<span class="defer">暂缓</span>';
     } else if (shouldShowDeferTag) {
       deferTag = '<span class="defer">暂缓</span>';
+=======
+      deferTag = '<div class="defer">暂缓</div>';
+    } else if (shouldShowDeferTag) {
+      deferTag = '<div class="defer">暂缓</div>';
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
       deferTag = '<div class="defer">暂缓</div>';
     } else if (shouldShowDeferTag) {
@@ -1068,6 +1077,7 @@ function mkNode(st, i, mode, appData, rtState) {
       // 圆点保持与暂缓站一致的默认样式，仅文字压暗
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
     if (txt) dockTag = `<span class="x-tag" style="background:${isDirMatch ? '#1e90ff' : '#444'}; padding:2px 5px; font-size:11px; border-radius:3px; color:#fff;">${txt}</span>`;
   }
   // 大站停靠标签：常驻显示，只要站点设置了expressStop就显示
@@ -1080,10 +1090,18 @@ function mkNode(st, i, mode, appData, rtState) {
   if (st.expressStop !== false) {
     expressStopTag = `<div style="margin-top:4px;"><span class="x-tag" style="background:#ffa502; padding:4px 6px; font-size:12px; border-radius:3px; color:#fff;">大站停靠</span></div>`;
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
+    if (txt) dockTag = `<div style="margin-top:4px;"><span class=\"x-tag\" style="background:${isDirMatch ? '#1e90ff' : '#444'}; padding:4px 6px; font-size:12px; border-radius:3px; color:${isDirMatch ? '#fff' : '#fff'};">${txt}</span></div>`;
+  }
+  // 大站停靠标签：常驻显示，只要站点设置了expressStop就显示
+  if (st.expressStop !== false) {
+    expressStopTag = `<div style="margin-top:4px;"><span class="x-tag" style="background:#ffa502; padding:4px 6px; font-size:12px; border-radius:3px; color:#fff;">大站停靠</span></div>`;
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   }
   
   // 计算标签数量：换乘站、暂缓、进上下行停靠、大站停靠
   if (mode === 'loop') {
+<<<<<<< HEAD
 <<<<<<< HEAD
     const parsedName = parseColorMarkup(st.name);
     const parsedEn = parseColorMarkup(st.en);
@@ -1189,6 +1207,12 @@ function mkNode(st, i, mode, appData, rtState) {
     
     const parsedName = parseColorMarkup(st.name);
     const parsedEn = parseColorMarkup(st.en);
+=======
+    node.innerHTML = `<div class="dot"${dotStyle}></div><div class="n-txt"><div style="${nameStyle}">${st.name}</div><div class="en">${st.en}</div>${deferTag}${dockTag}${expressStopTag}<div class="x-box">${xferHTML}</div></div>`;
+  } else {
+    // 线性模式：直接显示所有标签
+    const tagsContent = `${dockTag}${expressStopTag}${deferTag}${xferHTML}`;
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
     node.innerHTML = `<div class="dot"${dotStyle}></div><div class="n-txt"><div style="${nameStyle}">${st.name}</div><div class="en">${st.en}</div>${deferTag}${dockTag}${expressStopTag}<div class="x-box">${xferHTML}</div></div>`;
   } else {

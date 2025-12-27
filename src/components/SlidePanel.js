@@ -6,8 +6,12 @@ import { useController } from '../composables/useController.js'
 import { useSettings } from '../composables/useSettings.js'
 import dialogService from '../utils/dialogService.js'
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { ref, computed, watch, onMounted } from 'vue'
 import ColorPicker from './ColorPicker.js'
+=======
+import { ref, computed } from 'vue'
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 import { ref, computed } from 'vue'
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
@@ -58,6 +62,7 @@ export default {
     const promptUser = async (msg, defaultValue, title) => dialogService.prompt(msg, defaultValue, title)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     // 检查是否有 Electron API
     const hasElectronAPI = computed(() => {
       return typeof window !== 'undefined' && window.electronAPI && window.electronAPI.startColorPick;
@@ -84,6 +89,8 @@ export default {
       openColorPicker();
     }
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     // 兼容旧数据，补齐 serviceMode
@@ -154,8 +161,11 @@ export default {
         newL.meta.themeColor = '#' + Math.floor(Math.random()*16777215).toString(16);
         if (!newL.meta.serviceMode) newL.meta.serviceMode = 'normal';
 <<<<<<< HEAD
+<<<<<<< HEAD
         // 清空站点列表
         newL.stations = [];
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         pidsState.store.list.push(newL);
@@ -378,7 +388,11 @@ export default {
 
         // 更新模块状态（检查中/可用/下载中/已下载）
 <<<<<<< HEAD
+<<<<<<< HEAD
     const updateState = ref({ checking: false, available: false, downloading: false, downloaded: false, progress: 0, info: null, error: null, isLatest: false });
+=======
+    const updateState = ref({ checking: false, available: false, downloading: false, downloaded: false, progress: 0, info: null });
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
     const updateState = ref({ checking: false, available: false, downloading: false, downloaded: false, progress: 0, info: null });
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
@@ -394,6 +408,7 @@ export default {
         })();
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         // 配置主进程日志监听（用于调试）
         if (typeof window !== 'undefined' && window.electronAPI) {
             try {
@@ -408,6 +423,8 @@ export default {
             }
         }
         
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         // 配置更新事件监听（仅在 Electron 环境）
@@ -473,12 +490,16 @@ export default {
             updateState.value.checking = true;
             updateState.value.available = false;
 <<<<<<< HEAD
+<<<<<<< HEAD
             updateState.value.downloaded = false;
             updateState.value.error = null; // 清除之前的错误
             updateState.value.isLatest = false; // 清除之前的"已是最新"状态
             
             console.log('[SlidePanel] 开始检查更新...');
             
+=======
+        updateState.value.downloaded = false;
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
         updateState.value.downloaded = false;
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
@@ -509,6 +530,7 @@ export default {
         if (!window.electronAPI) return;
         updateState.value.downloading = true;
         updateState.value.downloaded = false;
+<<<<<<< HEAD
 <<<<<<< HEAD
         updateState.value.error = null; // 清除之前的错误
         
@@ -570,10 +592,15 @@ export default {
             updateState.value.error = errorMsg;
             showMsg('重新下载失败：' + errorMsg);
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         const r = await window.electronAPI.downloadUpdate();
         if (!r || !r.ok) {
             updateState.value.downloading = false;
             showMsg('下载失败：' + (r && r.error ? r.error : '未知错误'));
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         }
     }
@@ -600,6 +627,7 @@ export default {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     async function openGitHubReleases() {
         const url = 'https://github.com/tanzhouxkong/Metro-PIDS-/releases';
         try {
@@ -616,6 +644,8 @@ export default {
         }
     }
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     // 显示端/第三方相关辅助（展示预览已移除）
@@ -874,6 +904,7 @@ export default {
             switchLine, switchLineByName, newLine, delLine, saveCfg, clearShortTurn, applyShortTurn,
             settings, saveSettings, keyMapDisplay, recordKey, clearKey, resetKeys,
 <<<<<<< HEAD
+<<<<<<< HEAD
             updateState, checkForUpdateClicked, downloadUpdateNow, clearCacheAndRedownload, installDownloadedUpdate, skipThisVersion, openGitHubReleases,
             version, hasElectronAPI, pickColor, openColorPicker,
             showColorPicker, colorPickerInitialColor, onColorConfirm,
@@ -883,10 +914,15 @@ export default {
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             openLineManagerWindow
 =======
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
             updateState, checkForUpdateClicked, downloadUpdateNow, installDownloadedUpdate, skipThisVersion,
             version,
             startWithLock, stopWithUnlock, startRecordingWithCheck,
             changeServiceMode, serviceModeLabel
+<<<<<<< HEAD
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         }
     },
@@ -1207,7 +1243,11 @@ export default {
                 <div style="font-weight:bold; color:var(--muted);">{{ version }}</div>
             </div>
 <<<<<<< HEAD
+<<<<<<< HEAD
             <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+=======
+            <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px;">
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
             <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px;">
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
@@ -1216,6 +1256,7 @@ export default {
                     <i class="fas fa-list-alt"></i> 查看日志
                 </button>
                 <div v-if="updateState.checking" style="font-size:12px; color:var(--muted);">检查中...</div>
+<<<<<<< HEAD
 <<<<<<< HEAD
                 <div v-else-if="updateState.error" style="font-size:12px; color:#e74c3c;">错误：{{ updateState.error }}</div>
                 <div v-else-if="updateState.isLatest" style="font-size:12px; color:#2ed573;">✓ 当前已是最新版本</div>
@@ -1232,11 +1273,17 @@ export default {
                 <div v-else-if="updateState.downloaded" style="font-size:12px; color:#2ed573;">更新包已下载</div>
                 <div v-else-if="updateState.downloading" style="font-size:12px; color:var(--muted);">下载中 {{ updateState.progress }}%</div>
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
+=======
+                <div v-else-if="updateState.available && !updateState.downloading && !updateState.downloaded" style="font-size:12px; color:#4b7bec;">发现新版本 {{ (updateState.info && updateState.info.version) ? updateState.info.version : '' }}</div>
+                <div v-else-if="updateState.downloaded" style="font-size:12px; color:#2ed573;">更新包已下载</div>
+                <div v-else-if="updateState.downloading" style="font-size:12px; color:var(--muted);">下载中 {{ updateState.progress }}%</div>
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
             </div>
             <div v-if="updateState.available && !updateState.downloaded" style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
                 <button class="btn" style="background:#3867d6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="downloadUpdateNow()" :disabled="updateState.downloading">
                     <i class="fas fa-download"></i> 下载更新
                 </button>
+<<<<<<< HEAD
 <<<<<<< HEAD
                 <button v-if="updateState.error && (updateState.error.includes('checksum') || updateState.error.includes('sha512'))" class="btn" style="background:#ffa502; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="clearCacheAndRedownload()" :disabled="updateState.downloading">
                     <i class="fas fa-redo"></i> 清除缓存并重新下载
@@ -1244,6 +1291,8 @@ export default {
                 <button class="btn" style="background:#2ecc71; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="openGitHubReleases()" title="如果自动下载失败，可以从GitHub手动下载">
                     <i class="fab fa-github"></i> 从GitHub手动下载
                 </button>
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
                 <button class="btn" style="background:#95a5a6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="skipThisVersion()" :disabled="updateState.downloading">

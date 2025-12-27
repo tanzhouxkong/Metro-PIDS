@@ -1,7 +1,11 @@
 import { reactive } from 'vue'
 import { useBroadcast } from './useBroadcast.js'
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { DEF, DEF_LINE_16, DEF_JINAN_BUS, DEF_JINAN_METRO_1, DEF_JINAN_METRO_2, DEF_JINAN_METRO_3, DEF_JINAN_METRO_4, DEF_JINAN_METRO_6, DEF_JINAN_METRO_8, DEF_JINAN_METRO_4_8, DEF_JINAN_YUNBA } from '../utils/defaults.js'
+=======
+import { DEF, DEF_LINE_16 } from '../utils/defaults.js'
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 import { DEF, DEF_LINE_16 } from '../utils/defaults.js'
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
@@ -41,6 +45,7 @@ function loadSafe() {
             list: [
                 JSON.parse(JSON.stringify(DEF)),
 <<<<<<< HEAD
+<<<<<<< HEAD
                 JSON.parse(JSON.stringify(DEF_LINE_16)),
                 JSON.parse(JSON.stringify(DEF_JINAN_BUS)),
                 JSON.parse(JSON.stringify(DEF_JINAN_METRO_1)),
@@ -51,6 +56,9 @@ function loadSafe() {
                 JSON.parse(JSON.stringify(DEF_JINAN_METRO_8)),
                 JSON.parse(JSON.stringify(DEF_JINAN_METRO_4_8)),
                 JSON.parse(JSON.stringify(DEF_JINAN_YUNBA))
+=======
+                JSON.parse(JSON.stringify(DEF_LINE_16))
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
                 JSON.parse(JSON.stringify(DEF_LINE_16))
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc

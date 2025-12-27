@@ -177,6 +177,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     try { return await ipcRenderer.invoke('app/get-version'); } catch (e) { return { ok: false, error: String(e) }; }
   },
 <<<<<<< HEAD
+<<<<<<< HEAD
   // 监听主进程日志
   onMainConsoleLog: (cb) => {
     const l = (e, msg) => cb(msg);
@@ -188,6 +189,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('main-console-error', l);
     return () => ipcRenderer.removeListener('main-console-error', l);
   },
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 =======
 >>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   // 允许模态页将 alert 结果回传主进程
