@@ -2,7 +2,10 @@ const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeImage, desktop
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
+<<<<<<< HEAD
 const crypto = require('crypto');
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 
 // 引入日志和存储
 let logger = null;
@@ -26,6 +29,7 @@ try {
   console.log('[main] updater.autoUpdater:', typeof updater.autoUpdater);
   
   autoUpdater = updater.autoUpdater;
+<<<<<<< HEAD
   
   if (!autoUpdater) {
     console.error('[main] updater.autoUpdater 为 undefined');
@@ -36,10 +40,13 @@ try {
     }
   }
   
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   // 配置日志
   if (logger && autoUpdater) {
     autoUpdater.logger = logger;
   }
+<<<<<<< HEAD
   
   if (autoUpdater) {
     console.log('[main] electron-updater loaded successfully');
@@ -49,6 +56,8 @@ try {
   
   // 注意：在开发模式下（未打包），electron-updater 默认不会检查更新
   // 这是正常行为，更新功能需要在打包后的应用中测试
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 } catch (e) {
   console.error('[main] Failed to load electron-updater:', e);
   console.error('[main] Error details:', {
@@ -82,6 +91,7 @@ function createWindow() {
   const controlPath = `file://${path.join(__dirname, 'index.html')}`;
   mainWin.loadURL(controlPath);
 
+<<<<<<< HEAD
   // 监听来自线路管理器的线路切换请求
   ipcMain.on('switch-line-request', (event, lineName) => {
     if (mainWin && !mainWin.isDestroyed()) {
@@ -116,6 +126,12 @@ function createWindow() {
   // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
   // 仅在创建时生效
 
+=======
+  // 将主窗体设为无边框，以完全替换系统控件
+  // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
+  // 仅在创建时生效
+
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   // 拦截 renderer 的 window.open 来创建受控窗口
   mainWin.webContents.setWindowOpenHandler(({ url, features, disposition }) => {
     try {
@@ -251,6 +267,7 @@ async function ensureDir(dir) {
   }
 }
 
+<<<<<<< HEAD
 
 // 查找 JSON 文件的辅助函数（recursive 参数控制是否递归查找子文件夹）
 async function findJsonFiles(dir, baseDir = null, recursive = false) {
@@ -313,6 +330,48 @@ ipcMain.handle('lines/list', async (event, dir) => {
   try {
     // 不递归查找子文件夹，只查找当前文件夹下的 JSON 文件
     const files = await findJsonFiles(base, base, false);
+=======
+// 递归查找 JSON 文件的辅助函数
+async function findJsonFiles(dir, baseDir = null) {
+  if (!baseDir) baseDir = dir;
+  const out = [];
+  try {
+    const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // 递归查找子文件夹
+        const subFiles = await findJsonFiles(fullPath, baseDir);
+        out.push(...subFiles);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.json')) {
+        try {
+          const stat = await fsPromises.stat(fullPath);
+          const txt = await fsPromises.readFile(fullPath, 'utf8');
+          let json = null;
+          try { json = JSON.parse(txt); } catch (e) { json = null; }
+          const version = json && json.meta && json.meta.version ? json.meta.version : null;
+          // 计算相对路径作为文件名（相对于 baseDir）
+          const relativePath = path.relative(baseDir, fullPath);
+          const nameWithoutExt = relativePath.replace(/\.json$/i, '').replace(/\\/g, '/');
+          out.push({ name: nameWithoutExt, version, mtime: stat.mtimeMs, fullPath });
+        } catch (e) {
+          // 出错则跳过该文件
+        }
+      }
+    }
+  } catch (e) {
+    // 忽略错误
+  }
+  return out;
+}
+
+// 列出线路文件(JSON)，返回 { name, version, mtime } 数组（支持递归查找子文件夹）
+ipcMain.handle('lines/list', async (event, dir) => {
+  const base = getLinesDir(dir);
+  await ensureDir(base);
+  try {
+    const files = await findJsonFiles(base);
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     return files;
   } catch (err) {
     return { error: String(err) };
@@ -321,6 +380,7 @@ ipcMain.handle('lines/list', async (event, dir) => {
 
 // 读取单个线路文件（支持子文件夹路径）
 ipcMain.handle('lines/read', async (event, filename, dir) => {
+<<<<<<< HEAD
   let base;
   if (dir && typeof dir === 'string') {
     // 如果 dir 看起来像是一个完整路径（包含路径分隔符或绝对路径）
@@ -338,6 +398,9 @@ ipcMain.handle('lines/read', async (event, filename, dir) => {
   } else {
     base = getLinesDir(dir);
   }
+=======
+  const base = getLinesDir(dir);
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   // 如果 filename 包含路径分隔符，说明是子文件夹中的文件
   let fp;
   if (filename.includes('/') || filename.includes('\\')) {
@@ -396,7 +459,11 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir) => {
   }
 });
 
+<<<<<<< HEAD
 // 删除线路文件（支持子文件夹路径）
+=======
+// 删除线路文件
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 ipcMain.handle('lines/delete', async (event, filename, dir) => {
   const base = getLinesDir(dir);
   // 如果 filename 包含路径分隔符，说明是子文件夹中的文件
@@ -431,6 +498,7 @@ ipcMain.handle('lines/openFolder', async (event, dir) => {
   }
 });
 
+<<<<<<< HEAD
 // 打开指定的文件夹路径（用于右键菜单）
 ipcMain.handle('lines/folders/open', async (event, folderPath) => {
   try {
@@ -851,6 +919,8 @@ ipcMain.handle('utils/calculate-md5', async (event, data) => {
   }
 });
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 // 在默认浏览器打开外部链接
 ipcMain.handle('open-external', async (event, url) => {
   try {
@@ -1276,6 +1346,7 @@ async function initAutoUpdater() {
     // 下载由界面控制，不自动下载
     autoUpdater.autoDownload = false;
     
+<<<<<<< HEAD
     // 设置请求头，确保正确的 User-Agent
     autoUpdater.requestHeaders = {
       'User-Agent': `Metro-PIDS-App/${app.getVersion()} (${process.platform})`
@@ -1302,6 +1373,15 @@ async function initAutoUpdater() {
         logger.error(['检查更新失败', errorDetails]);
       } else {
         console.error('检查更新失败:', errorDetails);
+=======
+    // 错误处理
+    autoUpdater.on('error', (err) => {
+      const errorMsg = String(err);
+      if (logger) {
+        logger.error(['检查更新失败', errorMsg]);
+      } else {
+        console.error('检查更新失败:', errorMsg);
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
       }
       try { 
         mainWin && mainWin.webContents.send('update/error', errorMsg); 
@@ -1310,6 +1390,7 @@ async function initAutoUpdater() {
     
     // 有可用更新
     autoUpdater.on('update-available', (info) => {
+<<<<<<< HEAD
       const currentVersion = app.getVersion();
       if (logger) {
         logger.info('检查到有更新', { currentVersion, latestVersion: info.version });
@@ -1334,10 +1415,20 @@ async function initAutoUpdater() {
       } catch (e) {
         console.error('[main] 发送 update-available 事件失败:', e);
       }
+=======
+      if (logger) {
+        logger.info('检查到有更新');
+        logger.info(info);
+      }
+      try { 
+        mainWin && mainWin.webContents.send('update/available', info); 
+      } catch (e) {}
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     });
     
     // 没有可用更新
     autoUpdater.on('update-not-available', (info) => {
+<<<<<<< HEAD
       const currentVersion = app.getVersion();
       if (logger) {
         logger.info('没有可用更新', { currentVersion, info });
@@ -1374,6 +1465,14 @@ async function initAutoUpdater() {
       } catch (e) {
         console.error('[main] 发送 update-not-available 事件失败:', e);
       }
+=======
+      if (logger) {
+        logger.info('没有可用更新');
+      }
+      try { 
+        mainWin && mainWin.webContents.send('update/not-available', info); 
+      } catch (e) {}
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     });
     
     // 下载进度
@@ -1827,6 +1926,7 @@ ipcMain.handle('update/install', async () => {
   }
 });
 
+<<<<<<< HEAD
 // 获取 GitHub Releases 列表（用于显示更新日志）
 ipcMain.handle('github/get-releases', async () => {
   try {
@@ -1875,6 +1975,8 @@ ipcMain.handle('github/get-releases', async () => {
   }
 });
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 // 跳过版本更新
 ipcMain.handle('update/skip-version', async (event, version) => {
   if (store && version) {
@@ -1887,6 +1989,7 @@ ipcMain.handle('update/skip-version', async (event, version) => {
   return { ok: false, error: 'no-store-or-version' };
 });
 
+<<<<<<< HEAD
 // 自动检查更新：启动时执行（包括开发环境）
 async function scheduleAutoUpdateCheck() {
   if (!autoUpdater) {
@@ -1899,11 +2002,18 @@ async function scheduleAutoUpdateCheck() {
   
   console.log('[main] scheduleAutoUpdateCheck: starting...');
   console.log('[main] app version:', app.getVersion());
+=======
+// 自动检查更新：仅打包且存在 autoUpdater 时执行
+async function scheduleAutoUpdateCheck() {
+  if (!autoUpdater) return;
+  if (!app.isPackaged) return;
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
   
   // 等待 3 秒再检查更新，确保窗口准备完成，用户进入系统
   await sleep(3000);
   
   try {
+<<<<<<< HEAD
     console.log('[main] scheduleAutoUpdateCheck: calling checkForUpdates...');
     const result = await autoUpdater.checkForUpdates();
     console.log('[main] scheduleAutoUpdateCheck: result:', result);
@@ -1921,6 +2031,16 @@ async function scheduleAutoUpdateCheck() {
     }
     try { 
       mainWin && mainWin.webContents.send('update/error', String(err)); 
+=======
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    const errorMsg = String(err);
+    if (logger) {
+      logger.error('自动检查更新失败:', errorMsg);
+    }
+    try { 
+      mainWin && mainWin.webContents.send('update/error', errorMsg); 
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     } catch (e) {}
   }
 }
@@ -1963,9 +2083,15 @@ function createDisplayWindow(width, height) {
   const adjustedHeight = Math.ceil(logicalHeight / 4) * 4;
 
   const opts = {
+<<<<<<< HEAD
     width: adjustedWidth,
     height: adjustedHeight,
     useContentSize: false, // 使用窗口尺寸，确保窗口逻辑尺寸与内容尺寸完全匹配
+=======
+    width: typeof width === 'number' ? Math.max(100, Math.floor(width)) : 2371,
+    height: typeof height === 'number' ? Math.max(100, Math.floor(height)) : 810,
+    useContentSize: true,
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     frame: false, // 无边框，移除系统标题栏
     titleBarStyle: 'hidden',
     resizable: false,

@@ -1,6 +1,10 @@
 export const DEF = {
   "meta": {
+<<<<<<< HEAD
     "lineName": "上海地铁2号线",
+=======
+    "lineName": "2号线",
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     "themeColor": "#00ff4c",
     "mode": "linear",
     "dirType": "up",
@@ -43,7 +47,11 @@ export const DEF = {
 
 export const DEF_LINE_16 = {
   "meta": {
+<<<<<<< HEAD
     "lineName": "上海地铁16号线",
+=======
+    "lineName": "16号线",
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
     "themeColor": "#99CC66",
     "mode": "linear",
     "dirType": "up",
@@ -65,6 +73,7 @@ export const DEF_LINE_16 = {
     {"name": "滴水湖", "en": "Dishui Lake", "xfer": [], "dock": "both", "turnback": true, "expressStop": false}
   ]
 };
+<<<<<<< HEAD
 
 export const DEF_JINAN_BUS = {
   "meta": {
@@ -173,6 +182,8 @@ export const DEF_JINAN_YUNBA = {
     {"name": "大正路", "en": "Dazheng Lu", "xfer": [], "dock": "both", "turnback": true, "expressStop": false, "door": "right", "skip": false, "stationType": "地下", "region": "历城区"}
   ]
 };
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
 
 export const DEFAULT_SETTINGS = { 
     dark: false, 

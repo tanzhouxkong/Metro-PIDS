@@ -158,6 +158,7 @@ export default {
         return '普通';
     })
 
+<<<<<<< HEAD
     // 检查是否到达终点站的辅助函数
     function isAtTerminal() {
         if (!state.appData || !state.appData.stations || state.appData.stations.length === 0) return false;
@@ -196,6 +197,8 @@ export default {
         next();
     }
 
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         return {
             state,
             next: handleNext, move, setArr, setDep, jumpTo,

@@ -10,10 +10,13 @@ export default {
         const { uiState, togglePanel } = useUIState()
         const { state } = usePidsState()
         const { settings } = useSettings()
+<<<<<<< HEAD
         const hasUpdate = ref(false)
         const showReleaseNotes = ref(false)
         const releaseNotes = ref([])
         const loadingNotes = ref(false)
+=======
+>>>>>>> 94bf6b56baffc7780e58c8bf5bfd1580152e6dfc
         const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot'
         const getDisplaySize = () => {
             const w = settings && settings.display && settings.display.width ? Number(settings.display.width) : 1900;
