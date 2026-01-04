@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>开发者模式 - Metro PIDS</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg, #f5f5f5);
+            color: var(--text, #333);
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: var(--card, #fff);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: var(--text, #333);
+        }
+        
+        .header p {
+            color: var(--muted, #666);
+            font-size: 14px;
+        }
+        
+        .section {
+            background: var(--card, #fff);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: var(--text, #333);
+            border-bottom: 2px solid var(--accent, #12b7f5);
+            padding-bottom: 8px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+        
+        .info-item {
+            padding: 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 8px;
+            border-left: 4px solid var(--accent, #12b7f5);
+        }
+        
+        .info-item label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted, #666);
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        
+        .info-item value {
+            display: block;
+            font-size: 16px;
+            color: var(--text, #333);
+            font-weight: 500;
+            word-break: break-word;
+        }
+        
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin-top: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .btn {
+            background: var(--btn-blue-bg, #1677ff);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .btn:hover {
+            background: #0958d9;
+        }
+        
+        .btn-secondary {
+            background: var(--btn-gray-bg, #d9d9d9);
+            color: var(--text, #333);
+        }
+        
+        .btn-secondary:hover {
+            background: #bfbfbf;
+        }
+        
+        .btn-success {
+            background: #52c41a;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #389e0d;
+        }
+        
+        .btn-danger {
+            background: #ff4d4f;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #cf1322;
+        }
+        
+        .btn-warning {
+            background: #faad14;
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background: #d48806;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .status-active {
+            background: #52c41a;
+            color: white;
+        }
+        
+        .status-inactive {
+            background: #ff4d4f;
+            color: white;
+        }
+        
+        .status-dev {
+            background: #faad14;
+            color: white;
+        }
+        
+        .test-group {
+            margin-bottom: 20px;
+            padding: 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 8px;
+        }
+        
+        .test-group h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: var(--text, #333);
+        }
+        
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        
+        .input-group {
+            margin-bottom: 12px;
+        }
+        
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            color: var(--muted, #666);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        
+        .input-group input,
+        .input-group select,
+        .input-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--divider, #e0e0e0);
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            color: var(--text, #333);
+        }
+        
+        .input-group textarea {
+            min-height: 100px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            resize: vertical;
+        }
+        
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 4px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .log-time {
+            color: #858585;
+            margin-right: 8px;
+        }
+        
+        .log-info { color: #4ec9b0; }
+        .log-warn { color: #dcdcaa; }
+        .log-error { color: #f48771; }
+        .log-success { color: #6a9955; }
+        
+        .performance-metric {
+            display: inline-block;
+            padding: 8px 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 6px;
+            margin-right: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .performance-metric label {
+            display: block;
+            font-size: 11px;
+            color: var(--muted, #666);
+            margin-bottom: 4px;
+        }
+        
+        .performance-metric value {
+            display: block;
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--text, #333);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-code"></i> 开发者模式 <span class="status-badge status-dev">DEV</span></h1>
+            <p>开发者工具和测试功能</p>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-info-circle"></i> 环境信息</h2>
+            <div class="info-grid" id="env-info">
+                <div class="info-item">
+                    <label>运行环境</label>
+                    <value id="env-platform">-</value>
+                </div>
+                <div class="info-item">
+                    <label>应用版本</label>
+                    <value id="app-version">-</value>
+                </div>
+                <div class="info-item">
+                    <label>打包状态</label>
+                    <value id="packaged-status">-</value>
+                </div>
+                <div class="info-item">
+                    <label>操作系统</label>
+                    <value id="os-version">-</value>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-cog"></i> 开发者工具</h2>
+            <div>
+                <button class="btn" onclick="openDevTools()">
+                    <i class="fas fa-terminal"></i> 打开开发者工具
+                </button>
+                <button class="btn btn-secondary" onclick="reloadWindow()">
+                    <i class="fas fa-sync-alt"></i> 重新加载窗口
+                </button>
+                <button class="btn btn-secondary" onclick="clearLogs()">
+                    <i class="fas fa-trash"></i> 清除日志
+                </button>
+                <button class="btn btn-danger" onclick="closeDevWindow()">
+                    <i class="fas fa-times"></i> 关闭开发者模式
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-vial"></i> 状态测试</h2>
+            <div class="test-group">
+                <h3>当前状态信息</h3>
+                <div id="state-info" class="code-block">正在加载状态信息...</div>
+                <button class="btn btn-secondary" onclick="refreshState()">
+                    <i class="fas fa-sync"></i> 刷新状态
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>状态同步测试</h3>
+                <button class="btn btn-success" onclick="testSyncRequest()">
+                    <i class="fas fa-broadcast-tower"></i> 请求状态同步
+                </button>
+                <button class="btn btn-warning" onclick="testKeyCommand('Enter')">
+                    <i class="fas fa-keyboard"></i> 模拟按键: Enter
+                </button>
+                <button class="btn btn-warning" onclick="testKeyCommand('ArrowLeft')">
+                    <i class="fas fa-arrow-left"></i> 模拟按键: ←
+                </button>
+                <button class="btn btn-warning" onclick="testKeyCommand('ArrowRight')">
+                    <i class="fas fa-arrow-right"></i> 模拟按键: →
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-desktop"></i> 显示端测试</h2>
+            <div class="test-group">
+                <h3>显示端操作</h3>
+                <button class="btn btn-success" onclick="openDisplay1()">
+                    <i class="fas fa-tv"></i> 打开 Display-1
+                </button>
+                <button class="btn btn-success" onclick="openDisplay2()">
+                    <i class="fas fa-tv"></i> 打开 Display-2
+                </button>
+                <button class="btn btn-secondary" onclick="testDisplaySync()">
+                    <i class="fas fa-sync-alt"></i> 测试显示端同步
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-bell"></i> 通知测试</h2>
+            <div class="test-group">
+                <div class="input-group">
+                    <label>通知标题</label>
+                    <input type="text" id="notif-title" value="测试通知" placeholder="通知标题">
+                </div>
+                <div class="input-group">
+                    <label>通知内容</label>
+                    <textarea id="notif-body" placeholder="通知内容">这是一条测试通知消息</textarea>
+                </div>
+                <button class="btn btn-success" onclick="testNotification()">
+                    <i class="fas fa-paper-plane"></i> 发送测试通知
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-cogs"></i> 设置测试</h2>
+            <div class="test-group">
+                <h3>查看当前设置</h3>
+                <div id="settings-info" class="code-block">正在加载设置...</div>
+                <button class="btn btn-secondary" onclick="refreshSettings()">
+                    <i class="fas fa-sync"></i> 刷新设置
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>主题测试</h3>
+                <button class="btn btn-secondary" onclick="testTheme('light')">
+                    <i class="fas fa-sun"></i> 浅色主题
+                </button>
+                <button class="btn btn-secondary" onclick="testTheme('dark')">
+                    <i class="fas fa-moon"></i> 深色主题
+                </button>
+                <button class="btn btn-secondary" onclick="testTheme('system')">
+                    <i class="fas fa-adjust"></i> 跟随系统
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-tachometer-alt"></i> 性能监控</h2>
+            <div id="performance-metrics">
+                <div class="performance-metric">
+                    <label>内存使用</label>
+                    <value id="mem-usage">-</value>
+                </div>
+                <div class="performance-metric">
+                    <label>FPS</label>
+                    <value id="fps">-</value>
+                </div>
+                <div class="performance-metric">
+                    <label>帧时间</label>
+                    <value id="frame-time">-</value>
+                </div>
+            </div>
+            <button class="btn btn-secondary" onclick="togglePerformanceMonitor()">
+                <i class="fas fa-play"></i> 开始/停止监控
+            </button>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-list"></i> 测试日志</h2>
+            <div id="test-logs" class="log-container">
+                <div class="log-entry"><span class="log-time">[系统]</span><span class="log-info">开发者模式已启动</span></div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-code"></i> 调试信息</h2>
+            <div class="code-block" id="debug-info">
+                正在加载调试信息...
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let bc = null;
+        let perfMonitorInterval = null;
+        let frameCount = 0;
+        let lastFrameTime = performance.now();
+        
+        // 初始化 BroadcastChannel
+        function initBroadcastChannel() {
+            try {
+                if (typeof BroadcastChannel !== 'undefined') {
+                    bc = new BroadcastChannel('metro_pids_v3');
+                    bc.addEventListener('message', (event) => {
+                        addLog('收到 BroadcastChannel 消息', 'info', event.data);
+                    });
+                    addLog('BroadcastChannel 已初始化', 'success');
+                } else {
+                    addLog('BroadcastChannel 不可用，使用 postMessage', 'warn');
+                }
+            } catch (e) {
+                addLog('初始化 BroadcastChannel 失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 发送消息到主窗口
+        function sendToMainWindow(message) {
+            try {
+                if (bc) {
+                    bc.postMessage(message);
+                    addLog('已发送 BroadcastChannel 消息', 'info', message);
+                } else if (window.opener) {
+                    window.opener.postMessage(message, '*');
+                    addLog('已发送 postMessage 消息', 'info', message);
+                } else {
+                    addLog('无法发送消息：没有可用的通信通道', 'warn');
+                }
+            } catch (e) {
+                addLog('发送消息失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 添加日志
+        function addLog(message, type = 'info', data = null) {
+            const logsContainer = document.getElementById('test-logs');
+            if (!logsContainer) return;
+            
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            
+            const typeClass = 'log-' + type;
+            logEntry.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <span class="${typeClass}">${message}</span>
+                ${data ? '<br><span style="color: #858585; font-size: 11px;">' + JSON.stringify(data, null, 2) + '</span>' : ''}
+            `;
+            
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+            // 限制日志条数
+            const entries = logsContainer.querySelectorAll('.log-entry');
+            if (entries.length > 100) {
+                entries[0].remove();
+            }
+        }
+        
+        // 清除日志
+        function clearLogs() {
+            const logsContainer = document.getElementById('test-logs');
+            if (logsContainer) {
+                logsContainer.innerHTML = '<div class="log-entry"><span class="log-time">[系统]</span><span class="log-info">日志已清除</span></div>';
+            }
+        }
+        
+        // 加载环境信息
+        async function loadEnvInfo() {
+            try {
+                // 平台信息
+                const platform = typeof window !== 'undefined' && window.electronAPI 
+                    ? (window.electronAPI.platform || 'browser')
+                    : 'browser';
+                document.getElementById('env-platform').textContent = platform === 'browser' ? '浏览器' : platform;
+                
+                // 应用版本
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getAppVersion) {
+                    try {
+                        const versionResult = await window.electronAPI.getAppVersion();
+                        if (versionResult && versionResult.ok) {
+                            document.getElementById('app-version').textContent = versionResult.version || '-';
+                        }
+                    } catch (e) {
+                        document.getElementById('app-version').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('app-version').textContent = 'N/A';
+                }
+                
+                // 打包状态
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.isPackaged) {
+                    try {
+                        const isPackaged = await window.electronAPI.isPackaged();
+                        const statusEl = document.getElementById('packaged-status');
+                        statusEl.textContent = isPackaged ? '已打包' : '开发模式';
+                        statusEl.parentElement.querySelector('label').innerHTML += 
+                            isPackaged ? '<span class="status-badge status-active">PROD</span>' 
+                                      : '<span class="status-badge status-dev">DEV</span>';
+                    } catch (e) {
+                        document.getElementById('packaged-status').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('packaged-status').textContent = '浏览器环境';
+                }
+                
+                // 操作系统版本
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getOSVersion) {
+                    try {
+                        const osResult = await window.electronAPI.getOSVersion();
+                        if (osResult && osResult.ok) {
+                            document.getElementById('os-version').textContent = osResult.version || '-';
+                        }
+                    } catch (e) {
+                        document.getElementById('os-version').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('os-version').textContent = navigator.platform || 'N/A';
+                }
+            } catch (e) {
+                console.error('加载环境信息失败:', e);
+                addLog('加载环境信息失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 刷新状态
+        function refreshState() {
+            sendToMainWindow({ t: 'REQ' });
+            addLog('已请求状态同步', 'info');
+        }
+        
+        // 测试状态同步
+        function testSyncRequest() {
+            sendToMainWindow({ t: 'REQ' });
+            addLog('测试：请求状态同步', 'info');
+        }
+        
+        // 测试按键命令
+        function testKeyCommand(key) {
+            sendToMainWindow({ t: 'CMD_KEY', code: key, key: key });
+            addLog(`测试：模拟按键 ${key}`, 'info');
+        }
+        
+        // 打开显示端
+        async function openDisplay1() {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDisplay) {
+                    await window.electronAPI.openDisplay(1900, 600, 'display-1');
+                    addLog('已请求打开 Display-1', 'success');
+                } else {
+                    window.open('display_window.html', '_blank', 'width=1900,height=600');
+                    addLog('已打开 Display-1 (浏览器)', 'success');
+                }
+            } catch (e) {
+                addLog('打开 Display-1 失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function openDisplay2() {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDisplay) {
+                    await window.electronAPI.openDisplay(1920, 1080, 'display-2');
+                    addLog('已请求打开 Display-2', 'success');
+                } else {
+                    window.open('displays/display-2/display_window.html', '_blank', 'width=1920,height=1080');
+                    addLog('已打开 Display-2 (浏览器)', 'success');
+                }
+            } catch (e) {
+                addLog('打开 Display-2 失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 测试显示端同步
+        function testDisplaySync() {
+            const testData = {
+                t: 'SYNC',
+                d: {
+                    meta: {
+                        lineName: '测试线路',
+                        themeColor: '#00b894',
+                        mode: 'linear',
+                        dirType: 'up'
+                    },
+                    stations: [
+                        { name: '测试站1', en: 'Test Station 1' },
+                        { name: '测试站2', en: 'Test Station 2' }
+                    ]
+                },
+                r: {
+                    idx: 0,
+                    state: 0
+                }
+            };
+            sendToMainWindow(testData);
+            addLog('测试：发送显示端同步数据', 'info', testData);
+        }
+        
+        // 测试通知
+        function testNotification() {
+            const title = document.getElementById('notif-title').value || '测试通知';
+            const body = document.getElementById('notif-body').value || '这是一条测试通知消息';
+            
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body: body, icon: '/favicon.ico' });
+                addLog('已发送系统通知', 'success', { title, body });
+            } else if ('Notification' in window && Notification.permission !== 'denied') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification(title, { body: body, icon: '/favicon.ico' });
+                        addLog('已发送系统通知', 'success', { title, body });
+                    } else {
+                        addLog('通知权限被拒绝', 'warn');
+                    }
+                });
+            } else {
+                addLog('浏览器不支持通知或权限被拒绝', 'warn');
+            }
+        }
+        
+        // 刷新设置
+        function refreshSettings() {
+            try {
+                const settings = localStorage.getItem('pids_settings_v1');
+                if (settings) {
+                    const parsed = JSON.parse(settings);
+                    document.getElementById('settings-info').textContent = JSON.stringify(parsed, null, 2);
+                    addLog('设置已刷新', 'success');
+                } else {
+                    document.getElementById('settings-info').textContent = '未找到设置数据';
+                    addLog('未找到设置数据', 'warn');
+                }
+            } catch (e) {
+                document.getElementById('settings-info').textContent = '加载设置失败: ' + e.message;
+                addLog('加载设置失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 测试主题
+        function testTheme(theme) {
+            try {
+                const settings = JSON.parse(localStorage.getItem('pids_settings_v1') || '{}');
+                settings.themeMode = theme;
+                localStorage.setItem('pids_settings_v1', JSON.stringify(settings));
+                document.documentElement.setAttribute('data-theme', theme);
+                addLog(`主题已切换为: ${theme}`, 'success');
+                refreshSettings();
+            } catch (e) {
+                addLog('切换主题失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 性能监控
+        let perfMonitoring = false;
+        function togglePerformanceMonitor() {
+            perfMonitoring = !perfMonitoring;
+            if (perfMonitoring) {
+                startPerformanceMonitor();
+                addLog('性能监控已启动', 'success');
+            } else {
+                stopPerformanceMonitor();
+                addLog('性能监控已停止', 'info');
+            }
+        }
+        
+        function startPerformanceMonitor() {
+            frameCount = 0;
+            lastFrameTime = performance.now();
+            
+            perfMonitorInterval = setInterval(() => {
+                // 内存使用（如果可用）
+                if (performance.memory) {
+                    const memMB = (performance.memory.usedJSHeapSize / 1048576).toFixed(2);
+                    document.getElementById('mem-usage').textContent = memMB + ' MB';
+                }
+                
+                // FPS 计算
+                const now = performance.now();
+                const delta = now - lastFrameTime;
+                const fps = Math.round(1000 / delta);
+                document.getElementById('fps').textContent = fps;
+                document.getElementById('frame-time').textContent = delta.toFixed(2) + ' ms';
+                lastFrameTime = now;
+            }, 1000);
+            
+            // 使用 requestAnimationFrame 来更准确地计算 FPS
+            function countFrames() {
+                if (perfMonitoring) {
+                    frameCount++;
+                    requestAnimationFrame(countFrames);
+                }
+            }
+            requestAnimationFrame(countFrames);
+        }
+        
+        function stopPerformanceMonitor() {
+            if (perfMonitorInterval) {
+                clearInterval(perfMonitorInterval);
+                perfMonitorInterval = null;
+            }
+            document.getElementById('mem-usage').textContent = '-';
+            document.getElementById('fps').textContent = '-';
+            document.getElementById('frame-time').textContent = '-';
+        }
+        
+        // 显示应用信息
+        function showAppInfo() {
+            const info = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                screen: {
+                    width: window.screen.width,
+                    height: window.screen.height,
+                    availWidth: window.screen.availWidth,
+                    availHeight: window.screen.availHeight
+                },
+                window: {
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                },
+                localStorage: {
+                    available: typeof(Storage) !== 'undefined',
+                    size: new Blob(Object.values(localStorage)).size
+                },
+                broadcastChannel: typeof BroadcastChannel !== 'undefined'
+            };
+            
+            document.getElementById('debug-info').textContent = JSON.stringify(info, null, 2);
+        }
+        
+        // 打开开发者工具
+        function openDevTools() {
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDevTools) {
+                window.electronAPI.openDevTools();
+                addLog('已打开开发者工具', 'success');
+            } else {
+                addLog('仅在 Electron 环境中可用', 'warn');
+            }
+        }
+        
+        // 重新加载窗口
+        function reloadWindow() {
+            if (typeof window !== 'undefined' && window.location) {
+                window.location.reload();
+            }
+        }
+        
+        // 关闭开发者窗口
+        async function closeDevWindow() {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.closeDevWindow) {
+                    await window.electronAPI.closeDevWindow();
+                    addLog('开发者窗口已关闭', 'success');
+                } else {
+                    // 浏览器环境，直接关闭窗口
+                    window.close();
+                }
+            } catch (e) {
+                addLog('关闭开发者窗口失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            loadEnvInfo();
+            showAppInfo();
+            refreshSettings();
+            initBroadcastChannel();
+            addLog('开发者模式初始化完成', 'success');
+        });
+        
+        // 监听来自主窗口的消息
+        window.addEventListener('message', (event) => {
+            addLog('收到 postMessage 消息', 'info', event.data);
+        });
+    </script>
+</body>
+</html>
