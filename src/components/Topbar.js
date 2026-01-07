@@ -66,12 +66,14 @@ export default {
                     white-space: nowrap;
                 ">Metro PIDS Control</span>
                 <span v-if="appVersion" style="
-                    font-size: 10px;
-                    color: var(--muted, #9aa0a6);
-                    padding: 2px 6px;
-                    background: rgba(0, 184, 148, 0.1);
-                    border-radius: 4px;
-                    margin-left: 4px;
+                    font-size: 11px;
+                    color: var(--accent, #00b894);
+                    padding: 2px 8px;
+                    background: rgba(0, 0, 0, 0.06);
+                    border-radius: 999px;
+                    margin-left: 6px;
+                    font-weight: 600;
+                    border: 1px solid rgba(34, 193, 163, 0.5);
                 ">v{{ appVersion }}</span>
                                                 </div>
                                 </div>
