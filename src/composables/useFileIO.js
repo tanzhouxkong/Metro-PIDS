@@ -387,15 +387,8 @@ export function useFileIO(state) {
         }
         
         try {
-            // 固定写入到“默认”文件夹（若不存在则回退到第一个可用文件夹）
-            let presetFolderId = 'default';
-            const folders = await window.electronAPI.lines.folders.list();
-            if (folders && folders.ok && folders.folders) {
-                const defaultFolder = folders.folders.find(f => f.name === '默认' || f.id === 'default') || folders.folders[0];
-                presetFolderId = defaultFolder ? defaultFolder.id : 'default';
-            } else {
-                presetFolderId = 'default';
-            }
+            // 固定写入到“默认”文件夹（ID 恒为 'default'，对应 lines\\默认）
+            const presetFolderId = 'default';
             
             // 从 state.store.list 或默认常量获取预设线路数据
             const defaultLines = [];
@@ -444,7 +437,7 @@ export function useFileIO(state) {
                 }
             }
             
-            // 如果从 state 中没有获取到数据（例如重置数据时 state 可能还未初始化），尝试从默认常量导入
+            // 如果从 state 和 preset-lines 中都没有获取到数据（例如极端情况），尝试从默认常量导入
             if (defaultLines.length === 0 && forceRestore) {
                 try {
                     // 动态导入默认线路常量（避免循环依赖）
@@ -472,23 +465,11 @@ export function useFileIO(state) {
                 return;
             }
             
-            // 获取预设文件夹的路径
-            let presetFolderPath = null;
-            if (presetFolderId) {
-                const folderList = await window.electronAPI.lines.folders.list();
-                if (folderList && folderList.ok && folderList.folders) {
-                    const presetFolder = folderList.folders.find(f => f.id === presetFolderId);
-                    if (presetFolder && presetFolder.path) {
-                        presetFolderPath = presetFolder.path;
-                    }
-                }
-            }
-            
-            // 保存所有预设线路到预设文件夹（仅当文件不存在或内容不同时）
+            // 保存所有预设线路到“默认”文件夹（仅当文件不存在或内容不同时）
             for (const { data, filename } of defaultLines) {
                 try {
-                    // 检查文件是否已存在（在预设文件夹中）
-                    const existing = await window.electronAPI.lines.read(filename, presetFolderPath || presetFolderId);
+                    // 检查文件是否已存在（在默认文件夹中）
+                    const existing = await window.electronAPI.lines.read(filename, presetFolderId);
                     if (existing && existing.ok && existing.content) {
                         // 文件已存在，比较内容是否相同
                         const normalized = normalizeLine(JSON.parse(JSON.stringify(data)));
@@ -500,9 +481,9 @@ export function useFileIO(state) {
                         // 内容不同，继续保存（更新文件）
                     }
                     
-                    // 文件不存在或内容不同，保存到预设文件夹
+                    // 文件不存在或内容不同，保存到默认文件夹
                     const normalized = normalizeLine(JSON.parse(JSON.stringify(data)));
-                    await window.electronAPI.lines.save(filename, normalized, presetFolderPath || presetFolderId);
+                    await window.electronAPI.lines.save(filename, normalized, presetFolderId);
                 } catch (e) {
                     // 忽略单个文件的保存错误，继续处理下一个
                     console.warn(`初始化预设线路 ${filename} 失败:`, e);
