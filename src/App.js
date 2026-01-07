@@ -134,7 +134,7 @@ export default {
       height: 100vh;
       overflow: hidden;
       background: transparent;
-      position: relative;
+        position: relative;
       z-index: 1;
       ">
       <!-- Main Content Area (顶部栏+侧边栏已通过 BrowserView 嵌入，主内容区需要透明背景以透到桌面) -->

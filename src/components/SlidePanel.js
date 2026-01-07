@@ -2540,7 +2540,7 @@ export default {
             
             <div style="margin-bottom:16px;">
                 <label style="display:block; font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">主题模式</label>
-                <select v-model="settings.themeMode" @change="saveSettings()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--card); color:var(--text);">
+                <select v-model="settings.themeMode" @change="saveSettings()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <option value="system">跟随系统 (System)</option>
                     <option value="light">浅色 (Light)</option>
                     <option value="dark">深色 (Dark)</option>
@@ -2673,7 +2673,7 @@ export default {
                             @keydown="recordKey(key, $event)"
                             readonly
                             placeholder="按下按键..."
-                            style="width:100px; text-align:center; cursor:pointer; font-family:monospace; font-weight:bold; padding:6px 10px; border-radius:6px; border:1px solid var(--divider); background:var(--card); color:var(--accent);"
+                            style="width:100px; text-align:center; cursor:pointer; font-family:monospace; font-weight:bold; padding:6px 10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--accent);"
                         >
                         <button @click="clearKey(key)" class="btn" style="padding:6px 10px; background:var(--btn-gray-bg); color:var(--text);" title="清除快捷键"><i class="fas fa-times"></i></button>
                     </div>

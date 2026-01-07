@@ -91,14 +91,14 @@ export default {
                 height: '48px',
                 borderRadius: '12px',
                 border: 'none',
-                background: isActive ? 'var(--btn-blue-bg)' : 'transparent',
-                color: isActive ? '#fff' : 'var(--muted)',
+                background: isActive ? 'var(--btn-blue-bg)' : 'var(--rail-btn-bg)',
+                color: isActive ? '#fff' : 'var(--rail-btn-text)',
                 transition: 'all 0.2s',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                boxShadow: isActive ? '0 4px 12px rgba(22, 119, 255, 0.3)' : 'none',
+                boxShadow: isActive ? '0 4px 12px rgba(22, 119, 255, 0.3)' : '0 1px 4px rgba(0,0,0,0.08)',
                 margin: '0 auto' // 确保按钮在容器中居中
             }
         }
@@ -110,14 +110,14 @@ export default {
                 height: '48px',
                 borderRadius: '12px',
                 border: 'none',
-                background: isActive ? 'var(--btn-blue-bg)' : 'transparent',
-                color: isActive ? '#fff' : 'var(--muted)',
+                background: isActive ? 'var(--btn-blue-bg)' : 'var(--rail-btn-bg)',
+                color: isActive ? '#fff' : 'var(--rail-btn-text)',
                 transition: 'all 0.2s',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                boxShadow: isActive ? '0 4px 12px rgba(22, 119, 255, 0.3)' : 'none',
+                boxShadow: isActive ? '0 4px 12px rgba(22, 119, 255, 0.3)' : '0 1px 4px rgba(0,0,0,0.08)',
                 margin: '0 auto' // 确保按钮在容器中居中
             }
         }
@@ -129,14 +129,14 @@ export default {
                 height: '48px',
                 borderRadius: '12px',
                 border: 'none',
-                background: isActive ? 'var(--btn-blue-bg)' : 'transparent',
-                color: isActive ? '#fff' : 'var(--muted)',
+                background: isActive ? 'var(--btn-blue-bg)' : 'var(--rail-btn-bg)',
+                color: isActive ? '#fff' : 'var(--rail-btn-text)',
                 transition: 'all 0.2s',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                boxShadow: isActive ? '0 4px 12px rgba(22, 119, 255, 0.3)' : 'none',
+                boxShadow: isActive ? '0 4px 12px rgba(22, 119, 255, 0.3)' : '0 1px 4px rgba(0,0,0,0.08)',
                 margin: '0 auto' // 确保按钮在容器中居中
             }
         }

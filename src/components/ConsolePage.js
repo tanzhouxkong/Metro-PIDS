@@ -997,12 +997,12 @@ export default {
                     <div style="display:flex; gap:6px;">
                         <span v-if="pidsState.appData.meta.serviceMode==='express'" style="padding:4px 8px; border-radius:4px; border:1px solid #ffa502; color:#ffa502; font-weight:bold; background:rgba(255,165,2,0.12);">大站车</span>
                         <span v-else-if="pidsState.appData.meta.serviceMode==='direct'" style="padding:4px 8px; border-radius:4px; border:1px solid #ff4757; color:#ff4757; font-weight:bold; background:rgba(255,71,87,0.12);">直达</span>
-                        <span v-else style="padding:4px 8px; border-radius:4px; border:1px solid var(--divider); color:var(--text); font-weight:bold; background:var(--card);">普通</span>
+                        <span v-else style="padding:4px 8px; border-radius:4px; border:1px solid var(--divider); color:var(--text); font-weight:bold; background:var(--input-bg);">普通</span>
                     </div>
                 </div>
             </div>
             
-            <input v-model="pidsState.appData.meta.lineName" placeholder="线路名称" @input="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:12px; background:var(--card); color:var(--text);">
+            <input v-model="pidsState.appData.meta.lineName" placeholder="线路名称" @input="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:12px; background:var(--input-bg); color:var(--text);">
             
             <div style="display:flex; gap:12px; margin-bottom:12px;">
                 <div style="position:relative; width:60px; height:42px;">
@@ -1020,13 +1020,13 @@ export default {
                         @click="pickColor"
                     ></div>
                 </div>
-                <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--card); color:var(--text);">
+                <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <option value="loop">环线 (Loop)</option>
                     <option value="linear">单线 (Linear)</option>
                 </select>
             </div>
             
-            <select v-model="pidsState.appData.meta.dirType" @change="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:16px; background:var(--card); color:var(--text);">
+            <select v-model="pidsState.appData.meta.dirType" @change="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:16px; background:var(--input-bg); color:var(--text);">
                 <template v-if="pidsState.appData.meta.mode === 'loop'">
                     <option value="outer">外环 (逆时针)</option>
                     <option value="inner">内环 (顺时针)</option>
@@ -1044,7 +1044,7 @@ export default {
                         padding:'10px 14px',
                         borderRadius:'10px',
                         border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.serviceMode==='normal' ? 'var(--btn-blue-bg)' : 'var(--card)',
+                        background: pidsState.appData.meta.serviceMode==='normal' ? 'var(--btn-blue-bg)' : 'var(--input-bg)',
                         color: pidsState.appData.meta.serviceMode==='normal' ? '#fff' : 'var(--text)',
                         boxShadow: pidsState.appData.meta.serviceMode==='normal' ? '0 4px 12px rgba(22,119,255,0.25)' : 'none',
                         fontWeight:'bold',
@@ -1054,7 +1054,7 @@ export default {
                         padding:'10px 14px',
                         borderRadius:'10px',
                         border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.serviceMode==='express' ? '#ffa502' : 'var(--card)',
+                        background: pidsState.appData.meta.serviceMode==='express' ? '#ffa502' : 'var(--input-bg)',
                         color: pidsState.appData.meta.serviceMode==='express' ? '#fff' : 'var(--text)',
                         boxShadow: pidsState.appData.meta.serviceMode==='express' ? '0 4px 12px rgba(255,165,2,0.25)' : 'none',
                         fontWeight:'bold',
@@ -1064,7 +1064,7 @@ export default {
                         padding:'10px 14px',
                         borderRadius:'10px',
                         border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.serviceMode==='direct' ? '#ff4757' : 'var(--card)',
+                        background: pidsState.appData.meta.serviceMode==='direct' ? '#ff4757' : 'var(--input-bg)',
                         color: pidsState.appData.meta.serviceMode==='direct' ? '#fff' : 'var(--text)',
                         boxShadow: pidsState.appData.meta.serviceMode==='direct' ? '0 4px 12px rgba(255,71,87,0.25)' : 'none',
                         fontWeight:'bold',
@@ -1084,7 +1084,7 @@ export default {
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">起点</label>
-                <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--card); color:var(--text);">
+                <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <option :value="-1">无</option>
                     <option v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" :value="i">[{{i+1}}] {{s.name}}</option>
                 </select>
@@ -1092,7 +1092,7 @@ export default {
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:16px;">
                 <label style="color:var(--muted);">终点</label>
-                <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--card); color:var(--text);">
+                <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                      <option :value="-1">无</option>
                      <option v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" :value="i">[{{i+1}}] {{s.name}}</option>
                 </select>
@@ -1114,7 +1114,7 @@ export default {
                 </button>
             </div>
             <div v-if="shortTurnPresets.length > 0" style="max-height:200px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:12px;">
-                <div v-for="preset in shortTurnPresets" :key="preset.name" style="display:flex; align-items:center; justify-content:space-between; padding:8px; margin-bottom:4px; background:var(--card); border-radius:4px;">
+                <div v-for="preset in shortTurnPresets" :key="preset.name" style="display:flex; align-items:center; justify-content:space-between; padding:8px; margin-bottom:4px; background:var(--input-bg); border-radius:4px;">
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:2px;">{{ preset.name }}</div>
                         <div style="font-size:11px; color:var(--muted);">
@@ -1141,7 +1141,7 @@ export default {
         <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
             <div style="color:#9B59B6; font-weight:bold; margin-bottom:12px; font-size:15px;">贯通线路</div>
             
-            <div style="background:var(--card); border:1px solid var(--divider); border-radius:8px; padding:12px; margin-bottom:12px;">
+            <div style="background:var(--input-bg); border:1px solid var(--divider); border-radius:8px; padding:12px; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                     <div style="font-size:12px; font-weight:bold; color:var(--text);">线路段列表</div>
                     <button @click="addThroughLineSegment()" class="btn" style="background:#2ED573; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer;" title="添加线路段">
@@ -1155,8 +1155,10 @@ export default {
                 
                 <div v-for="(segment, index) in throughLineSegments" :key="index" style="margin-bottom:12px; padding:10px; background:var(--bg); border:1px solid var(--divider); border-radius:6px;">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                        <div style="min-width:60px; font-size:12px; font-weight:bold; color:var(--text);">段{{index + 1}}</div>
-                        <div style="flex:1; padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--card); color:var(--text); font-size:12px; min-height:28px; display:flex; align-items:center;">
+                        <div style="min-width:60px; font-size:12px; font-weight:bold; color:var(--text);">
+                            {{ '线路' + String.fromCharCode('A'.charCodeAt(0) + index) }}
+                        </div>
+                        <div style="flex:1; padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:12px; min-height:28px; display:flex; align-items:center;">
                             {{ segment.lineName || '未选择' }}
                         </div>
                         <button @click="openLineManagerForSegment(index)" class="btn" style="background:#9B59B6; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:12px; cursor:pointer; white-space:nowrap;" title="从线路管理器选择">
@@ -1172,13 +1174,13 @@ export default {
                             v-if="segment.candidateThroughStations && segment.candidateThroughStations.length > 1"
                             v-model="segment.throughStationName" 
                             @change="saveCfg()"
-                            style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--card); color:var(--text); font-size:11px; min-height:24px;">
+                            style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:11px; min-height:24px;">
                             <option value="">请选择贯通站点</option>
                             <option v-for="stationName in segment.candidateThroughStations" :key="stationName" :value="stationName">
                                 {{ stationName }}
                             </option>
                         </select>
-                        <div v-else style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--card); color:var(--text); font-size:11px; min-height:24px; display:flex; align-items:center;">
+                        <div v-else style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:11px; min-height:24px; display:flex; align-items:center;">
                             {{ segment.throughStationName || '未检测到' }}
                         </div>
                     </div>
