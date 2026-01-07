@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Topbar - Metro PIDS</title>
+    <script>
+        (function(){
+            var cdn = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = cdn;
+            document.head.appendChild(link);
+            setTimeout(function(){
+                var loaded = false;
+                try { loaded = !!(window.getComputedStyle && window.getComputedStyle(document.body, ':before')); } catch(e) { loaded = false; }
+                if (!loaded) {
+                    var l = document.createElement('link');
+                    l.rel = 'stylesheet';
+                    l.href = 'assets/local-icons.css';
+                    document.head.appendChild(l);
+                }
+            }, 2000);
+        })();
+    </script>
+    <style>
+        :root { 
+            --theme: #00b894; 
+            --font: "Microsoft YaHei", sans-serif; 
+            --bg: #f0f2f5;
+            --text: #2d3436;
+            --muted: #9aa0a6;
+            --accent: #00b894;
+            --titlebar-bg: rgba(255, 255, 255, 0.6); /* 半透明背景，让 Mica 效果透出 */
+            --titlebar-border: rgba(0, 0, 0, 0.08);
+        }
+        html.dark {
+            --bg: #0b1116;
+            --text: #e6eef6;
+            --muted: #9aa6b2;
+            --titlebar-bg: rgba(11, 17, 22, 0.6); /* 半透明背景，让 Mica 效果透出 */
+            --titlebar-border: rgba(255, 255, 255, 0.08);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background: transparent; 
+            font-family: var(--font); 
+            color: var(--text); 
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "vue": "./assets/vue.esm-browser.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="topbar-app"></div>
+    <script type="module">
+        import { createApp } from 'vue'
+        import Topbar from './src/components/Topbar.js'
+        
+        const app = createApp(Topbar)
+        app.mount('#topbar-app')
+    </script>
+</body>
+</html>
+

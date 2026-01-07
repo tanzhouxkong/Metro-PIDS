@@ -1,0 +1,149 @@
+{
+  "version": "1.1.0",
+  "description": "Metro PIDS 多显示端配置文件 - 包含系统保护功能",
+  "systemDisplays": {
+    "display-1": {
+      "id": "display-1",
+      "name": "主显示器",
+      "description": "系统保护的主要显示端，用于主要信息展示",
+      "source": "builtin",
+      "url": "",
+      "width": 1900,
+      "height": 600,
+      "enabled": true,
+      "isSystem": true,
+      "color": "#00b894",
+      "position": {
+        "x": 100,
+        "y": 100
+      },
+      "protection": {
+        "canEdit": false,
+        "canDelete": false,
+        "canDisable": true,
+        "reason": "系统核心显示器，确保基本功能正常运行"
+      }
+    },
+    "display-2": {
+      "id": "display-2",
+      "name": "副显示器",
+      "description": "系统保护的辅助显示端，用于补充信息展示",
+      "source": "builtin",
+      "url": "",
+      "width": 1920,
+      "height": 1080,
+      "enabled": true,
+      "isSystem": true,
+      "color": "#4A90E2",
+      "position": {
+        "x": 200,
+        "y": 150
+      },
+      "protection": {
+        "canEdit": false,
+        "canDelete": false,
+        "canDisable": true,
+        "reason": "系统辅助显示器，提供额外的信息展示空间"
+      }
+    }
+  },
+  "defaultDisplays": {
+    "display-3": {
+      "id": "display-3",
+      "name": "显示端 3",
+      "description": "第三个显示端窗口，适用于标准显示器",
+      "source": "builtin",
+      "url": "",
+      "width": 1366,
+      "height": 768,
+      "enabled": true,
+      "isSystem": false,
+      "color": "#2ED573",
+      "position": {
+        "x": 300,
+        "y": 200
+      }
+    },
+    "display-4": {
+      "id": "display-4",
+      "name": "显示端 4",
+      "description": "第四个显示端窗口，适用于小尺寸显示器",
+      "source": "builtin",
+      "url": "",
+      "width": 1280,
+      "height": 720,
+      "enabled": true,
+      "isSystem": false,
+      "color": "#74B9FF",
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    }
+  },
+  "features": {
+    "systemProtection": {
+      "enabled": true,
+      "description": "系统显示器保护功能，防止误删除或修改关键显示器"
+    },
+    "broadcastChannel": {
+      "enabled": true,
+      "channelName": "metro_pids_v3",
+      "description": "使用 BroadcastChannel API 进行跨窗口通信"
+    },
+    "autoSync": {
+      "enabled": true,
+      "interval": 1000,
+      "description": "自动同步数据到所有显示端"
+    },
+    "displayIdentification": {
+      "enabled": true,
+      "showInCorner": true,
+      "showSystemBadge": true,
+      "description": "在显示端显示标识和系统保护标记"
+    }
+  },
+  "messageTypes": {
+    "SYNC": "同步线路数据和实时状态",
+    "DISPLAY_READY": "显示端就绪通知",
+    "CMD_UI": "UI控制命令（关闭窗口等）",
+    "CMD_KEY": "远端按键指令",
+    "REQ": "请求显示端返回当前状态",
+    "REC_START": "开始录制",
+    "REC_STOP": "停止录制"
+  },
+  "systemProtectionRules": {
+    "mainDisplay": {
+      "id": "display-1",
+      "protections": ["edit", "delete"],
+      "allowedOperations": ["enable", "disable", "view"]
+    },
+    "secondaryDisplay": {
+      "id": "display-2", 
+      "protections": ["edit", "delete"],
+      "allowedOperations": ["enable", "disable", "view"]
+    },
+    "userDisplays": {
+      "protections": [],
+      "allowedOperations": ["edit", "delete", "enable", "disable", "view"]
+    }
+  },
+  "troubleshooting": {
+    "popupBlocked": {
+      "problem": "浏览器弹窗被拦截",
+      "solution": "在浏览器设置中允许此网站的弹窗"
+    },
+    "broadcastChannelNotSupported": {
+      "problem": "BroadcastChannel API 不支持",
+      "solution": "使用现代浏览器或 Electron 环境"
+    },
+    "displayNotSync": {
+      "problem": "显示端数据不同步",
+      "solution": "检查 BroadcastChannel 连接和消息格式"
+    },
+    "systemDisplayProtection": {
+      "problem": "无法编辑或删除系统显示器",
+      "solution": "这是正常的保护机制，系统显示器不允许修改以确保基本功能"
+    }
+  }
+}

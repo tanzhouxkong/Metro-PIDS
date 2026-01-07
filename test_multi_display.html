@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多显示端测试页面</title>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2d3436;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .display-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .display-card {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .display-card:hover {
+            border-color: #00b894;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,184,148,0.2);
+        }
+        .display-card.system {
+            border-color: #4A90E2;
+            background: rgba(74, 144, 226, 0.05);
+        }
+        .display-card.system:hover {
+            border-color: #4A90E2;
+            box-shadow: 0 4px 15px rgba(74, 144, 226, 0.2);
+        }
+        .display-card h3 {
+            margin: 0 0 15px 0;
+            color: #2d3436;
+        }
+        .display-card p {
+            color: #636e72;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .btn {
+            background: #00b894;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s ease;
+        }
+        .btn:hover {
+            background: #00a085;
+        }
+        .btn-secondary {
+            background: #74b9ff;
+        }
+        .btn-secondary:hover {
+            background: #0984e3;
+        }
+        .btn-danger {
+            background: #ff6b6b;
+        }
+        .btn-danger:hover {
+            background: #e55656;
+        }
+        .controls {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+        .controls button {
+            margin: 0 10px;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            border-left: 4px solid #00b894;
+        }
+        .system-badge {
+            display: inline-block;
+            background: #4A90E2;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Metro PIDS 多显示端测试</h1>
+        
+        <div class="display-grid">
+            <div class="display-card system">
+                <h3>主显示器 <span class="system-badge">🛡️ 系统</span></h3>
+                <p>系统保护的主显示端<br>1900x600 分辨率<br><small>不可删除编辑</small></p>
+                <button class="btn" onclick="openDisplay('display-1', 1900, 600)">打开主显示器</button>
+            </div>
+            
+            <div class="display-card system">
+                <h3>副显示器 <span class="system-badge">🛡️ 系统</span></h3>
+                <p>系统保护的副显示端<br>1920x1080 分辨率<br><small>不可删除编辑</small></p>
+                <button class="btn" onclick="openDisplay('display-2', 1920, 1080)">打开副显示器</button>
+            </div>
+            
+            <div class="display-card">
+                <h3>显示端 3</h3>
+                <p>第三个显示端窗口<br>1366x768 分辨率<br><small>可自定义配置</small></p>
+                <button class="btn" onclick="openDisplay('display-3', 1366, 768)">打开显示端 3</button>
+            </div>
+            
+            <div class="display-card">
+                <h3>显示端 4</h3>
+                <p>第四个显示端窗口<br>1280x720 分辨率<br><small>可自定义配置</small></p>
+                <button class="btn" onclick="openDisplay('display-4', 1280, 720)">打开显示端 4</button>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-secondary" onclick="openAllDisplays()">打开所有显示端</button>
+            <button class="btn btn-danger" onclick="closeAllDisplays()">关闭所有显示端</button>
+            <button class="btn" onclick="sendTestData()">发送测试数据</button>
+        </div>
+        
+        <div class="status" id="status">
+            <strong>状态:</strong> 准备就绪，点击按钮测试多显示端功能
+        </div>
+    </div>
+
+    <script>
+        // 显示端配置
+        const displays = [
+            { id: 'display-1', name: '主显示器', width: 1900, height: 600, isSystem: true },
+            { id: 'display-2', name: '副显示器', width: 1920, height: 1080, isSystem: true },
+            { id: 'display-3', name: '显示端 3', width: 1366, height: 768, isSystem: false },
+            { id: 'display-4', name: '显示端 4', width: 1280, height: 720, isSystem: false }
+        ];
+
+        // 更新状态显示
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = `<strong>状态:</strong> ${message}`;
+        }
+
+        // 打开单个显示端
+        async function openDisplay(displayId, width, height) {
+            const display = displays.find(d => d.id === displayId);
+            const systemText = display && display.isSystem ? ' (系统保护)' : '';
+            updateStatus(`正在打开 ${displayId}${systemText}...`);
+            
+            try {
+                // 检查是否在 Electron 环境中
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDisplay) {
+                    const result = await window.electronAPI.openDisplay(width, height, displayId);
+                    if (result) {
+                        updateStatus(`${displayId}${systemText} 已成功打开 (Electron 窗口)`);
+                    } else {
+                        updateStatus(`打开 ${displayId} 失败`);
+                    }
+                } else {
+                    // 浏览器环境，使用弹窗
+                    let url;
+                    if (displayId === 'display-1') {
+                        url = 'display_window.html';
+                    } else {
+                        url = `displays/${displayId}/display_window.html`;
+                    }
+                    
+                    const popup = window.open(url, displayId, `width=${width},height=${height},resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no`);
+                    if (popup) {
+                        updateStatus(`${displayId}${systemText} 已成功打开 (浏览器弹窗)`);
+                    } else {
+                        updateStatus(`打开 ${displayId} 失败 - 可能被弹窗拦截器阻止`);
+                    }
+                }
+            } catch (error) {
+                console.error('打开显示端失败:', error);
+                updateStatus(`打开 ${displayId} 时发生错误: ${error.message}`);
+            }
+        }
+
+        // 打开所有显示端
+        async function openAllDisplays() {
+            updateStatus('正在打开所有显示端...');
+            let successCount = 0;
+            
+            for (const display of displays) {
+                try {
+                    await openDisplay(display.id, display.width, display.height);
+                    successCount++;
+                    // 添加延迟避免同时打开太多窗口
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (error) {
+                    console.error(`打开 ${display.id} 失败:`, error);
+                }
+            }
+            
+            updateStatus(`已尝试打开 ${displays.length} 个显示端，成功 ${successCount} 个`);
+        }
+
+        // 关闭所有显示端
+        function closeAllDisplays() {
+            updateStatus('正在发送关闭命令到所有显示端...');
+            
+            try {
+                // 通过 BroadcastChannel 发送关闭命令
+                if (typeof BroadcastChannel !== 'undefined') {
+                    const bc = new BroadcastChannel('metro_pids_v3');
+                    bc.postMessage({ t: 'CMD_UI', cmd: 'winClose' });
+                    updateStatus('已通过 BroadcastChannel 发送关闭命令');
+                } else {
+                    updateStatus('BroadcastChannel 不支持，无法发送关闭命令');
+                }
+            } catch (error) {
+                console.error('发送关闭命令失败:', error);
+                updateStatus(`发送关闭命令失败: ${error.message}`);
+            }
+        }
+
+        // 发送测试数据
+        function sendTestData() {
+            updateStatus('正在发送测试数据到所有显示端...');
+            
+            try {
+                const testData = {
+                    t: 'SYNC',
+                    d: {
+                        meta: {
+                            lineName: '测试线路',
+                            themeColor: '#00b894',
+                            mode: 'linear',
+                            dirType: 'up'
+                        },
+                        stations: [
+                            { name: '起点站', en: 'Start Station', xfer: [], dock: 'both' },
+                            { name: '中间站', en: 'Middle Station', xfer: [], dock: 'both' },
+                            { name: '终点站', en: 'End Station', xfer: [], dock: 'both' }
+                        ]
+                    },
+                    r: { idx: 1, state: 0 }
+                };
+
+                if (typeof BroadcastChannel !== 'undefined') {
+                    const bc = new BroadcastChannel('metro_pids_v3');
+                    bc.postMessage(testData);
+                    updateStatus('已发送测试数据到所有显示端');
+                } else {
+                    updateStatus('BroadcastChannel 不支持，无法发送测试数据');
+                }
+            } catch (error) {
+                console.error('发送测试数据失败:', error);
+                updateStatus(`发送测试数据失败: ${error.message}`);
+            }
+        }
+
+        // 监听显示端就绪消息
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('metro_pids_v3');
+            bc.onmessage = function(event) {
+                const data = event.data;
+                if (data && data.t === 'DISPLAY_READY') {
+                    const systemText = data.isSystem ? ' (系统保护)' : '';
+                    updateStatus(`收到 ${data.displayName || data.displayId}${systemText} 就绪通知`);
+                }
+            };
+        }
+
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus('页面已加载，多显示端测试功能就绪 - 包含系统保护的主副显示器');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Metro PIDS V2 - Control Panel</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2300b894'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff'%3EMP%3C/text%3E%3C/svg%3E">
+    
+    <!-- External Resources -->
+    <link 
+        rel="stylesheet" 
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
+        crossorigin="anonymous" 
+        referrerpolicy="no-referrer"
+        onerror="console.warn('Font Awesome failed to load, using fallback')"
+    >
+    
+    <!-- Global Styles -->
+    <style>
+        /* ================= CSS Variables ================= */
+        :root {
+            /* Theme Colors */
+            --theme: #00b894;
+            --accent: #00b894;
+            --gold: #ffaa00;
+            --dark: #2d3436;
+            
+            /* Light Theme */
+            --bg: #f0f2f5; /* 浅色背景 */
+            --card: transparent; /* 透明卡片背景，让 Mica 效果透出 */
+            --card-border: #f0f0f0;
+            --text: #2d3436;
+            --muted: #9aa0a6;
+            --rail-bg: rgba(255, 255, 255, 0.65);
+            --rail-border: rgba(0, 0, 0, 0.04);
+            --panel-bg: transparent; /* 透明面板背景，让 Mica 效果透出 */
+            
+            /* Button Colors */
+            --btn-blue-bg: #1677ff;
+            --btn-green-bg: var(--accent);
+            --btn-org-bg: #ff9f5a;
+            --btn-red-bg: #ff6b6b;
+            --btn-gray-bg: #d9dde0;
+            --btn-gray-text: var(--text);
+            --btn-text: #ffffff;
+            
+            /* Window Controls */
+            --win-close-bg: linear-gradient(90deg, #ff6b6b, #ff4d4d);
+            --win-close-color: #fff;
+            --titlebar-bg: rgba(255, 255, 255, 0.85);
+            --titlebar-border: rgba(0, 0, 0, 0.08);
+            
+            /* Blur Surfaces - Light (参考示例) */
+            --surface-primary: rgba(255, 255, 255, 0.92);    /* Primary: R255 G255 B255 */
+            --surface-secondary: rgba(239, 239, 244, 0.92);  /* Secondary: R239 G239 B244 */
+            --surface-tertiary: rgba(255, 255, 255, 0.92);   /* Tertiary: R255 G255 B255 */
+            
+            /* Typography */
+            --font: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* Dark Theme */
+        html.dark {
+            --bg: #0b1116; /* 深色背景 */
+            --card: transparent; /* 透明卡片背景，让 Mica 效果透出 */
+            --card-border: rgba(255, 255, 255, 0.04);
+            --text: #e6eef6;
+            --muted: #9aa6b2;
+            --rail-bg: rgba(7, 16, 24, 0.65);
+            --panel-bg: transparent; /* 透明面板背景，让 Mica 效果透出 */
+            --accent: #22c1a3;
+            --titlebar-bg: rgba(11, 17, 22, 0.85);
+            --titlebar-border: rgba(255, 255, 255, 0.08);
+            
+            /* Blur Surfaces - Dark (参考示例) */
+            --surface-primary: rgba(0, 0, 0, 0.82);      /* Primary: R0 G0 B0 */
+            --surface-secondary: rgba(28, 28, 30, 0.82); /* Secondary: R28 G28 B30 */
+            --surface-tertiary: rgba(44, 44, 46, 0.82);  /* Tertiary: R44 G44 B46 */
+        }
+
+        /* ================= Base Styles ================= */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100%; 
+            height: 100%; 
+            overflow: hidden; 
+            background: transparent; 
+            font-family: var(--font); 
+            color: var(--text); 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* 窗口阴影效果 - 通过伪元素实现 */
+        html::before {
+            content: '';
+            position: fixed;
+            top: -20px;
+            left: -20px;
+            right: -20px;
+            bottom: -20px;
+            background: transparent;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+            pointer-events: none;
+            z-index: -1;
+            border-radius: 16px;
+        }
+
+        /* Main App Container */
+        #app {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: transparent !important; /* 强制透明背景，让 mica-electron 的 Mica 效果透出 */
+        }
+
+        /* Dark theme - 毛玻璃效果通过 mica-electron 实现，不使用 CSS backdrop-filter */
+        html.dark #app {
+            background: transparent !important; /* 强制透明背景，让 mica-electron 的 Mica 效果透出 */
+        }
+        
+        /* 确保所有内容区域背景透明 */
+        #app > * {
+            background: transparent !important;
+        }
+        
+        /* 主程序内容区域模糊效果，与侧边栏一致 */
+        /* 模糊效果由 mica-electron 原生控制，不使用 CSS backdrop-filter */
+        #admin-app {
+            background: var(--surface-primary, rgba(255, 255, 255, 0.6)) !important; /* 浅色/深色主题基于示例 Primary */
+            border-radius: 12px !important; /* R角 */
+            overflow: hidden !important; /* 确保内容不会超出圆角 */
+        }
+        html.dark #admin-app {
+            background: var(--surface-primary, rgba(11, 17, 22, 0.6)) !important; /* 深色主题 Primary */
+            border-radius: 12px !important; /* R角 */
+            overflow: hidden !important; /* 确保内容不会超出圆角 */
+        }
+
+        /* ================= Utility Classes ================= */
+        .card {
+            background: transparent; /* 完全透明背景，让 Mica 模糊效果完全透出 */
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+        }
+        html.dark .card {
+            background: transparent; /* 深色主题下也完全透明 */
+        }
+
+        .btn {
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            background: var(--accent);
+            color: var(--btn-text);
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.18s, box-shadow 0.18s, filter 0.18s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+        }
+
+        .btn:hover {
+            filter: brightness(1.06);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 34px rgba(0, 0, 0, 0.12);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        /* Button Variants */
+        .b-blue { background: var(--btn-blue-bg); }
+        .b-green { background: var(--btn-green-bg); }
+        .b-org { background: var(--btn-org-bg); }
+        .b-red { background: var(--btn-red-bg); }
+        .b-gray { 
+            background: var(--btn-gray-bg); 
+            color: var(--btn-gray-text); 
+        }
+
+        /* Window Controls */
+        .win-btn {
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .win-btn:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .win-btn:active {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .win-btn.close:hover {
+            background: #e81123;
+            color: #fff;
+        }
+
+        .win-btn.close:active {
+            background: #bf0f1d;
+        }
+
+        html.dark .win-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        html.dark .win-btn:active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Feature Button */
+        .ft-btn {
+            transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+        }
+
+        .ft-btn:hover {
+            filter: brightness(0.9);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .ft-btn:active {
+            filter: brightness(0.8);
+            transform: translateY(1px);
+        }
+
+        html.dark .ft-btn:hover {
+            filter: brightness(0.95);
+        }
+
+        html.dark .ft-btn:active {
+            filter: brightness(0.9);
+        }
+
+        /* Custom Titlebar */
+        .custom-titlebar {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            height: 32px;
+            width: 100%;
+            z-index: 9999;
+            -webkit-user-select: none;
+            user-select: none;
+            /* Electron 特有属性，用于窗口拖拽功能 */
+            /* webhint-disable-next-line compat-api/css */
+            -webkit-app-region: drag;
+        }
+        
+        .custom-titlebar.darwin {
+            justify-content: center;
+        }
+        
+        .custom-titlebar.linux {
+            display: none;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 3px;
+        }
+
+        html.dark ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* ================= Animations ================= */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* ================= Loading State ================= */
+        .app-loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--muted);
+        }
+
+        .app-loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--muted);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- App Root -->
+    <div id="app">
+        <div class="app-loading">加载中</div>
+    </div>
+
+    <!-- Vite Entry Point -->
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

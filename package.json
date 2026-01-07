@@ -1,0 +1,108 @@
+{
+  "name": "metro-pids",
+  "version": "1.5.0",
+  "description": "Metro-PIDS ",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tanzhouxkong/Metro-PIDS-.git"
+  },
+  "main": "./out/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "node scripts/copy-main.js && node scripts/start-dev.js",
+    "preview": "electron-vite preview",
+    "build": "electron-vite build && electron-builder",
+    "build:sdk": "node ./scripts/build-display-sdk.js",
+    "publish:gh": "electron-builder --publish=always",
+    "rebuild-mica": "npm install -g node-gyp && npm install --build-from-source mica-electron",
+    "check-build-tools": "node scripts/check-build-tools.js"
+  },
+  "build": {
+    "appId": "com.Metro-PIDS.myapp",
+    "productName": "Metro-PIDS",
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "shortcutName": "Metro-PIDS",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "tanzhouxkong",
+        "repo": "Metro-PIDS-",
+        "releaseType": "release",
+        "vPrefixedTagName": true
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist",
+      "!node_modules/electron",
+      "!node_modules/electron-builder"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "tanzhouxkong",
+          "repo": "Metro-PIDS-",
+          "vPrefixedTagName": true
+        }
+      ]
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.icns",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "tanzhouxkong",
+          "repo": "Metro-PIDS-",
+          "vPrefixedTagName": true
+        }
+      ]
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "tanzhouxkong",
+          "repo": "Metro-PIDS-",
+          "vPrefixedTagName": true
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "electron-log": "^5.4.3",
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.7.3",
+    "mica-electron": "^1.5.16",
+    "vue": "^3.5.26"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.0",
+    "electron": "^32.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^5.0.0",
+    "vite": "^5.4.0"
+  }
+}

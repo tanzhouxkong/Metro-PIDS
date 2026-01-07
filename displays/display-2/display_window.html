@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro PIDS - Jinan Style (Vue)</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script type="importmap">
+    {
+        "imports": {
+            "vue": "../../assets/vue.esm-browser.js"
+        }
+    }
+    </script>
+    <style>
+        /* ================= 全局样式 ================= */
+        :root {
+            --theme: #009F4D;
+            --bg-body: #000;
+            --bg-panel: #fdfdfd;
+            --font-main: "Helvetica Neue", Helvetica, "Microsoft YaHei", Arial, sans-serif;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg-body);
+            font-family: var(--font-main);
+        }
+
+        /* ================= 屏幕容器 (1900x600 适配) ================= */
+        #display-app {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-body);
+            font-family: var(--font-main);
+        }
+        #scaler {
+            width: 1900px;
+            height: 600px;
+            background: var(--bg-panel);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 0 100px #000;
+            transform-origin: center center;
+        }
+
+        /* ================= 自定义标题栏 ================= */
+        #display-titlebar.custom-titlebar {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            height: 35px;
+            width: 100%;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding-left: 12px;
+            font-size: 14px;
+            user-select: none;
+            -webkit-app-region: drag;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+        }
+        #display-titlebar.custom-titlebar [role="controls"] {
+            -webkit-app-region: no-drag;
+        }
+        
+        /* MacOS 适配：标题居中显示 */
+        #display-titlebar.custom-titlebar.darwin {
+            justify-content: center;
+        }
+        
+        /* Linux 适配：隐藏自定义标题栏 */
+        #display-titlebar.custom-titlebar.linux {
+            display: none;
+        }
+
+        /* ================= 顶部 Header ================= */
+        .header {
+            height: 90px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 28px;
+            border-bottom: 2px solid #eee;
+            background: #fff;
+            z-index: 10;
+            margin-top: 35px; /* push header below custom titlebar */
+        }
+
+        /* 左侧：Logo & Line */
+        .h-left {
+            width: 220px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .logo-box {
+            font-size: 30px;
+            color: #1e3785;
+        }
+        .logo-txt {
+            display: flex;
+            flex-direction: column;
+        }
+        .lt-cn {
+            font-size: 17px;
+            font-weight: 900;
+            color: #1e3785;
+            letter-spacing: 1px;
+        }
+        .lt-en {
+            font-size: 9px;
+            font-weight: bold;
+            color: #1e3785;
+        }
+        .line-tag {
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-left: 10px;
+        }
+        .ln-num {
+            font-size: 29px;
+            font-weight: 900;
+            line-height: 1;
+        }
+        .ln-lbl {
+            display: flex;
+            flex-direction: column;
+            font-size: 8px;
+            font-weight: bold;
+            line-height: 1.1;
+        }
+
+        /* 中间：动态信息 */
+        .h-center {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+        }
+        .info-col {
+            display: flex;
+            flex-direction: column;
+        }
+        .lbl {
+            font-size: 11px;
+            color: #888;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .val {
+            font-size: 23px;
+            font-weight: 900;
+        }
+        .val-en {
+            font-size: 11px;
+            margin-top: -2px;
+        }
+        .val.black {
+            color: #333;
+        }
+        .blink {
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 右侧：开门/车厢 */
+        .h-right {
+            width: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .door-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 2px solid #ddd;
+            padding-left: 14px;
+        }
+        .door-txt {
+            text-align: right;
+        }
+        .dt-cn {
+            font-size: 19px;
+            font-weight: 900;
+            color: #333;
+        }
+        .dt-en {
+            font-size: 9px;
+            color: #666;
+        }
+        .door-icon {
+            width: 40px;
+            height: 40px;
+            background: #eee;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 26px;
+            color: #c0392b;
+        }
+        .door-icon.door-open {
+            background: #27ae60;
+            color: #fff;
+        }
+        .door-icon.door-close {
+            background: #eee;
+            color: #c0392b;
+        }
+
+        /* ================= 地图区域 (核心) ================= */
+        .map-area {
+            flex-grow: 1;
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            background: #fdfdfd;
+        }
+
+        .track-wrap {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding-left: 0;
+            transition: none; /* 摄像机固定，不需要transition */
+            will-change: auto;
+        }
+
+        .rail-bg {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            /* height 和 border-radius 由 Vue 动态设置 */
+            background: #e0e0e0;
+            z-index: 0;
+        }
+
+        /* 分段线路条 */
+        .rail-segment {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            /* height 和 border-radius 由 Vue 动态设置 */
+            width: 0;
+            z-index: 1;
+            transition: background 0.5s linear;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
+        }
+
+        /* 线段上的箭头 */
+        .segment-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            /* margin-left, border-top, border-bottom, border-left 由 Vue 动态设置 */
+            border-top-color: transparent;
+            border-bottom-color: transparent;
+            z-index: 3;
+            filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.2));
+        }
+
+        .rail-segment.segment-passed {
+            opacity: 1;
+        }
+
+        .rail-segment.segment-current {
+            opacity: 1;
+        }
+
+        /* 箭头指示器 */
+        .rail-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            /* margin-left, border-top, border-bottom, border-left 由 Vue 动态设置 */
+            border-top-color: transparent;
+            border-bottom-color: transparent;
+            z-index: 2;
+            transition: left 0.5s linear;
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.3));
+        }
+
+        .nodes-container {
+            display: flex;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* 站点容器 */
+        .st-node {
+            position: relative;
+            /* width 由 Vue 动态设置 */
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            margin-right: 0;
+            flex-shrink: 0;
+            pointer-events: auto;
+        }
+
+        /* 站名 (斜体) */
+        .st-txt {
+            position: absolute;
+            top: 38%;
+            left: 5px;
+            transform: rotate(-45deg);
+            transform-origin: bottom left;
+            width: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding-bottom: 10px;
+        }
+        .st-cn {
+            font-size: 14px;
+            font-weight: bold;
+            color: #444;
+            transition: 0.3s;
+        }
+        .st-en {
+            font-size: 9px;
+            font-weight: 500;
+            color: #999;
+            margin-top: 1px;
+        }
+
+        /* 站点圆圈 */
+        .st-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2.5px solid #ccc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 9px;
+            font-weight: bold;
+            color: #aaa;
+            transition: 0.3s;
+            z-index: 15;
+        }
+
+        /* 换乘标识 */
+        .xfer-row {
+            position: absolute;
+            top: 70%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 2px;
+            margin-top: 8px;
+        }
+        .x-badge {
+            padding: 1px 4px;
+            border-radius: 2px;
+            color: #fff;
+            font-size: 7px;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        /* 状态样式逻辑 */
+        .st-node.passed .st-dot {
+            background: var(--theme);
+            border-color: var(--theme);
+            color: #fff;
+        }
+        .st-node.passed .st-cn {
+            color: #aaa;
+        }
+        .st-node.active .st-dot {
+            background: #fff;
+            border-color: var(--theme);
+            color: var(--theme);
+            width: 26px;
+            height: 26px;
+            font-size: 12px;
+            box-shadow: 0 0 8px var(--theme);
+        }
+        .st-node.active .st-cn {
+            color: var(--theme);
+            font-size: 23px;
+            font-weight: 900;
+        }
+        .st-node.active .st-en {
+            color: var(--theme);
+            font-weight: bold;
+        }
+        .st-node.future .st-dot {
+            border-color: var(--theme);
+            color: var(--theme);
+        }
+    </style>
+</head>
+<body>
+    <div id="display-root"></div>
+    <script type="module" src="./display-entry.js"></script>
+</body>
+</html>
