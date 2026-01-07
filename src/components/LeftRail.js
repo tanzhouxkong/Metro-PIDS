@@ -586,7 +586,7 @@ export default {
         <button
             type="button"
             class="ft-btn"
-            :style="{ width: '48px', height: '48px', borderRadius: '12px', border: 'none', background: 'transparent', color: 'var(--muted)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'none' }"
+            :style="{ width: '48px', height: '48px', borderRadius: '12px', border: 'none', background: 'var(--rail-btn-bg)', color: 'var(--rail-btn-text)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }"
             @click="openGithub()"
             title="Github"
         >
