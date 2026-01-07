@@ -39,10 +39,10 @@ export default {
   template: `
     <div v-if="visible" id="unified-dialogs" style="position:fixed; inset:0; align-items:center; justify-content:center; z-index:10000; display:flex;">
       <div id="ud-backdrop" style="position:absolute; inset:0; background:rgba(0,0,0,0.45); backdrop-filter: blur(18px);" @click="type !== 'alert' && closeDialog(type==='confirm'?false:null)"></div>
-      <div id="ud-box" style="position:relative; background:var(--card); padding:24px; border-radius:12px; width:420px; max-width:90%; box-shadow:0 8px 28px rgba(0,0,0,0.3); border:1px solid var(--card-border);">
+      <div id="ud-box" style="position:relative; background:var(--surface-tertiary, #ffffff); padding:24px; border-radius:12px; width:420px; max-width:90%; box-shadow:0 8px 28px rgba(0,0,0,0.3); border:1px solid var(--card-border);">
         <div id="ud-title" style="font-weight:800; font-size:18px; margin-bottom:12px; color:var(--text);">{{ title }}</div>
         <div id="ud-msg" style="margin-bottom:20px; color:var(--text); font-size:14px; line-height:1.5; white-space:pre-wrap;">{{ msg }}</div>
-        <input v-if="type==='prompt'" v-model="inputVal" id="ud-input" style="width:100%; padding:10px; margin-bottom:20px; border:1px solid var(--divider); border-radius:6px; background:var(--bg); color:var(--text);" @keyup.enter="closeDialog(inputVal)" />
+        <input v-if="type==='prompt'" v-model="inputVal" id="ud-input" style="width:100%; padding:10px; margin-bottom:20px; border:1px solid var(--divider); border-radius:6px; background:var(--input-bg); color:var(--text);" @keyup.enter="closeDialog(inputVal)" />
         <div style="display:flex; gap:12px; justify-content:flex-end;">
           <button class="btn" style="background:var(--btn-gray-bg); color:var(--btn-gray-text);" v-if="type!=='alert'" @click="closeDialog(type==='confirm'?false:null)">取消</button>
           <button class="btn" style="background:var(--accent); color:white;" @click="closeDialog(type==='prompt'?inputVal:true)">确定</button>

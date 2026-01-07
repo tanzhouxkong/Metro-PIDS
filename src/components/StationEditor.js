@@ -149,15 +149,16 @@ export default {
       }, [
         h('div', {
           style: {
-            background: 'var(--card)',
+            background: 'var(--surface-tertiary, #ffffff)',
             padding: '18px',
-            borderRadius: '8px',
+            borderRadius: '10px',
             width: '680px',
             maxWidth: '95%',
             maxHeight: '80vh',
             overflow: 'auto',
             boxShadow: '0 8px 28px rgba(0,0,0,0.3)',
-            color: 'var(--text)'
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)'
           }
         }, [
           // 顶部区域
@@ -194,7 +195,7 @@ export default {
                   value: form.name,
                   onInput: (e) => form.name = e.target.value,
                   placeholder: '例如: 人民广场',
-                  style: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--divider)', background: 'var(--bg)', color: 'var(--text)' }
+                  style: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--divider)', background: 'var(--input-bg)', color: 'var(--text)' }
                 })
             ]),
             h('div', { style: { flex: '1' } }, [
@@ -203,7 +204,7 @@ export default {
                   value: form.en,
                   onInput: (e) => form.en = e.target.value,
                   placeholder: 'e.g. People\'s Square',
-                  style: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--divider)', background: 'var(--bg)', color: 'var(--text)' }
+                  style: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--divider)', background: 'var(--input-bg)', color: 'var(--text)' }
                 })
             ])
           ]),
@@ -213,13 +214,13 @@ export default {
             // 运营状态
             h('div', { style: { flex: '1' } }, [
               h('div', { style: { fontSize: '12px', fontWeight: 'bold', color: 'var(--muted)', marginBottom: '6px' } }, '站点状态 (Status)'),
-              h('div', { style: { display: 'flex', background: 'var(--bg)', padding: '4px', borderRadius: '6px' } }, [
+              h('div', { style: { display: 'flex', background: 'var(--input-bg)', padding: '4px', borderRadius: '6px' } }, [
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: !form.skip ? 'var(--card)' : 'transparent', color: !form.skip ? 'var(--accent)' : 'var(--muted)', fontWeight: 'bold', boxShadow: !form.skip ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: !form.skip ? 'var(--input-bg)' : 'transparent', color: !form.skip ? 'var(--accent)' : 'var(--muted)', fontWeight: 'bold', boxShadow: !form.skip ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.skip = false
                 }, '正常运营'),
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.skip ? 'var(--card)' : 'transparent', color: form.skip ? 'var(--btn-org-bg)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.skip ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.skip ? 'var(--input-bg)' : 'transparent', color: form.skip ? 'var(--btn-org-bg)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.skip ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.skip = true
                 }, '暂缓开通')
               ])
@@ -227,36 +228,36 @@ export default {
             // 开门方向
             h('div', { style: { flex: '1' } }, [
               h('div', { style: { fontSize: '12px', fontWeight: 'bold', color: 'var(--muted)', marginBottom: '6px' } }, '开门方向 (Door)'),
-              h('div', { style: { display: 'flex', background: 'var(--bg)', padding: '4px', borderRadius: '6px' } }, [
+              h('div', { style: { display: 'flex', background: 'var(--input-bg)', padding: '4px', borderRadius: '6px' } }, [
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.door === 'left' ? 'var(--card)' : 'transparent', color: form.door === 'left' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.door === 'left' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.door === 'left' ? 'var(--accent)' : 'transparent', color: form.door === 'left' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.door === 'left' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.door = 'left'
                 }, '左侧'),
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.door === 'right' ? 'var(--card)' : 'transparent', color: form.door === 'right' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.door === 'right' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.door === 'right' ? 'var(--accent)' : 'transparent', color: form.door === 'right' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.door === 'right' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.door = 'right'
                 }, '右侧'),
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.door === 'both' ? 'var(--card)' : 'transparent', color: form.door === 'both' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.door === 'both' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.door === 'both' ? 'var(--accent)' : 'transparent', color: form.door === 'both' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.door === 'both' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.door = 'both'
                 }, '双侧')
-          ])
-        ])
+              ])
+            ])
         ,
           // 停靠方向（仅允许上/下/双）
           h('div', { style: { flex: '1' } }, [
             h('div', { style: { fontSize: '12px', fontWeight: 'bold', color: 'var(--muted)', marginBottom: '6px' } }, '停靠方向 (Dock)'),
-            h('div', { style: { display: 'flex', background: 'var(--bg)', padding: '4px', borderRadius: '6px' } }, [
+            h('div', { style: { display: 'flex', background: 'var(--input-bg)', padding: '4px', borderRadius: '6px' } }, [
               h('button', {
-                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.dock === 'up' ? 'var(--card)' : 'transparent', color: form.dock === 'up' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.dock === 'up' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.dock === 'up' ? 'var(--accent)' : 'transparent', color: form.dock === 'up' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.dock === 'up' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                 onClick: () => form.dock = 'up'
               }, '仅上行'),
               h('button', {
-                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.dock === 'down' ? 'var(--card)' : 'transparent', color: form.dock === 'down' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.dock === 'down' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.dock === 'down' ? 'var(--accent)' : 'transparent', color: form.dock === 'down' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.dock === 'down' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                 onClick: () => form.dock = 'down'
               }, '仅下行'),
               h('button', {
-                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.dock === 'both' ? 'var(--card)' : 'transparent', color: form.dock === 'both' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.dock === 'both' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.dock === 'both' ? 'var(--accent)' : 'transparent', color: form.dock === 'both' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.dock === 'both' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                 onClick: () => form.dock = 'both'
               }, '双向')
             ])
@@ -267,30 +268,30 @@ export default {
           h('div', { style: { flex: '1', display:'flex', gap:'12px', alignItems:'stretch', marginTop:'12px' } }, [
             h('div', { style: { flex: '1' } }, [
               h('div', { style: { fontSize: '12px', fontWeight: 'bold', color: 'var(--muted)', marginBottom: '6px' } }, '折返位置 (Turnback)'),
-              h('div', { style: { display: 'flex', background: 'var(--bg)', padding: '4px', borderRadius: '6px' } }, [
+              h('div', { style: { display: 'flex', background: 'var(--input-bg)', padding: '4px', borderRadius: '6px' } }, [
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.turnback === 'none' ? 'var(--card)' : 'transparent', color: form.turnback === 'none' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.turnback === 'none' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.turnback === 'none' ? 'var(--accent)' : 'transparent', color: form.turnback === 'none' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.turnback === 'none' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.turnback = 'none'
                 }, '无'),
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.turnback === 'pre' ? 'var(--card)' : 'transparent', color: form.turnback === 'pre' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.turnback === 'pre' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.turnback === 'pre' ? 'var(--accent)' : 'transparent', color: form.turnback === 'pre' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.turnback === 'pre' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.turnback = 'pre'
                 }, '站前折返'),
                 h('button', {
-                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.turnback === 'post' ? 'var(--card)' : 'transparent', color: form.turnback === 'post' ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.turnback === 'post' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                  style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.turnback === 'post' ? 'var(--accent)' : 'transparent', color: form.turnback === 'post' ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.turnback === 'post' ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                   onClick: () => form.turnback = 'post'
                 }, '站后折返')
               ])
             ]),
             h('div', { style: { width:'160px', display:'flex', flexDirection:'column', gap:'6px' } }, [
               h('div', { style: { fontSize: '12px', fontWeight: 'bold', color: 'var(--muted)' } }, '大站停靠'),
-            h('div', { style: { display:'flex', background: 'var(--bg)', padding: '4px', borderRadius: '6px' } }, [
+            h('div', { style: { display:'flex', background: 'var(--input-bg)', padding: '4px', borderRadius: '6px' } }, [
               h('button', {
-                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.expressStop ? 'var(--card)' : 'transparent', color: form.expressStop ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.expressStop ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: form.expressStop ? 'var(--accent)' : 'transparent', color: form.expressStop ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: form.expressStop ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                 onClick: () => { form.expressStop = true; }
               }, '停靠'),
               h('button', {
-                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: !form.expressStop ? 'var(--card)' : 'transparent', color: !form.expressStop ? 'var(--text)' : 'var(--muted)', fontWeight: 'bold', boxShadow: !form.expressStop ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: '0.2s' },
+                style: { flex: '1', border: 'none', padding: '8px', borderRadius: '4px', background: !form.expressStop ? 'var(--accent)' : 'transparent', color: !form.expressStop ? '#fff' : 'var(--muted)', fontWeight: 'bold', boxShadow: !form.expressStop ? '0 1px 6px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', transition: '0.2s' },
                 onClick: () => { form.expressStop = false; }
               }, '跳过')
             ])
@@ -313,7 +314,7 @@ export default {
             h('span', { style: { fontWeight: 'bold', fontSize: '14px' } }, '换乘线路'),
             h('button', {
               class: 'btn',
-              style: { background: 'var(--bg)', color: 'var(--accent)', fontSize: '12px', padding: '6px 12px', boxShadow:'0 4px 12px rgba(0,0,0,0.12)', borderRadius:'6px' },
+              style: { background: 'var(--input-bg)', color: 'var(--accent)', fontSize: '12px', padding: '6px 12px', boxShadow:'0 4px 12px rgba(0,0,0,0.12)', borderRadius:'6px' },
               onClick: (e) => { e.preventDefault(); addXfer(); }
             }, '+ 添加换乘')
           ]),
@@ -326,7 +327,7 @@ export default {
                 value: xf.line,
                 onInput: (e) => xf.line = e.target.value,
                 placeholder: '线路名称/编号',
-                style: { flex: '1', padding: '8px', borderRadius: '6px', border: '1px solid var(--divider)', background: 'var(--bg)', color: 'var(--text)' }
+                style: { flex: '1', padding: '8px', borderRadius: '6px', border: '1px solid var(--divider)', background: 'var(--input-bg)', color: 'var(--text)' }
               }),
               h('div', { style: { position: 'relative', width: '40px', height: '34px' } }, [
                   !hasElectronAPI ? h('input', {
@@ -354,7 +355,7 @@ export default {
               ]),
               h('button', {
                 class: 'btn',
-                style: { padding: '0 10px', height: '34px', fontSize: '12px', background: xf.suspended ? 'var(--btn-org-bg)' : 'var(--bg)', color: xf.suspended ? 'white' : 'var(--text)' },
+                style: { padding: '0 10px', height: '34px', fontSize: '12px', background: xf.suspended ? 'var(--btn-org-bg)' : 'var(--input-bg)', color: xf.suspended ? 'white' : 'var(--text)' },
                 onClick: () => toggleXferSuspended(idx)
               }, xf.suspended ? '暂缓' : '正常'),
               h('button', {

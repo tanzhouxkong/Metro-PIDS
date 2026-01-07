@@ -148,6 +148,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       } catch (e) {
         return { ok: false, error: String(e) };
       }
+    },
+    setMainBlur: async (enable) => {
+      try {
+        return await ipcRenderer.invoke('effects/main-blur', !!enable);
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
     }
   }
   ,
@@ -228,6 +235,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 获取环境变量中的 Gitee Token
   getGiteeTokenFromEnv: async () => {
     try { return await ipcRenderer.invoke('env/get-gitee-token'); } catch (e) { return null; }
+  },
+  // 重启应用（用于重置数据后彻底刷新）
+  relaunchApp: async () => {
+    try { return await ipcRenderer.invoke('app/relaunch'); } catch (e) { return { ok: false, error: String(e) }; }
   },
   // 监听主进程日志
   onMainConsoleLog: (cb) => {

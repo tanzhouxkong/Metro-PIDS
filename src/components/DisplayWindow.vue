@@ -3,10 +3,8 @@
     <div id="scaler">
       <div class="header">
         <div class="h-left">
-          <div class="logo-area">
-            <div class="logo-txt">Metro PIDS</div>
-          </div>
           <div class="line-info">
+            <div id="d-line-no" class="line-badge">--</div>
           </div>
         </div>
         <div class="h-next">
@@ -53,11 +51,10 @@
               </div>
             </div>
             </div>
+          <div class="as-panel-right">
+            <div class="as-map-track"></div>
+            <div class="as-map-nodes"></div>
           </div>
-            <div class="as-panel-right">
-              <div class="as-map-track"></div>
-              <div class="as-map-nodes"></div>
-            </div>
         </div>
       </div>
     </div>

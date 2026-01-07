@@ -12,9 +12,14 @@ export function useSettings() {
         root.classList.toggle('blur-disabled', !enabled);
         // 尝试同步到原生窗口效果（如有暴露的 API）
         try {
-            const blurApi = typeof window !== 'undefined' && window.electronAPI && window.electronAPI.effects && window.electronAPI.effects.setDialogBlur;
-            if (typeof blurApi === 'function') {
-                blurApi(enabled);
+            const effects = typeof window !== 'undefined' && window.electronAPI && window.electronAPI.effects;
+            if (effects) {
+                if (typeof effects.setMainBlur === 'function') {
+                    effects.setMainBlur(enabled);
+                }
+                if (typeof effects.setDialogBlur === 'function') {
+                    effects.setDialogBlur(enabled);
+                }
             }
         } catch (e) {
             // 忽略同步失败
@@ -118,6 +123,8 @@ export function useSettings() {
                 
                 // 兼容旧数据：补齐模糊开关
                 if (settings.blurEnabled === undefined) settings.blurEnabled = DEFAULT_SETTINGS.blurEnabled;
+                // 兼容旧数据：补齐线路名合并开关
+                if (settings.lineNameMerge === undefined) settings.lineNameMerge = DEFAULT_SETTINGS.lineNameMerge;
             }
         } catch (e) { 
             console.warn('Failed to load settings', e);

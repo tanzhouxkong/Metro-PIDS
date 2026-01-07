@@ -160,7 +160,6 @@ export default {
         <div class="header">
           <div class="h-left">
             <div class="logo-area">
-              <div class="logo-txt">Metro PIDS</div>
             </div>
             <div class="line-info">
               <div id="d-line-no" class="line-badge">--</div>

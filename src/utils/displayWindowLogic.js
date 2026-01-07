@@ -246,8 +246,8 @@ const displayStyleSheet = `
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-left: auto;
-    padding-right: 20px;
+    margin-left: -70px;
+    padding-right: 0;
 }
 #display-app .line-badge {
     font-size: 36px;
@@ -276,6 +276,7 @@ const displayStyleSheet = `
     border-radius: 8px;
     padding-right: 30px;
     z-index: 10;
+    margin-left: 90px; /* 让中间白框整体向右偏移 */
 }
 #display-app .h-next .lbl {
     font-size: 36px;
@@ -300,8 +301,11 @@ const displayStyleSheet = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    text-align: left;
+    text-align: right;
     flex-grow: 1;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
     color: #000;
 }
 #display-app .h-next .val .en {
@@ -309,6 +313,7 @@ const displayStyleSheet = `
     font-weight: bold;
     opacity: 0.9;
     display: block;
+    text-align: right; /* 英文右对齐 */
     color: #666;
 }
 #display-app .h-door {
@@ -1788,40 +1793,192 @@ export function initDisplayWindow(rootElement) {
   const renderNormalScreen = (sts, meta) => {
     const lineEl = locateId('d-line-no');
     if (lineEl) {
-      const lineName = meta.lineName || '--';
-      const parsedLineName = parseColorMarkup(lineName);
-      
-      // 移除颜色标记来计算纯文本长度（用于判断是否超过5个字）
-      const textOnly = lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1');
-      
-      // 创建滚动容器
-      lineEl.innerHTML = '';
-      const lineBox = document.createElement('div');
-      lineBox.className = 'marquee-box';
-      lineBox.style.fontSize = '36px';
-      lineBox.style.fontWeight = '900';
-      lineBox.style.color = 'var(--contrast-color)';
-      lineBox.style.lineHeight = '1';
-      lineBox.style.width = '100%';
-      lineBox.style.maxWidth = '100%';
-      
-      const lineContent = document.createElement('span');
-      lineContent.className = 'marquee-content';
-      lineContent.innerHTML = parsedLineName;
-      lineBox.appendChild(lineContent);
-      lineEl.appendChild(lineBox);
-      
-      // 检查是否需要滚动：超过5个字就开始滚动
-      setTimeout(() => {
-        if (textOnly.length > 5 || lineContent.offsetWidth > lineBox.offsetWidth) {
-          const w = lineContent.offsetWidth;
-          lineContent.innerHTML = `${parsedLineName}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedLineName}`;
-          lineContent.classList.add('scrolling');
-          let dur = (w + 50) / 50;
-          if (dur < 3) dur = 3;
-          lineContent.style.animationDuration = `${dur}s`;
+      // 父容器层控制宽度和内边距，保持与 line-info 一致并可容纳多段
+      lineEl.style.padding = '0 16px';
+      lineEl.style.boxSizing = 'border-box';
+      lineEl.style.width = '100%';
+      lineEl.style.maxWidth = '100%';
+      lineEl.style.display = 'flex';
+      lineEl.style.justifyContent = 'flex-end';
+
+      const cleanText = (t) => (t || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+      // 仅当显式为 true 或字符串 "true" 时启用合并，其他都视为关闭
+      const mergeEnabled = (meta.lineNameMerge === true || meta.lineNameMerge === 'true');
+      const segments = Array.isArray(meta.throughLineSegments) ? meta.throughLineSegments : [];
+      let mergedCandidates = [];
+
+      if (mergeEnabled) {
+        if (Array.isArray(meta.mergedLineNames) && meta.mergedLineNames.length > 0) {
+          mergedCandidates = meta.mergedLineNames;
+        } else if (segments.length > 0) {
+          mergedCandidates = segments.map(s => s.lineName);
+        } else if (meta.lineALineName || meta.lineBLineName) {
+          mergedCandidates = [meta.lineALineName, meta.lineBLineName].filter(Boolean);
+        } else if (meta.lineName) {
+          // 模板兜底：支持贯通/非贯通多段线路名
+          // 例如：
+          //  - “济南地铁4号线 - 济南地铁8号线 (贯通)”
+          //  - “4号线、8号线” / “4号线, 8号线” / “4号线/8号线”
+          const plain = cleanText(meta.lineName).replace(/\(.*?\)/g, '').trim();
+          const parts = plain
+            .split(/\s*(?:[-–—－]|、|,|，|\/|﹑)\s*/i)
+            .map(p => p.trim())
+            .filter(Boolean);
+          if (parts.length >= 2) {
+            mergedCandidates = parts;
+          } else if (parts.length === 1) {
+            mergedCandidates = parts;
+          }
         }
-      }, 0);
+        if (mergeEnabled && mergedCandidates.length === 0 && meta.lineName) {
+          mergedCandidates = [meta.lineName];
+        }
+      }
+
+      let mergedNames = mergeEnabled
+        ? Array.from(new Set(mergedCandidates.map(cleanText).filter(Boolean)))
+        : [];
+
+      // 兜底：普通线路在开启合并时，如果前面没有识别出任何候选，就至少用整条线路名生成一个块
+      if (mergeEnabled && mergedNames.length === 0 && meta.lineName) {
+        const fallback = cleanText(meta.lineName) || meta.lineName;
+        if (fallback && fallback.trim()) {
+          mergedNames = [fallback.trim()];
+        }
+      }
+      // 线路号按数字从小到大排序，保证左到右递增
+      if (mergeEnabled && mergedNames.length > 0) {
+        const getNum = (name) => {
+          const m = name.match(/(\d+)/);
+          return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+        };
+        mergedNames.sort((a, b) => getNum(a) - getNum(b));
+      }
+
+      lineEl.innerHTML = '';
+
+      // 如果开启了线路名合并：
+      //  - 有可用的 mergedNames：只渲染合并块
+      //  - 没有可用 mergedNames：直接隐藏，不走单线路块逻辑
+      if (mergeEnabled) {
+        if (mergedNames.length >= 1) {
+          // 线路名合并展示：逐段展示，如“4号线 8号线”，单段也走块样式
+          const wrap = document.createElement('div');
+          wrap.style.display = 'flex';
+          wrap.style.gap = '12px';
+          wrap.style.alignItems = 'center';
+          wrap.style.justifyContent = 'flex-start';
+          wrap.style.flexDirection = 'row'; // 从左到右排列线路块
+          wrap.style.width = '100%';
+          wrap.style.maxWidth = '100%';
+          wrap.style.flexWrap = 'nowrap'; // 三段也保持单行
+          wrap.style.overflow = 'hidden';
+
+          const toEn = (name) => {
+            const m = name.match(/(\d+)/);
+            return m ? `Line ${m[1]}` : name;
+          };
+
+          mergedNames.forEach((nm) => {
+            // 去前缀，提取数字和“号线”后缀
+            const simplify = (name) => {
+              const stripped = name
+                .replace(/^(?:[\u4e00-\u9fa5]{1,6}(?:省|市|县|区|自治区|特别行政区)?)(?:地铁|轨道交通|轨交|城轨|城市轨道交通)?\s*/i, '')
+                .trim();
+              return stripped || name;
+            };
+
+            const textOnlyNm = simplify(cleanText(nm));
+            const baseName = textOnlyNm || simplify(nm) || cleanText(nm) || nm || '--';
+            // 支持多条贯通线：数字可多段，以首个数字为主，后缀默认“号线”
+            const numMatch = baseName.match(/^(\d+)(.*)$/);
+            const numPart = numMatch ? numMatch[1] : baseName;
+            const suffixPart = (() => {
+              // 若存在非数字部分（含多线路名称），保留原文本；否则补“号线”
+              const rest = numMatch ? (numMatch[2] || '').trim() : '';
+              return rest || '号线';
+            })();
+
+            const block = document.createElement('div');
+            block.style.display = 'flex';
+            block.style.alignItems = 'center';
+            block.style.justifyContent = 'flex-start';
+            block.style.gap = '10px';
+            block.style.padding = '4px 6px';
+            block.style.borderRadius = '4px';
+            block.style.background = 'transparent';
+
+            const numBox = document.createElement('div');
+            numBox.style.fontSize = '46px';
+            numBox.style.fontWeight = '900';
+            numBox.style.color = 'var(--contrast-color)';
+            numBox.style.lineHeight = '1';
+            numBox.style.minWidth = '48px';
+            numBox.style.textAlign = 'center';
+            numBox.textContent = numPart;
+
+            const rightCol = document.createElement('div');
+            rightCol.style.display = 'flex';
+            rightCol.style.flexDirection = 'column';
+            rightCol.style.justifyContent = 'center';
+            rightCol.style.alignItems = 'flex-start';
+            rightCol.style.gap = '2px';
+
+            const cn = document.createElement('div');
+            cn.className = 'marquee-box';
+            cn.style.fontSize = '28px';
+            cn.style.fontWeight = '900';
+            cn.style.color = 'var(--contrast-color)';
+            cn.style.lineHeight = '1.05';
+            cn.style.textAlign = 'left';
+            const cnContent = document.createElement('span');
+            cnContent.className = 'marquee-content';
+            cnContent.innerHTML = parseColorMarkup(suffixPart);
+            cn.appendChild(cnContent);
+
+            const en = document.createElement('div');
+            en.style.fontSize = '14px';
+            en.style.fontWeight = '700';
+            en.style.color = 'var(--contrast-color)';
+            en.style.opacity = '0.92';
+            en.style.textAlign = 'left';
+            en.textContent = toEn(baseName);
+
+            rightCol.appendChild(cn);
+            rightCol.appendChild(en);
+
+            block.appendChild(numBox);
+            block.appendChild(rightCol);
+            wrap.appendChild(block);
+          });
+
+          lineEl.appendChild(wrap);
+        }
+        // 合并模式下不再执行后面的单线路块逻辑
+        return;
+      }
+
+      // 未开启合并：整行直接显示原始线路名（不再使用大号数字线路块）
+      {
+        const rawLineName = meta.lineName || '--';
+        const cleanText = (t) => (t || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+        const plainFull = cleanText(rawLineName);
+
+        const box = document.createElement('div');
+        box.className = 'marquee-box';
+        box.style.fontSize = '28px';
+        box.style.fontWeight = '900';
+        box.style.color = 'var(--contrast-color)';
+        box.style.lineHeight = '1.1';
+        box.style.textAlign = 'left';
+
+        const span = document.createElement('span');
+        span.className = 'marquee-content';
+        span.innerHTML = parseColorMarkup(plainFull);
+        box.appendChild(span);
+
+        lineEl.appendChild(box);
+      }
     }
     const termBox = locate('.h-term');
     const nextLbl = locate('.h-next .lbl');
@@ -1996,16 +2153,21 @@ export function initDisplayWindow(rootElement) {
     const nextStBox = locateId('d-next-st');
     if (!nextStBox || !targetSt) return;
     nextStBox.innerHTML = '';
-      const nWrapper = document.createElement('div');
-      nWrapper.className = 'marquee-box';
-      nWrapper.style.width = '100%';
-      nWrapper.style.display = 'flex';
-      nWrapper.style.flexDirection = 'column';
-      nWrapper.style.alignItems = 'flex-start';
+    const nWrapper = document.createElement('div');
+    nWrapper.className = 'marquee-box';
+    nWrapper.style.width = '100%';
+    nWrapper.style.display = 'flex';
+    nWrapper.style.flexDirection = 'column';
+    nWrapper.style.alignItems = 'flex-end'; // 整体右对齐
+    nWrapper.style.overflow = 'visible';   // 避免整体裁剪
     const nNameBox = document.createElement('div');
     nNameBox.className = 'marquee-box';
     nNameBox.style.maxWidth = '100%';
     nNameBox.style.height = '40px';
+    nNameBox.style.overflow = 'visible'; // 避免字母下部被裁剪
+    nNameBox.style.textAlign = 'right'; // 中文右对齐
+    nNameBox.style.lineHeight = '1.12';
+    nNameBox.style.paddingBottom = '2px';
     const nNameContent = document.createElement('span');
     nNameContent.className = 'marquee-content';
     nNameContent.style.fontSize = '36px';
@@ -2021,6 +2183,11 @@ export function initDisplayWindow(rootElement) {
     nEnBox.style.fontSize = '16px';
     nEnBox.style.fontWeight = 'bold';
     nEnBox.style.color = '#666';
+    nEnBox.style.overflow = 'visible'; // 避免字母下部被裁剪
+    nEnBox.style.lineHeight = '1.2';
+    nEnBox.style.paddingBottom = '2px';
+    nEnBox.style.overflow = 'visible'; // 避免字母下部被裁剪
+    nEnBox.style.textAlign = 'right'; // 英文右对齐
     const nEnContent = document.createElement('span');
     nEnContent.className = 'marquee-content';
     nEnContent.innerHTML = parsedTargetEn;
@@ -2109,15 +2276,18 @@ export function initDisplayWindow(rootElement) {
       nWrapper.style.width = '100%';
       nWrapper.style.display = 'flex';
       nWrapper.style.flexDirection = 'column';
-      nWrapper.style.alignItems = 'flex-start';
+      nWrapper.style.alignItems = 'flex-end'; // 整体右对齐
+      nWrapper.style.overflow = 'visible';   // 避免整体裁剪
       const nNameBox = document.createElement('div');
       nNameBox.className = 'marquee-box';
       nNameBox.style.maxWidth = '100%';
       nNameBox.style.height = '40px';
+      nNameBox.style.overflow = 'visible'; // 避免字母下部被裁剪
       nNameBox.style.fontSize = '36px';
       nNameBox.style.fontWeight = '900';
       nNameBox.style.color = '#000';
       nNameBox.style.lineHeight = '1.1';
+      nNameBox.style.textAlign = 'right';
       const nNameContent = document.createElement('span');
       nNameContent.className = 'marquee-content';
       const parsedName = parseColorMarkup(st.name);
@@ -2129,7 +2299,11 @@ export function initDisplayWindow(rootElement) {
       nEnBox.style.fontSize = '16px';
       nEnBox.style.fontWeight = 'bold';
       nEnBox.style.color = '#666';
+      nEnBox.style.overflow = 'visible'; // 避免字母下部被裁剪
       nEnBox.style.opacity = '0.9';
+      nEnBox.style.lineHeight = '1.2';
+      nEnBox.style.paddingBottom = '2px';
+      nEnBox.style.textAlign = 'right'; // 英文右对齐
       const nEnContent = document.createElement('span');
       nEnContent.className = 'marquee-content';
       const parsedEn = parseColorMarkup(st.en);

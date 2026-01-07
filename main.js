@@ -4,6 +4,13 @@ const fs = require('fs');
 const fsPromises = fs.promises;
 const crypto = require('crypto');
 
+// 关闭主进程的冗余日志（保留 warn/error）
+const ENABLE_MAIN_VERBOSE_LOG = false;
+const __MAIN_ORIGINAL_LOG = console.log;
+console.log = (...args) => {
+  if (ENABLE_MAIN_VERBOSE_LOG) __MAIN_ORIGINAL_LOG(...args);
+};
+
 // 引入 mica-electron 用于 Windows 11 Mica 效果
 // 注意：mica-electron 需要在 app 初始化后加载，所以在 createWindow 中加载
 let MicaBrowserWindow = BrowserWindow; // 默认使用标准 BrowserWindow
@@ -74,6 +81,7 @@ try {
 }
 
 let mainWin = null;
+let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
 let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
 let lineManagerWin = null;
 let devWin = null;
@@ -129,6 +137,10 @@ function getRendererUrl(htmlRelativePath) {
 // 重新应用 Mica 效果的辅助函数
 function reapplyMicaEffect() {
   if (!mainWin || mainWin.isDestroyed()) return;
+  if (!MAIN_BLUR_ENABLED) {
+    console.log('[MainWindow] 模糊开关关闭，跳过重新应用效果');
+    return;
+  }
   
   const isWindows = process.platform === 'win32';
   if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
@@ -219,9 +231,23 @@ function createWindow() {
     // Windows 和 MacOS 使用自定义标题栏，启用透明以支持毛玻璃效果（透到桌面）
     // 使用 MicaBrowserWindow（如果可用）以获得更好的 Mica 效果支持
     // 按照官方示例：先不显示窗口，等 dom-ready 后再显示
+    // 根据当前主显示器工作区域自动适配一个合适的初始大小，避免过大导致窗口被挤到左上角
+    let initialWidth = 1600;
+    let initialHeight = 900;
+    try {
+      const primary = screen.getPrimaryDisplay();
+      const size = (primary && (primary.workAreaSize || primary.workArea)) || null;
+      if (size && size.width && size.height) {
+        initialWidth = Math.min(initialWidth, size.width);
+        initialHeight = Math.min(initialHeight, size.height);
+      }
+    } catch (e) {
+      console.warn('[MainWindow] 获取屏幕信息失败，使用默认窗口大小', e);
+    }
+
     mainWin = new MicaBrowserWindow({
-      width: 2480,
-      height: 1440,
+      width: initialWidth,
+      height: initialHeight,
       frame: false, // 隐藏默认框架
       transparent: true, // 启用透明以支持毛玻璃效果（透到桌面）
       resizable: true,
@@ -275,10 +301,18 @@ function createWindow() {
     
     // 按照官方示例：在 dom-ready 时显示窗口
     mainWin.webContents.once('dom-ready', () => {
+      // 显示前先居中到当前主显示器中间
+      try {
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.center();
+        }
+      } catch (e) {
+        console.warn('[MainWindow] ⚠️ 居中窗口失败:', e);
+      }
       // 按照官方示例：直接显示窗口，效果已在窗口创建时应用
       if (mainWin && !mainWin.isDestroyed()) {
         mainWin.show();
-        console.log('[MainWindow] ✅ 窗口已显示（按照官方示例）');
+        console.log('[MainWindow] ✅ 窗口已显示并居中（按照官方示例）');
       }
     });
     
@@ -539,6 +573,50 @@ function createWindow() {
       return { ok: true };
     } catch (err) {
       console.warn('failed to toggle dialog blur', err);
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // 主窗口模糊开关（通过 mica-electron 控制，而非 CSS）
+  ipcMain.handle('effects/main-blur', (event, enable) => {
+    MAIN_BLUR_ENABLED = !!enable;
+    const win = mainWin;
+    if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' };
+    try {
+      // 关闭模糊：尽量退回无材质/透明
+      if (!MAIN_BLUR_ENABLED) {
+        if (process.platform === 'win32') {
+          if (typeof win.setBackgroundMaterial === 'function') {
+            win.setBackgroundMaterial('none');
+          }
+          // 保持透明背景
+          if (typeof win.setBackgroundColor === 'function') {
+            win.setBackgroundColor('#00000000');
+          }
+        } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+          win.setVibrancy('none');
+        }
+        return { ok: true };
+      }
+
+      // 开启模糊：根据平台恢复 Mica/Acrylic
+      if (process.platform === 'win32') {
+        if (typeof win.setBackgroundColor === 'function') {
+          win.setBackgroundColor('#00000000');
+        }
+        if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
+          win.setMicaAcrylicEffect();
+        } else if (WIN10 && typeof win.setAcrylic === 'function') {
+          win.setAcrylic();
+        } else if (typeof win.setBackgroundMaterial === 'function') {
+          win.setBackgroundMaterial('acrylic');
+        }
+      } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+        win.setVibrancy('fullscreen-ui');
+      }
+      return { ok: true };
+    } catch (err) {
+      console.warn('[effects/main-blur] toggle failed:', err);
       return { ok: false, error: String(err) };
     }
   });
@@ -1079,7 +1157,7 @@ ipcMain.handle('ui/close-panel', async (event) => {
 
 // ==================== BrowserView 管理结束 ====================
 
-// 辅助：默认线路文件目录位于 userData
+// 辅助：默认线路文件目录位于 userData/lines/默认
 function getLinesDir(dir) {
   if (dir && typeof dir === 'string' && dir.length > 0) return dir;
   // 获取当前活动的文件夹
@@ -1088,8 +1166,16 @@ function getLinesDir(dir) {
   if (folders[currentFolder]) {
     return folders[currentFolder].path;
   }
-  // 如果默认文件夹不存在，使用默认路径
-  const defaultPath = path.join(app.getPath('userData'), 'lines');
+  // 如果默认文件夹不存在，使用默认路径（lines/默认）
+  const defaultPath = path.join(app.getPath('userData'), 'lines', '默认');
+  // 确保物理目录存在
+  try {
+    if (!fs.existsSync(defaultPath)) {
+      fs.mkdirSync(defaultPath, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[getLinesDir] 创建默认线路目录失败:', e);
+  }
   // 确保默认文件夹被添加到列表中
   if (store) {
     const currentFolders = store.get('linesFolders') || {};
@@ -1106,11 +1192,39 @@ function getLinesDir(dir) {
 
 // 获取所有文件夹配置
 function getLinesFolders() {
-  if (!store) return { default: { name: '默认', path: path.join(app.getPath('userData'), 'lines') } };
+  if (!store) {
+    const defaultPath = path.join(app.getPath('userData'), 'lines', '默认');
+    // 确保物理目录存在
+    try {
+      if (!fs.existsSync(defaultPath)) {
+        fs.mkdirSync(defaultPath, { recursive: true });
+      }
+    } catch (e) {
+      console.warn('[getLinesFolders] (no-store) 创建默认线路目录失败:', e);
+    }
+    return {
+      default: {
+        name: '默认',
+        path: defaultPath
+      }
+    };
+  }
   const folders = store.get('linesFolders') || {};
   // 确保有默认文件夹
   if (!folders.default) {
-    folders.default = { name: '默认', path: path.join(app.getPath('userData'), 'lines') };
+    const defaultPath = path.join(app.getPath('userData'), 'lines', '默认');
+    // 确保物理目录存在
+    try {
+      if (!fs.existsSync(defaultPath)) {
+        fs.mkdirSync(defaultPath, { recursive: true });
+      }
+    } catch (e) {
+      console.warn('[getLinesFolders] 创建默认线路目录失败:', e);
+    }
+    folders.default = {
+      name: '默认',
+      path: defaultPath
+    };
     store.set('linesFolders', folders);
   }
   return folders;
@@ -1145,8 +1259,8 @@ async function initPresetLinesFromSource() {
       return;
     }
     
-    // 获取默认文件夹路径
-    const defaultLinesDir = path.join(app.getPath('userData'), 'lines');
+    // 获取默认文件夹路径（lines/默认）
+    const defaultLinesDir = path.join(app.getPath('userData'), 'lines', '默认');
     await ensureDir(defaultLinesDir);
     
     // 确保默认文件夹在配置中
@@ -2186,6 +2300,18 @@ ipcMain.handle('app/get-os-version', async () => {
     
     return { ok: true, osVersion: osVersion || `${platform} ${os.release()}` };
   } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 应用重启（用于重置数据后彻底刷新主窗口与 BrowserView）
+ipcMain.handle('app/relaunch', () => {
+  try {
+    app.relaunch();
+    app.exit(0); // 使用 exit 以确保 relaunch 生效
+    return { ok: true };
+  } catch (e) {
+    console.error('[main] app/relaunch 失败:', e);
     return { ok: false, error: String(e) };
   }
 });

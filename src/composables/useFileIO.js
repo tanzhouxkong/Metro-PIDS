@@ -343,7 +343,12 @@ export function useFileIO(state) {
             }
             // 清除本地存储并重新加载
             localStorage.removeItem('pids_global_store_v1');
-            location.reload();
+            // 彻底重启应用，确保主窗口与侧边栏 BrowserView 一并刷新
+            if (window.electronAPI && window.electronAPI.relaunchApp) {
+                await window.electronAPI.relaunchApp();
+            } else {
+                location.reload();
+            }
         }
     }
 

@@ -10,6 +10,9 @@ import { applyThroughOperation as mergeThroughLines } from '../utils/throughOper
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, toRefs } from 'vue'
 import ColorPicker from './ColorPicker.js'
 
+const ENABLE_SLIDE_LOG = false;
+const ENABLE_MAIN_LOG_BRIDGE = false; // 关闭主进程日志转发到渲染层
+
 export default {
   name: 'SlidePanel',
   components: { ColorPicker },
@@ -1186,7 +1189,7 @@ export default {
         })();
 
         // 配置主进程日志监听（用于调试）
-        if (typeof window !== 'undefined' && window.electronAPI) {
+        if (ENABLE_MAIN_LOG_BRIDGE && typeof window !== 'undefined' && window.electronAPI) {
             try {
                 window.electronAPI.onMainConsoleLog && window.electronAPI.onMainConsoleLog((msg) => {
                     console.log('[MAIN]', msg);
@@ -1220,7 +1223,7 @@ export default {
                     updateState.value.checking = false;
                     updateState.value.isLatest = true; // 标记为最新版本
                     const currentVersion = version.value || '未知';
-                    console.log('[SlidePanel] 收到 update-not-available 事件', info);
+                    if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 收到 update-not-available 事件', info);
                     // 不显示弹窗，只在界面上显示状态（避免频繁弹窗干扰用户）
                 });
 
@@ -1307,11 +1310,11 @@ export default {
             updateState.value.error = null; // 清除之前的错误
             updateState.value.isLatest = false; // 清除之前的"已是最新"状态
             
-            console.log('[SlidePanel] 开始检查更新...');
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 开始检查更新...');
             
             try {
                 const r = await window.electronAPI.checkForUpdates();
-                console.log('[SlidePanel] checkForUpdates 返回:', r);
+                if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] checkForUpdates 返回:', r);
                 
                 if (!r || !r.ok) {
                     updateState.value.checking = false;
@@ -1320,7 +1323,7 @@ export default {
                     console.error('[SlidePanel] 检查更新失败:', errorMsg);
                     showMsg('检查更新失败：' + errorMsg);
                 } else {
-                    console.log('[SlidePanel] 检查更新请求已发送，等待事件响应...');
+                if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 检查更新请求已发送，等待事件响应...');
                     // 不在这里设置 checking = false，等待事件响应
                 }
             } catch (e) {
@@ -1749,18 +1752,18 @@ export default {
 
         // 监听设置变化，同步到本地状态
         watch(() => settings.display.currentDisplayId, (newId) => {
-            console.log('[SlidePanel] 监听到 currentDisplayId 变化:', displayState.currentDisplayId, '->', newId);
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 currentDisplayId 变化:', displayState.currentDisplayId, '->', newId);
             displayState.currentDisplayId = newId;
         }, { immediate: true });
 
         watch(() => settings.display.displays, (newDisplays) => {
-            console.log('[SlidePanel] 监听到 displays 变化');
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 displays 变化');
             displayState.displays = { ...newDisplays }; // 创建新对象确保响应性
         }, { deep: true, immediate: true });
 
         // 当前显示端ID的响应式引用（用于确保模板更新）
         const currentDisplayId = computed(() => {
-            console.log('[SlidePanel] currentDisplayId computed:', displayState.currentDisplayId);
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] currentDisplayId computed:', displayState.currentDisplayId);
             return displayState.currentDisplayId;
         });
 
@@ -1811,7 +1814,7 @@ export default {
 
         // 点击卡片切换显示端
         async function selectDisplay(displayId) {
-            console.log('[SlidePanel] 点击切换显示端到:', displayId);
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 点击切换显示端到:', displayId);
             
             // 检查 display-2 是否允许打开
             if (displayId === 'display-2') {
@@ -1867,7 +1870,7 @@ export default {
                 
                 // 显示切换成功的提示
                 const displayName = targetDisplay.name || displayId;
-                console.log('[SlidePanel] 显示端切换完成:', oldDisplayId, '->', displayId);
+                if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端切换完成:', oldDisplayId, '->', displayId);
                 
                 showNotification('显示端已切换', `当前活动显示端：${displayName}`, {
                     tag: 'display-switched',
@@ -2023,7 +2026,7 @@ export default {
             
             saveSettings();
             
-            console.log('[SlidePanel] 显示端排序已更新:', sourceId, '->', targetId);
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端排序已更新:', sourceId, '->', targetId);
             
             showNotification('显示端排序已更新', `已将 "${displays[sourceId].name}" 移动到新位置`, {
                 tag: 'display-reordered',
@@ -2061,7 +2064,7 @@ export default {
             
             saveSettings();
             
-            console.log('[SlidePanel] 新显示端已添加:', newId, newDisplay);
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 新显示端已添加:', newId, newDisplay);
             await showMsg(`显示端 "${name}" 已添加并设为当前活动显示端`);
         }
 
@@ -2239,7 +2242,7 @@ export default {
                 
                 saveSettings();
                 
-                console.log('[SlidePanel] 显示端已更新:', displayId, result);
+                if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端已更新:', displayId, result);
                 await showMsg(`显示端 "${result.name}" 已更新`);
             }
         }
@@ -2255,7 +2258,7 @@ export default {
                 
                 saveSettings();
                 
-                console.log('[SlidePanel] 显示端启用状态已切换:', displayId, display.enabled);
+                if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端启用状态已切换:', displayId, display.enabled);
                 
                 const statusText = display.enabled ? '已启用' : '已禁用';
                 showNotification('显示端状态已更新', `${display.name} ${statusText}`, {
@@ -2293,13 +2296,13 @@ export default {
                 if (remainingIds.length > 0) {
                     settings.display.currentDisplayId = remainingIds[0];
                     displayState.currentDisplayId = remainingIds[0];
-                    console.log('[SlidePanel] 删除当前显示端，切换到:', remainingIds[0]);
+                    if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 删除当前显示端，切换到:', remainingIds[0]);
                 }
             }
 
             saveSettings();
             
-            console.log('[SlidePanel] 显示端已删除:', displayId);
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端已删除:', displayId);
             await showMsg(`显示端 "${display.name}" 已删除`);
         }
 

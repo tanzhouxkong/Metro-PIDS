@@ -204,6 +204,8 @@ export default {
     
     // 兼容旧数据，补齐 serviceMode
     if (!pidsState.appData.meta.serviceMode) pidsState.appData.meta.serviceMode = 'normal';
+    // 兼容旧数据，补齐线路名合并开关
+    if (pidsState.appData.meta.lineNameMerge === undefined) pidsState.appData.meta.lineNameMerge = false;
     
     // 初始化贯通线路设置字段
     if (pidsState.appData.meta.throughLineSegments === undefined) {
@@ -239,6 +241,10 @@ export default {
     }
     
     function saveCfg() {
+        // 归一化布尔值，避免字符串 "true"/"false" 影响显示端判断
+        if (pidsState?.appData?.meta) {
+            pidsState.appData.meta.lineNameMerge = !!pidsState.appData.meta.lineNameMerge;
+        }
         sync();
     }
     
@@ -1003,6 +1009,27 @@ export default {
             </div>
             
             <input v-model="pidsState.appData.meta.lineName" placeholder="线路名称" @input="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:12px; background:var(--input-bg); color:var(--text);">
+            
+            <!-- 线路名合并开关（控制台） -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:13px; color:var(--text);">
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <span style="font-weight:bold;">线路名合并</span>
+                <span style="font-size:12px; color:var(--muted);">显示端左侧按多段线路名拼接展示</span>
+              </div>
+              <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
+                <input type="checkbox" v-model="pidsState.appData.meta.lineNameMerge" @change="saveCfg()" style="opacity:0; width:0; height:0;">
+                <span :style="{
+                    position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0,
+                    backgroundColor: pidsState.appData.meta.lineNameMerge ? 'var(--accent)' : '#ccc',
+                    transition:'.3s', borderRadius:'24px'
+                }"></span>
+                <span :style="{
+                    position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px',
+                    backgroundColor:'white', transition:'.3s', borderRadius:'50%',
+                    transform: pidsState.appData.meta.lineNameMerge ? 'translateX(20px)' : 'translateX(0)'
+                }"></span>
+              </label>
+            </div>
             
             <div style="display:flex; gap:12px; margin-bottom:12px;">
                 <div style="position:relative; width:60px; height:42px;">

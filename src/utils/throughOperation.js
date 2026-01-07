@@ -47,9 +47,15 @@ export function applyThroughOperation(appData, storeList, options = null) {
     if (!name) return '';
     return String(name).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
   };
+  // 清理线路名（用于展示/合并记录）
+  const cleanLineName = (name) => {
+    if (!name) return '';
+    return cleanStationName(name);
+  };
   
   // 查找所有线路
   const lines = [];
+  const mergedLineNames = [];
   for (const segment of throughLineSegments) {
     if (!segment.lineName) {
       console.warn('[贯通线路] 线路段缺少线路名称');
@@ -67,6 +73,7 @@ export function applyThroughOperation(appData, storeList, options = null) {
     }
     
     lines.push(line);
+    mergedLineNames.push(cleanLineName(segment.lineName));
   }
   
   // 合并多条线路
@@ -209,6 +216,8 @@ export function applyThroughOperation(appData, storeList, options = null) {
   
   // 设置自定义颜色范围：为每个线路段设置不同的颜色
   mergedAppData.meta.customColorRanges = colorRanges;
+  // 记录用于展示的合并线路名列表（供显示端“线路名合并”使用）
+  mergedAppData.meta.mergedLineNames = mergedLineNames;
   
   // 设置合并线路的主题颜色（使用第一段的颜色）
   mergedAppData.meta.themeColor = lines[0].meta?.themeColor || '#00b894';

@@ -179,6 +179,7 @@ export const DEFAULT_SETTINGS = {
     themeMode: "system", 
     darkVariant: "soft", 
     blurEnabled: true,
+    lineNameMerge: false, // 线路名合并（控制显示端左侧是否拼接多段线路名）
     keys: { arrdep: "Enter", prev: "ArrowLeft", next: "ArrowRight" }, 
     autoplay: { enabled: false, intervalSec: 8, key: "Space" },
     display: { 
