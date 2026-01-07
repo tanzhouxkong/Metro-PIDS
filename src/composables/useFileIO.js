@@ -387,8 +387,22 @@ export function useFileIO(state) {
         }
         
         try {
-            // 固定写入到“默认”文件夹（ID 恒为 'default'，对应 lines\\默认）
-            const presetFolderId = 'default';
+            // 固定写入到“默认”文件夹（物理路径为 userData/lines/默认）
+            let targetDirPath = null;
+            try {
+                const foldersRes = await window.electronAPI.lines.folders.list();
+                if (foldersRes && foldersRes.ok && Array.isArray(foldersRes.folders)) {
+                    const def =
+                        foldersRes.folders.find(f => f.id === 'default') ||
+                        foldersRes.folders.find(f => f.name === '默认');
+                    if (def && def.path) {
+                        targetDirPath = def.path;
+                    }
+                }
+            } catch (e) {
+                console.warn('获取默认线路文件夹失败:', e);
+            }
+            // safety：如果没拿到路径，退回 null，让主进程按当前配置推断，但正常情况下会拿到默认文件夹路径
             
             // 从 state.store.list 或默认常量获取预设线路数据
             const defaultLines = [];
@@ -469,7 +483,7 @@ export function useFileIO(state) {
             for (const { data, filename } of defaultLines) {
                 try {
                     // 检查文件是否已存在（在默认文件夹中）
-                    const existing = await window.electronAPI.lines.read(filename, presetFolderId);
+                    const existing = await window.electronAPI.lines.read(filename, targetDirPath);
                     if (existing && existing.ok && existing.content) {
                         // 文件已存在，比较内容是否相同
                         const normalized = normalizeLine(JSON.parse(JSON.stringify(data)));
@@ -483,7 +497,7 @@ export function useFileIO(state) {
                     
                     // 文件不存在或内容不同，保存到默认文件夹
                     const normalized = normalizeLine(JSON.parse(JSON.stringify(data)));
-                    await window.electronAPI.lines.save(filename, normalized, presetFolderId);
+                    await window.electronAPI.lines.save(filename, normalized, targetDirPath);
                 } catch (e) {
                     // 忽略单个文件的保存错误，继续处理下一个
                     console.warn(`初始化预设线路 ${filename} 失败:`, e);
