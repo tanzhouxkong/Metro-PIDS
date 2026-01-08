@@ -2494,8 +2494,6 @@ export default {
                 <i class="fas fa-trash-alt"></i> 重置数据
             </button>
         </div>
-
-          </div>
           
           <!-- Autoplay Control -->
           <div class="card" style="border-left: 6px solid #1E90FF; border-radius:12px; padding:16px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">

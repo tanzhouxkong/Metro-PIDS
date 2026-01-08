@@ -3,6 +3,7 @@
     <div id="scaler">
       <div class="header">
         <div class="h-left">
+          <div class="app-title">Metro PIDS</div>
           <div class="line-info">
             <div id="d-line-no" class="line-badge">--</div>
           </div>
@@ -50,11 +51,14 @@
                 <div id="as-door-msg-en" class="as-door-t-en">Left side doors open</div>
               </div>
             </div>
+            <div class="as-car-area">
+              <div class="as-car-exits"></div>
             </div>
-          <div class="as-panel-right">
-            <div class="as-map-track"></div>
-            <div class="as-map-nodes"></div>
           </div>
+            <div class="as-panel-right">
+              <div class="as-map-track"></div>
+              <div class="as-map-nodes"></div>
+            </div>
         </div>
       </div>
     </div>
@@ -62,17 +66,30 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
 import { initDisplayWindow } from '../utils/displayWindowLogic.js';
 
 const rootRef = ref(null);
 let cleanup = () => {};
+
+// 平台检测
+const platform = ref('');
+const isDarwin = computed(() => platform.value === 'darwin');
+const isLinux = computed(() => platform.value === 'linux');
+
+// 获取平台信息
+if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.platform) {
+  platform.value = window.electronAPI.platform;
+}
 
 onMounted(() => {
   cleanup = initDisplayWindow(rootRef.value);
 });
 
 onBeforeUnmount(() => {
+  if (cleanup) {
   cleanup();
+    cleanup = null;
+  }
 });
 </script>

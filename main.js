@@ -21,6 +21,13 @@ let WIN10 = null;
 // 必须在 app.whenReady() 之前设置
 app.setName('Metro-PIDS');
 
+// 设置应用用户模型 ID（Windows 通知设置需要）
+// 必须在 app.whenReady() 之前设置
+// 使用与 package.json 中 appId 相同的值，确保通知设置中能正确识别应用
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.Metro-PIDS.myapp');
+}
+
 // 引入日志和存储
 let logger = null;
 let Store = null;
@@ -3144,6 +3151,25 @@ app.whenReady().then(async () => {
   
   // 延迟检查更新，确保窗口准备完成
   scheduleAutoUpdateCheck();
+  
+  // 在 Windows 上，确保应用注册到通知系统
+  // 这会让应用出现在 Windows 设置 > 系统 > 通知和操作 中
+  if (process.platform === 'win32' && Notification.isSupported()) {
+    try {
+      // 静默发送一个测试通知（立即关闭），以确保应用被注册到通知系统
+      // 用户不会看到这个通知，但它会触发 Windows 注册应用
+      const testNotification = new Notification({
+        title: 'Metro-PIDS',
+        body: '',
+        silent: true
+      });
+      // 立即关闭测试通知，用户不会看到
+      testNotification.close();
+      console.log('[main] Windows 通知系统注册完成');
+    } catch (e) {
+      console.warn('[main] Windows 通知系统注册失败:', e);
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -3953,10 +3979,11 @@ function createDisplayWindow(width, height, displayId = 'display-1') {
       // 隐藏默认标题栏，但保留系统窗口控制按钮
       titleBarStyle: 'hidden',
       // 显示系统自带窗口控制按钮
+      // 注意：height 设置为 0 或很小，让自定义状态栏完全控制拖动区域
       titleBarOverlay: {
         color: isWindows ? 'rgba(0, 0, 0, 0)' : undefined, // Windows 设置为透明，MacOS 不需要
         symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色（与控制面板一致，使用黑色）
-        height: 32 // 控制按钮高度，与自定义标题栏高度一致
+        height: 36 // 控制按钮高度，与自定义状态栏高度一致（36px）
       },
       // 顶级窗口（无父级），以独立原生窗口呈现
       webPreferences: {

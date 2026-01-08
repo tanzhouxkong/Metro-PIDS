@@ -32,10 +32,19 @@
 - 支持现代 ES modules
 - 快速的开发服务器和构建
 
+### 🪟 Windows 高斯模糊支持
+- 基于 **mica-electron** 实现 Windows 11 Mica/Acrylic 毛玻璃效果
+- 支持 Windows 11 的 Mica Acrylic 效果（更强的模糊）
+- 支持 Windows 10 的 Acrylic 效果
+- 自动检测 Windows 版本并应用相应的模糊效果
+- 支持主题切换（浅色/深色/自动）
+- 窗口背景透明，让原生模糊效果透出
+
 ## 主要功能
 
 - 多线路支持：可以创建/删除/切换多条线路，每条线路包含站点列表与运行方向信息。
-- 实时显示：Display 窗口用于投屏展示当前站、下一站、对侧开门提示等信息。
+- **线路名合并显示**：支持在显示端将多条线路名以并排的线路块形式展示，每个线路块显示大号数字、"号线"和"Line X"格式，适用于贯通运营线路的展示需求。
+- 实时显示：Display 窗口用于投屏展示当前站、下一站、对侧开门提示等信息，支持"下一站/到达站"信息的居中显示和文本右对齐。
 - 快捷键控制：支持配置"下一步/上一站/到达/发车"等快捷键，并在显示端按键时转发控制端执行。
 - 自动播放（Autoplay）：支持按键或定时自动前进，带倒计时与暂停/继续功能。
 - 主题与视觉：支持浅色/深色主题与一些视觉定制。
@@ -139,6 +148,55 @@ npx electron-builder --publish=always --win
 - 修改 `preload.js` 后，electron-vite 会自动重载
 - 使用 `contextBridge` 暴露 API 到渲染进程
 - 支持完整的 Node.js API
+
+### Windows 高斯模糊（Mica）支持
+
+项目使用 **mica-electron** 库实现 Windows 原生高斯模糊效果。
+
+#### 系统要求
+
+- **Windows 11**：支持 Mica Acrylic 效果（推荐）
+- **Windows 10**：支持 Acrylic 效果
+- 需要安装 Visual Studio Build Tools（用于编译原生模块）
+
+#### 安装与配置
+
+1. **首次安装依赖**：
+```bash
+npm install
+```
+
+2. **如果 mica-electron 编译失败**，需要重新编译：
+```bash
+# 检查构建工具
+npm run check-build-tools
+
+# 重新编译 mica-electron
+npm run rebuild-mica
+```
+
+#### 功能特性
+
+- **自动检测系统版本**：根据 Windows 版本自动选择 Mica 或 Acrylic 效果
+- **主题支持**：支持浅色、深色和自动主题切换
+- **背景透明**：窗口背景设置为透明，让原生模糊效果透出
+- **自动重新应用**：在窗口焦点变化、页面导航等场景下自动重新应用效果
+
+#### 使用说明
+
+- 模糊效果在应用启动时自动启用
+- 可在控制面板中通过设置开关控制模糊效果
+- 如果模糊效果不显示，请检查：
+  1. 系统是否为 Windows 10/11
+  2. mica-electron 是否已正确编译（运行 `npm run check-build-tools`）
+  3. 窗口是否有焦点（Mica 效果需要窗口有焦点才能显示）
+
+#### 技术细节
+
+- 使用 `mica-electron` 库（版本 1.5.16+）
+- 主进程通过 `MicaBrowserWindow` 创建窗口
+- 通过 IPC 通信控制模糊效果的启用/禁用
+- 窗口背景色设置为 `#00000000`（完全透明）以显示模糊效果
 
 ## 技术栈
 

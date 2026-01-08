@@ -53,23 +53,10 @@
             color: var(--text); 
         }
     </style>
-    <script type="importmap">
-        {
-            "imports": {
-                "vue": "./assets/vue.esm-browser.js"
-            }
-        }
-    </script>
 </head>
 <body>
     <div id="topbar-app"></div>
-    <script type="module">
-        import { createApp } from 'vue'
-        import Topbar from './src/components/Topbar.js'
-        
-        const app = createApp(Topbar)
-        app.mount('#topbar-app')
-    </script>
+    <script type="module" src="./src/topbarEntry.js"></script>
 </body>
 </html>
 

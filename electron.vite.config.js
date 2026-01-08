@@ -1,7 +1,7 @@
 import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
-import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, cpSync } from 'fs'
 import { join } from 'path'
 
 // 立即执行：确保 main.js 文件在 electron-vite 检查之前就存在
@@ -77,6 +77,29 @@ const ensureMainFile = () => {
   }
 }
 
+// 复制 assets 目录到构建输出的插件
+const copyAssets = () => {
+  return {
+    name: 'copy-assets',
+    writeBundle() {
+      const assetsSource = resolve(__dirname, 'assets')
+      const assetsTarget = resolve(__dirname, 'out/renderer/assets')
+      
+      if (existsSync(assetsSource)) {
+        try {
+          if (!existsSync(assetsTarget)) {
+            mkdirSync(assetsTarget, { recursive: true })
+          }
+          cpSync(assetsSource, assetsTarget, { recursive: true })
+          console.log('[copy-assets] ✅ Copied assets directory to out/renderer/assets')
+        } catch (e) {
+          console.error('[copy-assets] ❌ Failed to copy assets:', e)
+        }
+      }
+    }
+  }
+}
+
 export default defineConfig({
   // 主进程配置 - 支持热重启 🔥
   main: {
@@ -116,7 +139,7 @@ export default defineConfig({
   // 渲染进程配置 - 支持 HMR ⚡️
   renderer: {
     root: __dirname,
-    plugins: [vue()],
+    plugins: [vue(), copyAssets()],
     resolve: {
       // 使用带编译器的构建，以支持运行时 template 选项
       alias: {
@@ -146,6 +169,7 @@ export default defineConfig({
           devWindow: resolve(__dirname, 'dev_window.html'),
           electronAlert: resolve(__dirname, 'electron_alert.html'),
           // BrowserView 复合布局页面
+          topbar: resolve(__dirname, 'topbar.html'),
           sidebar: resolve(__dirname, 'sidebar.html'),
           // 示例与测试页面
           // debugDisplayRing: resolve(__dirname, 'debug_display_ring.html'), // 暂时移除，drawRing 未导出

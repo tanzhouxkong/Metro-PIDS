@@ -347,7 +347,7 @@ export function useFileIO(state) {
             if (window.electronAPI && window.electronAPI.relaunchApp) {
                 await window.electronAPI.relaunchApp();
             } else {
-                location.reload();
+            location.reload();
             }
         }
     }

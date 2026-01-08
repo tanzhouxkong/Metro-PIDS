@@ -347,11 +347,14 @@ export default {
             try {
                 console.log('[LeftRail] checkDevButtonVisibility: 开始检查...');
                 
+                let isPackaged = true; // 默认假设是打包环境
+                
                 // 检查是否是开发环境
                 if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.isPackaged === 'function') {
                     console.log('[LeftRail] 调用 isPackaged API...');
-                    const isPackaged = await window.electronAPI.isPackaged();
+                    isPackaged = await window.electronAPI.isPackaged();
                     console.log('[LeftRail] isPackaged 结果:', isPackaged);
+                    
                     if (!isPackaged) {
                         // 开发环境，默认显示开发者按钮
                         shouldShowDevButton.value = true;
@@ -359,55 +362,75 @@ export default {
                         return;
                     }
                 } else {
-                    console.log('[LeftRail] isPackaged API 不可用');
-                }
-                
-                // 检查 localStorage 中是否有开发者按钮的标记
-                if (typeof window !== 'undefined' && window.localStorage) {
-                    const devButtonEnabled = localStorage.getItem('metro_pids_dev_button_enabled');
-                    console.log('[LeftRail] localStorage 中的 metro_pids_dev_button_enabled:', devButtonEnabled);
-                    if (devButtonEnabled === 'true') {
-                        shouldShowDevButton.value = true;
-                        console.log('[LeftRail] ✅ 从 localStorage 读取到开发者按钮已启用');
-                    } else {
-                        console.log('[LeftRail] localStorage 中没有开发者按钮标记');
-                    }
-                } else {
-                    console.log('[LeftRail] localStorage 不可用');
-                }
-                
-                // 如果以上都没有，默认在开发环境显示（作为后备方案）
-                if (!shouldShowDevButton.value) {
-                    // 检查 URL 是否包含 localhost 或 127.0.0.1（开发环境）
+                    // 如果 API 不可用，通过 URL 判断
                     if (typeof window !== 'undefined' && window.location) {
                         const href = window.location.href || '';
                         const isDevUrl = href.includes('localhost') || 
                                        href.includes('127.0.0.1') ||
                                        href.includes('5173') || // Vite 默认端口
-                                       href.includes('5174') || // Vite 备用端口
-                                       href.includes('http://'); // 开发环境通常使用 http://
-                        console.log('[LeftRail] 检查 URL:', href, 'isDevUrl:', isDevUrl);
+                                       href.includes('5174'); // Vite 备用端口
                         if (isDevUrl) {
                             shouldShowDevButton.value = true;
                             console.log('[LeftRail] ✅ 检测到开发 URL，显示开发者按钮');
+                            return;
                         }
                     }
+                    console.log('[LeftRail] isPackaged API 不可用，假设为打包环境');
                 }
                 
-                // 最后的后备方案：如果所有检查都失败，在开发环境中强制显示
-                if (!shouldShowDevButton.value && typeof window !== 'undefined' && window.location) {
-                    const href = window.location.href || '';
-                    // 如果 URL 包含 http:// 或 localhost，认为是开发环境
-                    if (href.includes('http://') || href.includes('localhost') || href.includes('127.0.0.1')) {
-                        shouldShowDevButton.value = true;
-                        console.log('[LeftRail] ✅ 后备方案：强制显示开发者按钮（开发环境）');
+                // 打包环境：只检查 localStorage 中是否有开发者按钮的标记
+                if (isPackaged) {
+                    if (typeof window !== 'undefined' && window.localStorage) {
+                        const devButtonEnabled = localStorage.getItem('metro_pids_dev_button_enabled');
+                        console.log('[LeftRail] localStorage 中的 metro_pids_dev_button_enabled:', devButtonEnabled);
+                        if (devButtonEnabled === 'true') {
+                            shouldShowDevButton.value = true;
+                            console.log('[LeftRail] ✅ 从 localStorage 读取到开发者按钮已启用');
+                        } else {
+                            console.log('[LeftRail] 打包环境且 localStorage 中没有开发者按钮标记，默认隐藏');
+                            shouldShowDevButton.value = false;
+                        }
+                    } else {
+                        console.log('[LeftRail] localStorage 不可用，打包环境默认隐藏');
+                        shouldShowDevButton.value = false;
                     }
                 }
                 
                 console.log('[LeftRail] checkDevButtonVisibility: 最终结果 shouldShowDevButton =', shouldShowDevButton.value);
             } catch (e) {
                 console.error('[LeftRail] ❌ 检查开发者按钮可见性失败:', e);
+                // 出错时默认隐藏（打包环境）
+                shouldShowDevButton.value = false;
             }
+        };
+        
+        // 监听 localStorage 变化，以便在快速点击5次后实时更新
+        const setupLocalStorageListener = () => {
+            if (typeof window === 'undefined' || !window.addEventListener) return;
+            
+            // 监听 storage 事件（跨标签页/窗口）
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'metro_pids_dev_button_enabled' && e.newValue === 'true') {
+                    shouldShowDevButton.value = true;
+                    console.log('[LeftRail] 通过 storage 事件检测到开发者按钮已启用');
+                }
+            });
+            
+            // 定期检查 localStorage（因为 BrowserView 可能无法接收 storage 事件）
+            const checkInterval = setInterval(() => {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    const devButtonEnabled = localStorage.getItem('metro_pids_dev_button_enabled');
+                    if (devButtonEnabled === 'true' && !shouldShowDevButton.value) {
+                        shouldShowDevButton.value = true;
+                        console.log('[LeftRail] 通过定期检查检测到开发者按钮已启用');
+                    }
+                }
+            }, 500); // 每500ms检查一次
+            
+            // 返回清理函数
+            return () => {
+                clearInterval(checkInterval);
+            };
         };
 
         // 打开开发者窗口
@@ -468,6 +491,7 @@ export default {
 
         // 监听更新事件
         let updateListenerCleanup = null;
+        let localStorageListenerCleanup = null;
         onMounted(async () => {
             // 检查是否应该显示开发者按钮
             console.log('[LeftRail] onMounted: 开始检查开发者按钮可见性...');
@@ -477,11 +501,8 @@ export default {
             console.log('[LeftRail] onMounted: uiState.showDevButton =', uiState.showDevButton);
             console.log('[LeftRail] onMounted: 显示条件 =', shouldShowDevButton.value || uiState.showDevButton);
             
-            // 如果还是没有显示，强制设置为 true（开发环境）
-            if (!shouldShowDevButton.value && !uiState.showDevButton) {
-                console.log('[LeftRail] onMounted: 强制显示开发者按钮（开发环境）');
-                shouldShowDevButton.value = true;
-            }
+            // 设置 localStorage 监听器，以便在快速点击5次后实时更新
+            localStorageListenerCleanup = setupLocalStorageListener();
             
             if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onUpdateHasUpdate) {
                 updateListenerCleanup = window.electronAPI.onUpdateHasUpdate((data) => {
@@ -493,6 +514,9 @@ export default {
         onUnmounted(() => {
             if (updateListenerCleanup) {
                 updateListenerCleanup();
+            }
+            if (localStorageListenerCleanup) {
+                localStorageListenerCleanup();
             }
         });
 

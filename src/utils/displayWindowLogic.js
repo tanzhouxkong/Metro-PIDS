@@ -160,6 +160,9 @@ const displayStyleSheet = `
   align-items: center;
   background: rgba(0,0,0,0.02);
   z-index: 9998;
+  pointer-events: auto;
+  -webkit-app-region: drag;
+  cursor: move;
 }
 #display-statusbar-inner {
   width: 100%;
@@ -169,11 +172,27 @@ const displayStyleSheet = `
   align-items: center;
   padding: 0 20px;
 }
-#display-statusbar { pointer-events: none; }
 #display-statusbar .win-btn {
   width:56px; height:24px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text); background:transparent; border-radius:4px;
 }
 #display-statusbar .win-btn.close { color: var(--win-close-color, #ff4d4d); }
+#display-statusbar .app-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #333);
+  user-select: none;
+  -webkit-app-region: drag;
+  cursor: move;
+  flex: 1;
+}
+#display-statusbar .app-name span,
+#display-statusbar .app-name i {
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+}
 /* controls container visibility helper */
 #display-window-controls { transition: opacity 160ms ease, transform 160ms ease; opacity: 0; transform: translateY(-6px); pointer-events: none; }
 #display-window-controls.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
@@ -219,6 +238,15 @@ const displayStyleSheet = `
   padding-left: 20px;
   border-right: none;
 }
+#display-app .h-left .app-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--contrast-color);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-right: 10px;
+}
 #display-app .logo-area {
     display: flex;
     flex-direction: column;
@@ -246,8 +274,11 @@ const displayStyleSheet = `
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-left: -70px;
+    margin-left: 0;
     padding-right: 0;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
 }
 #display-app .line-badge {
     font-size: 36px;
@@ -1476,6 +1507,98 @@ function createWarningMessage(root) {
   return warning;
 }
 
+// 创建状态栏（窗口控制按钮）
+function createStatusBar(root) {
+  // 检查是否已存在状态栏
+  const existing = root.querySelector('#display-statusbar');
+  if (existing) {
+    return existing;
+  }
+  
+  const statusbar = document.createElement('div');
+  statusbar.id = 'display-statusbar';
+  // 整个状态栏允许拖动窗口
+  statusbar.style.webkitAppRegion = 'drag';
+  statusbar.style.cursor = 'move';
+  
+  const inner = document.createElement('div');
+  inner.id = 'display-statusbar-inner';
+  // inner 容器也允许拖动
+  inner.style.webkitAppRegion = 'drag';
+  inner.style.cursor = 'move';
+
+  // 左侧应用名称（可拖动区域）
+  const appName = document.createElement('div');
+  appName.className = 'app-name';
+  appName.innerHTML = `<i class="fas fa-subway"></i><span>Metro PIDS</span>`;
+  // 应用名称区域允许拖动窗口
+  appName.style.webkitAppRegion = 'drag';
+  appName.style.cursor = 'move';
+  inner.appendChild(appName);
+  
+  // 检查是否在 Electron 环境中
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const platform = isElectron && window.electronAPI.platform ? window.electronAPI.platform : 'unknown';
+  
+  // 只在 Windows 和 MacOS 上显示窗口控制按钮（Linux 使用系统框架）
+  if (isElectron && platform !== 'linux') {
+    const controls = document.createElement('div');
+    controls.style.display = 'flex';
+    controls.style.gap = '4px';
+    controls.style.marginLeft = 'auto';
+    controls.style.pointerEvents = 'auto';
+    // 按钮区域不允许拖动窗口
+    controls.style.webkitAppRegion = 'no-drag';
+    controls.style.cursor = 'default';
+    
+    // 最小化按钮
+    const minimizeBtn = document.createElement('div');
+    minimizeBtn.className = 'win-btn';
+    minimizeBtn.innerHTML = '<i class="fas fa-minus"></i>';
+    minimizeBtn.title = '最小化';
+    minimizeBtn.style.pointerEvents = 'auto';
+    minimizeBtn.style.cursor = 'pointer';
+    minimizeBtn.style.webkitAppRegion = 'no-drag';
+    minimizeBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.minimize) {
+        window.electronAPI.windowControls.minimize();
+      }
+    };
+    
+    // 最大化/还原按钮
+    const maximizeBtn = document.createElement('div');
+    maximizeBtn.className = 'win-btn';
+    maximizeBtn.innerHTML = '<i class="fas fa-square"></i>';
+    maximizeBtn.title = '最大化';
+    maximizeBtn.style.pointerEvents = 'auto';
+    maximizeBtn.style.cursor = 'pointer';
+    maximizeBtn.style.webkitAppRegion = 'no-drag';
+    maximizeBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.toggleMax) {
+        window.electronAPI.windowControls.toggleMax();
+      }
+    };
+    
+    // 注意：关闭按钮由 Electron 的 titleBarOverlay 提供，不需要自定义
+    
+    controls.appendChild(minimizeBtn);
+    controls.appendChild(maximizeBtn);
+    inner.appendChild(controls);
+  }
+  
+  statusbar.appendChild(inner);
+  
+  // 添加到根元素
+  const container = root || document.body;
+  if (container) {
+    container.appendChild(statusbar);
+  }
+  
+  return statusbar;
+}
+
 // 创建水印
 function createWatermark(root) {
   const watermark = document.createElement('div');
@@ -1534,6 +1657,9 @@ export function initDisplayWindow(rootElement) {
   const root = rootElement || document.getElementById('display-app');
   if (!root) return () => {};
   injectDisplayStyles();
+  
+  // 创建状态栏（窗口控制按钮）
+  createStatusBar(root);
   
   // 创建水印
   createWatermark(root);
@@ -1862,7 +1988,7 @@ export function initDisplayWindow(rootElement) {
       //  - 没有可用 mergedNames：直接隐藏，不走单线路块逻辑
       if (mergeEnabled) {
         if (mergedNames.length >= 1) {
-          // 线路名合并展示：逐段展示，如“4号线 8号线”，单段也走块样式
+          // 线路名合并展示：逐段展示，如"4号线 8号线"，单段也走块样式
           const wrap = document.createElement('div');
           wrap.style.display = 'flex';
           wrap.style.gap = '12px';
@@ -1873,6 +1999,22 @@ export function initDisplayWindow(rootElement) {
           wrap.style.maxWidth = '100%';
           wrap.style.flexWrap = 'nowrap'; // 三段也保持单行
           wrap.style.overflow = 'hidden';
+          wrap.style.position = 'relative';
+
+          // 如果线路块超过2个，启用滚动
+          const shouldScroll = mergedNames.length > 2;
+          
+          // 创建内部滚动容器
+          const scrollContainer = document.createElement('div');
+          scrollContainer.style.display = 'flex';
+          scrollContainer.style.gap = '12px';
+          scrollContainer.style.alignItems = 'center';
+          scrollContainer.style.flexDirection = 'row';
+          scrollContainer.style.flexWrap = 'nowrap';
+          if (shouldScroll) {
+            scrollContainer.style.animation = 'marquee-scroll 15s linear infinite';
+            scrollContainer.style.paddingRight = '50px';
+          }
 
           const toEn = (name) => {
             const m = name.match(/(\d+)/);
@@ -1949,20 +2091,74 @@ export function initDisplayWindow(rootElement) {
 
             block.appendChild(numBox);
             block.appendChild(rightCol);
-            wrap.appendChild(block);
+            scrollContainer.appendChild(block);
           });
+
+          // 如果超过2个，需要复制内容以实现无缝滚动
+          if (shouldScroll) {
+            // 创建一个包装容器用于滚动
+            const scrollWrapper = document.createElement('div');
+            scrollWrapper.style.display = 'flex';
+            scrollWrapper.style.flexDirection = 'row';
+            scrollWrapper.style.width = '100%';
+            scrollWrapper.style.overflow = 'hidden';
+            
+            // 复制所有块到第二个容器
+            const clonedContainer = scrollContainer.cloneNode(true);
+            clonedContainer.style.animation = 'marquee-scroll 15s linear infinite';
+            clonedContainer.style.paddingRight = '50px';
+            
+            scrollWrapper.appendChild(scrollContainer);
+            scrollWrapper.appendChild(clonedContainer);
+            
+            wrap.appendChild(scrollWrapper);
+            
+            // 调整动画时间，根据实际宽度动态计算
+            setTimeout(() => {
+              const totalWidth = scrollContainer.scrollWidth;
+              const containerWidth = wrap.offsetWidth;
+              if (totalWidth > containerWidth) {
+                // 速度约为50px/s，根据总宽度计算时间
+                let dur = (totalWidth + 50) / 50;
+                if (dur < 10) dur = 10; // 最小10秒
+                if (dur > 30) dur = 30; // 最大30秒
+                scrollContainer.style.animationDuration = `${dur}s`;
+                clonedContainer.style.animationDuration = `${dur}s`;
+              }
+            }, 100);
+          } else {
+            wrap.appendChild(scrollContainer);
+          }
 
           lineEl.appendChild(wrap);
         }
-        // 合并模式下不再执行后面的单线路块逻辑
-        return;
+        // 合并模式下不再执行后面的单线路块逻辑，但继续执行中间白框的更新
       }
-
+      
       // 未开启合并：整行直接显示原始线路名（不再使用大号数字线路块）
-      {
+      if (!mergeEnabled) {
         const rawLineName = meta.lineName || '--';
         const cleanText = (t) => (t || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
         const plainFull = cleanText(rawLineName);
+        
+        // 计算中文字符数（中文字符、日文、韩文等宽字符算1个字）
+        const countChineseChars = (str) => {
+          let count = 0;
+          for (let i = 0; i < str.length; i++) {
+            const char = str.charAt(i);
+            // 中文字符范围：\u4e00-\u9fa5，日文：\u3040-\u309f\u30a0-\u30ff，韩文：\uac00-\ud7a3
+            if (/[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff\uac00-\ud7a3]/.test(char)) {
+              count++;
+            } else if (char.trim()) {
+              // 非空白字符也算半个字（英文字母、数字等）
+              count += 0.5;
+            }
+          }
+          return Math.ceil(count);
+        };
+        
+        const charCount = countChineseChars(plainFull);
+        const shouldScroll = charCount > 9;
 
         const box = document.createElement('div');
         box.className = 'marquee-box';
@@ -1974,10 +2170,28 @@ export function initDisplayWindow(rootElement) {
 
         const span = document.createElement('span');
         span.className = 'marquee-content';
-        span.innerHTML = parseColorMarkup(plainFull);
+        const parsedContent = parseColorMarkup(plainFull);
+        span.innerHTML = parsedContent;
         box.appendChild(span);
 
         lineEl.appendChild(box);
+        
+        // 如果超过9个字，启用滚动效果
+        if (shouldScroll) {
+          setTimeout(() => {
+            if (span.offsetWidth > box.offsetWidth) {
+              const w = span.offsetWidth;
+              // 复制内容并添加间距，实现无缝滚动
+              span.innerHTML = `${parsedContent}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${parsedContent}`;
+              span.classList.add('scrolling');
+              // 根据宽度计算滚动时间，速度约为50px/s
+              let dur = (w + 50) / 50;
+              if (dur < 8) dur = 8; // 最小8秒
+              if (dur > 20) dur = 20; // 最大20秒
+              span.style.animationDuration = `${dur}s`;
+            }
+          }, 100);
+        }
       }
     }
     const termBox = locate('.h-term');
@@ -2105,43 +2319,52 @@ export function initDisplayWindow(rootElement) {
         isAtTerm = true;
       }
     }
-    if (isArriving) {
-      targetSt = sts[rt.idx];
-      if (nextLbl) nextLbl.innerHTML = '到达站:<br><span class="en">Arriving Station:</span>';
+    // 计算下一站索引
+    let nextIdx;
+    if (meta.mode === 'loop') {
+      nextIdx = (meta.dirType === 'outer') ? getNextValidSt(rt.idx, 1, appData) : getNextValidSt(rt.idx, -1, appData);
     } else {
-      let nextIdx;
-      if (meta.mode === 'loop') {
-        nextIdx = (meta.dirType === 'outer') ? getNextValidSt(rt.idx, 1, appData) : getNextValidSt(rt.idx, -1, appData);
-      } else {
-        nextIdx = (meta.dirType === 'up' || meta.dirType === 'outer') ? getNextValidSt(rt.idx, 1, appData) : getNextValidSt(rt.idx, -1, appData);
-      }
-      
-      // 检查是否是终点站
-      // 1. 如果 getNextValidSt 返回当前索引，说明已到达边界
-      // 2. 根据方向和短交路设置判断终点站
-      let terminalIdx = -1;
-      if (meta.termIdx !== undefined && meta.termIdx !== -1 && meta.startIdx !== undefined && meta.startIdx !== -1) {
-        // 有短交路设置：根据方向判断终点
-        if (meta.dirType === 'up' || meta.dirType === 'outer') {
-          terminalIdx = parseInt(meta.termIdx);
-        } else {
-          terminalIdx = parseInt(meta.startIdx);
-        }
-      } else if (meta.termIdx !== undefined && meta.termIdx !== -1) {
+      nextIdx = (meta.dirType === 'up' || meta.dirType === 'outer') ? getNextValidSt(rt.idx, 1, appData) : getNextValidSt(rt.idx, -1, appData);
+    }
+    
+    // 检查是否是终点站
+    // 1. 如果 getNextValidSt 返回当前索引，说明已到达边界
+    // 2. 根据方向和短交路设置判断终点站
+    let terminalIdx = -1;
+    if (meta.termIdx !== undefined && meta.termIdx !== -1 && meta.startIdx !== undefined && meta.startIdx !== -1) {
+      // 有短交路设置：根据方向判断终点
+      if (meta.dirType === 'up' || meta.dirType === 'outer') {
         terminalIdx = parseInt(meta.termIdx);
-      } else if (meta.startIdx !== undefined && meta.startIdx !== -1) {
-        terminalIdx = parseInt(meta.startIdx);
       } else {
-        // 没有短交路设置：根据方向判断终点
-        if (meta.dirType === 'up' || meta.dirType === 'outer') {
-          terminalIdx = sts.length - 1;
-        } else {
-          terminalIdx = 0;
-        }
+        terminalIdx = parseInt(meta.startIdx);
       }
-      
-      const isTerminal = (nextIdx === rt.idx) || (terminalIdx !== -1 && rt.idx === terminalIdx);
-      
+    } else if (meta.termIdx !== undefined && meta.termIdx !== -1) {
+      terminalIdx = parseInt(meta.termIdx);
+    } else if (meta.startIdx !== undefined && meta.startIdx !== -1) {
+      terminalIdx = parseInt(meta.startIdx);
+    } else {
+      // 没有短交路设置：根据方向判断终点
+      if (meta.dirType === 'up' || meta.dirType === 'outer') {
+        terminalIdx = sts.length - 1;
+      } else {
+        terminalIdx = 0;
+      }
+    }
+    
+    const isTerminal = (nextIdx === rt.idx) || (terminalIdx !== -1 && rt.idx === terminalIdx);
+    
+    if (isArriving) {
+      // 到达站：显示下一站（因为当前站正在到达，下一站是即将到达的站）
+      // 如果下一站存在，显示下一站；否则显示当前站
+      if (!isTerminal && nextIdx !== rt.idx && nextIdx >= 0 && nextIdx < sts.length) {
+        targetSt = sts[nextIdx];
+        if (nextLbl) nextLbl.innerHTML = '下一站:<br><span class="en">Next Station:</span>';
+      } else {
+        targetSt = sts[rt.idx];
+        if (nextLbl) nextLbl.innerHTML = '到达站:<br><span class="en">Arriving Station:</span>';
+      }
+    } else {
+      // 非到达状态：显示下一站或终点站
       if (isTerminal) {
         targetSt = sts[rt.idx];
         if (nextLbl) nextLbl.innerHTML = '终点站:<br><span class="en">Terminal Station:</span>';
