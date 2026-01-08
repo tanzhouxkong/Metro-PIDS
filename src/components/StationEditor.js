@@ -50,7 +50,10 @@ export default {
         form.turnback = newVal.turnback || 'none';
         form.expressStop = newVal.expressStop !== undefined ? !!newVal.expressStop : false;
         // 深拷贝换乘数组，避免直接改 props
-        form.xfer = newVal.xfer ? JSON.parse(JSON.stringify(newVal.xfer)) : [];
+        form.xfer = newVal.xfer ? JSON.parse(JSON.stringify(newVal.xfer.map(x => ({
+          ...x,
+          exitTransfer: x.exitTransfer || false // 确保 exitTransfer 字段存在
+        })))) : [];
       }
     }, { immediate: true, deep: true });
 
@@ -71,7 +74,8 @@ export default {
       form.xfer.push({
         line: '',
         color: '#000000',
-        suspended: false
+        suspended: false,
+        exitTransfer: false // 出站换乘标记
       });
     };
 
@@ -80,7 +84,21 @@ export default {
     };
 
     const toggleXferSuspended = (index) => {
-      form.xfer[index].suspended = !form.xfer[index].suspended;
+      const xf = form.xfer[index];
+      xf.suspended = !xf.suspended;
+      // 如果设置为暂缓，自动关闭出站换乘
+      if (xf.suspended) {
+        xf.exitTransfer = false;
+      }
+    };
+
+    const toggleExitTransfer = (index) => {
+      const xf = form.xfer[index];
+      xf.exitTransfer = !xf.exitTransfer;
+      // 如果设置为出站换乘，自动关闭暂缓
+      if (xf.exitTransfer) {
+        xf.suspended = false;
+      }
     };
 
     // 颜色选择器
@@ -353,10 +371,46 @@ export default {
                     onClick: () => openColorPicker(idx)
                   })
               ]),
+              // 出站换乘按钮（如果暂缓则禁用，但不隐藏）
               h('button', {
                 class: 'btn',
-                style: { padding: '0 10px', height: '34px', fontSize: '12px', background: xf.suspended ? 'var(--btn-org-bg)' : 'var(--input-bg)', color: xf.suspended ? 'white' : 'var(--text)' },
-                onClick: () => toggleXferSuspended(idx)
+                style: { 
+                  padding: '0 10px', 
+                  height: '34px', 
+                  fontSize: '12px', 
+                  background: xf.exitTransfer ? 'var(--btn-blue-bg)' : 'var(--input-bg)', 
+                  color: xf.exitTransfer ? 'white' : 'var(--text)',
+                  border: xf.exitTransfer ? 'none' : '1px solid var(--divider)',
+                  opacity: xf.suspended ? 0.5 : 1,
+                  cursor: xf.suspended ? 'not-allowed' : 'pointer'
+                },
+                onClick: () => {
+                  if (!xf.suspended) {
+                    toggleExitTransfer(idx);
+                  }
+                },
+                disabled: xf.suspended,
+                title: xf.suspended ? '暂缓时不能设置出站换乘' : '出站换乘'
+              }, '出站'),
+              // 暂缓按钮（如果出站换乘则禁用）
+              h('button', {
+                class: 'btn',
+                style: { 
+                  padding: '0 10px', 
+                  height: '34px', 
+                  fontSize: '12px', 
+                  background: xf.suspended ? 'var(--btn-org-bg)' : 'var(--input-bg)', 
+                  color: xf.suspended ? 'white' : 'var(--text)',
+                  opacity: xf.exitTransfer ? 0.5 : 1,
+                  cursor: xf.exitTransfer ? 'not-allowed' : 'pointer'
+                },
+                onClick: () => {
+                  if (!xf.exitTransfer) {
+                    toggleXferSuspended(idx);
+                  }
+                },
+                disabled: xf.exitTransfer,
+                title: xf.exitTransfer ? '出站换乘时不能暂缓' : (xf.suspended ? '暂缓' : '正常')
               }, xf.suspended ? '暂缓' : '正常'),
               h('button', {
                 class: 'btn',

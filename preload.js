@@ -49,6 +49,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return false;
     }
   },
+  updateF12DevToolsSetting: async (enabled) => {
+    try {
+      return await ipcRenderer.invoke('dev/update-f12-setting', enabled);
+    } catch (e) {
+      return false;
+    }
+  },
   switchLine: async (lineName) => {
     try {
       return await ipcRenderer.invoke('line-manager/switch-line', lineName);

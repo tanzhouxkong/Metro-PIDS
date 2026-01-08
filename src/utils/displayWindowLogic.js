@@ -800,12 +800,41 @@ const displayStyleSheet = `
     backdrop-filter: blur(2px);
     line-height: 1.4;
     display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+}
+#display-app #watermark > div:not(#xfer-check) {
+    white-space: nowrap;
+    display: flex;
     flex-direction: row;
     gap: 12px;
     align-items: center;
 }
-#display-app #watermark > div {
-    white-space: nowrap;
+#display-app #xfer-check {
+    font-size: 14px;
+    color: rgba(0, 0, 0, 0.5);
+    font-family: "Microsoft YaHei", sans-serif;
+    pointer-events: none;
+    user-select: none;
+    line-height: 1.4;
+    max-width: 400px;
+    word-wrap: break-word;
+    text-align: right;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    justify-content: flex-end;
+}
+#display-app #xfer-check .warning-icon {
+    display: inline-block;
+    color: #ff5722;
+    font-weight: bold;
+    font-size: 18px;
+    line-height: 1;
+}
+#display-app #xfer-check.hidden {
+    display: none;
 }
 #display-app #display-warning {
     position: fixed;
@@ -1202,6 +1231,9 @@ function mkNode(st, i, mode, appData, rtState) {
     st.xfer.forEach((x) => {
       if (x.suspended) {
           xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${x.line}<span class="sub">暂缓</span></span>`;
+      } else if (x.exitTransfer) {
+        // 出站换乘：显示线路名称和"出站"标记
+        xferHTML += `<span class="x-tag exit-transfer" style="background:${x.color}; display:inline-flex; align-items:center; gap:2px;">${x.line}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
       } else {
         xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
       }
@@ -1262,6 +1294,10 @@ function mkNode(st, i, mode, appData, rtState) {
         if (x.suspended) {
           tagHTML = `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:inline-flex; align-items:center; gap:2px; margin:1px;">${x.line}<span class="sub" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
           textLength += 2; // 加上"暂缓"2个字
+        } else if (x.exitTransfer) {
+          // 出站换乘：显示线路名称和"出站"标记
+          tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff; display:inline-flex; align-items:center; gap:2px;">${x.line}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
+          textLength += 2; // 加上"出站"2个字
         } else {
           tagHTML = `<span class="x-tag" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff;">${x.line}</span>`;
         }
@@ -1313,6 +1349,9 @@ function mkNode(st, i, mode, appData, rtState) {
         if (x.suspended) {
           // 暂缓的换乘标签，只计算换乘线路名的长度，"暂缓"是子标签
           tagInfos.push({ text: x.line, type: 'xfer-suspended', bgColor: '#ccc', textColor: '#666', hasSub: true });
+        } else if (x.exitTransfer) {
+          // 出站换乘：显示线路名称和"出站"标记
+          tagInfos.push({ text: x.line, type: 'xfer-exit', bgColor: x.color, textColor: '#fff', hasSub: true, subText: '出站' });
         } else {
           tagInfos.push({ text: x.line, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });
         }
@@ -1346,10 +1385,10 @@ function mkNode(st, i, mode, appData, rtState) {
     // 生成标签HTML和字数信息
     const tags = [];
     tagInfos.forEach(info => {
-      // 计算标签字数（暂缓标签如果有子标签，需要加上"暂缓"2个字）
+      // 计算标签字数（暂缓/出站标签如果有子标签，需要加上子文本字数）
       let textLength = info.text.length;
-      if (info.type === 'xfer-suspended' && info.hasSub) {
-        textLength += 2; // 加上"暂缓"2个字
+      if ((info.type === 'xfer-suspended' || info.type === 'xfer-exit') && info.hasSub) {
+        textLength += 2; // 加上"暂缓"或"出站"2个字
       }
       
       let tagHTML = '';
@@ -1357,6 +1396,10 @@ function mkNode(st, i, mode, appData, rtState) {
         // 暂缓的换乘标签
         const subFontSize = Math.max(7, fontSize - 2);
         tagHTML = `<span class="x-tag suspended" style="background:${info.bgColor}; color:${info.textColor}; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
+      } else if (info.type === 'xfer-exit' && info.hasSub) {
+        // 出站换乘标签
+        const subFontSize = Math.max(7, fontSize - 2);
+        tagHTML = `<span class="x-tag exit-transfer" style="background:${info.bgColor}; color:${info.textColor}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">${info.subText || '出站'}</span></span>`;
       } else if (info.type === 'defer') {
         // 暂缓标签
         tagHTML = `<span class="defer" style="font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; background:${info.bgColor}; color:${info.textColor}; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${info.text}</span>`;
@@ -1618,8 +1661,13 @@ function createWatermark(root) {
   // 获取缩放比例
   const scalePercent = Math.round(scaleFactor * 100);
   
-  // 先创建水印，使用临时版本号
-  watermark.innerHTML = `
+  // 创建信息行
+  const infoRow = document.createElement('div');
+  infoRow.style.display = 'flex';
+  infoRow.style.flexDirection = 'row';
+  infoRow.style.gap = '12px';
+  infoRow.style.alignItems = 'center';
+  infoRow.innerHTML = `
     <div>环境: ${env === 'Electron' ? 'Electron' : '浏览器'}</div>
     <div>版本: v--</div>
     <div>系统: --</div>
@@ -1633,24 +1681,126 @@ function createWatermark(root) {
     container.appendChild(watermark);
   }
   
+  // 将infoRow存储到watermark上，稍后添加（在换乘检测提示之后）
+  watermark._infoRow = infoRow;
+  
   // 异步获取版本号并更新
   Promise.all([
     getAppVersion(),
     getOSVersion()
   ]).then(([version, osVersion]) => {
-    const versionDiv = watermark.querySelector('div:nth-child(2)');
-    const osDiv = watermark.querySelector('div:nth-child(3)');
-    if (versionDiv) {
-      versionDiv.textContent = `版本: v${version}`;
-    }
-    if (osDiv) {
-      osDiv.textContent = `系统: ${osVersion}`;
+    const infoRow = watermark._infoRow || watermark.querySelector('div:last-child');
+    if (infoRow) {
+      const versionDiv = infoRow.querySelector('div:nth-child(2)');
+      const osDiv = infoRow.querySelector('div:nth-child(3)');
+      if (versionDiv) {
+        versionDiv.textContent = `版本: v${version}`;
+      }
+      if (osDiv) {
+        osDiv.textContent = `系统: ${osVersion}`;
+      }
     }
   }).catch(err => {
     console.warn('Failed to update watermark version/OS:', err);
   });
   
   return watermark;
+}
+
+// 检测换乘线路和站点暂未开通出站换乘
+function checkExitTransferStatus(appData) {
+  if (!appData || !appData.stations || !appData.stations.length) {
+    return {
+      suspendedLines: [],
+      exitTransferLines: [],
+      suspendedStations: []
+    };
+  }
+  
+  const suspendedLines = new Set();
+  const exitTransferLines = new Set();
+  const suspendedStations = [];
+  const stations = appData.stations;
+  
+  stations.forEach((st, idx) => {
+    // 检查站点是否暂缓开通
+    if (st.skip) {
+      suspendedStations.push({
+        stationName: st.name || `站点${idx + 1}`,
+        stationIdx: idx
+      });
+    }
+    
+    // 检查换乘线路
+    if (st.xfer && st.xfer.length > 0) {
+      st.xfer.forEach((xfer) => {
+        const lineName = xfer.line || '未知线路';
+        if (xfer.suspended) {
+          // 暂缓开通的线路
+          suspendedLines.add(lineName);
+        } else if (xfer.exitTransfer) {
+          // 出站换乘的线路
+          exitTransferLines.add(lineName);
+        }
+      });
+    }
+  });
+  
+  return {
+    suspendedLines: Array.from(suspendedLines),
+    exitTransferLines: Array.from(exitTransferLines),
+    suspendedStations: suspendedStations
+  };
+}
+
+// 创建换乘检测提示
+function createXferCheck(watermarkElement) {
+  const xferCheck = document.createElement('div');
+  xferCheck.id = 'xfer-check';
+  xferCheck.className = 'hidden';
+  
+  // 添加到水印元素中，让它们显示在一起
+  if (watermarkElement) {
+    watermarkElement.appendChild(xferCheck);
+  }
+  
+  return xferCheck;
+}
+
+// 更新换乘检测显示
+function updateXferCheck(xferCheckElement, appData) {
+  if (!xferCheckElement) return;
+  
+  const issues = checkExitTransferStatus(appData);
+  
+  const parts = [];
+  
+  // 暂缓开通的线路
+  if (issues.suspendedLines.length > 0) {
+    parts.push(`${issues.suspendedLines.join('、')}暂缓开通`);
+  }
+  
+  // 出站换乘的线路
+  if (issues.exitTransferLines.length > 0) {
+    parts.push(`${issues.exitTransferLines.join('、')}出站换乘`);
+  }
+  
+  // 暂缓开通的站点
+  if (issues.suspendedStations.length > 0) {
+    issues.suspendedStations.forEach(station => {
+      parts.push(`${station.stationName}暂缓开通`);
+    });
+  }
+  
+  if (parts.length === 0) {
+    xferCheckElement.classList.add('hidden');
+    return;
+  }
+  
+  xferCheckElement.classList.remove('hidden');
+  
+  const content = parts.join('。');
+  xferCheckElement.innerHTML = `<span class="warning-icon">⚠</span>${content}`;
 }
 
 export function initDisplayWindow(rootElement) {
@@ -1662,7 +1812,16 @@ export function initDisplayWindow(rootElement) {
   createStatusBar(root);
   
   // 创建水印
-  createWatermark(root);
+  const watermarkElement = createWatermark(root);
+  
+  // 创建换乘检测提示（添加到水印中，会显示在上面）
+  const xferCheckElement = createXferCheck(watermarkElement);
+  
+  // 将信息行添加到水印中（显示在换乘检测提示下面）
+  if (watermarkElement._infoRow) {
+    watermarkElement.appendChild(watermarkElement._infoRow);
+    delete watermarkElement._infoRow;
+  }
   
   // 创建警告提示
   const warningElement = createWarningMessage(root);
@@ -2021,8 +2180,10 @@ export function initDisplayWindow(rootElement) {
             return m ? `Line ${m[1]}` : name;
           };
 
+          // 性能优化：使用 DocumentFragment 批量插入节点，减少重排
+          const fragment = document.createDocumentFragment();
           mergedNames.forEach((nm) => {
-            // 去前缀，提取数字和“号线”后缀
+            // 去前缀，提取数字和"号线"后缀
             const simplify = (name) => {
               const stripped = name
                 .replace(/^(?:[\u4e00-\u9fa5]{1,6}(?:省|市|县|区|自治区|特别行政区)?)(?:地铁|轨道交通|轨交|城轨|城市轨道交通)?\s*/i, '')
@@ -2032,11 +2193,11 @@ export function initDisplayWindow(rootElement) {
 
             const textOnlyNm = simplify(cleanText(nm));
             const baseName = textOnlyNm || simplify(nm) || cleanText(nm) || nm || '--';
-            // 支持多条贯通线：数字可多段，以首个数字为主，后缀默认“号线”
+            // 支持多条贯通线：数字可多段，以首个数字为主，后缀默认"号线"
             const numMatch = baseName.match(/^(\d+)(.*)$/);
             const numPart = numMatch ? numMatch[1] : baseName;
             const suffixPart = (() => {
-              // 若存在非数字部分（含多线路名称），保留原文本；否则补“号线”
+              // 若存在非数字部分（含多线路名称），保留原文本；否则补"号线"
               const rest = numMatch ? (numMatch[2] || '').trim() : '';
               return rest || '号线';
             })();
@@ -2091,8 +2252,10 @@ export function initDisplayWindow(rootElement) {
 
             block.appendChild(numBox);
             block.appendChild(rightCol);
-            scrollContainer.appendChild(block);
+            fragment.appendChild(block);
           });
+          // 一次性插入所有节点，只触发一次重排
+          scrollContainer.appendChild(fragment);
 
           // 如果超过2个，需要复制内容以实现无缝滚动
           if (shouldScroll) {
@@ -3557,6 +3720,8 @@ export function initDisplayWindow(rootElement) {
       box.style.alignItems = 'center';
       box.style.width = '100%';
       box.style.height = '100%';
+      // 性能优化：使用 DocumentFragment 批量插入节点，减少重排
+      const fragment = document.createDocumentFragment();
       sts.forEach((st, i) => {
         const node = mkNode(st, i, 'linear', appData, rt);
         const dot = node.querySelector('.dot');
@@ -3637,8 +3802,10 @@ export function initDisplayWindow(rootElement) {
             }
           }
         }
-        box.appendChild(node);
+        fragment.appendChild(node);
       });
+      // 一次性插入所有节点，只触发一次重排
+      box.appendChild(fragment);
       
       // 设置track容器宽度
       const nodeWidth = 90;
@@ -4248,6 +4415,8 @@ export function initDisplayWindow(rootElement) {
       if (appData) {
         autoApplyShortTurnIfNeeded(appData);
       }
+      // 更新换乘检测显示
+      updateXferCheck(xferCheckElement, appData);
       rt = data.r || rt;
       renderDisp();
     }
@@ -4267,6 +4436,8 @@ export function initDisplayWindow(rootElement) {
     if (appData) {
       autoApplyShortTurnIfNeeded(appData);
     }
+    // 更新换乘检测显示
+    updateXferCheck(xferCheckElement, appData);
     rt = data.r || rt;
     renderDisp();
   };
@@ -4283,6 +4454,8 @@ export function initDisplayWindow(rootElement) {
       if (appData) {
         autoApplyShortTurnIfNeeded(appData);
       }
+      // 更新换乘检测显示
+      updateXferCheck(xferCheckElement, appData);
       rt = data.r || rt;
       if (appData) renderDisp();
       return true;

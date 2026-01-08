@@ -379,7 +379,9 @@ export default {
                 }
                 
                 // 打包环境：只检查 localStorage 中是否有开发者按钮的标记
+                // 必须明确设置为 'true' 才显示，其他情况一律隐藏
                 if (isPackaged) {
+                    shouldShowDevButton.value = false; // 默认隐藏
                     if (typeof window !== 'undefined' && window.localStorage) {
                         const devButtonEnabled = localStorage.getItem('metro_pids_dev_button_enabled');
                         console.log('[LeftRail] localStorage 中的 metro_pids_dev_button_enabled:', devButtonEnabled);
@@ -388,11 +390,9 @@ export default {
                             console.log('[LeftRail] ✅ 从 localStorage 读取到开发者按钮已启用');
                         } else {
                             console.log('[LeftRail] 打包环境且 localStorage 中没有开发者按钮标记，默认隐藏');
-                            shouldShowDevButton.value = false;
                         }
                     } else {
                         console.log('[LeftRail] localStorage 不可用，打包环境默认隐藏');
-                        shouldShowDevButton.value = false;
                     }
                 }
                 
@@ -420,9 +420,21 @@ export default {
             const checkInterval = setInterval(() => {
                 if (typeof window !== 'undefined' && window.localStorage) {
                     const devButtonEnabled = localStorage.getItem('metro_pids_dev_button_enabled');
-                    if (devButtonEnabled === 'true' && !shouldShowDevButton.value) {
-                        shouldShowDevButton.value = true;
-                        console.log('[LeftRail] 通过定期检查检测到开发者按钮已启用');
+                    // 只有在打包环境下才检查 localStorage
+                    // 开发环境下应该始终显示，不需要检查
+                    if (devButtonEnabled === 'true') {
+                        if (!shouldShowDevButton.value) {
+                            shouldShowDevButton.value = true;
+                            console.log('[LeftRail] 通过定期检查检测到开发者按钮已启用');
+                        }
+                    } else {
+                        // 如果 localStorage 中没有标记，且当前是显示状态，需要重新检查环境
+                        // 但这里只处理打包环境的情况，开发环境应该始终显示
+                        // 为了避免频繁检查，这里只处理从 true 变为 false 的情况
+                        if (shouldShowDevButton.value) {
+                            // 重新检查一次，确保状态正确
+                            checkDevButtonVisibility();
+                        }
                     }
                 }
             }, 500); // 每500ms检查一次
@@ -575,7 +587,7 @@ export default {
         
         <!-- 开发者按钮 -->
         <button 
-            v-if="shouldShowDevButton || uiState.showDevButton"
+            v-if="shouldShowDevButton"
             class="ft-btn" 
             :style="{ width: '48px', height: '48px', borderRadius: '12px', border: 'none', background: 'transparent', color: 'var(--muted)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'none', margin: '0 auto' }"
             @click="openDevWindow()" 

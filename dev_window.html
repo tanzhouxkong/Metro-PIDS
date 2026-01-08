@@ -359,6 +359,23 @@
                     <i class="fas fa-times"></i> 关闭开发者模式
                 </button>
             </div>
+            <div style="margin-top: 20px; padding: 16px; background: var(--bg, #f5f5f5); border-radius: 8px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <label style="display: block; font-size: 14px; font-weight: 600; color: var(--text, #333); margin-bottom: 4px;">
+                            允许在打包后使用 F12 打开开发者工具
+                        </label>
+                        <p style="font-size: 12px; color: var(--muted, #666); margin: 0;">
+                            开启后，即使在打包版本中也可以使用 F12 快捷键打开开发者工具
+                        </p>
+                    </div>
+                    <label style="position: relative; display: inline-block; width: 50px; height: 26px;">
+                        <input type="checkbox" id="enable-f12-devtools" style="opacity: 0; width: 0; height: 0;" onchange="toggleF12DevTools(this.checked)">
+                        <span id="toggle-slider" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 26px; transition: 0.3s;"></span>
+                        <span id="toggle-circle" style="position: absolute; content: ''; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></span>
+                    </label>
+                </div>
+            </div>
         </div>
         
         <div class="section">
@@ -918,6 +935,62 @@
             }
         }
         
+        // 切换F12开发者工具开关
+        function toggleF12DevTools(enabled) {
+            try {
+                updateToggleStyle(enabled);
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    if (enabled) {
+                        localStorage.setItem('metro_pids_enable_f12_devtools', 'true');
+                        addLog('已启用：打包后可使用 F12 打开开发者工具', 'success');
+                    } else {
+                        localStorage.removeItem('metro_pids_enable_f12_devtools');
+                        addLog('已禁用：打包后无法使用 F12 打开开发者工具', 'info');
+                    }
+                    // 通知主进程更新设置
+                    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.updateF12DevToolsSetting) {
+                        window.electronAPI.updateF12DevToolsSetting(enabled);
+                    }
+                } else {
+                    addLog('localStorage 不可用', 'warn');
+                }
+            } catch (e) {
+                addLog('切换F12开发者工具设置失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 加载F12开发者工具设置
+        function loadF12DevToolsSetting() {
+            try {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    const enabled = localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+                    const checkbox = document.getElementById('enable-f12-devtools');
+                    if (checkbox) {
+                        checkbox.checked = enabled;
+                        // 更新开关样式
+                        const slider = document.getElementById('toggle-slider');
+                        const circle = document.getElementById('toggle-circle');
+                        if (slider && circle) {
+                            slider.style.backgroundColor = enabled ? '#1677ff' : '#ccc';
+                            circle.style.transform = enabled ? 'translateX(24px)' : 'translateX(0)';
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('加载F12开发者工具设置失败:', e);
+            }
+        }
+        
+        // 更新开关样式
+        function updateToggleStyle(enabled) {
+            const slider = document.getElementById('toggle-slider');
+            const circle = document.getElementById('toggle-circle');
+            if (slider && circle) {
+                slider.style.backgroundColor = enabled ? '#1677ff' : '#ccc';
+                circle.style.transform = enabled ? 'translateX(24px)' : 'translateX(0)';
+            }
+        }
+        
         // 重新加载窗口
         function reloadWindow() {
             if (typeof window !== 'undefined' && window.location) {
@@ -1130,6 +1203,7 @@
             showAppInfo();
             refreshSettings();
             initBroadcastChannel();
+            loadF12DevToolsSetting(); // 加载F12开发者工具设置
             addLog('开发者模式初始化完成', 'success');
             
             // 初始化 Mica 信息

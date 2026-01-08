@@ -295,11 +295,13 @@ export default {
                                     borderRadius:'2px', 
                                     fontSize:'10px',
                                     border: x.suspended ? '1px solid #999' : 'none',
-                                    display: x.suspended ? 'inline-flex' : 'inline',
+                                    display: (x.suspended || x.exitTransfer) ? 'inline-flex' : 'inline',
                                     alignItems: 'center',
                                     gap: '2px'
                                 }">
-                                    {{ x.line }}<span v-if="x.suspended" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span>
+                                    {{ x.line }}
+                                    <span v-if="x.suspended" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span>
+                                    <span v-else-if="x.exitTransfer" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span>
                                 </span>
                             </div>
                             <!-- 双向上行下行站台停靠-->

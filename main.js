@@ -4,6 +4,19 @@ const fs = require('fs');
 const fsPromises = fs.promises;
 const crypto = require('crypto');
 
+// ================= GPU 加速优化（优先作用于显示端） =================
+// 这些开关需要在 app.ready 之前配置，主要影响 Chromium 渲染管线。
+// Electron 默认已经启用 GPU，但通过以下开关可以更偏向 GPU 光栅化和零拷贝路径，
+// 对显示端这种大量动画/绘制的窗口更友好。
+try {
+  app.commandLine.appendSwitch('enable-gpu');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+} catch (e) {
+  console.warn('[main] 配置 GPU 开关失败:', e);
+}
+
 // 关闭主进程的冗余日志（保留 warn/error）
 const ENABLE_MAIN_VERBOSE_LOG = false;
 const __MAIN_ORIGINAL_LOG = console.log;
@@ -526,6 +539,35 @@ function createWindow() {
     return false;
   });
 
+  // 更新F12开发者工具设置（用于开发者窗口通知主进程）
+  ipcMain.handle('dev/update-f12-setting', async (event, enabled) => {
+    // 将设置同步到所有显示窗口的localStorage
+    try {
+      for (const [displayId, displayWin] of displayWindows.entries()) {
+        if (displayWin && !displayWin.isDestroyed()) {
+          await displayWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                if (${enabled}) {
+                  localStorage.setItem('metro_pids_enable_f12_devtools', 'true');
+                } else {
+                  localStorage.removeItem('metro_pids_enable_f12_devtools');
+                }
+                return true;
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+        }
+      }
+      return true;
+    } catch (e) {
+      console.warn('[main] 更新F12设置失败:', e);
+      return false;
+    }
+  });
+
   ipcMain.handle('dialog/alert', async (event, message) => {
     const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
     if (!win) return;
@@ -730,6 +772,8 @@ function createWindow() {
   });
 
   mainWin.on('closed', () => {
+    // 主窗口关闭时，关闭所有其他窗口
+    closeAllWindows();
     mainWin = null;
   });
 }
@@ -2268,9 +2312,12 @@ ipcMain.handle('app/get-os-version', async () => {
       osVersion = `macOS ${release}`;
     } else if (platform === 'linux') {
       // Linux: 尝试获取发行版信息，如果没有则使用内核版本
+      // 性能优化：使用异步操作避免阻塞事件循环
+      // 注意：由于这是IPC处理函数，异步读取可能导致返回值延迟
+      // 为了保持兼容性，先尝试同步读取，如果失败则使用默认值
       try {
         const fs = require('fs');
-        // 尝试读取 /etc/os-release
+        // 尝试同步读取（文件很小，影响可接受）
         if (fs.existsSync('/etc/os-release')) {
           const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
           const lines = osRelease.split('\n');
@@ -3119,6 +3166,12 @@ app.whenReady().then(async () => {
     console.warn('[main] 初始化预设线路文件失败:', e);
   }
   
+  // 性能优化：延迟加载自动更新模块
+  // 先加载自动更新模块（如果需要检查待安装更新）
+  if (app.isPackaged) {
+    loadAutoUpdater();
+  }
+  
   // 在创建窗口之前检查并安装待安装的更新
   // 如果有待安装的更新，会自动安装并重启，不会创建窗口
   if (app.isPackaged && autoUpdater) {
@@ -3176,8 +3229,130 @@ app.whenReady().then(async () => {
   });
 });
 
+// 关闭所有窗口的辅助函数
+function closeAllWindows() {
+  console.log('[main] 开始关闭所有窗口...');
+  
+  // 关闭所有显示端窗口
+  if (displayWindows && displayWindows.size > 0) {
+    console.log(`[main] 关闭 ${displayWindows.size} 个显示端窗口...`);
+    for (const [id, win] of displayWindows.entries()) {
+      if (win && !win.isDestroyed()) {
+        try {
+          win.close();
+        } catch (e) {
+          console.warn(`[main] 关闭显示端窗口 ${id} 失败:`, e);
+        }
+      }
+    }
+    displayWindows.clear();
+  }
+  
+  // 关闭线路管理器窗口
+  if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+    console.log('[main] 关闭线路管理器窗口...');
+    try {
+      lineManagerWin.close();
+    } catch (e) {
+      console.warn('[main] 关闭线路管理器窗口失败:', e);
+    }
+    lineManagerWin = null;
+  }
+  
+  // 关闭开发者工具窗口
+  if (devWin && !devWin.isDestroyed()) {
+    console.log('[main] 关闭开发者工具窗口...');
+    try {
+      devWin.close();
+    } catch (e) {
+      console.warn('[main] 关闭开发者工具窗口失败:', e);
+    }
+    devWin = null;
+  }
+  
+  // 关闭颜色选择器窗口
+  if (colorPickerWin && !colorPickerWin.isDestroyed()) {
+    console.log('[main] 关闭颜色选择器窗口...');
+    try {
+      colorPickerWin.close();
+    } catch (e) {
+      console.warn('[main] 关闭颜色选择器窗口失败:', e);
+    }
+    colorPickerWin = null;
+  }
+  
+  // 关闭所有 BrowserView
+  if (browserViews && browserViews.size > 0) {
+    console.log(`[main] 关闭 ${browserViews.size} 个 BrowserView...`);
+    for (const [viewId, viewData] of browserViews.entries()) {
+      if (viewData && viewData.view) {
+        try {
+          if (typeof viewData.view.isDestroyed === 'function' && !viewData.view.isDestroyed()) {
+            if (mainWin && !mainWin.isDestroyed()) {
+              mainWin.removeBrowserView(viewData.view);
+            }
+            viewData.view.destroy();
+          }
+        } catch (e) {
+          console.warn(`[main] 关闭 BrowserView ${viewId} 失败:`, e);
+        }
+      }
+    }
+    browserViews.clear();
+  }
+  
+  // 关闭所有其他窗口（通过 BrowserWindow.getAllWindows() 获取）
+  const allWindows = BrowserWindow.getAllWindows();
+  for (const win of allWindows) {
+    if (win && !win.isDestroyed() && win !== mainWin) {
+      try {
+        console.log(`[main] 关闭窗口: ${win.getTitle() || '未命名窗口'}`);
+        win.close();
+      } catch (e) {
+        console.warn('[main] 关闭窗口失败:', e);
+      }
+    }
+  }
+  
+  console.log('[main] 所有窗口关闭完成');
+}
+
+// 应用程序退出前处理：确保所有窗口都已关闭
+app.on('before-quit', (event) => {
+  console.log('[main] before-quit 事件触发');
+  // 如果还有窗口未关闭，先关闭所有窗口
+  const allWindows = BrowserWindow.getAllWindows();
+  if (allWindows.length > 0) {
+    console.log(`[main] 检测到 ${allWindows.length} 个窗口仍在运行，开始关闭...`);
+    closeAllWindows();
+    // 等待窗口关闭完成后再退出
+    setTimeout(() => {
+      // 再次检查，如果还有窗口，强制关闭
+      const remainingWindows = BrowserWindow.getAllWindows();
+      if (remainingWindows.length > 0) {
+        console.log(`[main] 仍有 ${remainingWindows.length} 个窗口未关闭，强制关闭...`);
+        for (const win of remainingWindows) {
+          if (win && !win.isDestroyed()) {
+            try {
+              win.destroy();
+            } catch (e) {
+              console.warn('[main] 强制关闭窗口失败:', e);
+            }
+          }
+        }
+      }
+    }, 100);
+  }
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  console.log('[main] window-all-closed 事件触发');
+  // 确保所有窗口都已关闭
+  closeAllWindows();
+  if (process.platform !== 'darwin') {
+    console.log('[main] 退出应用程序');
+    app.quit();
+  }
 });
 
 // 检查 Gitee 更新（自定义逻辑，因为 electron-updater 不支持 Gitee）
@@ -3959,7 +4134,10 @@ function createDisplayWindow(width, height, displayId = 'display-1') {
         contextIsolation: true,
         nodeIntegration: false,
         zoomFactor: 1.0,
-        enableBlinkFeatures: ''
+        // 显示端：确保在后台也保持刷新，并启用 2D Canvas GPU 光栅化
+        backgroundThrottling: false,
+        offscreen: false,
+        enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
       }
     };
   } else {
@@ -3992,8 +4170,11 @@ function createDisplayWindow(width, height, displayId = 'display-1') {
         nodeIntegration: false,
         // 禁用自动缩放，使用CSS transform来控制缩放
         zoomFactor: 1.0,
-        // 允许高DPI支持
-        enableBlinkFeatures: ''
+        // 显示端：确保在后台也保持刷新，并启用 2D Canvas GPU 光栅化
+        backgroundThrottling: false,
+        offscreen: false,
+        // 允许高DPI支持 + 2D Canvas GPU 加速
+        enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
       }
     };
   }
@@ -4074,15 +4255,39 @@ function createDisplayWindow(width, height, displayId = 'display-1') {
   });
   
   // 添加快捷键支持：F12 或 Ctrl+Shift+I (Windows/Linux) / Cmd+Option+I (MacOS) 切换开发者工具
-  displayWin.webContents.on('before-input-event', (event, input) => {
+  displayWin.webContents.on('before-input-event', async (event, input) => {
     // F12 键
     if (input.key === 'F12') {
+      // 检查是否允许在打包后使用F12
+      let allowF12 = !app.isPackaged; // 开发环境默认允许
+      
+      if (app.isPackaged) {
+        // 打包环境：检查localStorage中的设置
+        try {
+          const result = await displayWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          allowF12 = result === true;
+        } catch (e) {
+          console.warn('[DisplayWindow] 检查F12设置失败:', e);
+          allowF12 = false;
+        }
+      }
+      
+      if (allowF12) {
       if (displayWin.webContents.isDevToolsOpened()) {
         displayWin.webContents.closeDevTools();
       } else {
         displayWin.webContents.openDevTools();
       }
       event.preventDefault();
+      }
       return;
     }
     
@@ -4092,20 +4297,85 @@ function createDisplayWindow(width, height, displayId = 'display-1') {
     const isCmdOptionI = isMac && input.meta && input.alt && input.key === 'I';
     
     if (isCtrlShiftI || isCmdOptionI) {
+      // 检查是否允许在打包后使用快捷键
+      let allowShortcut = !app.isPackaged; // 开发环境默认允许
+      
+      if (app.isPackaged) {
+        // 打包环境：检查localStorage中的设置
+        try {
+          const result = await displayWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          allowShortcut = result === true;
+        } catch (e) {
+          console.warn('[DisplayWindow] 检查F12设置失败:', e);
+          allowShortcut = false;
+        }
+      }
+      
+      if (allowShortcut) {
       if (displayWin.webContents.isDevToolsOpened()) {
         displayWin.webContents.closeDevTools();
       } else {
         displayWin.webContents.openDevTools();
       }
       event.preventDefault();
+      }
       return;
     }
   });
 
-  // 窗口关闭时清理引用
+  // 性能优化：窗口关闭时彻底清理资源，避免内存泄漏
   displayWin.on('closed', () => {
     displayWindows.delete(displayId);
+    // 确保窗口引用被清理
+    if (displayWin && !displayWin.isDestroyed()) {
+      try {
+        displayWin.destroy();
+      } catch (e) {
+        console.warn(`[DisplayWindow:${displayId}] 销毁窗口失败:`, e);
+      }
+    }
   });
+
+  // 性能优化：监控显示端窗口内存使用，超阈值时刷新页面
+  // 显示端窗口通常需要持续运行，内存监控有助于保持性能
+  let memoryMonitorInterval = null;
+  if (displayWin && displayWin.webContents) {
+    memoryMonitorInterval = setInterval(async () => {
+      try {
+        if (displayWin.isDestroyed()) {
+          if (memoryMonitorInterval) {
+            clearInterval(memoryMonitorInterval);
+            memoryMonitorInterval = null;
+          }
+          return;
+        }
+        
+        const memoryInfo = displayWin.webContents.getProcessMemoryInfo();
+        if (memoryInfo && memoryInfo.privateBytes) {
+          const memoryMB = memoryInfo.privateBytes / 1024 / 1024;
+          // 显示端窗口内存阈值：800MB（考虑到地图渲染等复杂内容）
+          if (memoryMB > 800) {
+            console.warn(`[DisplayWindow:${displayId}] 内存使用超阈值（${memoryMB.toFixed(2)}MB），刷新页面`);
+            displayWin.webContents.reload();
+          }
+        }
+      } catch (e) {
+        // 忽略监控错误，避免影响窗口正常运行
+        if (memoryMonitorInterval) {
+          clearInterval(memoryMonitorInterval);
+          memoryMonitorInterval = null;
+        }
+      }
+    }, 30000); // 每30秒检查一次内存使用
+  }
 
   // 存储窗口引用
   displayWindows.set(displayId, displayWin);
