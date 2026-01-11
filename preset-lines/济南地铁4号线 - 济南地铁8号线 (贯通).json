@@ -15,8 +15,15 @@
         "throughStationName": ""
       }
     ],
+    "throughDirection": "",
+    "throughOperationEnabled": true,
+    "lineALineName": "",
+    "lineBLineName": "",
+    "throughStationIdx": -1,
     "startIdx": 0,
     "termIdx": 41,
+    "version": 5,
+    "lineNameMerge": true,
     "customColorRanges": [
       {
         "startIdx": 0,
@@ -29,8 +36,10 @@
         "color": "#8A2BE2"
       }
     ],
-    "throughOperationEnabled": true,
-    "version": 2
+    "mergedLineNames": [
+      "济南地铁4号线",
+      "济南地铁8号线"
+    ]
   },
   "stations": [
     {
@@ -56,20 +65,11 @@
     {
       "name": "济南西站西广场",
       "en": "Jinan West Railway Station West Square",
-      "xfer": [
-        {
-          "line": "1号线",
-          "color": "#B73F91"
-        },
-        {
-          "line": "6号线",
-          "color": "#2ABAEE"
-        }
-      ],
-      "door": "left",
       "skip": false,
+      "door": "left",
       "dock": "both",
-      "turnback": false,
+      "turnback": "none",
+      "xfer": [],
       "expressStop": false
     },
     {
@@ -346,16 +346,17 @@
     {
       "name": "邢村立交桥东",
       "en": "Xingcun Overpass East",
+      "skip": false,
+      "door": "right",
+      "dock": "both",
+      "turnback": "none",
       "xfer": [
         {
           "line": "8号线",
-          "color": "#5E3791"
+          "color": "#5E3791",
+          "exitTransfer": false
         }
       ],
-      "door": "left",
-      "skip": false,
-      "dock": "both",
-      "turnback": false,
       "expressStop": false
     },
     {
@@ -391,31 +392,35 @@
     {
       "name": "春博路",
       "en": "Chunbo Road",
+      "skip": false,
+      "door": "left",
+      "dock": "both",
+      "turnback": "none",
       "xfer": [
         {
           "line": "高新云巴线",
-          "color": "#1878BE"
+          "color": "#1878BE",
+          "exitTransfer": true,
+          "suspended": false
         }
       ],
-      "door": "left",
-      "skip": false,
-      "dock": "both",
-      "turnback": false,
       "expressStop": false
     },
     {
       "name": "山东职业学院",
       "en": "Shandong Vocational College",
+      "skip": false,
+      "door": "left",
+      "dock": "both",
+      "turnback": "none",
       "xfer": [
         {
           "line": "高新云巴线",
-          "color": "#1878BE"
+          "color": "#1878BE",
+          "exitTransfer": true,
+          "suspended": false
         }
       ],
-      "door": "left",
-      "skip": false,
-      "dock": "both",
-      "turnback": false,
       "expressStop": false
     },
     {

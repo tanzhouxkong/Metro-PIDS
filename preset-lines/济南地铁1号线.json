@@ -19,7 +19,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架三层岛式",
+      "region": "长清区"
     },
     {
       "name": "创新谷",
@@ -29,7 +31,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架",
+      "region": "长清区"
     },
     {
       "name": "园博园",
@@ -39,7 +43,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架",
+      "region": "长清区"
     },
     {
       "name": "大学城",
@@ -49,7 +55,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架",
+      "region": "长清区"
     },
     {
       "name": "紫薇路",
@@ -59,7 +67,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架",
+      "region": "长清区"
     },
     {
       "name": "赵营",
@@ -69,7 +79,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架",
+      "region": "长清区"
     },
     {
       "name": "玉符河",
@@ -79,7 +91,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "高架",
+      "region": "市中区"
     },
     {
       "name": "王府庄",
@@ -94,7 +108,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "槐荫区"
     },
     {
       "name": "大杨",
@@ -109,7 +125,9 @@
       "turnback": false,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "槐荫区"
     },
     {
       "name": "济南西站",
@@ -135,7 +153,9 @@
       "turnback": true,
       "expressStop": false,
       "door": "right",
-      "skip": false
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "槐荫区"
     }
   ]
 }

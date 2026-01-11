@@ -7,39 +7,43 @@
     "serviceMode": "normal",
     "startIdx": 0,
     "termIdx": 18,
-    "version": 50
+    "version": 9
   },
   "stations": [
     {
       "name": "王府庄",
       "en": "Wangfuzhuang",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [
         {
           "line": "1号线",
           "color": "#B73F91"
         }
       ],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "市中区、槐荫区"
     },
     {
       "name": "腊山南",
       "en": "Lashan Nan",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "槐荫区"
     },
     {
       "name": "腊山",
       "en": "Lashan",
       "skip": false,
-      "door": "left",
+      "door": "right",
       "dock": "both",
       "turnback": "none",
       "xfer": [
@@ -53,18 +57,20 @@
     {
       "name": "二环西路",
       "en": "Erhuan Xilu",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "槐荫区"
     },
     {
       "name": "老屯",
       "en": "Laotun",
       "skip": false,
-      "door": "left",
+      "door": "right",
       "dock": "both",
       "turnback": "none",
       "xfer": [
@@ -79,68 +85,80 @@
     {
       "name": "八里桥",
       "en": "Baliqiao",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下三层岛式",
+      "region": "天桥区"
     },
     {
       "name": "益康路",
       "en": "Yikang Lu",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "天桥区"
     },
     {
       "name": "济南站北",
       "en": "Jinan Railway Station North",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "天桥区"
     },
     {
       "name": "济泺路",
       "en": "Jiluo Lu",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "天桥区"
     },
     {
       "name": "生产路",
       "en": "Shengchan Lu",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "天桥区"
     },
     {
       "name": "北园",
       "en": "Beiyuan",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "天桥区"
     },
     {
       "name": "历山路",
       "en": "Lishan Lu",
       "skip": false,
-      "door": "left",
+      "door": "right",
       "dock": "both",
       "turnback": "none",
       "xfer": [
@@ -155,89 +173,96 @@
     {
       "name": "七里堡",
       "en": "Qilibao",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "历城区"
     },
     {
       "name": "祝甸",
       "en": "Zhudian",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "历城区"
     },
     {
       "name": "八涧堡",
       "en": "Bajianpu",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [
         {
           "line": "3号线",
           "color": "#013895"
         }
       ],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下三层岛式",
+      "region": "历下区"
     },
     {
       "name": "姜家庄",
       "en": "Jiangjiazhuang",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下二层岛式",
+      "region": "历下区"
     },
     {
-      "name": "凤凰北路",
-      "en": "fenghuang beilu ",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
+      "name": "凤凰路",
+      "en": "Fenghuang Lu",
       "xfer": [
         {
           "line": "6号线",
           "color": "#2ABAEE"
         }
       ],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "历城区"
     },
     {
       "name": "鲍山",
       "en": "Baoshan",
-      "skip": false,
-      "door": "left",
-      "dock": "both",
-      "turnback": "none",
       "xfer": [],
-      "expressStop": false
+      "dock": "both",
+      "turnback": false,
+      "expressStop": false,
+      "door": "right",
+      "skip": false,
+      "stationType": "地下",
+      "region": "历城区"
     },
     {
       "name": "彭家庄",
       "en": "Pengjiazhuang",
       "skip": false,
-      "door": "left",
+      "door": "right",
       "dock": "both",
       "turnback": true,
       "xfer": [
         {
           "line": "4号线",
           "color": "#178f3b"
-        },
-        {
-          "line": "济南高新云巴",
-          "color": "#077bb1",
-          "suspended": false
         }
       ],
       "expressStop": false

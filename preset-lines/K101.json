@@ -7,18 +7,34 @@
     "serviceMode": "normal",
     "startIdx": -1,
     "termIdx": -1,
-    "version": 2
+    "version": 9,
+    "lineNameMerge": false,
+    "throughLineSegments": [
+      {
+        "lineName": "",
+        "throughStationName": ""
+      },
+      {
+        "lineName": "",
+        "throughStationName": ""
+      }
+    ],
+    "throughDirection": "",
+    "throughOperationEnabled": false,
+    "lineALineName": "",
+    "lineBLineName": "",
+    "throughStationIdx": -1
   },
   "stations": [
     {
       "name": "甸柳庄",
       "en": "Dianliuzhuang",
-      "xfer": [],
-      "dock": "both",
-      "turnback": false,
-      "expressStop": false,
+      "skip": false,
       "door": "right",
-      "skip": false
+      "dock": "both",
+      "turnback": "none",
+      "xfer": [],
+      "expressStop": false
     },
     {
       "name": "二环东路和平路",

@@ -7,7 +7,7 @@
     "serviceMode": "normal",
     "startIdx": 0,
     "termIdx": 15,
-    "version": 1,
+    "version": 2,
     "lineNameMerge": false,
     "throughLineSegments": [
       {
@@ -32,18 +32,18 @@
       "skip": false,
       "door": "left",
       "dock": "both",
-      "turnback": false,
+      "turnback": "none",
       "xfer": [
         {
           "line": "3号线",
           "color": "#013895",
-          "exitTransfer": false,
+          "exitTransfer": true,
           "suspended": false
         },
         {
           "line": "6号线",
           "color": "#2ABAEE",
-          "exitTransfer": false,
+          "exitTransfer": true,
           "suspended": false
         }
       ],
@@ -201,4 +201,3 @@
     }
   ]
 }
-

@@ -5,29 +5,48 @@
     "mode": "linear",
     "dirType": "up",
     "serviceMode": "normal",
+    "throughLineSegments": [
+      {
+        "lineName": "",
+        "throughStationName": ""
+      },
+      {
+        "lineName": "",
+        "throughStationName": ""
+      }
+    ],
+    "throughDirection": "",
+    "throughOperationEnabled": false,
+    "lineALineName": "",
+    "lineBLineName": "",
+    "throughStationIdx": -1,
     "startIdx": -1,
     "termIdx": -1,
-    "version": 1
+    "version": 2,
+    "lineNameMerge": false
   },
   "stations": [
     {
       "name": "浦东1号2号航站楼",
       "en": "Pudong Airport Terminal 1 & 2",
+      "skip": false,
+      "door": "left",
+      "dock": "both",
+      "turnback": "none",
       "xfer": [
         {
           "line": "磁浮线",
-          "color": "#808080"
+          "color": "#808080",
+          "exitTransfer": false
         },
         {
           "line": "机场联络线",
-          "color": "#808080"
+          "color": "#808080",
+          "exitTransfer": true,
+          "suspended": false
         }
       ],
-      "dock": "both",
-      "turnback": false,
-      "expressStop": false,
-      "door": "left",
-      "skip": false
+      "expressStop": false
     },
     {
       "name": "海天三路",

@@ -6,8 +6,9 @@
     "dirType": "up",
     "startIdx": -1,
     "termIdx": -1,
-    "version": 2,
-    "serviceMode": "normal"
+    "version": 3,
+    "serviceMode": "normal",
+    "lineNameMerge": false
   },
   "stations": [
     {
@@ -359,20 +360,23 @@
     {
       "name": "彭家庄",
       "en": "Pengjiazhuang",
+      "skip": false,
+      "door": "left",
+      "dock": "both",
+      "turnback": "none",
       "xfer": [
         {
           "line": "2号线",
-          "color": "#F5A623"
+          "color": "#F5A623",
+          "exitTransfer": false
         },
         {
           "line": "高新云巴线",
-          "color": "#1878BE"
+          "color": "#1878BE",
+          "exitTransfer": true,
+          "suspended": false
         }
       ],
-      "door": "left",
-      "skip": false,
-      "dock": "both",
-      "turnback": false,
       "expressStop": false
     }
   ]

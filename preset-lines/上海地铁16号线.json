@@ -4,38 +4,58 @@
     "themeColor": "#99CC66",
     "mode": "linear",
     "dirType": "up",
-    "serviceMode": "normal",
-    "startIdx": -1,
-    "termIdx": -1,
-    "version": 1
+    "serviceMode": "direct",
+    "startIdx": 0,
+    "termIdx": 12,
+    "version": 3,
+    "lineNameMerge": false,
+    "throughLineSegments": [
+      {
+        "lineName": "",
+        "throughStationName": ""
+      },
+      {
+        "lineName": "",
+        "throughStationName": ""
+      }
+    ],
+    "throughDirection": "",
+    "throughOperationEnabled": false,
+    "lineALineName": "",
+    "lineBLineName": "",
+    "throughStationIdx": -1
   },
   "stations": [
     {
       "name": "龙阳路",
       "en": "Longyang Road",
+      "skip": false,
+      "door": "left",
+      "dock": "both",
+      "turnback": true,
       "xfer": [
         {
           "line": "2号线",
-          "color": "#00ff4c"
+          "color": "#00ff4c",
+          "exitTransfer": false
         },
         {
           "line": "7号线",
-          "color": "#FF6900"
+          "color": "#FF6900",
+          "exitTransfer": false
         },
         {
           "line": "18号线",
-          "color": "#D7000F"
+          "color": "#D7000F",
+          "exitTransfer": false
         },
         {
           "line": "磁浮线",
-          "color": "#808080"
+          "color": "#808080",
+          "exitTransfer": false
         }
       ],
-      "dock": "both",
-      "turnback": true,
-      "expressStop": true,
-      "door": "left",
-      "skip": false
+      "expressStop": false
     },
     {
       "name": "华夏中路",
