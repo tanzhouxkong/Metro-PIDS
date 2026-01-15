@@ -1,9 +1,11 @@
 import { usePidsState } from './usePidsState.js'
+import { useSettings } from './useSettings.js'
 import { cloneDisplayState } from '../utils/displayStateSerializer.js'
 import { applyThroughOperation } from '../utils/throughOperation.js'
 
 export function useController() {
     const { state, bcPost } = usePidsState();
+    const { settings } = useSettings();
 
     function sync() {
         if (!state.store || !state.store.list) return;
@@ -17,7 +19,14 @@ export function useController() {
         const payload = {
             t: 'SYNC',
             d: appDataToSend,
-            r: rtToSend
+            r: rtToSend,
+            settings: {
+                display: {
+                    display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000,
+                    display2FooterLED: settings?.display?.display2FooterLED || '',
+                    display2FooterWatermark: settings?.display?.display2FooterWatermark !== false
+                }
+            }
         };
         
         bcPost(payload);

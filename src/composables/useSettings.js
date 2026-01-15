@@ -2,6 +2,7 @@ import { reactive, watch } from 'vue'
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 
 const settings = reactive({ ...DEFAULT_SETTINGS })
+let systemThemeCleanup = null; // 存储系统主题监听的清理函数
 
 export function useSettings() {
     
@@ -56,7 +57,7 @@ export function useSettings() {
                             },
                             'display-2': {
                                 id: 'display-2',
-                                name: '副显示器',
+                                name: '高仿济南公交LCD屏幕',
                                 source: 'builtin',
                                 url: '',
                                 width: 1500,
@@ -87,7 +88,7 @@ export function useSettings() {
                 if (!settings.display.displays['display-2']) {
                     settings.display.displays['display-2'] = {
                         id: 'display-2',
-                        name: '副显示器',
+                        name: '高仿济南公交LCD屏幕',
                         source: 'builtin',
                         url: '',
                         width: 1500,
@@ -109,6 +110,10 @@ export function useSettings() {
                 if (settings.display.display2Mode === undefined) {
                     settings.display.display2Mode = DEFAULT_SETTINGS.display.display2Mode || 'dev-only';
                 }
+                // 确保 display2NextStationDuration 存在
+                if (settings.display.display2NextStationDuration === undefined) {
+                    settings.display.display2NextStationDuration = DEFAULT_SETTINGS.display.display2NextStationDuration || 10000;
+                }
                 
                 // 兼容旧数据，补 serviceMode
                 if (settings.meta && settings.meta.serviceMode === undefined) settings.meta.serviceMode = 'normal';
@@ -117,6 +122,8 @@ export function useSettings() {
                 if (settings.blurEnabled === undefined) settings.blurEnabled = DEFAULT_SETTINGS.blurEnabled;
                 // 兼容旧数据：补齐线路名合并开关
                 if (settings.lineNameMerge === undefined) settings.lineNameMerge = DEFAULT_SETTINGS.lineNameMerge;
+                // 兼容旧数据：补齐 API 服务器开关
+                if (settings.enableApiServer === undefined) settings.enableApiServer = DEFAULT_SETTINGS.enableApiServer;
             }
         } catch (e) { 
             console.warn('Failed to load settings', e);
@@ -153,23 +160,77 @@ export function useSettings() {
         function setDarkVariant(v) { 
             document.documentElement.setAttribute('data-dark-variant', v || 'soft'); 
         }
+        
+        // 同步主题到 mica-electron（主窗口）
+        function syncMicaTheme(isDark) {
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.mica) {
+                try {
+                    if (mode === 'system') {
+                        // 系统模式：使用自动主题
+                        if (typeof window.electronAPI.mica.setAutoTheme === 'function') {
+                            window.electronAPI.mica.setAutoTheme();
+                        }
+                    } else if (isDark) {
+                        // 深色模式
+                        if (typeof window.electronAPI.mica.setDarkTheme === 'function') {
+                            window.electronAPI.mica.setDarkTheme();
+                        }
+                    } else {
+                        // 浅色模式
+                        if (typeof window.electronAPI.mica.setLightTheme === 'function') {
+                            window.electronAPI.mica.setLightTheme();
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[useSettings] 同步主题到 mica-electron 失败:', e);
+                }
+            }
+        }
 
-        // 若有旧监听应移除（此处简化，假设单实例）
+        // 清理旧的系统主题监听
+        if (systemThemeCleanup) {
+            systemThemeCleanup();
+            systemThemeCleanup = null;
+        }
         
         if (mode === 'system') {
             if (window.matchMedia) {
                 const mql = window.matchMedia('(prefers-color-scheme: dark)');
-                setDark(mql.matches);
+                const isDark = mql.matches;
+                setDark(isDark);
                 setDarkVariant(darkVariant);
-                // 注意：为简化未重新绑定系统主题变更监听
+                syncMicaTheme(isDark);
+                
+                // 监听系统主题变化
+                const systemThemeListener = (e) => {
+                    const isDarkNow = e.matches;
+                    setDark(isDarkNow);
+                    syncMicaTheme(isDarkNow);
+                };
+                
+                if (mql.addEventListener) {
+                    mql.addEventListener('change', systemThemeListener);
+                    systemThemeCleanup = () => {
+                        mql.removeEventListener('change', systemThemeListener);
+                    };
+                } else if (mql.addListener) {
+                    // 兼容旧版 API
+                    mql.addListener(systemThemeListener);
+                    systemThemeCleanup = () => {
+                        mql.removeListener(systemThemeListener);
+                    };
+                }
             } else {
                 setDark(false);
+                syncMicaTheme(false);
             }
         } else if (mode === 'dark') {
             setDark(true);
             setDarkVariant(darkVariant);
+            syncMicaTheme(true);
         } else {
             setDark(false);
+            syncMicaTheme(false);
         }
     }
 

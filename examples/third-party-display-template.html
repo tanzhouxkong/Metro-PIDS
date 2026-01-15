@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Metro-PIDS 第三方显示器模板</title>
+    <!-- 
+        注意：此模板展示了基本的消息接收和显示功能。
+        如需使用站点计算 API（支持短交路、暂缓站、大站车、直达车等），
+        请参考 examples/display-with-station-calculator.html 示例文件。
+        
+        站点计算 API 文档：请参考 API_DOCUMENTATION.md 中的"站点计算 API"章节。
+    -->
     <style>
         * {
             box-sizing: border-box;
@@ -84,6 +91,7 @@
             50% { opacity: 0.5; }
         }
 
+
         .main-content {
             flex: 1;
             display: grid;
@@ -100,6 +108,8 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            min-height: 0; /* 允许 flex 子元素收缩 */
+            overflow: hidden; /* 防止内容溢出 */
         }
 
         .panel-title {
@@ -119,6 +129,32 @@
             padding: 20px;
             background: rgba(96, 165, 250, 0.1);
             border-radius: 8px;
+        }
+
+        .station-status {
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .status-badge.arrived {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-badge.departed {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3);
         }
 
         .station-info {
@@ -254,12 +290,16 @@
             </div>
         </div>
 
+
         <!-- 主要内容 -->
         <div class="main-content">
             <!-- 左侧：当前站点信息 -->
             <div class="panel">
                 <div class="panel-title">当前站点</div>
                 <div class="current-station" id="currentStation">--</div>
+                <div class="station-status" id="stationStatus">
+                    <span class="status-badge" id="statusBadge">--</span>
+                </div>
                 <div class="station-info">
                     <div class="info-item">
                         <span class="info-label">站点索引</span>
@@ -305,6 +345,30 @@
             snapshotKey: 'metro_pids_display_snapshot',  // localStorage 快照键名
             enableDebug: false,  // 是否启用调试面板（按 F12 切换）
         };
+
+        // ==================== 站点计算 API 配置 ====================
+        // 注意：如果您的第三方显示器与 Metro-PIDS 主程序在同一项目中，
+        // 可以使用 ES6 模块导入站点计算 API：
+        // 
+        // import {
+        //   getFilteredStations,
+        //   calculateDisplayStationInfo,
+        //   isSkippedByService,
+        //   getNextValidSt,
+        //   calculateNextStationIndex
+        // } from '../src/utils/displayStationCalculator.js';
+        //
+        // 显示器配置示例：
+        // const displayConfig = {
+        //   filterByDirection: true,  // 是否根据方向过滤站点（dock限制）
+        //   reverseOnDown: true       // 下行方向时是否反转站点顺序
+        // };
+        //
+        // 使用示例：
+        // const stationInfo = calculateDisplayStationInfo(appData, rtState, displayConfig);
+        // const filteredStations = getFilteredStations(appData, appData.meta?.dirType, displayConfig);
+        //
+        // 更多信息请参考 API_DOCUMENTATION.md 中的"站点计算 API"章节
 
         // ==================== 状态管理 ====================
         let appData = null;
@@ -436,6 +500,25 @@
             document.getElementById('lineNumber').textContent = `线路号: ${lineNumber}`;
             
             // 更新当前站点
+            // 注意：这里使用原始索引，如果需要使用站点计算 API 进行过滤和计算，
+            // 请参考以下示例代码（需要导入 displayStationCalculator.js）：
+            //
+            // const displayConfig = {
+            //   filterByDirection: true,
+            //   reverseOnDown: false  // 根据您的需求设置
+            // };
+            // const stationInfo = calculateDisplayStationInfo(appData, rtState, displayConfig);
+            // const filteredStations = getFilteredStations(appData, appData.meta?.dirType, displayConfig);
+            // const currentStation = filteredStations[stationInfo.currentIdx];
+            // const nextStation = stationInfo.nextIdx >= 0 ? filteredStations[stationInfo.nextIdx] : null;
+            //
+            // 使用过滤后的站点和索引：
+            // - currentStation: 当前站（过滤后数组中的站点）
+            // - nextStation: 下一站（过滤后数组中的站点，仅在出站状态时）
+            // - stationInfo.currentIdx: 当前站在过滤后数组中的索引
+            // - stationInfo.nextIdx: 下一站在过滤后数组中的索引
+            // - stationInfo.nextStationName: 下一站名称
+            
             const currentIdx = rtState?.idx ?? 0;
             const stations = appData.stations || [];
             const currentStation = stations[currentIdx];
@@ -448,12 +531,35 @@
                 document.getElementById('stationIndex').textContent = '-- / --';
             }
             
+            // 更新到站/出站状态
+            const currentState = rtState?.state ?? 0; // 0: 到站, 1: 出站
+            const statusBadge = document.getElementById('statusBadge');
+            if (statusBadge) {
+                if (currentState === 0) {
+                    statusBadge.textContent = '到站';
+                    statusBadge.className = 'status-badge arrived';
+                } else {
+                    statusBadge.textContent = '出站';
+                    statusBadge.className = 'status-badge departed';
+                }
+            }
+            
             // 更新其他信息
             document.getElementById('direction').textContent = appData.direction || appData.meta?.dirType || '--';
             document.getElementById('trainNumber').textContent = appData.trainNumber || '--';
             updateCurrentTime();
             
             // 更新站点列表
+            // 注意：如果需要显示过滤后的站点列表（例如，仅显示当前方向停靠的站点），
+            // 请使用 getFilteredStations API：
+            //
+            // const filteredStations = getFilteredStations(
+            //   appData,
+            //   appData.meta?.dirType,
+            //   { filterByDirection: true, reverseOnDown: false }
+            // );
+            // updateStationsList(filteredStations, stationInfo.currentIdx);
+            //
             updateStationsList(stations, currentIdx);
         }
 
@@ -551,22 +657,51 @@
             debugInfo.textContent = `[${timestamp}] ${message}`;
         }
 
-        // ==================== 调用 API 发送控制命令 ====================
-        const API_BASE = 'http://localhost:9001';
+        // ==================== 通过广播发送控制命令（可靠方案，不依赖HTTP API） ====================
+        function sendCommand(command) {
+            // 将命令转换为按键代码
+            let keyCode = 'Enter';
+            if (command === 'prev') keyCode = 'ArrowLeft';
+            else if (command === 'next') keyCode = 'ArrowRight';
+            else if (command === 'arrive') keyCode = 'Enter';
+            else if (command === 'depart') keyCode = 'Space';
+            
+            // 通过 BroadcastChannel 发送 CMD_KEY 消息到主程序
+            if (bc) {
+                try {
+                    bc.postMessage({
+                        t: 'CMD_KEY',
+                        code: keyCode,
+                        key: keyCode
+                    });
+                    console.log('[Display] ✅ 控制命令已通过广播发送:', command, '->', keyCode);
+                    return true;
+                } catch (e) {
+                    console.warn('[Display] ❌ 广播发送命令失败:', e);
+                    return false;
+                }
+            } else {
+                console.warn('[Display] ❌ BroadcastChannel 不可用，无法发送控制命令');
+                console.warn('[Display] 提示：请确保浏览器支持 BroadcastChannel API');
+                return false;
+            }
+        }
 
-        async function sendApiCommand(command, extra = {}) {
-            try {
-                const payload = Object.assign({ command }, extra);
-                console.log('[Display] 发送控制命令到 API:', payload);
-                const res = await fetch(`${API_BASE}/api/display/control`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-                console.log('[Display] 控制命令响应:', data);
-            } catch (err) {
-                console.error('[Display] 控制命令发送失败:', err);
+        // ==================== 通过广播请求数据同步 ====================
+        function requestDataSync() {
+            // 通过 BroadcastChannel 发送 REQ 消息，请求主程序同步数据
+            if (bc) {
+                try {
+                    bc.postMessage({ t: 'REQ' });
+                    console.log('[Display] ✅ 已通过广播请求数据同步');
+                    return true;
+                } catch (e) {
+                    console.warn('[Display] ❌ 广播请求数据失败:', e);
+                    return false;
+                }
+            } else {
+                console.warn('[Display] ❌ BroadcastChannel 不可用，无法请求数据');
+                return false;
             }
         }
 
@@ -590,16 +725,16 @@
 
             if (code === 'ArrowRight') {          // 下一站
                 e.preventDefault();
-                sendApiCommand('next');
+                sendCommand('next');
             } else if (code === 'ArrowLeft') {    // 上一站
                 e.preventDefault();
-                sendApiCommand('prev');
+                sendCommand('prev');
             } else if (code === 'Enter') {        // 到达
                 e.preventDefault();
-                sendApiCommand('arrive');
+                sendCommand('arrive');
             } else if (code === 'Space') {        // 发车
                 e.preventDefault();
-                sendApiCommand('depart');
+                sendCommand('depart');
             }
         });
 
@@ -630,6 +765,9 @@
             // 尝试恢复快照
             restoreSnapshot();
             
+            // 通过广播请求初始数据（不依赖API服务器）
+            requestDataViaBroadcast();
+
             // 启动时钟更新
             setInterval(updateCurrentTime, 1000);
             updateCurrentTime();

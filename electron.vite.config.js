@@ -160,6 +160,10 @@ export default defineConfig({
   // 渲染进程配置 - 支持 HMR ⚡️
   renderer: {
     root: __dirname,
+    // 配置 base 路径，确保资源路径在开发和生产环境一致
+    base: './',
+    // 配置 publicDir，确保静态资源被正确复制
+    publicDir: 'assets',
     plugins: [
       // Vue 插件配置：确保模板在构建时预编译
       vue({

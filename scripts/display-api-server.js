@@ -1,4 +1,12 @@
 // Metro-PIDS 显示器控制 API 服务器
+// 
+// ⚠️ 已弃用：此HTTP API服务器已被禁用，现在使用BroadcastChannel进行通信
+// BroadcastChannel是更可靠的方案，无需HTTP服务器，避免端口占用、防火墙等问题
+// 
+// 如需恢复HTTP API服务器：
+// 1. 在main.js中取消displayApiServer相关的注释
+// 2. 取消app.whenReady()中启动API服务器的注释
+//
 // 提供 HTTP API 接口用于控制显示器
 //
 // 启动方式（项目根目录）：
@@ -18,7 +26,9 @@ let apiHandlers = {
   closeDisplayWindow: null,
   sendBroadcastMessage: null,
   getMainWindow: null,
-  getStore: null
+  getStore: null,
+  getAppData: null,
+  getRtState: null
 };
 
 // 设置API处理器（由main.js调用）
@@ -266,6 +276,39 @@ function createDisplayApiServer() {
         }
       }
 
+      // GET /api/display/stations - 获取站点列表
+      if (pathname === '/api/display/stations' && method === 'GET') {
+        if (apiHandlers.getAppData && apiHandlers.getRtState) {
+          try {
+            const appData = apiHandlers.getAppData();
+            const rtState = apiHandlers.getRtState();
+            
+            if (!appData) {
+              return sendError(res, 404, '当前没有线路数据');
+            }
+            
+            const stations = appData.stations || [];
+            const currentIdx = rtState?.idx ?? 0;
+            const currentState = rtState?.state ?? 0; // 0: 到达, 1: 发车
+            
+            return sendJson(res, 200, {
+              ok: true,
+              stations: stations,
+              currentIdx: currentIdx,
+              currentState: currentState,
+              meta: appData.meta || {},
+              lineName: appData.lineName || '',
+              direction: appData.direction || appData.meta?.dirType || '',
+              trainNumber: appData.trainNumber || ''
+            });
+          } catch (e) {
+            return sendError(res, 500, `获取站点列表失败: ${e.message}`);
+          }
+        } else {
+          return sendError(res, 503, '数据获取功能未初始化');
+        }
+      }
+
       // GET /api/display/info - 获取API信息
       if (pathname === '/api/display/info' && method === 'GET') {
         return sendJson(res, 200, {
@@ -274,6 +317,7 @@ function createDisplayApiServer() {
           version: '1.0.0',
           endpoints: [
             'GET    /api/display/status - 获取显示器状态',
+            'GET    /api/display/stations - 获取站点列表',
             'POST   /api/display/open - 打开显示器',
             'POST   /api/display/close - 关闭显示器',
             'POST   /api/display/sync - 同步数据到显示器',
@@ -299,6 +343,7 @@ function createDisplayApiServer() {
           port: PORT,
           endpoints: [
             'GET    /api/display/status',
+            'GET    /api/display/stations',
             'POST   /api/display/open',
             'POST   /api/display/close',
             'POST   /api/display/sync',

@@ -4,7 +4,8 @@ const fs = require('fs');
 const fsPromises = fs.promises;
 const crypto = require('crypto');
 
-// 导入显示器控制API服务器
+// HTTP API 服务器（可选，用于 Python 等第三方客户端）
+// 默认使用 BroadcastChannel 进行通信，如需使用 Python 客户端可启用此选项
 let displayApiServer = null;
 try {
   const apiServerModule = require('./scripts/display-api-server.js');
@@ -12,6 +13,8 @@ try {
 } catch (e) {
   console.warn('[main] 无法加载显示器控制API服务器:', e);
 }
+
+let apiServerInstance = null; // 存储当前运行的 API 服务器实例
 
 // ================= GPU 加速优化（优先作用于显示端） =================
 // 这些开关需要在 app.ready 之前配置，主要影响 Chromium 渲染管线。
@@ -285,6 +288,261 @@ function reapplyMicaEffect() {
   }
 }
 
+// 强制重新应用模糊效果（用于打开显示器窗口时）
+function forceReapplyMicaEffect() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  if (!MAIN_BLUR_ENABLED) return;
+  
+  const isWindows = process.platform === 'win32';
+  if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
+  
+  // 只调用一次，不使用多个延迟
+  try {
+    if (!mainWin || mainWin.isDestroyed()) return;
+    mainWin.setBackgroundColor('#00000000');
+    if (IS_WINDOWS_11 && typeof mainWin.setMicaAcrylicEffect === 'function') {
+      mainWin.setMicaAcrylicEffect();
+    } else if (WIN10 && typeof mainWin.setAcrylic === 'function') {
+      mainWin.setAcrylic();
+    }
+  } catch (e) {
+    // 静默失败，不输出日志
+  }
+}
+
+// 启动/停止 API 服务器的函数（在 createWindow 外部定义，以便在 app.whenReady() 中使用）
+function startApiServer() {
+  if (!displayApiServer) {
+    console.warn('[main] API 服务器模块未加载，无法启动');
+    return false;
+  }
+  
+  // 如果已经启动，先停止
+  if (apiServerInstance) {
+    try {
+      apiServerInstance.close();
+      apiServerInstance = null;
+      console.log('[main] 已停止旧的 API 服务器');
+    } catch (e) {
+      console.warn('[main] 停止旧 API 服务器失败:', e);
+    }
+  }
+  
+  try {
+    const { server, PORT, setApiHandlers } = displayApiServer;
+    
+    // 设置API处理器
+    setApiHandlers({
+      getDisplayWindows: () => displayWindows,
+      createDisplayWindow: (width, height, displayId) => {
+        return createDisplayWindow(width, height, displayId);
+      },
+      closeDisplayWindow: (displayId) => {
+        if (displayId) {
+          const win = displayWindows.get(displayId);
+          if (win && !win.isDestroyed()) {
+            win.close();
+            displayWindows.delete(displayId);
+            return [displayId];
+          }
+          return [];
+        } else {
+          const closed = [];
+          for (const [id, win] of displayWindows.entries()) {
+            if (win && !win.isDestroyed()) {
+              win.close();
+              closed.push(id);
+            }
+          }
+          displayWindows.clear();
+          return closed;
+        }
+      },
+      sendBroadcastMessage: (payload) => {
+        const channelName = 'metro_pids_v3';
+        const payloadStr = JSON.stringify(payload);
+        
+        const jsCode = `
+          (function() {
+            try {
+              let success = false;
+              
+              if (typeof BroadcastChannel !== 'undefined') {
+                try {
+                  const bc = new BroadcastChannel('${channelName}');
+                  bc.postMessage(${payloadStr});
+                  bc.close();
+                  success = true;
+                } catch(e) {
+                  console.warn('[Display] BroadcastChannel 发送失败:', e);
+                }
+              }
+              
+              if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+                try {
+                  window.postMessage(${payloadStr}, '*');
+                  success = true;
+                } catch(e) {
+                  console.warn('[Display] postMessage 发送失败:', e);
+                }
+              }
+              
+              return success;
+            } catch(e) {
+              console.error('[Display] 发送消息失败:', e);
+              return false;
+            }
+          })();
+        `;
+        
+        let successCount = 0;
+        for (const [id, win] of displayWindows.entries()) {
+          if (win && !win.isDestroyed() && win.webContents) {
+            try {
+              win.webContents.executeJavaScript(jsCode).catch(e => {
+                console.warn(`[DisplayAPI] 向 ${id} 发送消息失败:`, e);
+              });
+              successCount++;
+            } catch (e) {
+              console.warn(`[DisplayAPI] 执行脚本失败 (${id}):`, e);
+            }
+          }
+        }
+        
+        if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
+          try {
+            mainWin.webContents.executeJavaScript(jsCode).catch(e => {
+              console.warn('[DisplayAPI] 向主窗口发送消息失败:', e);
+            });
+          } catch (e) {
+            console.warn('[DisplayAPI] 向主窗口执行脚本失败:', e);
+          }
+        }
+        
+        return successCount;
+      },
+      getMainWindow: () => mainWin,
+      getStore: () => store,
+      getAppData: async () => {
+        if (!mainWin || mainWin.isDestroyed()) {
+          return null;
+        }
+        try {
+          const result = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                const raw = localStorage.getItem('pids_global_store_v1');
+                if (!raw) return null;
+                const store = JSON.parse(raw);
+                if (!store || !store.list || !store.cur) return null;
+                return store.list[store.cur] || null;
+              } catch(e) {
+                return null;
+              }
+            })();
+          `);
+          return result;
+        } catch (e) {
+          console.warn('[DisplayAPI] 获取应用数据失败:', e);
+          return null;
+        }
+      },
+      getRtState: async () => {
+        if (!mainWin || mainWin.isDestroyed()) {
+          return null;
+        }
+        try {
+          const result = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                const raw = localStorage.getItem('pids_global_store_v1');
+                if (!raw) return null;
+                const store = JSON.parse(raw);
+                if (!store || !store.rt) return null;
+                return store.rt || null;
+              } catch(e) {
+                return null;
+              }
+            })();
+          `);
+          return result;
+        } catch (e) {
+          console.warn('[DisplayAPI] 获取实时状态失败:', e);
+          return null;
+        }
+      },
+      editDisplay: async (displayId, displayData) => {
+        try {
+          if (!mainWin || mainWin.isDestroyed()) {
+            return { ok: false, error: '主窗口未就绪' };
+          }
+          
+          const result = await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              ipcMain.removeListener('api/edit-display-result', handler);
+              resolve({ ok: false, error: '操作超时' });
+            }, 5000);
+            
+            const handler = (event, response) => {
+              clearTimeout(timeout);
+              ipcMain.removeListener('api/edit-display-result', handler);
+              resolve(response);
+            };
+            
+            ipcMain.once('api/edit-display-result', handler);
+            
+            mainWin.webContents.send('api/edit-display-request', displayId, displayData);
+          });
+          
+          return result;
+        } catch (e) {
+          console.error('[DisplayAPI] 编辑显示端失败:', e);
+          return { ok: false, error: String(e.message || e) };
+        }
+      }
+    });
+    
+    // 启动服务器
+    server.listen(PORT, () => {
+      console.log(`[DisplayAPI] ✅ 显示器控制 API 服务器已启动，端口: ${PORT}`);
+      console.log(`[DisplayAPI] 访问 http://localhost:${PORT}/api/display/info 查看API文档`);
+      apiServerInstance = server;
+    });
+    
+    server.on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        console.warn(`[DisplayAPI] 端口 ${PORT} 已被占用，API服务器未启动`);
+        apiServerInstance = null;
+      } else {
+        console.error('[DisplayAPI] 服务器错误:', e);
+        apiServerInstance = null;
+      }
+    });
+    
+    return true;
+  } catch (e) {
+    console.error('[main] 启动显示器控制API服务器失败:', e);
+    apiServerInstance = null;
+    return false;
+  }
+}
+
+function stopApiServer() {
+  if (apiServerInstance) {
+    try {
+      apiServerInstance.close();
+      apiServerInstance = null;
+      console.log('[main] ✅ API 服务器已停止');
+      return true;
+    } catch (e) {
+      console.warn('[main] 停止 API 服务器失败:', e);
+      apiServerInstance = null;
+      return false;
+    }
+  }
+  return true;
+}
+
 function createWindow() {
   console.log('[MainWindow] ===== 开始创建窗口 =====');
   // 尝试加载 mica-electron（需要在 app 初始化后）
@@ -399,15 +657,37 @@ function createWindow() {
     // 按照官方示例：窗口创建后立即设置主题和效果
     if (isWindows && mainWin && MicaBrowserWindow !== BrowserWindow) {
       try {
+        // 读取当前主题设置（从 electron-store 或默认值）
+        let themeMode = 'system';
+        try {
+          if (store) {
+            const currentSettings = store.get('settings', {});
+            themeMode = currentSettings.themeMode || 'system';
+          }
+        } catch (e) {
+          console.warn('[MainWindow] 读取主题设置失败，使用默认值:', e);
+        }
+        
         // 按照官方示例：先设置主题，然后设置效果
         if (IS_WINDOWS_11) {
           // Windows 11: 使用 Mica Acrylic Effect（Acrylic for Windows 11）
-          if (typeof mainWin.setAutoTheme === 'function') {
-            mainWin.setAutoTheme();
-            console.log('[MainWindow] ✅ 已设置自动主题');
-          } else if (typeof mainWin.setDarkTheme === 'function') {
-            mainWin.setDarkTheme();
-            console.log('[MainWindow] ✅ 已设置深色主题');
+          // 根据用户设置的主题模式来设置
+          if (themeMode === 'system') {
+            if (typeof mainWin.setAutoTheme === 'function') {
+              mainWin.setAutoTheme();
+              console.log('[MainWindow] ✅ 已设置自动主题（跟随系统）');
+            }
+          } else if (themeMode === 'dark') {
+            if (typeof mainWin.setDarkTheme === 'function') {
+              mainWin.setDarkTheme();
+              console.log('[MainWindow] ✅ 已设置深色主题');
+            }
+          } else {
+            // light mode
+            if (typeof mainWin.setLightTheme === 'function') {
+              mainWin.setLightTheme();
+              console.log('[MainWindow] ✅ 已设置浅色主题');
+            }
           }
           
           if (typeof mainWin.setMicaAcrylicEffect === 'function') {
@@ -416,6 +696,19 @@ function createWindow() {
           }
         } else if (WIN10) {
           // Windows 10: 使用 Acrylic 效果
+          // Windows 10 也支持主题设置
+          if (themeMode === 'dark') {
+            if (typeof mainWin.setDarkTheme === 'function') {
+              mainWin.setDarkTheme();
+              console.log('[MainWindow] ✅ Windows 10: 已设置深色主题');
+            }
+          } else if (themeMode === 'light') {
+            if (typeof mainWin.setLightTheme === 'function') {
+              mainWin.setLightTheme();
+              console.log('[MainWindow] ✅ Windows 10: 已设置浅色主题');
+            }
+          }
+          
           if (typeof mainWin.setAcrylic === 'function') {
             mainWin.setAcrylic();
             console.log('[MainWindow] ✅ 已启用 Acrylic 效果');
@@ -459,6 +752,8 @@ function createWindow() {
       if (mainWin && !mainWin.isDestroyed()) {
         try {
           mainWin.setBackgroundColor('#00000000'); // 设置透明背景
+          // 主窗口失去焦点时，强制重新应用模糊效果（防止侧边栏模糊消失）
+          forceReapplyMicaEffect();
         } catch (e) {
           console.warn('[MainWindow] ⚠️ 设置透明背景失败:', e);
         }
@@ -467,7 +762,8 @@ function createWindow() {
     
     // 窗口重新获得焦点时重新应用 Mica 效果
     mainWin.on('focus', () => {
-      reapplyMicaEffect();
+      // 主窗口重新获得焦点时，强制重新应用模糊效果
+      forceReapplyMicaEffect();
     });
     
     // 监听页面导航事件，在导航完成后重新应用 Mica 效果
@@ -692,6 +988,38 @@ function createWindow() {
   ipcMain.handle('switch-display', async (event, displayId, width, height) => {
     console.log('[main] switch-display requested, displayId=', displayId, 'width=', width, 'height=', height);
     
+    // 优先从主窗口的 localStorage 读取最新的 currentDisplayId，确保使用最新配置
+    let actualDisplayId = displayId;
+    if (mainWin && !mainWin.isDestroyed()) {
+      try {
+        const localStorageSettings = await mainWin.webContents.executeJavaScript(`
+          (function() {
+            try {
+              const raw = localStorage.getItem('pids_settings_v1');
+              if (raw) {
+                const settings = JSON.parse(raw);
+                return settings.display?.currentDisplayId || null;
+              }
+              return null;
+            } catch(e) {
+              return null;
+            }
+          })();
+        `);
+        
+        if (localStorageSettings) {
+          actualDisplayId = localStorageSettings;
+          console.log(`[main] switch-display: 从主窗口读取到最新的 currentDisplayId: ${actualDisplayId} (传入的: ${displayId})`);
+        }
+      } catch (e) {
+        console.warn('[main] 从主窗口读取 currentDisplayId 失败，使用传入的 displayId:', e);
+      }
+    }
+    
+    // 使用实际应该切换到的 displayId
+    displayId = actualDisplayId;
+    console.log(`[main] switch-display: 最终使用的 displayId: ${displayId}`);
+    
     // 检查是否已存在该显示端窗口
     const existingWin = displayWindows.get(displayId);
     if (existingWin && !existingWin.isDestroyed()) {
@@ -759,7 +1087,11 @@ function createWindow() {
         }
         
         // 计算期望的URL
-        if (displayConfig && displayConfig.source === 'builtin') {
+        if (displayConfig && displayConfig.source === 'online' && displayConfig.url) {
+          // 在线显示器：直接使用URL
+          expectedUrl = displayConfig.url.trim();
+          console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
+        } else if (displayConfig && displayConfig.source === 'builtin') {
           if (displayConfig.url) {
             // 自定义HTML文件路径
             let customFilePath = displayConfig.url.trim();
@@ -799,6 +1131,10 @@ function createWindow() {
               }
             }
           }
+        } else if (displayConfig && displayConfig.source === 'online' && displayConfig.url) {
+          // 在线显示器：直接使用URL
+          expectedUrl = displayConfig.url.trim();
+          console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
         } else {
           // 没有配置，使用默认路径
           if (displayId === 'display-1') {
@@ -812,11 +1148,24 @@ function createWindow() {
         const currentUrl = existingWin.webContents.getURL();
         console.log(`[main] switch-display: 当前窗口URL: ${currentUrl}`);
         console.log(`[main] switch-display: 期望URL: ${expectedUrl}`);
+        console.log(`[main] switch-display: 显示端配置:`, displayConfig ? {
+          id: displayConfig.id,
+          name: displayConfig.name,
+          source: displayConfig.source,
+          url: displayConfig.url
+        } : '未找到配置');
         
         // 比较URL，如果不一致则需要重新加载
         if (expectedUrl && currentUrl !== expectedUrl) {
           needReload = true;
-          console.log(`[main] switch-display: URL不一致，需要重新加载`);
+          console.log(`[main] switch-display: URL不一致，需要重新加载 (${currentUrl} -> ${expectedUrl})`);
+        } else if (expectedUrl && currentUrl === expectedUrl) {
+          console.log(`[main] switch-display: URL一致，但检查是否需要强制重新加载`);
+          // 如果配置了自定义URL，即使URL相同也重新加载（确保使用最新配置）
+          if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) {
+            console.log(`[main] switch-display: 检测到自定义URL配置，强制重新加载以确保使用最新配置`);
+            needReload = true;
+          }
         }
         
         if (needReload) {
@@ -834,7 +1183,39 @@ function createWindow() {
             existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
           }
           existingWin.focus();
-          console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦`);
+          console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦 (URL: ${currentUrl})`);
+          
+          // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+          forceReapplyMicaEffect();
+          
+          // 即使 URL 相同，也发送一个消息通知显示端切换（确保数据同步）
+          try {
+            const jsCode = `
+              (function() {
+                try {
+                  // 发送一个切换通知，让显示端知道当前应该显示哪个显示端的数据
+                  if (typeof BroadcastChannel !== 'undefined') {
+                    const bc = new BroadcastChannel('metro_pids_v3');
+                    bc.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' });
+                    bc.close();
+                  }
+                  if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+                    window.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' }, '*');
+                  }
+                  return true;
+                } catch(e) {
+                  console.error('[Display] 发送切换通知失败:', e);
+                  return false;
+                }
+              })();
+            `;
+            existingWin.webContents.executeJavaScript(jsCode).catch(e => {
+              console.warn(`[main] 向显示端 ${displayId} 发送切换通知失败:`, e);
+            });
+          } catch (e) {
+            console.warn(`[main] 执行切换通知脚本失败 (${displayId}):`, e);
+          }
+          
           return true;
         }
       } catch (e) {
@@ -843,13 +1224,19 @@ function createWindow() {
     }
     
     // 关闭所有现有的显示窗口（除了目标显示端）
+    const windowsToClose = [];
     for (const [id, win] of displayWindows.entries()) {
       if (id !== displayId && win && !win.isDestroyed()) {
-        try {
-          win.close();
-        } catch (e) {
-          console.warn(`[main] 关闭显示窗口 ${id} 失败:`, e);
-        }
+        windowsToClose.push({ id, win });
+      }
+    }
+    
+    // 关闭窗口（关闭操作可能会影响主窗口的模糊效果）
+    for (const { id, win } of windowsToClose) {
+      try {
+        win.close();
+      } catch (e) {
+        console.warn(`[main] 关闭显示窗口 ${id} 失败:`, e);
       }
     }
     
@@ -860,8 +1247,17 @@ function createWindow() {
       }
     }
     
+    // 如果关闭了窗口，立即强制重新应用主窗口的模糊效果（防止因关闭窗口导致模糊消失）
+    if (windowsToClose.length > 0) {
+      console.log(`[main] switch-display: 已关闭 ${windowsToClose.length} 个其他显示窗口，立即重新应用主窗口模糊效果`);
+      forceReapplyMicaEffect();
+    }
+    
     // 创建新的显示窗口（如果不存在或需要重新加载）
     createDisplayWindow(width, height, displayId);
+
+    // 创建新窗口后，强制重新应用主窗口的模糊效果（防止因创建窗口导致模糊消失）
+    forceReapplyMicaEffect();
     
     return true;
   });
@@ -870,8 +1266,69 @@ function createWindow() {
   ipcMain.handle('settings/sync', async (event, settings) => {
     try {
       if (store && settings) {
+        const oldSettings = store.get('settings', {});
         store.set('settings', settings);
         console.log('[main] 设置已同步到 electron-store');
+        
+        // 检查主题模式是否变化，如果变化则同步到 mica-electron
+        const oldThemeMode = oldSettings.themeMode || 'system';
+        const newThemeMode = settings.themeMode || 'system';
+        
+        if (oldThemeMode !== newThemeMode && mainWin && !mainWin.isDestroyed() && MicaBrowserWindow !== BrowserWindow) {
+          try {
+            if (IS_WINDOWS_11) {
+              if (newThemeMode === 'system') {
+                // 系统模式：使用自动主题
+                if (typeof mainWin.setAutoTheme === 'function') {
+                  mainWin.setAutoTheme();
+                  console.log('[main] ✅ 主题模式已切换为系统模式，已设置自动主题');
+                }
+              } else if (newThemeMode === 'dark') {
+                // 深色模式
+                if (typeof mainWin.setDarkTheme === 'function') {
+                  mainWin.setDarkTheme();
+                  console.log('[main] ✅ 主题模式已切换为深色模式');
+                }
+              } else {
+                // 浅色模式
+                if (typeof mainWin.setLightTheme === 'function') {
+                  mainWin.setLightTheme();
+                  console.log('[main] ✅ 主题模式已切换为浅色模式');
+                }
+              }
+            } else if (WIN10) {
+              // Windows 10 也支持主题切换（虽然效果可能不如 Windows 11）
+              if (newThemeMode === 'dark') {
+                if (typeof mainWin.setDarkTheme === 'function') {
+                  mainWin.setDarkTheme();
+                  console.log('[main] ✅ Windows 10: 主题模式已切换为深色模式');
+                }
+              } else {
+                if (typeof mainWin.setLightTheme === 'function') {
+                  mainWin.setLightTheme();
+                  console.log('[main] ✅ Windows 10: 主题模式已切换为浅色模式');
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[main] ⚠️ 同步主题到 mica-electron 失败:', e);
+          }
+        }
+        
+        // 检查 API 服务器开关是否变化
+        const oldEnableApiServer = oldSettings.enableApiServer || false;
+        const newEnableApiServer = settings.enableApiServer || false;
+        
+        if (oldEnableApiServer !== newEnableApiServer) {
+          if (newEnableApiServer) {
+            console.log('[main] 用户启用了 API 服务器，正在启动...');
+            startApiServer();
+          } else {
+            console.log('[main] 用户禁用了 API 服务器，正在停止...');
+            stopApiServer();
+          }
+        }
+        
         return { ok: true };
       }
       return { ok: false, error: 'store 未初始化或 settings 为空' };
@@ -928,10 +1385,29 @@ function createWindow() {
   });
 
   // 暴露 IPC 供渲染层关闭开发者窗口
-  ipcMain.handle('close-dev-window', (event) => {
+  ipcMain.handle('close-dev-window', async (event) => {
     if (devWin && !devWin.isDestroyed()) {
       devWin.close();
       devWin = null;
+      
+      // 清除主窗口 localStorage 中的开发者按钮标记
+      if (mainWin && !mainWin.isDestroyed()) {
+        try {
+          await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                localStorage.removeItem('metro_pids_dev_button_enabled');
+                return true;
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          console.log('[MainWindow] 已清除开发者按钮标记');
+        } catch (e) {
+          console.warn('[MainWindow] 清除开发者按钮标记失败:', e);
+        }
+      }
     }
     return true;
   });
@@ -3716,7 +4192,24 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
-  // 启动显示器控制API服务器
+  // 根据用户设置决定是否启动 API 服务器
+  // 默认使用 BroadcastChannel 进行通信，如需使用 Python 等第三方客户端可启用 API 服务器
+  try {
+    const currentSettings = store ? store.get('settings', {}) : {};
+    const shouldEnableApiServer = currentSettings.enableApiServer === true;
+    
+    if (shouldEnableApiServer && displayApiServer) {
+      console.log('[main] 检测到用户已启用 API 服务器，正在启动...');
+      startApiServer();
+    } else {
+      console.log('[main] API 服务器未启用（默认使用 BroadcastChannel 通信）');
+    }
+  } catch (e) {
+    console.warn('[main] 读取 API 服务器设置失败，使用默认值（未启用）:', e);
+  }
+  
+  /*
+  // 启动显示器控制API服务器（旧代码，已改为使用 startApiServer 函数）
   if (displayApiServer) {
     try {
       const { server, PORT, setApiHandlers } = displayApiServer;
@@ -3820,6 +4313,56 @@ app.whenReady().then(async () => {
         },
         getMainWindow: () => mainWin,
         getStore: () => store,
+        getAppData: async () => {
+          // 从主窗口的localStorage获取应用数据
+          if (!mainWin || mainWin.isDestroyed()) {
+            return null;
+          }
+          try {
+            const result = await mainWin.webContents.executeJavaScript(`
+              (function() {
+                try {
+                  const raw = localStorage.getItem('pids_global_store_v1');
+                  if (!raw) return null;
+                  const store = JSON.parse(raw);
+                  if (!store || !store.list || !store.cur) return null;
+                  return store.list[store.cur] || null;
+                } catch(e) {
+                  return null;
+                }
+              })();
+            `);
+            return result;
+          } catch (e) {
+            console.warn('[DisplayAPI] 获取应用数据失败:', e);
+            return null;
+          }
+        },
+        getRtState: async () => {
+          // 从主窗口的localStorage获取实时状态
+          if (!mainWin || mainWin.isDestroyed()) {
+            return null;
+          }
+          try {
+            const result = await mainWin.webContents.executeJavaScript(`
+              (function() {
+                try {
+                  const raw = localStorage.getItem('pids_global_store_v1');
+                  if (!raw) return null;
+                  const store = JSON.parse(raw);
+                  if (!store || !store.rt) return null;
+                  return store.rt || null;
+                } catch(e) {
+                  return null;
+                }
+              })();
+            `);
+            return result;
+          } catch (e) {
+            console.warn('[DisplayAPI] 获取实时状态失败:', e);
+            return null;
+          }
+        },
         editDisplay: async (displayId, displayData) => {
           // 通过IPC调用编辑显示端
           try {
@@ -3870,6 +4413,7 @@ app.whenReady().then(async () => {
       console.error('[main] 启动显示器控制API服务器失败:', e);
     }
   }
+  */
 });
 
 // 关闭所有窗口的辅助函数
@@ -4721,6 +5265,8 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
           existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
         }
         existingWin.focus();
+        // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+        forceReapplyMicaEffect();
       } catch (e) {
         // 忽略尺寸设置异常
       }
@@ -4923,8 +5469,11 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     }
   }
   
-  // 判断是否为第三方显示器（配置了自定义HTML文件）
-  const isThirdPartyDisplay = displayConfig && displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim();
+  // 判断是否为第三方显示器（配置了自定义HTML文件或在线URL）
+  const isThirdPartyDisplay = displayConfig && (
+    (displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) ||
+    (displayConfig.source === 'online' && displayConfig.url && displayConfig.url.trim())
+  );
   
   // 使用方案二：隐藏默认标题栏，显示系统窗口控制按钮
   const isWindows = process.platform === 'win32';
@@ -5058,8 +5607,11 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   let dispPath;
   
   // displayConfig 已在窗口创建前读取，这里直接使用
-  // 如果配置了本地文件路径（source为builtin且url存在），使用该路径
-  if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url) {
+  // 如果配置了在线URL（source为online且url存在），直接使用该URL
+  if (displayConfig && displayConfig.source === 'online' && displayConfig.url) {
+    dispPath = displayConfig.url.trim();
+    console.log(`[main] ✅ 使用在线显示器URL: ${dispPath}`);
+  } else if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url) {
     let customFilePath = displayConfig.url.trim();
     console.log(`[main] 检测到自定义HTML文件路径: ${customFilePath}`);
     
@@ -5210,6 +5762,9 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     if (!app.isPackaged) {
       displayWin.webContents.openDevTools();
     }
+    
+    // 显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+    forceReapplyMicaEffect();
   });
   
   displayWin.loadURL(dispPath);
@@ -5220,11 +5775,20 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   // 监听缩放变化事件，确保始终保持1.0缩放
   displayWin.webContents.on('did-finish-load', () => {
     displayWin.webContents.setZoomFactor(1.0);
+    // 页面加载完成后，强制重新应用主窗口的模糊效果
+    forceReapplyMicaEffect();
   });
   
   // 监听窗口显示事件，再次确保缩放正确
   displayWin.on('show', () => {
     displayWin.webContents.setZoomFactor(1.0);
+    // 显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+    forceReapplyMicaEffect();
+  });
+  
+  // 监听显示器窗口的焦点事件，当显示器窗口失去焦点时（主窗口重新获得焦点），重新应用模糊效果
+  displayWin.on('blur', () => {
+    forceReapplyMicaEffect();
   });
   
   // 添加快捷键支持：F12 或 Ctrl+Shift+I (Windows/Linux) / Cmd+Option+I (MacOS) 切换开发者工具
@@ -5592,8 +6156,27 @@ function createDevWindow() {
     }
   });
 
-  devWin.on('closed', () => {
+  devWin.on('closed', async () => {
     devWin = null;
+    
+    // 清除主窗口 localStorage 中的开发者按钮标记
+    if (mainWin && !mainWin.isDestroyed()) {
+      try {
+        await mainWin.webContents.executeJavaScript(`
+          (function() {
+            try {
+              localStorage.removeItem('metro_pids_dev_button_enabled');
+              return true;
+            } catch(e) {
+              return false;
+            }
+          })();
+        `);
+        console.log('[MainWindow] 开发者窗口关闭，已清除开发者按钮标记');
+      } catch (e) {
+        console.warn('[MainWindow] 清除开发者按钮标记失败:', e);
+      }
+    }
   });
 }
 

@@ -1774,16 +1774,38 @@ export function initDisplayWindow(rootElement) {
         for (let i = sts.length - 1; i >= 0; i--) if (!sts[i].skip) return sts[i];
         return sts[sts.length - 1];
       };
-      let startSt = getFirst();
-      let termSt = getLast();
-      if (meta.startIdx !== undefined && meta.startIdx !== -1) {
-        const s = sts[meta.startIdx];
-        if (s) startSt = s;
+      // 根据上下行确定首末站
+      // 上行/外环：首站 = startIdx（或第一个），末站 = termIdx（或最后一个）
+      // 下行/内环：首站 = termIdx（或最后一个），末站 = startIdx（或第一个）
+      let firstSt, lastSt;
+      if (meta.startIdx !== undefined && meta.startIdx !== -1 && meta.termIdx !== undefined && meta.termIdx !== -1) {
+        // 有短交路设置：根据方向确定首末站
+        const startIdx = meta.startIdx;
+        const termIdx = meta.termIdx;
+        if (meta.dirType === 'up' || meta.dirType === 'outer') {
+          // 上行/外环：首站 = startIdx，末站 = termIdx
+          firstSt = sts[startIdx];
+          lastSt = sts[termIdx];
+        } else {
+          // 下行/内环：首站 = termIdx，末站 = startIdx（方向相反）
+          firstSt = sts[termIdx];
+          lastSt = sts[startIdx];
+        }
+      } else {
+        // 没有短交路设置：根据方向确定首末站
+        const firstIdx = 0;
+        const lastIdx = sts.length - 1;
+        if (meta.dirType === 'up' || meta.dirType === 'outer') {
+          // 上行/外环：首站 = 第一个，末站 = 最后一个
+          firstSt = getFirst();
+          lastSt = getLast();
+        } else {
+          // 下行/内环：首站 = 最后一个，末站 = 第一个（方向相反）
+          firstSt = getLast();
+          lastSt = getFirst();
+        }
       }
-      if (meta.termIdx !== undefined && meta.termIdx !== -1) {
-        const t = sts[meta.termIdx];
-        if (t) termSt = t;
-      }
+      
       let arrowHTML = '';
       //右侧顶部三角
       if (meta.dirType === 'up' || meta.dirType === 'outer') {
@@ -1800,12 +1822,12 @@ export function initDisplayWindow(rootElement) {
           <i class="fas fa-chevron-left a3" style="animation-delay:0s;"></i>
         `;
       }
-      termBox.appendChild(createScrollBlock(startSt));
+      termBox.appendChild(createScrollBlock(firstSt));
       const arrows = document.createElement('div');
       arrows.className = 'route-arrows';
       arrows.innerHTML = arrowHTML;
       termBox.appendChild(arrows);
-      termBox.appendChild(createScrollBlock(termSt));
+      termBox.appendChild(createScrollBlock(lastSt));
     }
     let targetSt;
     let isArriving = (rt.state === 0);

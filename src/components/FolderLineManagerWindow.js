@@ -971,45 +971,55 @@ export default {
     async function showFolderSelector(foldersList, title, lineName = '') {
       return new Promise((resolve) => {
         const dialog = document.createElement('div');
-        dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px);';
+        dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); animation:fadeIn 0.3s ease;';
         
         const dialogContent = document.createElement('div');
-        dialogContent.style.cssText = 'background:var(--card, #fff); border-radius:12px; width:90%; max-width:500px; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.3); overflow:hidden;';
+        dialogContent.style.cssText = 'background:var(--card, #ffffff); border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;';
         
         const header = document.createElement('div');
-        header.style.cssText = 'padding:20px; border-bottom:1px solid var(--divider, #e0e0e0); display:flex; flex-direction:column; gap:12px; flex-shrink:0;';
+        header.style.cssText = 'padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); display:flex; flex-direction:column; gap:16px; flex-shrink:0; background:linear-gradient(135deg, rgba(255,159,67,0.05) 0%, rgba(255,159,67,0.02) 100%);';
         header.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0; font-size:18px; font-weight:bold; color:var(--text, #333);">${title || '选择文件夹'}</h3>
-            <button id="closeBtn" style="background:none; border:none; color:var(--muted, #666); cursor:pointer; font-size:24px; padding:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:6px; transition:background 0.2s;">&times;</button>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #FF9F43 0%, #FFC371 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(255,159,67,0.3);">
+                <i class="fas fa-folder-open" style="color:white; font-size:18px;"></i>
+              </div>
+              <div>
+                <h3 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">${title || '选择文件夹'}</h3>
+                <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Select Folder</div>
+              </div>
+            </div>
+            <button id="closeBtn" style="background:none; border:none; color:var(--muted, #999); cursor:pointer; font-size:20px; padding:8px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:all 0.2s;" onmouseover="this.style.color='var(--text, #333)'" onmouseout="this.style.color='var(--muted, #999)'">
+              <i class="fas fa-times"></i>
+            </button>
           </div>
           ${lineName ? `
-          <div style="padding:12px; background:linear-gradient(135deg, #FF9F43 0%, #FFC371 100%); border-radius:8px; display:flex; align-items:center; gap:12px; box-shadow:0 2px 8px rgba(255,159,67,0.2);">
+          <div style="padding:14px 16px; background:linear-gradient(135deg, #FF9F43 0%, #FFC371 100%); border-radius:10px; display:flex; align-items:center; gap:12px; box-shadow:0 4px 12px rgba(255,159,67,0.3);">
             <i class="fas fa-exchange-alt" style="font-size:20px; color:#fff;"></i>
             <div style="flex:1;">
-              <div style="font-size:14px; font-weight:bold; color:#fff; margin-bottom:4px;">保存贯通线路</div>
-              <div style="font-size:12px; color:rgba(255,255,255,0.9);">线路名称: ${lineName}</div>
+              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:4px;">保存贯通线路</div>
+              <div style="font-size:12px; color:rgba(255,255,255,0.95);">线路名称: ${lineName}</div>
             </div>
           </div>
           ` : ''}
         `;
         
         const folderList = document.createElement('div');
-        folderList.style.cssText = 'flex:1; overflow-y:auto; padding:12px; max-height:400px;';
+        folderList.style.cssText = 'flex:1; overflow-y:auto; padding:20px 28px; background:var(--bg, #fafafa);';
         
         let selectedFolder = null;
         
         foldersList.forEach((folder) => {
           const folderCard = document.createElement('div');
-          folderCard.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:12px; margin-bottom:8px; background:var(--card, #fff); border-radius:6px; border:2px solid var(--divider, #e0e0e0); cursor:pointer; transition:all 0.2s; user-select:none;';
+          folderCard.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:16px; margin-bottom:12px; background:var(--card, #ffffff); border-radius:12px; border:2px solid var(--divider, rgba(0,0,0,0.08)); cursor:pointer; transition:all 0.2s; user-select:none; box-shadow:0 2px 8px rgba(0,0,0,0.04);';
           
           folderCard.innerHTML = `
             <div style="flex:1; min-width:0;">
-              <div style="font-size:14px; font-weight:bold; color:var(--text, #333); margin-bottom:4px;">
-                <i class="fas fa-folder" style="margin-right:8px; color:var(--accent, #12b7f5);"></i>
-                ${folder.name}
+              <div style="font-size:15px; font-weight:600; color:var(--text, #333); margin-bottom:6px; display:flex; align-items:center; gap:10px;">
+                <i class="fas fa-folder" style="font-size:16px; color:#FF9F43;"></i>
+                <span>${folder.name}</span>
               </div>
-              <div style="font-size:12px; color:var(--muted, #666); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              <div style="font-size:12px; color:var(--muted, #999); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:26px;">
                 ${folder.path || ''}
               </div>
             </div>
@@ -1023,11 +1033,13 @@ export default {
                 if (f.id === folder.id) {
                   card.style.borderColor = '#FF9F43';
                   card.style.background = 'rgba(255,159,67,0.1)';
-                  card.style.boxShadow = '0 2px 8px rgba(255,159,67,0.3)';
+                  card.style.boxShadow = '0 4px 16px rgba(255,159,67,0.3)';
+                  card.style.transform = 'translateY(-2px)';
                 } else {
-                  card.style.borderColor = 'var(--divider, #e0e0e0)';
-                  card.style.background = 'var(--card, #fff)';
-                  card.style.boxShadow = 'none';
+                  card.style.borderColor = 'var(--divider, rgba(0,0,0,0.08))';
+                  card.style.background = 'var(--card, #ffffff)';
+                  card.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
+                  card.style.transform = 'translateY(0)';
                 }
               }
             });
@@ -1036,11 +1048,15 @@ export default {
           folderCard.addEventListener('mouseenter', () => {
             if (selectedFolder?.id !== folder.id) {
               folderCard.style.background = 'var(--bg, #f5f5f5)';
+              folderCard.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+              folderCard.style.transform = 'translateY(-1px)';
             }
           });
           folderCard.addEventListener('mouseleave', () => {
             if (selectedFolder?.id !== folder.id) {
-              folderCard.style.background = 'var(--card, #fff)';
+              folderCard.style.background = 'var(--card, #ffffff)';
+              folderCard.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
+              folderCard.style.transform = 'translateY(0)';
             }
           });
           
@@ -1049,11 +1065,21 @@ export default {
         });
         
         const buttonBar = document.createElement('div');
-        buttonBar.style.cssText = 'padding:16px 20px; border-top:1px solid var(--divider, #e0e0e0); display:flex; justify-content:flex-end; gap:12px; flex-shrink:0;';
+        buttonBar.style.cssText = 'padding:20px 28px; border-top:1px solid var(--divider, rgba(0,0,0,0.1)); display:flex; justify-content:flex-end; gap:12px; flex-shrink:0; background:var(--card, #ffffff);';
         buttonBar.innerHTML = `
-          <button id="cancelBtn" style="padding:8px 20px; background:#fff; color:#333; border:1px solid #d9d9d9; border-radius:4px; font-size:14px; cursor:pointer; transition:all 0.2s; min-width:60px;">取消</button>
-          <button id="confirmBtn" style="padding:8px 20px; background:#1677ff; color:#fff; border:none; border-radius:4px; font-size:14px; cursor:pointer; transition:all 0.2s; font-weight:500; min-width:60px;">确定</button>
+          <button id="cancelBtn" style="padding:10px 20px; background:var(--btn-gray-bg, #f5f5f5); color:var(--btn-gray-text, #666); border:none; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.2s; min-width:80px;" onmouseover="this.style.background='var(--bg, #e5e5e5)'" onmouseout="this.style.background='var(--btn-gray-bg, #f5f5f5)'">取消</button>
+          <button id="confirmBtn" style="padding:10px 20px; background:#FF9F43; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:all 0.2s; min-width:80px; box-shadow:0 4px 12px rgba(255,159,67,0.4);" onmouseover="this.style.boxShadow='0 6px 16px rgba(255,159,67,0.6)'; this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 4px 12px rgba(255,159,67,0.4)'; this.style.transform='translateY(0)'">确定</button>
         `;
+        
+        // 添加动画样式
+        const style = document.createElement('style');
+        style.textContent = `
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+        `;
+        dialog.appendChild(style);
         
         dialogContent.appendChild(header);
         dialogContent.appendChild(folderList);

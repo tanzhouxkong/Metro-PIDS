@@ -119,12 +119,68 @@
             width: 100%;
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
             padding: 0 20px;
             background: #162b75; /* 深蓝色背景 */
             z-index: 10;
             color: #fff;
             flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* LED滚动文字 */
+        .footer-led {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+            min-width: 0; /* 允许flex收缩 */
+        }
+        
+        .footer-led-content {
+            white-space: nowrap;
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            display: inline-block;
+            padding-right: 50px;
+        }
+        
+        .footer-led-content.scrolling {
+            animation: footer-led-scroll 20s linear infinite;
+        }
+        
+        @keyframes footer-led-scroll {
+            0% {
+                transform: translateX(0);
+            }
+            100% {
+                transform: translateX(-50%);
+            }
+        }
+        
+        /* 水印 */
+        .footer-watermark {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            flex-shrink: 0;
+            margin-left: auto; /* 确保水印靠右显示 */
+        }
+        
+        .footer-watermark .watermark-item {
+            white-space: nowrap;
+        }
+        
+        /* 当没有LED文字时，水印居中显示 */
+        .footer:not(:has(.footer-led)) .footer-watermark {
+            margin-left: 0;
+            margin-right: auto;
         }
         .header-left {
             display: flex;
@@ -189,7 +245,7 @@
         .track-lines {
             position: absolute;
             top: 50%;
-            left: 20px;
+            left: 5px;
             right: 20px;
             height: 35px;
             transform: translateY(-50%);
@@ -261,8 +317,13 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 30px;
+            width: 30px; /* 默认宽度，两列模式时会自动扩展 */
             position: absolute;
+        }
+        
+        /* 两列模式的站点容器需要更宽 */
+        .station:has(.station-name-two-column) {
+            width: 30px;
         }
         
         /* 上排站点：定位到底部 */
@@ -275,14 +336,58 @@
             top: 0;
         }
 
-        /* 站点文字 */
+        /* 站点文字容器（单列模式） */
         .station-name {
-            font-size: 16px;
-            writing-mode: vertical-rl;
-            text-orientation: upright;
-            letter-spacing: 1px;
+            font-size: 14px;
             font-weight: 600;
-            white-space: nowrap;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            height: 100px; /* 固定高度，单列模式最多7个字 */
+            width: 30px;
+            text-align: center;
+        }
+        
+        /* 两列模式：横向布局 */
+        .station-name.station-name-two-column {
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: flex-start;
+            height: 100px; /* 与单列模式保持一致的高度 */
+            width: 30px; /* 减少宽度以减少两列之间的间隔（减少50%） */
+            gap: 0; /* 减少两列之间的间隔 */
+        }
+        
+        /* 站名单个字符 */
+        .station-name-char {
+            display: block;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        
+        /* 站名列容器（两列模式） */
+        .station-name-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            justify-content: space-between; /* 字符之间均匀分布，像"后龙"那样 */
+        }
+        
+        /* 第一列：固定4个字符高度，垂直均匀分布 */
+        .station-name-col-1 {
+            width: 15px;
+            height: 88px; /* 略小于单列高度，让最下面的字往上提一些 */
+            justify-content: space-between;
+        }
+        
+        /* 第二列：剩余字符，垂直均匀分布（与第一列保持一致） */
+        .station-name-col-2 {
+            width: 15px;
+            height: 88px; /* 略小于单列高度，让最下面的字往上提一些 */
+            justify-content: space-between; /* 字符之间均匀分布，像"后龙"那样 */
+            margin-left: 0;
         }
 
         .row-top .station-name {
@@ -301,6 +406,39 @@
         /* 未过站站点文字：黑色（上排和下排都适用） */
         .station.future .station-name {
             color: #000000;
+        }
+        
+        /* 下一站站名：红色（出站信号时） */
+        .station-name.next-station-name-red {
+            color: #dc2626 !important;
+        }
+
+        /* 下一站页面：全屏白色背景 */
+        .next-station-page {
+            flex-grow: 1;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 355px;
+        }
+        
+        .next-station-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .next-station-label {
+            font-size: 48px;
+            font-weight: 600;
+            color: #000000;
+        }
+        
+        .next-station-name {
+            font-size: 48px;
+            font-weight: 700;
+            color: #dc2626;
         }
 
         /* 站点圆点 */

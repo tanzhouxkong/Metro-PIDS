@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;">
     <title>Sidebar - Metro PIDS</title>
     <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Sidebar] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
     <style>
@@ -124,59 +125,6 @@
             <div id="leftrail-app"></div>
         </div>
     </div>
-    <script type="module">
-        // 检查容器元素（侧边栏 BrowserView 只包含侧边栏，不包含顶部栏）
-        const leftrailContainer = document.getElementById('leftrail-app')
-        
-        async function initSidebar() {
-            try {
-                const vueModule = await import('vue')
-                const { createApp } = vueModule
-                
-                // 侧边栏 BrowserView：只挂载 LeftRail 组件（顶部栏由 topbar.html 单独处理）
-                const LeftRailModule = await import('./src/components/LeftRail.js')
-                const LeftRail = LeftRailModule.default
-                
-                if (!LeftRail) {
-                    throw new Error('LeftRail 组件未找到')
-                }
-                
-                const leftrailApp = createApp(LeftRail)
-                leftrailApp.mount('#leftrail-app')
-                
-                // 延迟检查 DOM
-                setTimeout(() => {
-                    const topbarEl = document.getElementById('topbar-app')
-                    const leftrailEl = document.getElementById('leftrail-app')
-                    const leftRailDiv = document.getElementById('leftRail')
-                    const buttons = leftRailDiv?.querySelectorAll('button') || leftrailEl?.querySelectorAll('button')
-                }, 2000)
-            } catch (error) {
-                // 显示错误信息到页面
-                const errorDiv = document.createElement('div')
-                errorDiv.style.cssText = 'position:fixed; top:10px; left:10px; background:red; color:white; padding:10px; z-index:9999; max-width:400px;'
-                errorDiv.textContent = `加载错误: ${error.message}`
-                document.body.appendChild(errorDiv)
-            }
-        }
-        
-        // 侧边栏布局：不需要复杂的视图类型判断
-        function adjustLayout() {
-            // 侧边栏布局已经通过 CSS 设置好了，这里只需要确保元素存在
-            const container = document.querySelector('.sidebar-container');
-            const sidebar = document.querySelector('.sidebar-section');
-        }
-        
-        // 确保 DOM 加载完成后再执行
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                adjustLayout();
-                initSidebar();
-            });
-        } else {
-            adjustLayout();
-            initSidebar();
-        }
-    </script>
+    <script type="module" src="./src/sidebarEntry.js"></script>
 </body>
 </html>

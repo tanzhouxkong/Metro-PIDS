@@ -7,7 +7,7 @@ import { useSettings } from '../composables/useSettings.js'
 import dialogService from '../utils/dialogService.js'
 import { showNotification } from '../utils/notificationService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, toRefs } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount, nextTick, reactive, toRefs, Teleport, Transition } from 'vue'
 import ColorPicker from './ColorPicker.js'
 
 const ENABLE_SLIDE_LOG = false;
@@ -15,7 +15,7 @@ const ENABLE_MAIN_LOG_BRIDGE = false; // 关闭主进程日志转发到渲染层
 
 export default {
   name: 'SlidePanel',
-  components: { ColorPicker },
+  components: { ColorPicker, Teleport, Transition },
   setup() {
     const { uiState, closePanel } = useUIState()
         const { state: pidsState, sync: syncState } = usePidsState()
@@ -1478,23 +1478,6 @@ export default {
             if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openDisplay === 'function') {
                 const currentDisplayConfig = currentDisplay.value;
                 
-                // 检查 display-2 是否允许打开
-                if (currentDisplayConfig.id === 'display-2') {
-                    const allowed = await isDisplay2Allowed();
-                    if (!allowed) {
-                        const mode = settings.display.display2Mode || 'dev-only';
-                        let message = '副显示器当前已禁用，无法打开';
-                        if (mode === 'dev-only') {
-                            message = '副显示器仅在开发者模式下可用，当前环境不允许打开';
-                        }
-                        showNotification('副显示器已禁用', message, {
-                            tag: 'display-2-disabled',
-                            urgency: 'normal'
-                        });
-                        return false;
-                    }
-                }
-                
                 const dw = currentDisplayConfig.width || 1900;
                 const dh = currentDisplayConfig.height || 600;
                 const displayId = currentDisplayConfig.id || 'display-1';
@@ -1507,23 +1490,6 @@ export default {
         try {
             const currentDisplayConfig = currentDisplay.value;
             
-            // 检查 display-2 是否允许打开
-            if (currentDisplayConfig.id === 'display-2') {
-                const allowed = await isDisplay2Allowed();
-                if (!allowed) {
-                    const mode = settings.display.display2Mode || 'dev-only';
-                    let message = '副显示器当前已禁用，无法打开';
-                    if (mode === 'dev-only') {
-                        message = '副显示器仅在开发者模式下可用，当前环境不允许打开';
-                    }
-                    showNotification('副显示器已禁用', message, {
-                        tag: 'display-2-disabled',
-                        urgency: 'normal'
-                    });
-                    return false;
-                }
-            }
-            
             const hasPopup = window.__metro_pids_display_popup && !window.__metro_pids_display_popup.closed;
             let url = '';
             if (currentDisplayConfig.source === 'builtin') {
@@ -1535,9 +1501,7 @@ export default {
                 } else {
                     url = `displays/${currentDisplayConfig.id}/display_window.html`;
                 }
-            } else if (currentDisplayConfig.source === 'gitee') {
-                url = currentDisplayConfig.url || '';
-            } else {
+            } else if (currentDisplayConfig.source === 'online' || currentDisplayConfig.source === 'custom' || currentDisplayConfig.source === 'gitee') {
                 url = currentDisplayConfig.url || '';
             }
             if (!hasPopup && url) {
@@ -1730,12 +1694,21 @@ export default {
 
         // 格式化更新日志内容（将Markdown转换为简单的HTML）
         const formatReleaseBody = (body, release) => {
-            if (!body) return '';
+            if (!body) return '<div style="color:var(--muted, #999); font-style:italic;">暂无更新说明</div>';
             const githubRepo = 'tanzhouxkong/Metro-PIDS-';
             const githubBaseUrl = 'https://github.com';
             const githubRawBaseUrl = 'https://raw.githubusercontent.com';
             
             let formatted = body;
+            
+            // 处理代码块：```language\ncode\n```
+            formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+                const language = lang || 'text';
+                return `<div style="background:var(--bg, #f5f5f5); border:1px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; padding:12px; margin:12px 0; overflow-x:auto; font-family:'Consolas','Monaco','Courier New',monospace; font-size:13px; line-height:1.5;"><div style="color:var(--muted, #999); font-size:11px; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">${language}</div><pre style="margin:0; color:var(--text, #333); white-space:pre-wrap; word-wrap:break-word;">${code.trim()}</pre></div>`;
+            });
+            
+            // 处理行内代码：`code`
+            formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:var(--bg, #f5f5f5); border:1px solid var(--divider, rgba(0,0,0,0.1)); border-radius:4px; padding:2px 6px; font-family:\'Consolas\',\'Monaco\',\'Courier New\',monospace; font-size:12px; color:var(--accent, #1677ff);">$1</code>');
             
             // 处理图片：![alt](url) 或 ![alt](url "title")
             formatted = formatted.replace(/!\[([^\]]*)\]\(([^)]+)(?:\s+"[^"]*")?\)/g, (match, alt, url) => {
@@ -1754,17 +1727,33 @@ export default {
                 }
                 
                 // 返回img标签，支持响应式和样式
-                return `<img src="${imageUrl}" alt="${alt || ''}" style="max-width:100%; height:auto; border-radius:6px; margin:12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:block;" onerror="this.style.display='none';">`;
+                return `<div style="margin:16px 0; text-align:center;"><img src="${imageUrl}" alt="${alt || ''}" style="max-width:100%; height:auto; border-radius:8px; margin:0 auto; box-shadow:0 4px 12px rgba(0,0,0,0.15); display:block;" onerror="this.style.display='none';"><div style="color:var(--muted, #999); font-size:12px; margin-top:8px; font-style:italic;">${alt || ''}</div></div>`;
             });
             
-            // 简单的Markdown转换（在图片处理之后）
+            // 处理链接：[text](url)
+            formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--btn-blue-bg, #1677ff); text-decoration:none; border-bottom:1px solid rgba(22,119,255,0.3); transition:all 0.2s;" onmouseover="this.style.borderBottomColor=\'rgba(22,119,255,0.6)\'" onmouseout="this.style.borderBottomColor=\'rgba(22,119,255,0.3)\'">$1 <i class="fas fa-external-link-alt" style="font-size:10px; margin-left:2px;"></i></a>');
+            
+            // 处理标题
             formatted = formatted
-                .replace(/\n## (.*)/g, '<h4 style="margin-top:16px; margin-bottom:8px; font-weight:bold; color:var(--text);">$1</h4>')
-                .replace(/\n### (.*)/g, '<h5 style="margin-top:12px; margin-bottom:6px; font-weight:bold; color:var(--text);">$1</h5>')
-                .replace(/\n- (.*)/g, '<div style="margin-left:16px; margin-top:4px;">• $1</div>')
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/\n/g, '<br>');
+                .replace(/\n# (.*)/g, '<h2 style="margin-top:24px; margin-bottom:12px; font-size:20px; font-weight:700; color:var(--text, #333); border-bottom:2px solid var(--divider, rgba(0,0,0,0.1)); padding-bottom:8px;">$1</h2>')
+                .replace(/\n## (.*)/g, '<h3 style="margin-top:20px; margin-bottom:10px; font-size:17px; font-weight:700; color:var(--text, #333);">$1</h3>')
+                .replace(/\n### (.*)/g, '<h4 style="margin-top:16px; margin-bottom:8px; font-size:15px; font-weight:600; color:var(--text, #333);">$1</h4>')
+                .replace(/\n#### (.*)/g, '<h5 style="margin-top:12px; margin-bottom:6px; font-size:14px; font-weight:600; color:var(--text, #333);">$1</h5>');
+            
+            // 处理列表
+            formatted = formatted
+                .replace(/\n- (.*)/g, '<div style="margin-left:20px; margin-top:6px; margin-bottom:6px; padding-left:8px; position:relative;"><span style="position:absolute; left:0; color:var(--accent, #1677ff);">•</span><span>$1</span></div>')
+                .replace(/\n\d+\. (.*)/g, '<div style="margin-left:20px; margin-top:6px; margin-bottom:6px; padding-left:8px; position:relative;"><span style="position:absolute; left:0; color:var(--accent, #1677ff); font-weight:600;">$&</span><span>$1</span></div>');
+            
+            // 处理强调
+            formatted = formatted
+                .replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight:700; color:var(--text, #333);">$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em style="font-style:italic; color:var(--text, #333);">$1</em>')
+                .replace(/~~(.*?)~~/g, '<del style="text-decoration:line-through; color:var(--muted, #999);">$1</del>');
+            
+            // 处理换行
+            formatted = formatted.replace(/\n\n/g, '</p><p style="margin:12px 0;">');
+            formatted = '<p style="margin:0;">' + formatted.replace(/\n/g, '<br>') + '</p>';
             
             return formatted;
         }
@@ -1800,68 +1789,13 @@ export default {
         // 拖拽相关状态
         const draggedDisplayId = ref(null);
         const dragOverDisplayId = ref(null);
-
-        // 检查是否允许打开 display-2
-        async function isDisplay2Allowed() {
-            if (!settings.display.display2Mode) {
-                settings.display.display2Mode = 'dev-only'; // 默认值
-            }
-            
-            const mode = settings.display.display2Mode;
-            
-            // 模式 1: disabled - 所有情况下都不允许打开
-            if (mode === 'disabled') {
-                return false;
-            }
-            
-            // 模式 2: enabled - 所有环境下都能打开
-            if (mode === 'enabled') {
-                return true;
-            }
-            
-            // 模式 3: dev-only - 仅在浏览器和框架的开发者模式下打开
-            if (mode === 'dev-only') {
-                // 检查是否在 Electron 环境
-                const isElectron = typeof window !== 'undefined' && window.electronAPI;
-                
-                if (isElectron) {
-                    // Electron 环境：检查是否在开发者模式（未打包）
-                    try {
-                        const isPackaged = await window.electronAPI.isPackaged();
-                        return !isPackaged; // 未打包 = 开发者模式
-                    } catch (e) {
-                        return false;
-                    }
-                } else {
-                    // 浏览器环境：检查 URL 参数或开发者工具
-                    // 简单判断：浏览器环境默认允许（视为开发模式）
-                    return true;
-                }
-            }
-            
-            return false;
-        }
+        
+        // 显示端右键菜单状态
+        const displayContextMenu = ref({ visible: false, x: 0, y: 0, displayId: null });
 
         // 点击卡片切换显示端
         async function selectDisplay(displayId) {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 点击切换显示端到:', displayId);
-            
-            // 检查 display-2 是否允许打开
-            if (displayId === 'display-2') {
-                const allowed = await isDisplay2Allowed();
-                if (!allowed) {
-                    const mode = settings.display.display2Mode || 'dev-only';
-                    let message = '副显示器当前已禁用，无法切换';
-                    if (mode === 'dev-only') {
-                        message = '副显示器仅在开发者模式下可用，当前环境不允许打开';
-                    }
-                    showNotification('副显示器已禁用', message, {
-                        tag: 'display-2-disabled',
-                        urgency: 'normal'
-                    });
-                    return;
-                }
-            }
             
             // 确保显示端存在且已启用
             const targetDisplay = settings.display.displays[displayId];
@@ -1881,36 +1815,42 @@ export default {
             // 强制更新状态，确保响应性
             const oldDisplayId = settings.display.currentDisplayId;
             
-            // 使用 nextTick 确保状态更新和UI刷新的正确顺序
-            nextTick(() => {
-                // 同时更新设置和本地状态
-                settings.display.currentDisplayId = displayId;
-                displayState.currentDisplayId = displayId;
-                
-                // 强制触发响应性更新
-                Object.assign(displayState, {
-                    currentDisplayId: displayId,
-                    displays: { ...settings.display.displays }
-                });
-                
-                // 只有切换到显示器1时才同步显示端设置到线路数据
-                if (displayId === 'display-1' && pidsState && pidsState.appData && pidsState.appData.meta && targetDisplay) {
-                    if (targetDisplay.lineNameMerge !== undefined) {
-                        pidsState.appData.meta.lineNameMerge = targetDisplay.lineNameMerge;
-                    }
-                    if (targetDisplay.showAllStations !== undefined) {
-                        pidsState.appData.meta.showAllStations = targetDisplay.showAllStations;
-                    }
-                    // 同步到显示端
-                    sync();
+            // 同步更新设置和本地状态（不使用 nextTick，确保立即生效）
+            settings.display.currentDisplayId = displayId;
+            displayState.currentDisplayId = displayId;
+            
+            // 强制触发响应性更新
+            Object.assign(displayState, {
+                currentDisplayId: displayId,
+                displays: { ...settings.display.displays }
+            });
+            
+            // 只有切换到显示器1时才同步显示端设置到线路数据
+            if (displayId === 'display-1' && pidsState && pidsState.appData && pidsState.appData.meta && targetDisplay) {
+                if (targetDisplay.lineNameMerge !== undefined) {
+                    pidsState.appData.meta.lineNameMerge = targetDisplay.lineNameMerge;
                 }
-                
-                saveSettings();
-                
-                // 处理显示窗口切换
-                handleDisplayWindowSwitch();
-                
-                // 显示切换成功的提示
+                if (targetDisplay.showAllStations !== undefined) {
+                    pidsState.appData.meta.showAllStations = targetDisplay.showAllStations;
+                }
+                // 同步到显示端
+                sync();
+            }
+            
+            // 立即保存设置到 localStorage，确保侧边栏按钮能读取到最新值
+            saveSettings();
+            
+            // 强制同步 settings 对象，确保响应式更新立即生效
+            // 通过重新赋值触发 Vue 的响应式系统
+            const currentId = settings.display.currentDisplayId;
+            settings.display.currentDisplayId = displayId;
+            if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 已更新 settings.display.currentDisplayId:', currentId, '->', displayId);
+            
+            // 不再自动打开/切换显示窗口，用户需要通过侧边栏按钮手动打开
+            // handleDisplayWindowSwitch();
+            
+            // 使用 nextTick 延迟显示通知，确保 UI 更新完成
+            nextTick(() => {
                 const displayName = targetDisplay.name || displayId;
                 if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端切换完成:', oldDisplayId, '->', displayId);
                 
@@ -2121,7 +2061,7 @@ export default {
             if (displayData) {
                 // 检查是否为系统显示器
                 if (display.isSystem) {
-                    // 系统显示器只能更新开关值（仅显示器1）
+                    // 系统显示器只能更新开关值（仅显示器1）或显示器2的设置
                     if (displayId === 'display-1') {
                         if (displayData.lineNameMerge !== undefined) {
                             display.lineNameMerge = displayData.lineNameMerge;
@@ -2142,6 +2082,11 @@ export default {
                                 sync();
                             }
                         }
+                    } else if (displayId === 'display-2') {
+                        // 显示器2：更新"下一站"页面显示时长
+                        if (displayData.nextStationDuration !== undefined) {
+                            settings.display.display2NextStationDuration = displayData.nextStationDuration;
+                        }
                     }
                 } else {
                     // 非系统显示器，更新所有字段
@@ -2157,6 +2102,10 @@ export default {
                         if (displayData.showAllStations !== undefined) {
                             display.showAllStations = displayData.showAllStations;
                         }
+                    }
+                    // 显示器2：更新"下一站"页面显示时长
+                    if (displayId === 'display-2' && displayData.nextStationDuration !== undefined) {
+                        settings.display.display2NextStationDuration = displayData.nextStationDuration;
                     }
                 }
                 
@@ -2181,58 +2130,87 @@ export default {
             const showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
             const isSystem = display.isSystem === true;
             const isDisplay1 = displayId === 'display-1'; // 判断是否为显示器1
+            const isDisplay2 = displayId === 'display-2'; // 判断是否为显示器2
+            // 获取"下一站"页面显示时长（秒），默认10秒，需要将毫秒转换为秒显示
+            let nextStationDurationSeconds = 10;
+            if (settings.display && settings.display.display2NextStationDuration !== undefined && settings.display.display2NextStationDuration !== null) {
+                const durationMs = settings.display.display2NextStationDuration;
+                nextStationDurationSeconds = Math.round(durationMs / 1000);
+            }
             
             // 创建编辑对话框的内容
             // 如果是系统显示器，只显示开关；否则显示所有字段
             const basicFields = isSystem ? '' : `
                     <div>
-                        <label style="display:block; margin-bottom:4px; font-weight:bold;">显示端名称:</label>
-                        <input id="displayName" type="text" value="${display.name}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">显示端名称</label>
+                        <input id="displayName" type="text" value="${display.name}" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
                     </div>
                     <div>
-                        <label style="display:block; margin-bottom:4px; font-weight:bold;">显示端类型:</label>
-                        <select id="displaySource" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">显示端类型</label>
+                        <select id="displaySource" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box; cursor:pointer;" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
                             <option value="builtin" ${display.source === 'builtin' ? 'selected' : ''}>本地显示器</option>
+                            <option value="online" ${display.source === 'online' || display.source === 'custom' || display.source === 'gitee' ? 'selected' : ''}>在线显示器</option>
                         </select>
                     </div>
-                    <div id="fileContainer" style="display:block;">
-                        <label style="display:block; margin-bottom:4px; font-weight:bold;">本地网页文件:</label>
-                        <div style="display:flex; gap:8px;">
-                            <input id="displayFile" type="text" value="${display.url || ''}" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" placeholder="请选择本地HTML文件" readonly>
-                            <button id="selectFileBtn" type="button" style="padding:8px 16px; background:#4A90E2; color:white; border:none; border-radius:4px; cursor:pointer; white-space:nowrap;">选择文件</button>
+                    <div id="fileContainer" style="display:${display.source === 'builtin' ? 'block' : 'none'};">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">本地网页文件</label>
+                        <div style="display:flex; gap:10px;">
+                            <input id="displayFile" type="text" value="${display.source === 'builtin' ? (display.url || '') : ''}" style="flex:1; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" placeholder="请选择本地HTML文件" readonly>
+                            <button id="selectFileBtn" type="button" style="padding:12px 20px; background:#4A90E2; color:white; border:none; border-radius:8px; cursor:pointer; white-space:nowrap; font-size:14px; font-weight:500; transition:all 0.2s; box-shadow:0 2px 8px rgba(74,144,226,0.3);" onmouseover="this.style.boxShadow='0 4px 12px rgba(74,144,226,0.5)'; this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(74,144,226,0.3)'; this.style.transform='translateY(0)'">
+                                <i class="fas fa-folder-open" style="margin-right:6px;"></i>选择文件
+                            </button>
                         </div>
                     </div>
+                    <div id="urlContainer" style="display:${display.source === 'builtin' ? 'none' : 'block'};">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">在线URL</label>
+                        <input id="displayUrl" type="text" value="${display.source !== 'builtin' ? (display.url || '') : ''}" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" placeholder="请输入在线显示器的URL，例如：https://example.com/display.html" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
+                    </div>
                     <div>
-                        <label style="display:block; margin-bottom:4px; font-weight:bold;">描述 (可选):</label>
-                        <input id="displayDescription" type="text" value="${display.description || ''}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;" placeholder="请输入显示端描述">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">描述 <span style="font-weight:normal; color:var(--muted, #999); font-size:12px;">(可选)</span></label>
+                        <input id="displayDescription" type="text" value="${display.description || ''}" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" placeholder="请输入显示端描述" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
                     </div>
             `;
+            
+            // 显示器2的"下一站/到站"页面显示时长设置
+            const display2Fields = isDisplay2 ? `
+                    <!-- 下一站/到站 页面显示时长 -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; background:var(--card, #ffffff); border:1px solid var(--divider, rgba(0,0,0,0.08)); border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                            <span style="font-weight:600; font-size:14px; color:var(--text, #333);">下一站 / 到站 页面显示时长</span>
+                            <span style="font-size:12px; color:var(--muted, #999); line-height:1.4;">设置显示器2的“下一站”白屏和“到站”白屏页面显示多长时间后切回线路图（秒）</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input id="nextStationDuration" type="number" value="${nextStationDurationSeconds}" min="1" max="60" step="1" style="width:100px; padding:8px 12px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box; text-align:right;" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
+                            <span style="font-size:14px; color:var(--text, #333); font-weight:500;">秒</span>
+                        </div>
+                    </div>
+            ` : '';
             
             // 只有显示器1才显示这两个开关
             const switchFields = isDisplay1 ? `
                     <!-- 线路名合并开关 -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; ${isSystem ? '' : 'margin-top:8px;'} padding:12px; background:rgba(0,0,0,0.02); border-radius:6px;">
-                        <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
-                            <span style="font-weight:bold; font-size:13px; color:var(--text, #333);">线路名合并</span>
-                            <span style="font-size:11px; color:var(--muted, #666);">显示端左侧按多段线路名拼接展示</span>
+                    <div style="display:flex; align-items:center; justify-content:space-between; ${isSystem ? '' : 'margin-top:8px;'} padding:16px; background:var(--card, #ffffff); border:1px solid var(--divider, rgba(0,0,0,0.08)); border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                            <span style="font-weight:600; font-size:14px; color:var(--text, #333);">线路名合并</span>
+                            <span style="font-size:12px; color:var(--muted, #999); line-height:1.4;">显示端左侧按多段线路名拼接展示</span>
                         </div>
-                        <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; flex-shrink:0;">
+                        <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; flex-shrink:0; cursor:pointer;">
                             <input type="checkbox" id="lineNameMerge" ${lineNameMerge ? 'checked' : ''} style="opacity:0; width:0; height:0;">
-                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:${lineNameMerge ? 'var(--accent, #1677ff)' : '#ccc'}; transition:.3s; border-radius:24px;"></span>
-                            <span style="position:absolute; height:18px; width:18px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; transform:${lineNameMerge ? 'translateX(20px)' : 'translateX(0)'};"></span>
+                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:${lineNameMerge ? 'var(--accent, #1677ff)' : '#ccc'}; transition:.3s; border-radius:24px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></span>
+                            <span style="position:absolute; height:18px; width:18px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; transform:${lineNameMerge ? 'translateX(20px)' : 'translateX(0)'}; box-shadow:0 2px 4px rgba(0,0,0,0.2);"></span>
                         </label>
                     </div>
                     
                     <!-- 显示全部站点开关 -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:rgba(0,0,0,0.02); border-radius:6px;">
-                        <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
-                            <span style="font-weight:bold; font-size:13px; color:var(--text, #333);">显示全部站点</span>
-                            <span style="font-size:11px; color:var(--muted, #666);">启用后，所有站点都会显示在屏幕上，使用 flexbox 布局均匀分布</span>
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; background:var(--card, #ffffff); border:1px solid var(--divider, rgba(0,0,0,0.08)); border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                            <span style="font-weight:600; font-size:14px; color:var(--text, #333);">显示全部站点</span>
+                            <span style="font-size:12px; color:var(--muted, #999); line-height:1.4;">启用后，所有站点都会显示在屏幕上，使用 flexbox 布局均匀分布</span>
                         </div>
-                        <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; flex-shrink:0;">
+                        <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; flex-shrink:0; cursor:pointer;">
                             <input type="checkbox" id="showAllStations" ${showAllStations ? 'checked' : ''} style="opacity:0; width:0; height:0;">
-                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:${showAllStations ? 'var(--accent, #1677ff)' : '#ccc'}; transition:.3s; border-radius:24px;"></span>
-                            <span style="position:absolute; height:18px; width:18px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; transform:${showAllStations ? 'translateX(20px)' : 'translateX(0)'};"></span>
+                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:${showAllStations ? 'var(--accent, #1677ff)' : '#ccc'}; transition:.3s; border-radius:24px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></span>
+                            <span style="position:absolute; height:18px; width:18px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; transform:${showAllStations ? 'translateX(20px)' : 'translateX(0)'}; box-shadow:0 2px 4px rgba(0,0,0,0.2);"></span>
                         </label>
                     </div>
             ` : '';
@@ -2241,31 +2219,78 @@ export default {
                 <div style="display:flex; flex-direction:column; gap:12px;">
                     ${basicFields}
                     ${switchFields}
+                    ${display2Fields}
                 </div>
             `;
 
             // 使用自定义对话框
             const result = await new Promise((resolve) => {
                 const dialog = document.createElement('div');
-                dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:30000; background:rgba(0,0,0,0.45); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);';
+                dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:30000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); animation:fadeIn 0.3s ease;';
                 
                 dialog.innerHTML = `
-                    <div style="background:var(--surface-tertiary, #ffffff); border-radius:12px; padding:24px; max-width:500px; width:90%; box-shadow:0 8px 28px rgba(0,0,0,0.3); border:1px solid var(--card-border);">
-                        <h3 style="margin:0 0 20px 0; font-size:18px; font-weight:bold; color:var(--text);">编辑显示端 - ${display.name}</h3>
-                        ${editForm}
-                        <div style="display:flex; gap:12px; margin-top:20px; justify-content:flex-end;">
-                            <button id="cancelBtn" style="background:#95a5a6; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;">取消</button>
-                            <button id="saveBtn" style="background:#2ED573; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;">保存</button>
+                    <div style="background:var(--card, #ffffff); border-radius:16px; padding:0; max-width:600px; width:92%; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;">
+                        <!-- Header -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); background:linear-gradient(135deg, rgba(22,119,255,0.05) 0%, rgba(255,159,67,0.05) 100%);">
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #1677ff 0%, #FF9F43 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(22,119,255,0.3);">
+                                    <i class="fas fa-edit" style="color:white; font-size:18px;"></i>
+                                </div>
+                                <div>
+                                    <h3 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">编辑显示端</h3>
+                                    <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">${display.name}</div>
+                                </div>
+                            </div>
+                            <button id="closeBtn" style="background:none; border:none; color:var(--muted, #999); cursor:pointer; font-size:20px; padding:8px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:all 0.2s;" onmouseover="this.style.color='var(--text, #333)'" onmouseout="this.style.color='var(--muted, #999)'">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Content -->
+                        <div style="padding:24px 28px; background:var(--bg, #fafafa); max-height:70vh; overflow-y:auto;">
+                            ${editForm}
+                        </div>
+                        
+                        <!-- Footer -->
+                        <div style="padding:20px 28px; border-top:1px solid var(--divider, rgba(0,0,0,0.1)); background:var(--card, #ffffff); display:flex; gap:12px; justify-content:flex-end;">
+                            <button id="cancelBtn" style="padding:10px 20px; background:var(--btn-gray-bg, #f5f5f5); color:var(--btn-gray-text, #666); border:none; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.2s; min-width:80px;" onmouseover="this.style.background='var(--bg, #e5e5e5)'" onmouseout="this.style.background='var(--btn-gray-bg, #f5f5f5)'">取消</button>
+                            <button id="saveBtn" style="padding:10px 20px; background:#2ED573; color:white; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:all 0.2s; min-width:80px; box-shadow:0 4px 12px rgba(46,213,115,0.4);" onmouseover="this.style.boxShadow='0 6px 16px rgba(46,213,115,0.6)'; this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 4px 12px rgba(46,213,115,0.4)'; this.style.transform='translateY(0)'">保存</button>
                         </div>
                     </div>
+                    <style>
+                        @keyframes fadeIn {
+                            from { opacity: 0; }
+                            to { opacity: 1; }
+                        }
+                    </style>
                 `;
 
                 document.body.appendChild(dialog);
 
-                // 如果不是系统显示器，添加文件选择相关的事件监听
+                // 如果不是系统显示器，添加文件选择相关的事件监听和类型切换逻辑
                 if (!isSystem) {
+                    const displaySourceSelect = dialog.querySelector('#displaySource');
+                    const fileContainer = dialog.querySelector('#fileContainer');
+                    const urlContainer = dialog.querySelector('#urlContainer');
                     const displayFileInput = dialog.querySelector('#displayFile');
+                    const displayUrlInput = dialog.querySelector('#displayUrl');
                     const selectFileBtn = dialog.querySelector('#selectFileBtn');
+                    
+                    // 添加类型切换事件监听
+                    if (displaySourceSelect) {
+                        displaySourceSelect.addEventListener('change', function() {
+                            const source = this.value;
+                            if (source === 'builtin') {
+                                // 显示本地文件选择器，隐藏URL输入框
+                                if (fileContainer) fileContainer.style.display = 'block';
+                                if (urlContainer) urlContainer.style.display = 'none';
+                            } else {
+                                // 显示URL输入框，隐藏本地文件选择器
+                                if (fileContainer) fileContainer.style.display = 'none';
+                                if (urlContainer) urlContainer.style.display = 'block';
+                            }
+                        });
+                    }
                     
                     // 添加文件选择按钮事件
                     if (selectFileBtn && displayFileInput) {
@@ -2341,6 +2366,15 @@ export default {
                     }
                 }
 
+                // 关闭按钮事件
+                const closeBtn = dialog.querySelector('#closeBtn');
+                if (closeBtn) {
+                    closeBtn.onclick = () => {
+                        document.body.removeChild(dialog);
+                        resolve(null);
+                    };
+                }
+                
                 dialog.querySelector('#cancelBtn').onclick = () => {
                     document.body.removeChild(dialog);
                     resolve(null);
@@ -2357,17 +2391,39 @@ export default {
                         showAllStations = showAllStationsCheckbox ? showAllStationsCheckbox.checked : false;
                     }
                     
-                    // 如果是系统显示器，只保存开关值（仅显示器1）
+                    // 显示器2读取"下一站/到站"页面显示时长（秒），转换为毫秒存储
+                    let nextStationDuration = 10000;
+                    if (isDisplay2) {
+                        const durationInput = dialog.querySelector('#nextStationDuration');
+                        if (durationInput) {
+                            const value = parseInt(durationInput.value, 10);
+                            if (!isNaN(value)) {
+                                nextStationDuration = value * 1000; // 将秒转换为毫秒
+                            }
+                        }
+                    }
+                    
+                    // 如果是系统显示器，只保存开关值（仅显示器1）或显示器2的设置
                     if (isSystem) {
                         document.body.removeChild(dialog);
-                        resolve({ lineNameMerge, showAllStations, isSystem: true, isDisplay1 });
+                        if (isDisplay2) {
+                            resolve({ nextStationDuration, isSystem: true, isDisplay2 });
+                        } else {
+                            resolve({ lineNameMerge, showAllStations, isSystem: true, isDisplay1 });
+                        }
                         return;
                     }
                     
                     // 非系统显示器，需要验证并保存所有字段
                     const name = dialog.querySelector('#displayName').value.trim();
                     const source = dialog.querySelector('#displaySource').value;
-                    const url = dialog.querySelector('#displayFile').value.trim();
+                    // 根据 source 类型读取对应的 URL
+                    let url = '';
+                    if (source === 'builtin') {
+                        url = dialog.querySelector('#displayFile').value.trim();
+                    } else {
+                        url = dialog.querySelector('#displayUrl').value.trim();
+                    }
                     const description = dialog.querySelector('#displayDescription').value.trim();
 
                     if (!name) {
@@ -2375,13 +2431,28 @@ export default {
                         return;
                     }
                     
-                    if (!url) {
+                    if (source === 'builtin' && !url) {
                         alert('请选择本地网页文件');
                         return;
                     }
+                    
+                    if (source === 'online' && !url) {
+                        alert('请输入在线显示器的URL');
+                        return;
+                    }
+                    
+                    // 验证 URL 格式（如果是在线显示器）
+                    if (source === 'online' && url) {
+                        try {
+                            new URL(url);
+                        } catch (e) {
+                            alert('请输入有效的URL格式，例如：https://example.com/display.html');
+                            return;
+                        }
+                    }
 
                     document.body.removeChild(dialog);
-                    resolve({ name, source, url, description, lineNameMerge, showAllStations, isDisplay1 });
+                    resolve({ name, source, url, description, lineNameMerge, showAllStations, isDisplay1, nextStationDuration, isDisplay2 });
                 };
 
                 // 点击背景关闭
@@ -2404,6 +2475,53 @@ export default {
             }
         }
 
+        // 显示显示端右键菜单
+        function showDisplayContextMenu(event, displayId = null) {
+            event.preventDefault();
+            event.stopPropagation();
+            displayContextMenu.value = {
+                visible: true,
+                x: event.clientX,
+                y: event.clientY,
+                displayId: displayId
+            };
+        }
+        
+        // 关闭显示端右键菜单
+        function closeDisplayContextMenu() {
+            displayContextMenu.value.visible = false;
+        }
+        
+        // 从右键菜单编辑显示端
+        function editDisplayFromMenu() {
+            if (displayContextMenu.value.displayId) {
+                editDisplay(displayContextMenu.value.displayId);
+            }
+            closeDisplayContextMenu();
+        }
+        
+        // 从右键菜单切换显示端启用状态
+        function toggleDisplayEnabledFromMenu() {
+            if (displayContextMenu.value.displayId) {
+                toggleDisplayEnabled(displayContextMenu.value.displayId);
+            }
+            closeDisplayContextMenu();
+        }
+        
+        // 从右键菜单删除显示端
+        async function deleteDisplayFromMenu() {
+            if (displayContextMenu.value.displayId) {
+                await deleteDisplay(displayContextMenu.value.displayId);
+            }
+            closeDisplayContextMenu();
+        }
+        
+        // 从右键菜单新建显示端
+        async function addNewDisplayFromMenu() {
+            closeDisplayContextMenu();
+            await addNewDisplay();
+        }
+        
         // 切换显示端启用状态
         function toggleDisplayEnabled(displayId) {
             const display = settings.display.displays[displayId];
@@ -2477,15 +2595,6 @@ export default {
             
             for (const display of enabledDisplays) {
                 try {
-                    // 检查 display-2 是否允许打开
-                    if (display.id === 'display-2') {
-                        const allowed = await isDisplay2Allowed();
-                        if (!allowed) {
-                            skippedCount++;
-                            continue; // 跳过不允许打开的 display-2
-                        }
-                    }
-                    
                     if (display.source === 'builtin') {
                         // Electron 原生窗口
                         if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openDisplay === 'function') {
@@ -2507,9 +2616,9 @@ export default {
                                 openedCount++;
                             }
                         }
-                    } else {
-                        // 自定义URL或Gitee页面
-                        const url = display.source === 'gitee' ? display.url : display.url;
+                    } else if (display.source === 'online' || display.source === 'custom' || display.source === 'gitee') {
+                        // 在线显示器、自定义URL或Gitee页面
+                        const url = display.url;
                         if (url) {
                             const popup = window.open(url, `display_${display.id}`, `width=${display.width},height=${display.height}`);
                             if (popup) {
@@ -2587,7 +2696,10 @@ export default {
             currentDisplay, currentDisplayId, displayState, selectDisplay, 
             draggedDisplayId, dragOverDisplayId,
             handleDragStart, handleDragEnd, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-            addNewDisplay, editDisplay, toggleDisplayEnabled, deleteDisplay, openAllDisplays, closeAllDisplays
+            addNewDisplay, editDisplay, toggleDisplayEnabled, deleteDisplay, openAllDisplays, closeAllDisplays,
+            // 显示端右键菜单
+            displayContextMenu, showDisplayContextMenu, closeDisplayContextMenu,
+            editDisplayFromMenu, toggleDisplayEnabledFromMenu, deleteDisplayFromMenu, addNewDisplayFromMenu
         };
     },
   template: `
@@ -2729,21 +2841,18 @@ export default {
         <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">显示端管理 (Display Management)</div>
             
-            <!-- 显示端列表标题和添加按钮 -->
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+            <!-- 显示端列表标题 -->
+            <div style="margin-bottom:12px;">
                 <div style="font-size:14px; font-weight:bold; color:var(--text);">显示端列表</div>
-                <button @click="addNewDisplay()" class="btn" style="background:#2ED573; color:white; padding:6px 12px; border-radius:6px; border:none; font-size:12px;">
-                    <i class="fas fa-plus"></i> 添加显示端
-                </button>
             </div>
             
             <!-- 拖拽提示 -->
             <div style="font-size:12px; color:var(--muted); margin-bottom:12px; padding:8px; background:var(--card); border-radius:6px; border:1px dashed var(--divider);">
-                <i class="fas fa-info-circle"></i> 点击卡片切换显示端，拖拽卡片可调整顺序
+                <i class="fas fa-info-circle"></i> 点击卡片切换当前选中的显示端，右键卡片或空白处可进行新建、编辑、启用/禁用、删除操作，拖拽卡片可调整顺序
             </div>
             
             <!-- 显示端卡片列表 -->
-            <div style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:16px;">
+            <div style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:16px;" @contextmenu.prevent="showDisplayContextMenu($event, null)">
                 <div v-for="(display, id) in displayState.displays" :key="id" 
                      :draggable="true"
                      @dragstart="handleDragStart($event, id)"
@@ -2753,6 +2862,7 @@ export default {
                      @dragover="handleDragOver($event)"
                      @drop="handleDrop($event, id)"
                      @click="selectDisplay(id)"
+                     @contextmenu.prevent="showDisplayContextMenu($event, id)"
                      :style="[
                          !display.enabled ? 'opacity: 0.5; cursor: not-allowed; background: #f5f5f5;' : '',
                          id === displayState.currentDisplayId ? 'border-color: #FF9F43; background: rgba(255,159,67,0.1); box-shadow: 0 2px 8px rgba(255,159,67,0.3);' : '',
@@ -2776,7 +2886,7 @@ export default {
                             </span>
                         </div>
                         <div style="font-size:12px; color:var(--muted);">
-                            {{ display.source === 'builtin' ? '本地显示器' : display.source === 'custom' ? '自定义URL' : 'Gitee页面' }}
+                            {{ display.source === 'builtin' ? '本地显示器' : display.source === 'online' ? '在线显示器' : display.source === 'custom' ? '自定义URL' : display.source === 'gitee' ? 'Gitee页面' : display.source }}
                             <span v-if="!display.enabled" style="color:#FF6B6B; margin-left:8px;">
                                 <i class="fas fa-pause"></i> 已禁用
                             </span>
@@ -2786,30 +2896,6 @@ export default {
                         </div>
                     </div>
 
-                    <!-- 操作按钮 -->
-                    <div style="display:flex; gap:4px; margin-left:8px;" @click="$event.stopPropagation()">
-                        <!-- 编辑按钮 -->
-                        <button @click="editDisplay(id)" 
-                                style="padding:6px 8px; border-radius:4px; border:none; background:#4A90E2; color:white; font-size:11px;" 
-                                title="编辑显示端">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        
-                        <!-- 启用/禁用按钮 -->
-                        <button @click="toggleDisplayEnabled(id)" 
-                                :style="display.enabled ? 'padding:6px 8px; border-radius:4px; border:none; background:#FF9F43; color:white; font-size:11px;' : 'padding:6px 8px; border-radius:4px; border:none; background:#95A5A6; color:white; font-size:11px;'" 
-                                :title="display.enabled ? '禁用显示端' : '启用显示端'">
-                            <i :class="display.enabled ? 'fas fa-pause' : 'fas fa-play'"></i>
-                        </button>
-                        
-                        <!-- 删除按钮（仅非系统显示器） -->
-                        <button v-if="!display.isSystem"
-                                @click="deleteDisplay(id)"
-                                style="padding:6px 8px; border-radius:4px; border:none; background:#FF6B6B; color:white; font-size:11px;"
-                                title="删除显示端">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
                 </div>
             </div>
 
@@ -2821,6 +2907,39 @@ export default {
                 <button @click="closeAllDisplays()" class="btn" style="flex:1; background:#FF6B6B; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;">
                     <i class="fas fa-times-circle"></i> 关闭所有显示端
                 </button>
+            </div>
+        </div>
+
+        <!-- API Server Settings -->
+        <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+            <div style="color:#9B59B6; font-weight:bold; margin-bottom:16px; font-size:15px;">API 服务器 (API Server)</div>
+            
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <div style="flex:1;">
+                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">启用 HTTP API 服务器</div>
+                    <div style="font-size:12px; color:var(--muted); line-height:1.5;">
+                        启用后可通过 HTTP API 控制显示器（用于 Python 等第三方客户端）。<br>
+                        默认使用 BroadcastChannel 通信，无需 HTTP 服务器。
+                    </div>
+                </div>
+                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; margin-left:16px; flex-shrink:0;">
+                    <input type="checkbox" v-model="settings.enableApiServer" @change="saveSettings()" style="opacity:0; width:0; height:0;">
+                    <span :style="{
+                        position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
+                        backgroundColor: settings.enableApiServer ? 'var(--accent)' : '#ccc', 
+                        transition:'.4s', borderRadius:'24px'
+                    }"></span>
+                    <span :style="{
+                        position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
+                        backgroundColor:'white', transition:'.4s', borderRadius:'50%',
+                        transform: settings.enableApiServer ? 'translateX(20px)' : 'translateX(0)'
+                    }"></span>
+                </label>
+            </div>
+            
+            <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.1); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.2); line-height:1.6;">
+                <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
+                <strong>提示：</strong>如果第三方显示器（特别是 Python 客户端）显示异常或无法连接，请尝试更改此开关状态并<strong>重启应用</strong>重试。
             </div>
         </div>
 
@@ -2926,34 +3045,188 @@ export default {
 
 
     <!-- Release Notes Dialog -->
-    <div v-if="showReleaseNotes" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:#1a1a1a;" @click.self="closeReleaseNotes">
-        <div style="background:var(--card); border-radius:12px; padding:24px; max-width:800px; max-height:80vh; width:90%; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h2 style="margin:0; font-size:20px; font-weight:bold; color:var(--text);">更新日志</h2>
-                <button @click="closeReleaseNotes" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:24px; padding:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:6px; transition:background 0.2s;" @mouseover="$event.target.style.background='var(--bg)'" @mouseout="$event.target.style.background='none'">&times;</button>
-            </div>
-            <div style="flex:1; overflow-y:auto; padding-right:8px;">
-                <div v-if="loadingNotes" style="text-align:center; padding:40px; color:var(--muted);">加载中...</div>
-                <div v-else-if="releaseNotes.length === 0" style="text-align:center; padding:40px; color:var(--muted);">暂无更新日志</div>
-                <div v-else style="display:flex; flex-direction:column; gap:24px;">
-                    <div v-for="(release, index) in releaseNotes" :key="index" style="border-bottom:1px solid var(--divider); padding-bottom:20px;" :style="index === releaseNotes.length - 1 ? 'border-bottom:none;' : ''">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                            <div>
-                                <h3 style="margin:0; font-size:18px; font-weight:bold; color:var(--text);">{{ release.name || release.tag_name }}</h3>
-                                <div style="font-size:12px; color:var(--muted); margin-top:4px;">{{ new Date(release.published_at).toLocaleDateString('zh-CN') }}</div>
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showReleaseNotes" 
+                 style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);" 
+                 @click.self="closeReleaseNotes">
+                <div style="background:var(--card, #ffffff); border-radius:16px; padding:0; max-width:900px; max-height:85vh; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;">
+                    <!-- Header -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); background:linear-gradient(135deg, rgba(22,119,255,0.05) 0%, rgba(255,159,67,0.05) 100%);">
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #1677ff 0%, #FF9F43 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(22,119,255,0.3);">
+                                <i class="fas fa-newspaper" style="color:white; font-size:18px;"></i>
                             </div>
-                            <div style="display:flex; gap:8px; align-items:center;">
-                                <span v-if="release.prerelease" style="background:#ffa502; color:white; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">预发布</span>
-                                <span v-if="release.draft" style="background:#95a5a6; color:white; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">草稿</span>
-                                <a :href="release.html_url" target="_blank" style="color:var(--btn-blue-bg); text-decoration:none; font-size:12px;">查看详情 →</a>
+                            <div>
+                                <h2 style="margin:0; font-size:22px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">更新日志</h2>
+                                <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Release Notes</div>
                             </div>
                         </div>
-                        <div style="color:var(--text); line-height:1.6; white-space:pre-wrap; font-size:14px;" v-html="formatReleaseBody(release.body, release)"></div>
+                        <button @click="closeReleaseNotes" 
+                                style="background:none; border:none; color:var(--muted, #999); cursor:pointer; font-size:20px; padding:8px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:all 0.2s;" 
+                                @mouseover="$event.target.style.color='var(--text, #333)'" 
+                                @mouseout="$event.target.style.color='var(--muted, #999)'">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div style="flex:1; overflow-y:auto; padding:24px 28px; background:var(--bg, #fafafa);">
+                        <!-- Loading State -->
+                        <div v-if="loadingNotes" style="text-align:center; padding:60px 20px;">
+                            <div style="display:inline-block; width:48px; height:48px; border:4px solid var(--divider, rgba(0,0,0,0.1)); border-top-color:var(--accent, #1677ff); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:16px;"></div>
+                            <div style="color:var(--muted, #999); font-size:14px;">正在加载更新日志...</div>
+                        </div>
+                        
+                        <!-- Empty State -->
+                        <div v-else-if="releaseNotes.length === 0" style="text-align:center; padding:60px 20px;">
+                            <div style="width:80px; height:80px; margin:0 auto 20px; border-radius:50%; background:var(--card, #ffffff); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                                <i class="fas fa-inbox" style="font-size:32px; color:var(--muted, #999);"></i>
+                            </div>
+                            <div style="color:var(--muted, #999); font-size:14px; margin-bottom:8px;">暂无更新日志</div>
+                            <div style="color:var(--muted, #ccc); font-size:12px;">请稍后再试或检查网络连接</div>
+                        </div>
+                        
+                        <!-- Release List -->
+                        <div v-else style="display:flex; flex-direction:column; gap:20px;">
+                            <div v-for="(release, index) in releaseNotes" 
+                                 :key="index" 
+                                 style="background:var(--card, #ffffff); border-radius:12px; padding:20px; border:1px solid var(--divider, rgba(0,0,0,0.08)); box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:all 0.2s; hover:box-shadow:0 4px 16px rgba(0,0,0,0.08); hover:transform:translateY(-2px);"
+                                 @mouseover="$event.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.08)'; $event.currentTarget.style.transform='translateY(-2px)'"
+                                 @mouseout="$event.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)'; $event.currentTarget.style.transform='translateY(0)'">
+                                <!-- Release Header -->
+                                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; gap:16px;">
+                                    <div style="flex:1; min-width:0;">
+                                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                            <h3 style="margin:0; font-size:18px; font-weight:700; color:var(--text, #333); letter-spacing:-0.3px;">{{ release.name || release.tag_name }}</h3>
+                                            <span v-if="release.prerelease" 
+                                                  style="background:linear-gradient(135deg, #ffa502 0%, #ff6348 100%); color:white; padding:3px 10px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; box-shadow:0 2px 6px rgba(255,165,2,0.3);">
+                                                预发布
+                                            </span>
+                                            <span v-if="release.draft" 
+                                                  style="background:#95a5a6; color:white; padding:3px 10px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+                                                草稿
+                                            </span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:12px; font-size:12px; color:var(--muted, #999);">
+                                            <div style="display:flex; align-items:center; gap:6px;">
+                                                <i class="fas fa-calendar-alt" style="font-size:11px;"></i>
+                                                <span>{{ new Date(release.published_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) }}</span>
+                                            </div>
+                                            <div style="width:4px; height:4px; border-radius:50%; background:var(--muted, #ccc);"></div>
+                                            <div style="display:flex; align-items:center; gap:6px;">
+                                                <i class="fas fa-tag" style="font-size:11px;"></i>
+                                                <span>{{ release.tag_name }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <a :href="release.html_url" 
+                                       target="_blank" 
+                                       style="display:flex; align-items:center; gap:6px; color:var(--btn-blue-bg, #1677ff); text-decoration:none; font-size:13px; font-weight:500; padding:6px 12px; border-radius:6px; transition:all 0.2s; white-space:nowrap; hover:background:rgba(22,119,255,0.1);"
+                                       @mouseover="$event.target.style.background='rgba(22,119,255,0.1)'"
+                                       @mouseout="$event.target.style.background='transparent'">
+                                        <span>查看详情</span>
+                                        <i class="fas fa-external-link-alt" style="font-size:11px;"></i>
+                                    </a>
+                                </div>
+                                
+                                <!-- Release Body -->
+                                <div style="color:var(--text, #333); line-height:1.7; font-size:14px; padding-top:16px; border-top:1px solid var(--divider, rgba(0,0,0,0.08));" v-html="formatReleaseBody(release.body, release)"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+        </Transition>
+    </Teleport>
+    
+    <!-- 显示端右键菜单 - 使用 Teleport 传送到 body -->
+    <Teleport to="body">
+        <div 
+            v-if="displayContextMenu.visible"
+            data-display-context-menu
+            @click.stop
+            @contextmenu.prevent
+            :style="{
+                position: 'fixed',
+                left: displayContextMenu.x + 'px',
+                top: displayContextMenu.y + 'px',
+                background: 'rgba(255, 255, 255, 0.95)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(224, 224, 224, 0.8)',
+                borderRadius: '8px',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                zIndex: 9999,
+                minWidth: '140px',
+                padding: '6px 0'
+            }"
+        >
+            <div 
+                @click="addNewDisplayFromMenu()"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
+                @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
+                @mouseout="$event.target.style.background='transparent'"
+            >
+                <i class="fas fa-plus" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                新建
+            </div>
+            <div v-if="displayContextMenu.displayId" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div 
+                v-if="displayContextMenu.displayId"
+                @click="editDisplayFromMenu()"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
+                @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
+                @mouseout="$event.target.style.background='transparent'"
+            >
+                <i class="fas fa-edit" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                编辑
+            </div>
+            <div v-if="displayContextMenu.displayId" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div 
+                v-if="displayContextMenu.displayId"
+                @click="toggleDisplayEnabledFromMenu()"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
+                @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
+                @mouseout="$event.target.style.background='transparent'"
+            >
+                <i :class="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? 'fas fa-pause' : 'fas fa-play'" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                {{ displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? '禁用' : '启用' }}
+            </div>
+            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div 
+                v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && !displayState.displays[displayContextMenu.displayId].isSystem"
+                @click="deleteDisplayFromMenu()"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
+                @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"
+                @mouseout="$event.target.style.background='transparent'"
+            >
+                <i class="fas fa-trash" style="font-size: 12px; color: var(--btn-red-bg, #ff4444); width: 16px;"></i>
+                删除
+            </div>
         </div>
-    </div>
+    </Teleport>
+    
+    <!-- 点击外部关闭显示端右键菜单的遮罩 - 使用 Teleport 传送到 body -->
+    <Teleport to="body">
+        <div 
+            v-if="displayContextMenu.visible"
+            @click="closeDisplayContextMenu"
+            style="position: fixed; inset: 0; z-index: 9998; background: transparent;"
+        ></div>
+    </Teleport>
+    
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.3s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+    </style>
   `
 }
 

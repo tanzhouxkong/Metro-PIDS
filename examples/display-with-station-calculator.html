@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第三方显示器（使用站点计算 API）</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #090d12;
+            color: #e2e8f0;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .header {
+            padding: 20px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .line-name {
+            font-size: 32px;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(16, 185, 129, 0.2);
+            border-radius: 20px;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-indicator.offline {
+            background: rgba(100, 116, 139, 0.2);
+            border-color: rgba(100, 116, 139, 0.3);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-dot.offline {
+            background: #64748b;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-text {
+            font-size: 14px;
+            color: #10b981;
+        }
+
+        .status-indicator.offline .status-text {
+            color: #64748b;
+        }
+
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            padding-bottom: 10px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .info-label {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .info-value {
+            color: #e2e8f0;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .stations-list {
+            max-height: 400px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-right: 8px;
+        }
+
+        /* 滚动条样式 */
+        .stations-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .stations-list::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 4px;
+        }
+
+        .stations-list::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 4px;
+        }
+
+        .stations-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.5);
+        }
+
+        .station-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 6px;
+            border-left: 3px solid transparent;
+        }
+
+        .station-status {
+            min-width: 60px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .station-status.arrival {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .station-status.departure {
+            background: rgba(96, 165, 250, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(96, 165, 250, 0.3);
+        }
+
+        .station-status.none {
+            background: rgba(148, 163, 184, 0.1);
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .station-content {
+            flex: 1;
+        }
+
+        .station-item.current {
+            background: rgba(96, 165, 250, 0.2);
+            border-left-color: #60a5fa;
+            font-weight: bold;
+        }
+
+        .station-item.next {
+            background: rgba(16, 185, 129, 0.2);
+            border-left-color: #10b981;
+        }
+
+        .station-item.passed {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="line-name" id="lineName">等待数据...</div>
+        <div class="status-indicator" id="statusIndicator">
+            <div class="status-dot" id="statusDot"></div>
+            <span class="status-text" id="statusText">未连接</span>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="panel">
+            <div class="panel-title">站点信息（使用站点计算 API）</div>
+            <div class="info-item">
+                <span class="info-label">当前站（过滤后索引）</span>
+                <span class="info-value" id="currentStationIdx">--</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">下一站（过滤后索引）</span>
+                <span class="info-value" id="nextStationIdx">--</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">下一站名称</span>
+                <span class="info-value" id="nextStationName">--</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">过滤后站点数</span>
+                <span class="info-value" id="filteredCount">-- / --</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">过滤后的站点列表</div>
+            <div class="stations-list" id="stationsList">
+                <div style="text-align: center; color: #94a3b8; padding: 20px;">
+                    等待数据加载...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 导入站点计算 API
+        // 注意：此示例需要与 Metro-PIDS 主程序在同一项目中运行
+        // 如果您的第三方显示器是独立的，需要将 displayStationCalculator.js 复制到您的项目中
+        import { createDisplaySdk } from '../src/utils/displaySdk.js';
+        import {
+            getFilteredStations,
+            calculateDisplayStationInfo
+        } from '../src/utils/displayStationCalculator.js';
+
+        // 创建 SDK 实例
+        const sdk = createDisplaySdk({ channelName: 'metro_pids_v3' });
+
+        // 显示器配置：方向过滤 + 下行反转
+        // 您可以根据自己的需求调整这些配置
+        const displayConfig = {
+            filterByDirection: true,  // 是否根据方向过滤站点（dock限制）
+            reverseOnDown: true       // 下行方向时是否反转站点顺序
+        };
+
+        let appData = null;
+        let rtState = null;
+        let isConnected = false;
+        let connectionTimeout = null;
+        let lastMessageTime = null;
+
+        // 更新连接状态
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            if (connected) {
+                statusIndicator.classList.remove('offline');
+                statusDot.classList.remove('offline');
+                statusText.textContent = '已连接';
+                lastMessageTime = Date.now();
+                
+                // 清除之前的超时检测
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                
+                // 设置新的超时检测（5秒未收到消息则标记为未连接）
+                connectionTimeout = setTimeout(() => {
+                    if (Date.now() - lastMessageTime > 5000) {
+                        updateConnectionStatus(false);
+                    }
+                }, 5000);
+            } else {
+                statusIndicator.classList.add('offline');
+                statusDot.classList.add('offline');
+                statusText.textContent = '未连接';
+                
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+            }
+        }
+
+        // 监听消息
+        sdk.onMessage((msg) => {
+            if (msg.t === 'SYNC') {
+                appData = msg.d;
+                rtState = msg.r;
+                updateConnectionStatus(true);
+                updateDisplay();
+            } else if (msg.t === 'CMD_KEY' || msg.t === 'REC_START' || msg.t === 'REC_STOP') {
+                // 收到任何消息都更新连接状态
+                updateConnectionStatus(true);
+            }
+        });
+
+        // 显示端启动时，请求主程序同步数据
+        sdk.request();
+        
+        // 初始化时标记为未连接
+        updateConnectionStatus(false);
+        
+        // 3秒后如果仍未连接，显示警告
+        setTimeout(() => {
+            if (!isConnected) {
+                console.warn('[Display] 警告：未收到主程序的数据同步');
+            }
+        }, 3000);
+
+        function updateDisplay() {
+            if (!appData || !rtState) {
+                console.warn('[Display] 数据未就绪');
+                return;
+            }
+
+            const content = document.getElementById('lineName');
+            const lineName = appData.meta?.lineName || '未知线路';
+            content.textContent = lineName;
+
+            // 使用 API 计算站点信息
+            const stationInfo = calculateDisplayStationInfo(appData, rtState, displayConfig);
+
+            // 获取过滤后的站点数组
+            const dirType = appData.meta?.dirType || null;
+            const filteredStations = getFilteredStations(appData, dirType, displayConfig);
+
+            // 更新站点信息显示
+            document.getElementById('currentStationIdx').textContent = 
+                stationInfo.currentIdx >= 0 ? stationInfo.currentIdx : '--';
+            document.getElementById('nextStationIdx').textContent = 
+                stationInfo.nextIdx >= 0 ? stationInfo.nextIdx : '--';
+            document.getElementById('nextStationName').textContent = 
+                stationInfo.nextStationName || '--';
+            document.getElementById('filteredCount').textContent = 
+                `${filteredStations.length} / ${appData.stations.length}`;
+
+            // 更新站点列表
+            updateStationsList(filteredStations, stationInfo);
+        }
+
+        function updateStationsList(filteredStations, stationInfo) {
+            const listElement = document.getElementById('stationsList');
+
+            if (!filteredStations || filteredStations.length === 0) {
+                listElement.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 20px;">暂无站点数据</div>';
+                return;
+            }
+
+            // 获取当前运行状态（0=进站，1=出站）
+            const currentState = rtState?.state ?? 0;
+            const isArrival = currentState === 0;
+            const isDeparture = currentState === 1;
+
+            listElement.innerHTML = filteredStations.map((station, filteredIndex) => {
+                const isCurrent = filteredIndex === stationInfo.currentIdx;
+                const isNext = filteredIndex === stationInfo.nextIdx;
+                const isPassed = filteredIndex < stationInfo.currentIdx;
+
+                let classes = 'station-item';
+                if (isCurrent) classes += ' current';
+                if (isNext) classes += ' next';
+                if (isPassed) classes += ' passed';
+
+                // 确定状态标签
+                let statusClass = 'none';
+                let statusText = '';
+                if (isCurrent) {
+                    if (isArrival) {
+                        statusClass = 'arrival';
+                        statusText = '进站';
+                    } else if (isDeparture) {
+                        statusClass = 'departure';
+                        statusText = '出站';
+                    }
+                } else if (isNext && isDeparture) {
+                    statusClass = 'departure';
+                    statusText = '下一站';
+                }
+
+                return `
+                    <div class="${classes}">
+                        <div class="station-status ${statusClass}">${statusText}</div>
+                        <div class="station-content">
+                            <div style="font-size: 16px; color: #e2e8f0;">
+                                ${station.name || '未知站点'}
+                                <span style="font-size: 12px; color: #94a3b8; margin-left: 8px;">
+                                    (原始索引: ${station.originalIndex})
+                                </span>
+                            </div>
+                            ${station.en ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">${station.en}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    </script>
+</body>
+</html>

@@ -180,6 +180,7 @@ export const DEFAULT_SETTINGS = {
     darkVariant: "soft", 
     blurEnabled: true,
     lineNameMerge: false, // 线路名合并（控制显示端左侧是否拼接多段线路名）
+    enableApiServer: false, // 是否启用 HTTP API 服务器（用于 Python 等第三方客户端，默认使用 BroadcastChannel）
     keys: { arrdep: "Enter", prev: "ArrowLeft", next: "ArrowRight" }, 
     autoplay: { enabled: false, intervalSec: 8, key: "Space" },
     display: { 
@@ -189,6 +190,9 @@ export const DEFAULT_SETTINGS = {
         height: 600,
         currentDisplayId: 'display-1', // 当前活动的显示端ID
         display2Mode: 'enabled', // 'disabled' | 'dev-only' | 'enabled' - display-2 的显示模式
+        display2NextStationDuration: 10000, // 显示器2"下一站"页面显示时长（毫秒），默认10秒
+        display2FooterLED: '', // 显示器2底栏LED滚动文字
+        display2FooterWatermark: true, // 显示器2底栏是否显示水印
         displays: {
             'display-1': {
                 id: 'display-1',
@@ -203,7 +207,7 @@ export const DEFAULT_SETTINGS = {
             },
             'display-2': {
                 id: 'display-2',
-                name: '副显示器',
+                name: '高仿济南公交LCD屏幕',
                 source: 'builtin',
                 url: '',
                 width: 1500,

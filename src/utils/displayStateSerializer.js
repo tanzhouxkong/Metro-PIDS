@@ -1,4 +1,4 @@
-import { toRaw } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
+import { toRaw } from 'vue'
 
 export function cloneDisplayState(value) {
   if (value === undefined || value === null) return value

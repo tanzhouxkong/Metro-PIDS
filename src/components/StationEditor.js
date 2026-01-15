@@ -32,13 +32,6 @@ export default {
       expressStop: false
     });
 
-    const applyDialogBlur = (state) => {
-      if (typeof window === 'undefined') return;
-      if (typeof document !== 'undefined' && document.documentElement.classList.contains('blur-disabled')) return;
-      const blurApi = window.electronAPI && window.electronAPI.effects && window.electronAPI.effects.setDialogBlur;
-      if (typeof blurApi === 'function') blurApi(state);
-    };
-
     // 监听 station 变更以同步表单
     watch(() => props.station, (newVal) => {
       if (newVal) {
@@ -58,7 +51,6 @@ export default {
     }, { immediate: true, deep: true });
 
     const close = () => {
-      applyDialogBlur(false);
       try { console.log('[StationEditor] close -> emit update:modelValue false'); } catch(e){}
       emit('update:modelValue', false);
     };
@@ -140,11 +132,6 @@ export default {
       }
     };
 
-    watch(() => props.modelValue, (visible) => {
-      applyDialogBlur(!!visible);
-    }, { immediate: true });
-
-    onBeforeUnmount(() => applyDialogBlur(false));
 
     return () => {
       if (!props.modelValue) return null;
@@ -156,7 +143,7 @@ export default {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'rgba(0,0,0,0.45)',
+          background: 'rgba(0,0,0,0.6)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           zIndex: '10001'
@@ -167,43 +154,105 @@ export default {
       }, [
         h('div', {
           style: {
-            background: 'var(--surface-tertiary, #ffffff)',
-            padding: '18px',
-            borderRadius: '10px',
+            background: 'var(--card, #ffffff)',
+            padding: '0',
+            borderRadius: '16px',
             width: '680px',
             maxWidth: '95%',
-            maxHeight: '80vh',
-            overflow: 'auto',
-            boxShadow: '0 8px 28px rgba(0,0,0,0.3)',
+            maxHeight: '85vh',
+            overflow: 'hidden',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1)',
             color: 'var(--text)',
-            border: '1px solid var(--card-border)'
+            display: 'flex',
+            flexDirection: 'column'
           }
         }, [
-          // 顶部区域
+          // 顶部区域 - Header
           h('div', {
             style: {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '20px',
-              borderBottom: '1px solid var(--divider)',
-              paddingBottom: '12px'
+              padding: '24px 28px',
+              borderBottom: '1px solid var(--divider, rgba(0,0,0,0.1))',
+              background: 'linear-gradient(135deg, rgba(22,119,255,0.05) 0%, rgba(255,159,67,0.05) 100%)'
             }
           }, [
-            h('div', { style: { fontWeight: '800', fontSize: '18px' } }, props.isNew ? '新建站点' : '站点编辑'),
-            h('div', { style: { display: 'flex', gap: '8px' } }, [
-              h('button', {
-                class: 'btn',
-                style: { background: 'var(--btn-gray-bg)', color: 'var(--btn-gray-text)' },
-                onClick: close
-              }, '取消'),
-              h('button', {
-                class: 'btn',
-                style: { background: 'var(--accent)', color: 'white' },
-                onClick: save
-              }, '保存')
+            h('div', { 
+              style: { 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px' 
+              } 
+            }, [
+              h('div', {
+                style: {
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #1677ff 0%, #FF9F43 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(22,119,255,0.3)'
+                }
+              }, [
+                h('i', { class: props.isNew ? 'fas fa-plus' : 'fas fa-edit', style: { color: 'white', fontSize: '18px' } })
+              ]),
+              h('div', {}, [
+                h('div', { 
+                  style: { 
+                    fontWeight: '800', 
+                    fontSize: '20px', 
+                    letterSpacing: '-0.5px',
+                    color: 'var(--text, #333)'
+                  } 
+                }, props.isNew ? '新建站点' : '站点编辑'),
+                h('div', {
+                  style: {
+                    fontSize: '12px',
+                    color: 'var(--muted, #999)',
+                    marginTop: '2px'
+                  }
+                }, props.isNew ? 'New Station' : 'Edit Station')
+              ])
+            ]),
+            h('button', {
+              style: { 
+                background: 'none', 
+                border: 'none', 
+                color: 'var(--muted, #999)', 
+                cursor: 'pointer', 
+                fontSize: '20px', 
+                padding: '8px', 
+                width: '36px', 
+                height: '36px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                borderRadius: '8px', 
+                transition: 'all 0.2s' 
+              },
+              onMouseover: (e) => {
+                e.target.style.color = 'var(--text, #333)';
+              },
+              onMouseout: (e) => {
+                e.target.style.color = 'var(--muted, #999)';
+              },
+              onClick: close
+            }, [
+              h('i', { class: 'fas fa-times' })
             ])
           ]),
+          // Content Area
+          h('div', {
+            style: {
+              flex: '1',
+              overflow: 'auto',
+              padding: '24px 28px',
+              background: 'var(--bg, #fafafa)'
+            }
+          }, [
 
           // 站名输入
           h('div', { style: { display: 'flex', gap: '12px', marginBottom: '16px' } }, [
@@ -419,6 +468,53 @@ export default {
               }, h('i', { class: 'fas fa-times' }))
             ]);
           }))
+          ]),
+          // Footer - 底部按钮区域
+          h('div', {
+            style: {
+              padding: '20px 28px',
+              borderTop: '1px solid var(--divider, rgba(0,0,0,0.1))',
+              background: 'var(--card, #ffffff)',
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              flexShrink: 0
+            }
+          }, [
+            h('button', {
+              class: 'btn',
+              style: { 
+                padding: '10px 20px', 
+                background: 'var(--btn-gray-bg, #f5f5f5)', 
+                color: 'var(--btn-gray-text, #666)', 
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                minWidth: '80px'
+              },
+              onClick: close
+            }, '取消'),
+            h('button', {
+              class: 'btn',
+              style: { 
+                padding: '10px 20px', 
+                background: 'var(--accent, #1677ff)', 
+                color: 'white', 
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                minWidth: '80px',
+                boxShadow: '0 4px 12px rgba(22,119,255,0.4)'
+              },
+              onClick: save
+            }, '保存')
+          ])
         ]),
         // 颜色选择器对话框
         h(ColorPicker, {

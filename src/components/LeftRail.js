@@ -3,6 +3,7 @@ import { usePidsState } from '../composables/usePidsState.js'
 import { useSettings } from '../composables/useSettings.js'
 import { cloneDisplayState } from '../utils/displayStateSerializer.js'
 import { showNotification } from '../utils/notificationService.js'
+import { calculateDisplayStationInfo } from '../utils/displayStationCalculator.js'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
 export default {
@@ -25,7 +26,7 @@ export default {
             }
         }
         const { state } = usePidsState()
-        const { settings } = useSettings()
+        const { settings, saveSettings } = useSettings()
         const hasUpdate = ref(false)
         const showReleaseNotes = ref(false)
         const releaseNotes = ref([])
@@ -149,6 +150,24 @@ export default {
             }
         }
 
+        const devBtnStyle = () => {
+            return {
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                border: 'none',
+                background: 'var(--rail-btn-bg)',
+                color: 'var(--rail-btn-text)',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                margin: '0 auto' // 确保按钮在容器中居中
+            }
+        }
+
         const closeBrowserDisplayWindow = () => {
             if (browserDisplayWindow && !browserDisplayWindow.closed) {
                 browserDisplayWindow.close()
@@ -157,45 +176,10 @@ export default {
             uiState.showDisplay = false
         }
 
-        // 检查是否允许打开 display-2
+        // 检查是否允许打开 display-2（已移除打包限制，始终允许）
         const isDisplay2Allowed = async () => {
-            if (!settings.display.display2Mode) {
-                settings.display.display2Mode = 'dev-only'; // 默认值
-            }
-            
-            const mode = settings.display.display2Mode;
-            
-            // 模式 1: disabled - 所有情况下都不允许打开
-            if (mode === 'disabled') {
-                return false;
-            }
-            
-            // 模式 2: enabled - 所有环境下都能打开
-            if (mode === 'enabled') {
-                return true;
-            }
-            
-            // 模式 3: dev-only - 仅在浏览器和框架的开发者模式下打开
-            if (mode === 'dev-only') {
-                // 检查是否在 Electron 环境
-                const isElectron = typeof window !== 'undefined' && window.electronAPI;
-                
-                if (isElectron) {
-                    // Electron 环境：检查是否在开发者模式（未打包）
-                    try {
-                        const isPackaged = await window.electronAPI.isPackaged();
-                        return !isPackaged; // 未打包 = 开发者模式
-                    } catch (e) {
-                        return false;
-                    }
-                } else {
-                    // 浏览器环境：检查 URL 参数或开发者工具
-                    // 简单判断：浏览器环境默认允许（视为开发模式）
-                    return true;
-                }
-            }
-            
-            return false;
+            // 始终返回 true，允许在任何环境下打开显示器2
+            return true;
         }
 
         const persistDisplaySnapshot = (payload) => {
@@ -212,9 +196,15 @@ export default {
             const payload = {
                 t: 'SYNC',
                 d: cloneDisplayState(state.appData),
-                r: cloneDisplayState(state.rt)
+                r: cloneDisplayState(state.rt),
+                settings: {
+                    display: {
+                        display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000
+                    }
+                }
             }
             // 仅在折返类型为 pre 时，为当前到站计算有效车门
+            // 同时计算下一站名称（用于显示器2的"下一站"页面）
             try {
                 const app = payload.d;
                 const rt = payload.r || {};
@@ -237,6 +227,28 @@ export default {
                             st._effectiveDoor = invertDoor(st.door || 'left');
                         }
                     }
+                    
+                    // 使用API计算显示器2所需的当前站和下一站信息
+                    // 显示器2配置：方向过滤 + 下行反转
+                    const display2Config = {
+                        filterByDirection: true,
+                        reverseOnDown: true
+                    };
+                    const display2Info = calculateDisplayStationInfo(app, rt, display2Config);
+                    
+                    // 将计算结果添加到 payload
+                    if (display2Info.currentIdx >= 0) {
+                        payload.r.display2CurrentIdx = display2Info.currentIdx;
+                    }
+                    if (rt.state === 1) {
+                        if (display2Info.nextStationName) {
+                            payload.r.nextStationName = display2Info.nextStationName;
+                        }
+                        if (display2Info.nextIdx >= 0) {
+                            payload.r.display2NextIdx = display2Info.nextIdx;
+                        }
+                    }
+                    
                     // 构建 payload 后再更新 lastSentDirType 以便下次比较
                     lastSentDirType = meta.dirType || lastSentDirType;
                 }
@@ -278,7 +290,7 @@ export default {
                             displayUrl = `displays/${currentDisplayConfig.id}/display_window.html`;
                         }
                     }
-                } else if (currentDisplayConfig.source === 'custom' || currentDisplayConfig.source === 'gitee') {
+                } else if (currentDisplayConfig.source === 'online' || currentDisplayConfig.source === 'custom' || currentDisplayConfig.source === 'gitee') {
                     displayUrl = currentDisplayConfig.url || displayWindowUrl;
                 }
             }
@@ -315,35 +327,87 @@ export default {
         }
 
         const handleDisplayAction = async () => {
-            // 获取当前要打开的显示端ID
-            const { w, h, displayId } = getDisplaySize();
+            // 直接从 localStorage 读取最新的配置，确保使用最新值（不依赖响应式更新时机）
+            let currentDisplayId = 'display-1';
+            let displayConfig = null;
+            let localStorageSettings = null;
             
-            // 检查 display-2 是否允许打开
-            if (displayId === 'display-2') {
-                const allowed = await isDisplay2Allowed();
-                if (!allowed) {
-                    const mode = settings.display.display2Mode || 'dev-only';
-                    let message = '副显示器当前已禁用，无法打开';
-                    if (mode === 'dev-only') {
-                        message = '副显示器仅在开发者模式下可用，当前环境不允许打开';
-                    }
-                    showNotification('副显示器已禁用', message, {
-                        tag: 'display-2-disabled',
-                        urgency: 'normal'
+            try {
+                const raw = localStorage.getItem('pids_settings_v1');
+                if (raw) {
+                    localStorageSettings = JSON.parse(raw);
+                    currentDisplayId = localStorageSettings?.display?.currentDisplayId || 'display-1';
+                    displayConfig = localStorageSettings?.display?.displays?.[currentDisplayId];
+                    
+                    console.log('[LeftRail] 从 localStorage 读取显示端配置:', {
+                        currentDisplayId,
+                        displayConfig: displayConfig ? {
+                            name: displayConfig.name,
+                            source: displayConfig.source,
+                            enabled: displayConfig.enabled
+                        } : null
                     });
-                    return;
+                }
+            } catch (e) {
+                console.warn('[LeftRail] 从 localStorage 读取配置失败，使用 settings:', e);
+                // 回退到使用响应式 settings
+                currentDisplayId = settings?.display?.currentDisplayId || 'display-1';
+                displayConfig = settings?.display?.displays?.[currentDisplayId];
+            }
+            
+            // 如果找不到当前显示端配置，尝试从 settings 中获取
+            if (!displayConfig && settings?.display?.displays) {
+                displayConfig = settings.display.displays[currentDisplayId];
+            }
+            
+            // 如果还是找不到，使用第一个可用的显示端
+            if (!displayConfig) {
+                if (localStorageSettings?.display?.displays) {
+                    const firstDisplayId = Object.keys(localStorageSettings.display.displays)[0];
+                    displayConfig = localStorageSettings.display.displays[firstDisplayId];
+                } else if (settings?.display?.displays) {
+                    const firstDisplayId = Object.keys(settings.display.displays)[0];
+                    displayConfig = settings.display.displays[firstDisplayId];
                 }
             }
             
-            // 确保显示端存在且已启用
-            const targetDisplay = settings?.display?.displays?.[displayId];
+            // 获取宽度和高度，如果没有配置则使用默认值
+            const w = displayConfig?.width ? Number(displayConfig.width) : 1900;
+            const h = displayConfig?.height ? Number(displayConfig.height) : 600;
+            const displayId = currentDisplayId;
+            
+            // 使用从 localStorage 读取的配置进行验证（优先使用 localStorage，因为它包含最新数据）
+            const targetDisplay = displayConfig || (localStorageSettings?.display?.displays?.[displayId]) || (settings?.display?.displays?.[displayId]);
+            
             if (!targetDisplay) {
-                console.warn('[LeftRail] 显示端不存在:', displayId);
+                console.warn('[LeftRail] 显示端不存在:', displayId, {
+                    localStorageHasDisplay: !!localStorageSettings?.display?.displays?.[displayId],
+                    settingsHasDisplay: !!settings?.display?.displays?.[displayId],
+                    localStorageDisplays: Object.keys(localStorageSettings?.display?.displays || {}),
+                    settingsDisplays: Object.keys(settings?.display?.displays || {})
+                });
                 showNotification('显示端不存在', `显示端 "${displayId}" 不存在，无法打开`, {
                     tag: 'display-not-found',
                     urgency: 'normal'
                 });
                 return;
+            }
+            
+            // 检查 display-2 是否允许打开
+            if (displayId === 'display-2') {
+                const allowed = await isDisplay2Allowed();
+                if (!allowed) {
+                    const mode = (localStorageSettings?.display?.display2Mode) || (settings?.display?.display2Mode) || 'dev-only';
+                    let message = '高仿济南公交LCD屏幕当前已禁用，无法打开';
+                    if (mode === 'dev-only') {
+                        message = '高仿济南公交LCD屏幕仅在开发者模式下可用，当前环境不允许打开';
+                    }
+                    showNotification('高仿济南公交LCD屏幕已禁用', message, {
+                        tag: 'display-2-disabled',
+                        urgency: 'normal'
+                    });
+                    return;
+                }
             }
             
             if (!targetDisplay.enabled) {
@@ -356,16 +420,58 @@ export default {
             
             if (hasNativeDisplay) {
                 try {
-                    // 传递显示端ID给Electron API
-                    window.electronAPI.openDisplay(w, h, displayId);
-                } catch (e) {
-                    try { 
-                        window.electronAPI.openDisplay(w, h); 
-                    } catch (e) {
-                        console.error('[LeftRail] 打开显示端失败:', e);
+                    // 确保 settings 对象也同步更新（虽然我们已经从 localStorage 读取，但为了保持一致性）
+                    if (settings && settings.display && settings.display.currentDisplayId !== displayId) {
+                        settings.display.currentDisplayId = displayId;
+                        console.log('[LeftRail] 同步更新 settings.display.currentDisplayId 到:', displayId);
                     }
+                    
+                    // 确保设置已保存到 localStorage，以便主进程能读取到最新配置
+                    saveSettings();
+                    
+                    // 添加一个小延迟，确保 localStorage 写入完成和主进程能读取到最新值
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // 最后一次从 localStorage 读取，确保使用绝对最新的值（防止在延迟期间有其他更新）
+                    let finalDisplayId = displayId;
+                    let finalW = w;
+                    let finalH = h;
+                    try {
+                        const raw = localStorage.getItem('pids_settings_v1');
+                        if (raw) {
+                            const latestSettings = JSON.parse(raw);
+                            const latestDisplayId = latestSettings?.display?.currentDisplayId;
+                            if (latestDisplayId) {
+                                finalDisplayId = latestDisplayId;
+                                const latestConfig = latestSettings?.display?.displays?.[latestDisplayId];
+                                if (latestConfig) {
+                                    finalW = latestConfig.width ? Number(latestConfig.width) : w;
+                                    finalH = latestConfig.height ? Number(latestConfig.height) : h;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[LeftRail] 最终读取 localStorage 失败，使用原值:', e);
+                    }
+                    
+                    console.log('[LeftRail] 准备切换显示端:', {
+                        displayId: finalDisplayId,
+                        currentDisplayId: finalDisplayId,
+                        targetDisplayName: targetDisplay?.name,
+                        w: finalW,
+                        h: finalH,
+                        localStorageCurrentDisplayId: localStorageSettings?.display?.currentDisplayId,
+                        settingsCurrentDisplayId: settings?.display?.currentDisplayId
+                    });
+                    
+                    // 在 Electron 环境下：始终通过 switchDisplay 按当前选中的显示端进行切换/打开
+                    // switchDisplay 会在不存在目标窗口时创建，在已存在时切换到对应显示端
+                    // 注意：主进程会从 localStorage 读取最新的 currentDisplayId，所以这里传入的 displayId 可能被覆盖
+                    await window.electronAPI.switchDisplay(finalDisplayId, finalW, finalH);
+                } catch (e) {
+                    console.error('[LeftRail] 切换/打开显示端失败:', e);
                 }
-                return
+                return;
             }
 
             if (typeof window === 'undefined') return
@@ -466,19 +572,21 @@ export default {
                     console.log('[LeftRail] isPackaged API 不可用，假设为打包环境');
                 }
                 
-                // 打包环境：完全隐藏开发者按钮
-                // 打包环境中不应该显示开发者按钮，即使用户之前设置过标记
+                // 打包环境：检查 localStorage 中是否有启用标记
                 if (isPackaged) {
-                    shouldShowDevButton.value = false; // 打包环境强制隐藏
-                    console.log('[LeftRail] 打包环境，强制隐藏开发者按钮（忽略 localStorage 中的标记）');
-                    // 清除 localStorage 中的标记，确保不会意外显示
-                    if (typeof window !== 'undefined' && window.localStorage) {
-                        try {
-                            localStorage.removeItem('metro_pids_dev_button_enabled');
-                            console.log('[LeftRail] 已清除打包环境中的开发者按钮标记');
-                        } catch (e) {
-                            console.warn('[LeftRail] 清除 localStorage 标记失败:', e);
-                        }
+                    // 检查 localStorage 中是否有启用标记（通过连续点击5次设置）
+                    const devButtonEnabled = typeof window !== 'undefined' && window.localStorage 
+                        ? localStorage.getItem('metro_pids_dev_button_enabled') === 'true'
+                        : false;
+                    
+                    if (devButtonEnabled) {
+                        // 如果有启用标记，显示开发者按钮
+                        shouldShowDevButton.value = true;
+                        console.log('[LeftRail] 打包环境，检测到开发者按钮启用标记，显示按钮');
+                    } else {
+                        // 如果没有启用标记，隐藏开发者按钮
+                        shouldShowDevButton.value = false;
+                        console.log('[LeftRail] 打包环境，未检测到启用标记，隐藏开发者按钮');
                     }
                 }
                 
@@ -526,17 +634,21 @@ export default {
                         console.error('[LeftRail] 检查打包状态失败:', e);
                     }
                     
-                    // 打包环境：强制隐藏，不检查 localStorage
+                    // 打包环境：检查 localStorage 中是否有启用标记
                     if (isPackaged) {
-                        if (shouldShowDevButton.value) {
-                            shouldShowDevButton.value = false;
-                            console.log('[LeftRail] 打包环境，强制隐藏开发者按钮');
-                        }
-                        // 清除可能存在的标记
-                        if (localStorage.getItem('metro_pids_dev_button_enabled') === 'true') {
-                            try {
-                                localStorage.removeItem('metro_pids_dev_button_enabled');
-                            } catch (e) {}
+                        const devButtonEnabled = localStorage.getItem('metro_pids_dev_button_enabled') === 'true';
+                        // 如果 localStorage 中有启用标记，显示按钮；否则隐藏
+                        if (devButtonEnabled) {
+                            if (!shouldShowDevButton.value) {
+                                shouldShowDevButton.value = true;
+                                console.log('[LeftRail] 打包环境，检测到开发者按钮启用标记，显示按钮');
+                            }
+                        } else {
+                            // 如果没有启用标记，隐藏按钮
+                            if (shouldShowDevButton.value) {
+                                shouldShowDevButton.value = false;
+                                console.log('[LeftRail] 打包环境，未检测到启用标记，隐藏开发者按钮');
+                            }
                         }
                     }
                     // 开发环境下，shouldShowDevButton 已经在 checkDevButtonVisibility 中设置为 true，不需要额外检查
@@ -643,6 +755,7 @@ export default {
             btnStyle,
             homeBtnStyle,
             displayBtnStyle,
+            devBtnStyle,
             handleDisplayAction,
             openGithub,
             hasUpdate,
@@ -694,7 +807,7 @@ export default {
         <button 
             v-if="shouldShowDevButton"
             class="ft-btn" 
-            :style="{ width: '48px', height: '48px', borderRadius: '12px', border: 'none', background: 'transparent', color: 'var(--muted)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'none', margin: '0 auto' }"
+            :style="devBtnStyle()"
             @click="openDevWindow()" 
             title="开发者模式"
         >
