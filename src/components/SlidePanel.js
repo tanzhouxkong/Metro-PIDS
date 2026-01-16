@@ -2556,8 +2556,9 @@ export default {
             const display = settings.display.displays[displayId];
             if (!display) return;
             
-            // 检查是否为系统显示器
-            if (display.isSystem) {
+            // 检查是否为系统显示器（双重保护：检查 isSystem 属性和 displayId）
+            // display-1 和 display-2 是系统显示器，不允许删除
+            if (displayId === 'display-1' || displayId === 'display-2' || display.isSystem === true) {
                 await showMsg('系统显示器不允许删除');
                 return;
             }
@@ -3191,9 +3192,9 @@ export default {
                 <i :class="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? 'fas fa-pause' : 'fas fa-play'" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 {{ displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? '禁用' : '启用' }}
             </div>
-            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
             <div 
-                v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && !displayState.displays[displayContextMenu.displayId].isSystem"
+                v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && !displayState.displays[displayContextMenu.displayId].isSystem"
                 @click="deleteDisplayFromMenu()"
                 style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
                 @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"

@@ -83,9 +83,10 @@
 
         .content {
             flex: 1;
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
+            overflow: hidden;
         }
 
         .panel {
@@ -125,13 +126,19 @@
         }
 
         .stations-list {
-            max-height: 400px;
+            height: 100%;
             overflow-y: auto;
             overflow-x: hidden;
             display: flex;
             flex-direction: column;
             gap: 8px;
             padding-right: 8px;
+        }
+
+        .panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
         /* 滚动条样式 */
@@ -209,6 +216,7 @@
         .station-item.passed {
             opacity: 0.5;
         }
+
     </style>
 </head>
 <body>
@@ -223,6 +231,10 @@
     <div class="content">
         <div class="panel">
             <div class="panel-title">站点信息（使用站点计算 API）</div>
+            <div class="info-item">
+                <span class="info-label">当前站</span>
+                <span class="info-value" id="currentStationName">--</span>
+            </div>
             <div class="info-item">
                 <span class="info-label">当前站（过滤后索引）</span>
                 <span class="info-value" id="currentStationIdx">--</span>
@@ -314,6 +326,7 @@
             }
         }
 
+
         // 监听消息
         sdk.onMessage((msg) => {
             if (msg.t === 'SYNC') {
@@ -340,6 +353,16 @@
             }
         }, 3000);
 
+        // 安装键盘事件处理器（类似显示器1的处理方式）
+        // 主程序会根据用户配置的快捷键自动匹配并执行对应操作
+        // 这样第三方显示器就支持用户自定义快捷键了
+        if (sdk && typeof sdk.installKeyboardHandler === 'function') {
+            sdk.installKeyboardHandler();
+            console.log('[Display] ✅ 键盘事件处理器已安装（支持自定义快捷键）');
+        } else {
+            console.warn('[Display] ⚠️ SDK 不支持 installKeyboardHandler，请更新 SDK 版本');
+        }
+
         function updateDisplay() {
             if (!appData || !rtState) {
                 console.warn('[Display] 数据未就绪');
@@ -357,7 +380,13 @@
             const dirType = appData.meta?.dirType || null;
             const filteredStations = getFilteredStations(appData, dirType, displayConfig);
 
+            // 获取当前站名称
+            const currentStationName = stationInfo.currentIdx >= 0 && filteredStations[stationInfo.currentIdx]
+                ? filteredStations[stationInfo.currentIdx].name || '--'
+                : '--';
+
             // 更新站点信息显示
+            document.getElementById('currentStationName').textContent = currentStationName;
             document.getElementById('currentStationIdx').textContent = 
                 stationInfo.currentIdx >= 0 ? stationInfo.currentIdx : '--';
             document.getElementById('nextStationIdx').textContent = 

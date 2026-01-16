@@ -82,12 +82,64 @@ export default {
         console.log('[App] 收到第三方显示器的数据请求，立即同步数据');
         sync();
       }
-      // 远端按键指令
+      // 远端按键指令（支持命令格式和按键格式）
       if (data && data.t === 'CMD_KEY') {
          const code = data.code || data.key;
-         if (code === 'Enter') next();
-         if (code === 'ArrowLeft') move(-getStep());
-         if (code === 'ArrowRight') move(getStep());
+         const key = data.key || data.code;
+         const command = data.command; // 支持命令格式：'next', 'prev', 'arrive', 'depart'
+         const km = settings.keys || { arrdep: 'Enter', prev: 'ArrowLeft', next: 'ArrowRight' };
+         
+         const normalize = (s) => {
+             if (!s) return '';
+             if (s === ' ') return 'Space';
+             return s.toLowerCase();
+         };
+         
+         const match = (target) => {
+             if (!target) return false;
+             const t = normalize(target);
+             return normalize(code) === t || normalize(key) === t;
+         };
+         
+         // 如果发送的是命令格式，直接执行对应操作（命令是语义化的，不需要匹配快捷键）
+         if (command) {
+             if (command === 'next') {
+                 move(getStep());
+                 return;
+             }
+             if (command === 'prev') {
+                 move(-getStep());
+                 return;
+             }
+             if (command === 'arrive' || command === 'depart') {
+                 next();
+                 return;
+             }
+             return;
+         }
+         
+         // 如果发送的是按键格式，检查是否与用户配置的快捷键匹配
+         if (match(km.arrdep)) {
+             next();
+             return;
+         }
+         if (match(km.prev)) {
+             move(-getStep());
+             return;
+         }
+         if (match(km.next)) {
+             move(getStep());
+             return;
+         }
+         
+         // 兜底：如果用户配置的快捷键不匹配，尝试使用默认值（向后兼容）
+         if (code === 'Enter' || key === 'Enter') {
+             next();
+         } else if (code === 'ArrowLeft' || key === 'ArrowLeft') {
+             move(-getStep());
+         } else if (code === 'ArrowRight' || key === 'ArrowRight') {
+             move(getStep());
+         }
       }
       // 来自显示端的 UI 命令；若标记 src=display 则忽略
       if (data && data.t === 'CMD_UI') {

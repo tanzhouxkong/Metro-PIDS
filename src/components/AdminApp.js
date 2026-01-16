@@ -337,11 +337,157 @@ export default {
         return state.appData.stations[state.rt.idx] || {}
     })
 
+    // 生成路线信息格式：【首站··· 上一站→当前站→下一站··· 末站】
+    const stationRouteInfo = computed(() => {
+        if (!state.appData || !state.appData.stations) return ''
+        const s = state.appData.stations
+        if (s.length === 0) return ''
+        
+        const meta = state.appData.meta || {}
+        const dirType = meta.dirType || 'up'
+        const currentIdx = state.rt.idx
+        
+        // 确定首站和末站
+        let firstIdx, lastIdx
+        if (meta.startIdx !== undefined && meta.startIdx !== -1 && meta.termIdx !== undefined && meta.termIdx !== -1) {
+            // 有短交路设置
+            if (dirType === 'up' || dirType === 'outer') {
+                firstIdx = meta.startIdx
+                lastIdx = meta.termIdx
+            } else {
+                firstIdx = meta.termIdx
+                lastIdx = meta.startIdx
+            }
+        } else {
+            // 没有短交路设置
+            if (dirType === 'up' || dirType === 'outer') {
+                firstIdx = 0
+                lastIdx = s.length - 1
+            } else {
+                firstIdx = s.length - 1
+                lastIdx = 0
+            }
+        }
+        
+        const firstSt = s[firstIdx]
+        const lastSt = s[lastIdx]
+        const currentSt = s[currentIdx]
+        
+        if (!firstSt || !lastSt || !currentSt) return currentSt?.name || ''
+        
+        // 获取上一站和下一站
+        const step = getStep()
+        const prevIdx = currentIdx - step
+        const nextIdx = currentIdx + step
+        
+        const prevSt = (prevIdx >= 0 && prevIdx < s.length) ? s[prevIdx] : null
+        const nextSt = (nextIdx >= 0 && nextIdx < s.length) ? s[nextIdx] : null
+        
+        // 构建显示 HTML 字符串，每个站点用不同颜色的背景，文字为白色
+        let result = ''
+        const isFirst = currentIdx === firstIdx
+        const isLast = currentIdx === lastIdx
+        
+        // 统一的标签样式基础 - 使用更深的背景色和更强的阴影，确保白色文字清晰可见
+        const tagBaseStyle = 'display: inline-block; color: #fff; padding: 4px 12px; border-radius: 6px; font-weight: 500; font-size: 13px; line-height: 1.4; margin: 0 3px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); text-shadow: 0 1px 2px rgba(0,0,0,0.2);'
+        
+        // 如果当前站是首站，显示"始发"，否则显示首站名称
+        if (isFirst) {
+            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">始发</span>`
+        } else {
+            // 显示首站名称（深灰色背景）
+            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">${firstSt.name}</span>`
+        }
+        
+        // 判断是否需要显示省略号和上一站
+        const needPrevSection = !isFirst
+        // 判断是否是第二站（首站的下一个站）
+        const isSecond = (step > 0 && currentIdx === firstIdx + 1) || (step < 0 && currentIdx === firstIdx - 1)
+        
+        if (needPrevSection) {
+            // 如果不是第二站，显示省略号
+            if (!isSecond) {
+                result += '<span style="color: #aaa; margin: 0 6px; font-size: 12px;">···</span>'
+            }
+            // 上一站（如果存在且不是首站，使用深橙色背景）
+            if (prevSt && prevSt.name && prevIdx !== firstIdx) {
+                result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);">${prevSt.name}</span>`
+            }
+        }
+        
+        // 箭头和当前站（深蓝色背景，白色文字，突出显示）
+        result += `<span style="color: #888; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span><span style="${tagBaseStyle} background: linear-gradient(135deg, #1E90FF 0%, #0056b3 100%); font-weight: 700; font-size: 14px; box-shadow: 0 3px 8px rgba(30, 144, 255, 0.4);">${currentSt.name}</span>`
+        
+        // 判断是否需要显示下一站和省略号
+        const needNextSection = !isLast
+        // 判断是否是倒数第二站（末站的前一个站）
+        const isSecondLast = (step > 0 && currentIdx === lastIdx - 1) || (step < 0 && currentIdx === lastIdx + 1)
+        
+        if (needNextSection) {
+            // 下一站（如果存在且不是末站，使用深绿色背景）
+            if (nextSt && nextSt.name && nextIdx !== lastIdx) {
+                result += `<span style="color: #888; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span><span style="${tagBaseStyle} background: linear-gradient(135deg, #27ae60 0%, #229954 100%);">${nextSt.name}</span>`
+            }
+            // 如果不是倒数第二站，显示省略号
+            if (!isSecondLast) {
+                result += '<span style="color: #aaa; margin: 0 6px; font-size: 12px;">···</span>'
+            }
+            // 显示末站名称（深灰色背景）
+            // 如果是倒数第二站，下一站就是末站，需要显示箭头
+            if (isSecondLast) {
+                result += `<span style="color: #888; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span>`
+            }
+            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">${lastSt.name}</span>`
+        } else {
+            // 当前站是末站，显示"终到"，前面不需要箭头
+            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">终到</span>`
+        }
+        
+        return result
+    })
+
     const routeInfo = computed(() => {
         if (!state.appData || !state.appData.stations) return ''
         const s = state.appData.stations
         if (s.length < 2) return ''
-        return `${s[0].name} → ${s[s.length-1].name}`
+        
+        const meta = state.appData.meta || {}
+        const dirType = meta.dirType || 'up'
+        
+        let firstSt, lastSt
+        
+        // 根据短交路设置和方向确定首末站
+        if (meta.startIdx !== undefined && meta.startIdx !== -1 && meta.termIdx !== undefined && meta.termIdx !== -1) {
+            // 有短交路设置：根据方向确定首末站
+            const startIdx = meta.startIdx
+            const termIdx = meta.termIdx
+            if (dirType === 'up' || dirType === 'outer') {
+                // 上行/外环：首站 = startIdx，末站 = termIdx
+                firstSt = s[startIdx]
+                lastSt = s[termIdx]
+            } else {
+                // 下行/内环：首站 = termIdx，末站 = startIdx（方向相反）
+                firstSt = s[termIdx]
+                lastSt = s[startIdx]
+            }
+        } else {
+            // 没有短交路设置：根据方向确定首末站
+            // 直接使用索引，显示完整的路线范围（包括所有站点）
+            const firstIdx = 0
+            const lastIdx = s.length - 1
+            if (dirType === 'up' || dirType === 'outer') {
+                // 上行/外环：首站 = 第一个，末站 = 最后一个
+                firstSt = s[firstIdx]
+                lastSt = s[lastIdx]
+            } else {
+                // 下行/内环：首站 = 最后一个，末站 = 第一个（方向相反）
+                firstSt = s[lastIdx]
+                lastSt = s[firstIdx]
+            }
+        }
+        
+        if (!firstSt || !lastSt) return ''
+        return `${firstSt.name} → ${lastSt.name}`
     })
 
     const statusDesc = computed(() => {
@@ -401,7 +547,7 @@ export default {
             next: handleNext, move, setArr, setDep, jumpTo,
             showEditor, editingStation, editingIndex, isNewStation,
             openEditor, saveStation, deleteStation,
-            currentStation, routeInfo, statusDesc, serviceModeLabel,
+            currentStation, routeInfo, statusDesc, serviceModeLabel, stationRouteInfo,
             onDragStart, onDragOver, onDrop, onDragEnter, onDragEnd, onDragLeave, draggingIndex, dragOverIndex, listRef,
             stationContextMenu, clipboard,
             showStationContextMenu, closeStationContextMenu,
@@ -413,18 +559,13 @@ export default {
     <div id="admin-app-vue" style="flex:1; display:flex; flex-direction:column; height:100%; overflow:hidden; padding:20px; gap:20px; background:var(--bg);">
         
         <!-- Header Info Card -->
-        <div class="card" style="padding:20px; display:flex; flex-direction:column; gap:10px; border-left: 6px solid #1E90FF; border-radius:12px;">
-            <div style="display:flex; justify-content:flex-start; align-items:center;">
-                <div style="font-size:12px; color:var(--muted);">{{ routeInfo }}</div>
-            </div>
+        <div class="card" style="padding:18px 24px; display:flex; flex-direction:column; gap:12px; border-left: 4px solid #1E90FF; border-radius:10px; background: linear-gradient(135deg, rgba(240, 242, 245, 0.98) 0%, rgba(245, 247, 250, 0.95) 100%); box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-size:28px; font-weight:800; color:var(--text);">{{ currentStation.name }}</div>
+                <div style="font-size:20px; font-weight:600; color:var(--text); line-height:1.5;" v-html="stationRouteInfo"></div>
+                <div style="display:flex; align-items:center; gap:8px;">
                 <div class="badge" :style="{ background: (state.rt.state === 0 ? '#27c93f' : '#ff5f56'), padding: '6px 16px', borderRadius: '16px', fontSize: '14px', color: '#fff', fontWeight: '700', boxShadow: '0 6px 18px rgba(0,0,0,0.12)' }">
                     {{ state.rt.state === 0 ? '进站' : '出站' }}
                 </div>
-            </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
-                <div style="font-size:14px; color:var(--btn-red-bg); font-weight:bold;">{{ statusDesc }}</div>
                 <div style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; background:rgba(255, 255, 255, 0.1); border:1px solid var(--divider); border-radius:8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
                     <span style="font-size:11px; color:var(--muted); font-weight:500;">运营模式</span>
                     <span :style="{
@@ -438,6 +579,7 @@ export default {
                     }">
                         {{ serviceModeLabel }}
                     </span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -462,23 +604,23 @@ export default {
 
         <!-- Station List -->
         <div class="card" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding:0; border-left: 6px solid #FF9F43; border-radius:12px;">
-            <div class="st-list" ref="listRef" style="flex:1; overflow-y:auto; padding:10px;" @dragover="onDragOver($event)" @contextmenu.prevent="showStationContextMenu($event, null, -1)">
+            <div class="st-list" ref="listRef" style="flex:1; overflow-y:auto; padding:0;" @dragover="onDragOver($event)" @contextmenu.prevent="showStationContextMenu($event, null, -1)">
                 <div v-if="state.appData && state.appData.stations" 
                      v-for="(st, i) in state.appData.stations" 
                      :key="i" 
                      class="item" 
                      :class="{ active: i === state.rt.idx }"
                      :style="{
-                        padding: '12px',
-                        borderBottom: '1px solid var(--divider)',
+                        padding: '14px 16px',
+                        borderBottom: (i < state.appData.stations.length - 1) ? '1px solid rgba(0, 0, 0, 0.08)' : 'none',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         cursor: 'default',
                         transition: 'background 0.2s, border-color 0.2s',
                         opacity: i === draggingIndex ? 0.5 : 1,
-                        borderTop: (i === dragOverIndex && i < draggingIndex) ? '2px solid var(--accent)' : '',
-                        borderBottom: (i === dragOverIndex && i > draggingIndex) ? '2px solid var(--accent)' : '1px solid var(--divider)',
+                        borderTop: (i === dragOverIndex && i < draggingIndex) ? '2px solid var(--accent)' : 'none',
+                        borderBottom: (i === dragOverIndex && i > draggingIndex) ? '2px solid var(--accent)' : ((i < state.appData.stations.length - 1) ? '1px solid rgba(0, 0, 0, 0.08)' : 'none'),
                         background: (i === state.rt.idx) ? 'rgba(22, 119, 255, 0.08)' : ((i === dragOverIndex) ? 'rgba(255, 255, 255, 0.05)' : 'transparent'),
                         borderLeft: (i === state.rt.idx) ? '4px solid var(--btn-blue-bg)' : '4px solid transparent'
                      }"

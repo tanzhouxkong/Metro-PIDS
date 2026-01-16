@@ -207,17 +207,10 @@ function createDisplayApiServer() {
             let payload = null;
             
             if (command === 'next' || command === 'prev' || command === 'arrive' || command === 'depart') {
-              // 控制命令通过 CMD_KEY 发送
-              let keyCode = 'Enter';
-              if (command === 'prev') keyCode = 'ArrowLeft';
-              if (command === 'next') keyCode = 'ArrowRight';
-              if (command === 'arrive') keyCode = 'Enter';
-              if (command === 'depart') keyCode = 'Space';
-              
+              // 发送命令格式，让主程序根据用户配置的快捷键来判断是否执行
               payload = {
                 t: 'CMD_KEY',
-                code: keyCode,
-                key: keyCode
+                command: command
               };
             } else if (command === 'key' && body.keyCode) {
               // 自定义按键

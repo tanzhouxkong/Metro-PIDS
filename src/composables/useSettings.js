@@ -142,6 +142,17 @@ export function useSettings() {
     }
 
     function saveSettings() {
+        // 在保存前，强制确保系统显示器的 isSystem 属性为 true（防止被覆盖）
+        // display-1 和 display-2 是系统显示器，不允许删除
+        if (settings.display && settings.display.displays) {
+            if (settings.display.displays['display-1']) {
+                settings.display.displays['display-1'].isSystem = true;
+            }
+            if (settings.display.displays['display-2']) {
+                settings.display.displays['display-2'].isSystem = true;
+            }
+        }
+        
         localStorage.setItem('pids_settings_v1', JSON.stringify(settings));
         applyThemeMode();
         applyBlurSetting();
@@ -151,6 +162,15 @@ export function useSettings() {
             try {
                 // 创建一个可序列化的副本，移除不可序列化的内容
                 const serializableSettings = JSON.parse(JSON.stringify(settings));
+                // 再次确保系统显示器的保护（在序列化后也检查一次）
+                if (serializableSettings.display && serializableSettings.display.displays) {
+                    if (serializableSettings.display.displays['display-1']) {
+                        serializableSettings.display.displays['display-1'].isSystem = true;
+                    }
+                    if (serializableSettings.display.displays['display-2']) {
+                        serializableSettings.display.displays['display-2'].isSystem = true;
+                    }
+                }
                 window.electronAPI.syncSettings(serializableSettings);
             } catch (e) {
                 console.warn('[useSettings] 同步设置到主进程失败:', e);

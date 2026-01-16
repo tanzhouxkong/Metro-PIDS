@@ -659,22 +659,15 @@
 
         // ==================== 通过广播发送控制命令（可靠方案，不依赖HTTP API） ====================
         function sendCommand(command) {
-            // 将命令转换为按键代码
-            let keyCode = 'Enter';
-            if (command === 'prev') keyCode = 'ArrowLeft';
-            else if (command === 'next') keyCode = 'ArrowRight';
-            else if (command === 'arrive') keyCode = 'Enter';
-            else if (command === 'depart') keyCode = 'Space';
-            
+            // 直接发送命令格式，让主程序根据用户配置的快捷键来判断是否执行
             // 通过 BroadcastChannel 发送 CMD_KEY 消息到主程序
             if (bc) {
                 try {
                     bc.postMessage({
                         t: 'CMD_KEY',
-                        code: keyCode,
-                        key: keyCode
+                        command: command  // 'next', 'prev', 'arrive', 'depart'
                     });
-                    console.log('[Display] ✅ 控制命令已通过广播发送:', command, '->', keyCode);
+                    console.log('[Display] ✅ 控制命令已通过广播发送:', command);
                     return true;
                 } catch (e) {
                     console.warn('[Display] ❌ 广播发送命令失败:', e);
@@ -705,9 +698,24 @@
             }
         }
 
-        // ==================== 键盘快捷键 ====================
+        // ==================== 键盘快捷键（支持自定义快捷键） ====================
+        // 如果使用 SDK，可以使用 installKeyboardHandler 自动处理键盘事件
+        // 主程序会根据用户配置的快捷键自动匹配并执行对应操作
+        let keyboardUninstall = null;
+        if (typeof createDisplaySdk !== 'undefined') {
+            try {
+                const sdk = createDisplaySdk({ channelName: CONFIG.channelName });
+                if (sdk && typeof sdk.installKeyboardHandler === 'function') {
+                    keyboardUninstall = sdk.installKeyboardHandler();
+                    console.log('[Display] ✅ 键盘事件处理器已安装（支持自定义快捷键）');
+                }
+            } catch (e) {
+                console.warn('[Display] ⚠️ 无法安装键盘事件处理器:', e);
+            }
+        }
+
+        // F12 切换调试面板（保留此功能）
         document.addEventListener('keydown', (e) => {
-            // F12 切换调试面板
             if (e.key === 'F12') {
                 e.preventDefault();
                 CONFIG.enableDebug = !CONFIG.enableDebug;
@@ -719,23 +727,7 @@
                 }
                 return;
             }
-
-            // 其他键映射到 API 控制命令（方案 B）
-            const code = e.code || e.key;
-
-            if (code === 'ArrowRight') {          // 下一站
-                e.preventDefault();
-                sendCommand('next');
-            } else if (code === 'ArrowLeft') {    // 上一站
-                e.preventDefault();
-                sendCommand('prev');
-            } else if (code === 'Enter') {        // 到达
-                e.preventDefault();
-                sendCommand('arrive');
-            } else if (code === 'Space') {        // 发车
-                e.preventDefault();
-                sendCommand('depart');
-            }
+            // 其他按键由 installKeyboardHandler 处理
         });
 
         // ==================== 确保窗口可接收键盘事件 ====================

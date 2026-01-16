@@ -1,4 +1,49 @@
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification } = require('electron');
+
+// 辅助函数：显示显示器识别错误对话框
+function showDisplayErrorDialog(title, message, details) {
+  const logFilePath = logger ? logger.transports.file.getFile().path : '未配置日志文件';
+  const detailText = `显示端ID: ${details.displayId || '未知'}
+显示端名称: ${details.name || '未知'}
+Source类型: ${details.source || '未知'}
+配置的URL: ${details.url || '(空)'}
+期望的URL: ${details.expectedUrl || '(未确定)'}
+实际使用的URL: ${details.actualUrl || '(未确定)'}
+识别失败原因: ${details.reason || '未知错误'}
+
+日志文件位置: ${logFilePath}
+
+详细配置信息:
+${JSON.stringify(details.config || {}, null, 2)}`;
+
+  dialog.showMessageBox(mainWin || null, {
+    type: 'error',
+    title: title || '显示器识别错误',
+    message: message || '无法识别第三方显示器',
+    detail: detailText,
+    buttons: ['确定', '打开日志文件'],
+    defaultId: 0,
+    cancelId: 0
+  }).then(result => {
+    if (result.response === 1 && logger) {
+      // 用户点击了"打开日志文件"
+      try {
+        shell.showItemInFolder(logFilePath);
+      } catch (e) {
+        console.warn('[main] 无法打开日志文件:', e);
+      }
+    }
+  }).catch(e => {
+    console.error('[main] 显示错误对话框失败:', e);
+  });
+  
+  // 同时输出到控制台和日志文件
+  console.error(`[main] ${title}: ${message}`);
+  console.error(`[main] 详细信息:`, details);
+  if (logger) {
+    logger.error(`[main] ${title}: ${message}`, details);
+  }
+}
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
@@ -940,6 +985,83 @@ function createWindow() {
     mainWin.webContents.openDevTools();
   }
   
+  // 为主窗口添加 F12 快捷键支持（切换开发者工具）
+  mainWin.webContents.on('before-input-event', async (event, input) => {
+    // F12 键
+    if (input.key === 'F12') {
+      // 检查是否允许在打包后使用F12
+      let allowF12 = !app.isPackaged; // 开发环境默认允许
+      
+      if (app.isPackaged) {
+        // 打包环境：检查localStorage中的设置
+        try {
+          const result = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          allowF12 = result === true;
+        } catch (e) {
+          console.warn('[MainWindow] 检查F12设置失败:', e);
+          allowF12 = false;
+        }
+      }
+      
+      if (allowF12) {
+        if (mainWin.webContents.isDevToolsOpened()) {
+          mainWin.webContents.closeDevTools();
+        } else {
+          mainWin.webContents.openDevTools();
+        }
+        event.preventDefault();
+      }
+      return;
+    }
+    
+    // Ctrl+Shift+I (Windows/Linux) 或 Cmd+Option+I (MacOS)
+    const isMac = process.platform === 'darwin';
+    const isCtrlShiftI = !isMac && input.control && input.shift && input.key === 'I';
+    const isCmdOptionI = isMac && input.meta && input.alt && input.key === 'I';
+    
+    if (isCtrlShiftI || isCmdOptionI) {
+      // 检查是否允许在打包后使用快捷键
+      let allowShortcut = !app.isPackaged; // 开发环境默认允许
+      
+      if (app.isPackaged) {
+        // 打包环境：检查localStorage中的设置
+        try {
+          const result = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          allowShortcut = result === true;
+        } catch (e) {
+          console.warn('[MainWindow] 检查F12设置失败:', e);
+          allowShortcut = false;
+        }
+      }
+      
+      if (allowShortcut) {
+        if (mainWin.webContents.isDevToolsOpened()) {
+          mainWin.webContents.closeDevTools();
+        } else {
+          mainWin.webContents.openDevTools();
+        }
+        event.preventDefault();
+      }
+      return;
+    }
+  });
+  
   // 将主进程日志发送到渲染进程（用于调试）
   const originalLog = console.log;
   const originalError = console.error;
@@ -1087,10 +1209,25 @@ function createWindow() {
         }
         
         // 计算期望的URL
-        if (displayConfig && displayConfig.source === 'online' && displayConfig.url) {
-          // 在线显示器：直接使用URL
+        if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+          // 在线显示器：直接使用URL（包括 online、custom、gitee）
           expectedUrl = displayConfig.url.trim();
           console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
+          
+          // 验证URL格式
+          if (!expectedUrl || expectedUrl.trim() === '') {
+            const errorDetails = {
+              displayId: displayId,
+              name: displayConfig.name,
+              source: displayConfig.source,
+              url: displayConfig.url,
+              expectedUrl: expectedUrl,
+              actualUrl: currentUrl,
+              reason: '配置的URL为空',
+              config: displayConfig
+            };
+            showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置的URL为空`, errorDetails);
+          }
         } else if (displayConfig && displayConfig.source === 'builtin') {
           if (displayConfig.url) {
             // 自定义HTML文件路径
@@ -1131,12 +1268,27 @@ function createWindow() {
               }
             }
           }
-        } else if (displayConfig && displayConfig.source === 'online' && displayConfig.url) {
-          // 在线显示器：直接使用URL
+        } else if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+          // 在线显示器：直接使用URL（包括 online、custom、gitee）
           expectedUrl = displayConfig.url.trim();
           console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
         } else {
           // 没有配置，使用默认路径
+          // 如果配置了第三方显示器但URL为空或source不匹配，显示错误
+          if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+            const errorDetails = {
+              displayId: displayId,
+              name: displayConfig.name,
+              source: displayConfig.source,
+              url: displayConfig.url || '(空)',
+              expectedUrl: expectedUrl,
+              actualUrl: currentUrl,
+              reason: displayConfig.url ? 'URL格式错误或无法识别' : '配置的URL为空',
+              config: displayConfig
+            };
+            showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置错误`, errorDetails);
+          }
+          
           if (displayId === 'display-1') {
             expectedUrl = getRendererUrl('display_window.html');
           } else {
@@ -1154,6 +1306,25 @@ function createWindow() {
           source: displayConfig.source,
           url: displayConfig.url
         } : '未找到配置');
+        
+        // 检查第三方显示器是否被错误识别为默认显示器
+        if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+          const expectedThirdPartyUrl = displayConfig.url.trim();
+          // 如果期望的是第三方URL，但当前URL是默认的display_window.html，说明识别失败
+          if (currentUrl && currentUrl.includes('display_window.html') && expectedThirdPartyUrl && !expectedThirdPartyUrl.includes('display_window.html')) {
+            const errorDetails = {
+              displayId: displayId,
+              name: displayConfig.name,
+              source: displayConfig.source,
+              url: displayConfig.url,
+              expectedUrl: expectedThirdPartyUrl,
+              actualUrl: currentUrl,
+              reason: '第三方显示器被错误识别为默认显示器，URL不匹配',
+              config: displayConfig
+            };
+            showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 被错误识别为默认显示器`, errorDetails);
+          }
+        }
         
         // 比较URL，如果不一致则需要重新加载
         if (expectedUrl && currentUrl !== expectedUrl) {
@@ -5472,7 +5643,9 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   // 判断是否为第三方显示器（配置了自定义HTML文件或在线URL）
   const isThirdPartyDisplay = displayConfig && (
     (displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) ||
-    (displayConfig.source === 'online' && displayConfig.url && displayConfig.url.trim())
+    (displayConfig.source === 'online' && displayConfig.url && displayConfig.url.trim()) ||
+    (displayConfig.source === 'custom' && displayConfig.url && displayConfig.url.trim()) ||
+    (displayConfig.source === 'gitee' && displayConfig.url && displayConfig.url.trim())
   );
   
   // 使用方案二：隐藏默认标题栏，显示系统窗口控制按钮
@@ -5607,10 +5780,27 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   let dispPath;
   
   // displayConfig 已在窗口创建前读取，这里直接使用
-  // 如果配置了在线URL（source为online且url存在），直接使用该URL
-  if (displayConfig && displayConfig.source === 'online' && displayConfig.url) {
+  // 如果配置了在线URL（source为online/custom/gitee且url存在），直接使用该URL
+  if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
     dispPath = displayConfig.url.trim();
     console.log(`[main] ✅ 使用在线显示器URL: ${dispPath}`);
+    
+    // 验证URL格式
+    if (!dispPath || dispPath.trim() === '') {
+      const errorDetails = {
+        displayId: displayId,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url,
+        expectedUrl: dispPath,
+        actualUrl: null,
+        reason: '配置的URL为空，无法加载第三方显示器',
+        config: displayConfig
+      };
+      showDisplayErrorDialog('第三方显示器加载失败', `显示端 "${displayConfig.name || displayId}" 的URL为空`, errorDetails);
+      // 回退到默认路径
+      dispPath = getRendererUrl('display_window.html');
+    }
   } else if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url) {
     let customFilePath = displayConfig.url.trim();
     console.log(`[main] 检测到自定义HTML文件路径: ${customFilePath}`);
@@ -5662,6 +5852,21 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     }
   } else {
     // 没有配置自定义URL，检查是否有默认的显示端文件
+    // 如果配置了第三方显示器但URL为空或source不匹配，显示错误
+    if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+      const errorDetails = {
+        displayId: displayId,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url || '(空)',
+        expectedUrl: null,
+        actualUrl: null,
+        reason: displayConfig.url ? 'URL格式错误或无法识别，source类型为第三方但URL无效' : '配置的URL为空，source类型为第三方但未提供URL',
+        config: displayConfig
+      };
+      showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置错误`, errorDetails);
+    }
+    
     if (displayId === 'display-1') {
       dispPath = getRendererUrl('display_window.html');
       console.log(`[main] 使用默认主显示器路径: ${dispPath}`);
@@ -5768,6 +5973,40 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   });
   
   displayWin.loadURL(dispPath);
+  
+  // 监听加载失败事件，特别是第三方显示器
+  displayWin.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return; // 只处理主框架的加载失败
+    
+    // 如果是第三方显示器加载失败，显示详细错误信息
+    if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+      const errorDetails = {
+        displayId: displayId,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url,
+        expectedUrl: dispPath,
+        actualUrl: validatedURL || dispPath,
+        reason: `页面加载失败 (错误代码: ${errorCode}, 描述: ${errorDescription})`,
+        config: displayConfig,
+        errorCode: errorCode,
+        errorDescription: errorDescription,
+        validatedURL: validatedURL
+      };
+      showDisplayErrorDialog('第三方显示器加载失败', `显示端 "${displayConfig.name || displayId}" 无法加载`, errorDetails);
+    } else {
+      // 非第三方显示器也记录错误，但不弹出对话框（避免干扰正常使用）
+      console.error(`[main] ${displayId} 加载失败:`, {
+        errorCode,
+        errorDescription,
+        validatedURL,
+        dispPath
+      });
+      if (logger) {
+        logger.error(`[main] ${displayId} 加载失败`, { errorCode, errorDescription, validatedURL, dispPath });
+      }
+    }
+  });
   
   // 确保缩放因子始终为1.0，禁用Electron的自动缩放
   displayWin.webContents.setZoomFactor(1.0);
