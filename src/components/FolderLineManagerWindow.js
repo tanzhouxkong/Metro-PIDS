@@ -1,6 +1,7 @@
 import { ref, computed, watch, onMounted, nextTick, Teleport } from 'vue'
 import LineManagerDialog from './LineManagerDialog.js'
 import LineManagerTopbar from './LineManagerTopbar.js'
+import RuntimeLineManager from './RuntimeLineManager.js'
 
 // 解析颜色标记（简化版，仅用于显示）
 function parseColorMarkup(text) {
@@ -35,7 +36,8 @@ export default {
   name: 'FolderLineManagerWindow',
   components: {
     LineManagerDialog,
-    LineManagerTopbar
+    LineManagerTopbar,
+    RuntimeLineManager
   },
   setup() {
     const folders = ref([]);
@@ -49,6 +51,7 @@ export default {
     const clipboard = ref({ type: null, line: null, sourceFolderId: null, sourceFolderPath: null }); // 剪贴板状态（用于复制/剪贴）
     const isSavingThroughLine = ref(false); // 是否正在保存贯通线路
     const pendingThroughLineInfo = ref(null); // 待保存的贯通线路信息
+    const showRuntimeLineManager = ref(false); // 是否显示运控线路管理器
 
     // 获取首末站信息
     function getStationInfo(lineData) {
@@ -289,6 +292,54 @@ export default {
         }
       } catch (e) {
         console.error('切换线路失败:', e);
+      }
+    }
+
+    // 应用运控线路（从运控线路管理器调用）
+    async function applyRuntimeLine(lineData) {
+      if (!lineData || !lineData.meta || !lineData.meta.lineName) {
+        console.warn('[线路管理器] applyRuntimeLine: invalid lineData', lineData);
+        return;
+      }
+
+      try {
+        const lineName = lineData.meta.lineName;
+        
+        // 通过 IPC 通知主窗口应用运控线路（Electron 环境）
+        if (window.electronAPI && window.electronAPI.switchRuntimeLine) {
+          // 使用专门的 switchRuntimeLine 方法传递线路数据
+          const result = await window.electronAPI.switchRuntimeLine(lineData);
+          if (result && result.ok) {
+            if (window.electronAPI.closeWindow) {
+              await window.electronAPI.closeWindow();
+            }
+          }
+        } else {
+          // 网页环境或降级方案：存储线路数据到 localStorage
+          localStorage.setItem('runtimeLineData', JSON.stringify(lineData));
+          localStorage.setItem('lineManagerSelectedLine', lineName);
+          localStorage.setItem('isRuntimeLine', 'true'); // 标记这是运控线路
+          
+          // 通过 postMessage 通知主窗口
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage({
+              type: 'switch-runtime-line',
+              lineName: lineName,
+              lineData: lineData
+            }, '*');
+          }
+          
+          // 触发 storage 事件
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: 'runtimeLineData',
+            newValue: JSON.stringify(lineData)
+          }));
+          
+          window.close();
+        }
+      } catch (e) {
+        console.error('应用运控线路失败:', e);
+        throw e;
       }
     }
 
@@ -1208,7 +1259,9 @@ export default {
       pasteLine,
       deleteLine,
       createNewLine,
-      clipboard
+      clipboard,
+      showRuntimeLineManager,
+      applyRuntimeLine
     };
   },
   components: {
@@ -1391,6 +1444,16 @@ export default {
                 >
                   <i class="fas fa-plus" style="font-size:12px;"></i> 新建线路
                 </button>
+
+                <button 
+                  @click="showRuntimeLineManager = true"
+                  style="background:#1E90FF; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:13px; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all 0.2s;"
+                  @mouseover="$event.target.style.background='#1c7ed6'"
+                  @mouseout="$event.target.style.background='#1E90FF'"
+                  title="从云端获取运控线路"
+                >
+                  <i class="fas fa-cloud" style="font-size:12px;"></i> 运控线路
+                </button>
                 
                 <!-- 选中线路信息 -->
                 <div v-if="selectedLine" style="display:flex; align-items:center; gap:8px; color:var(--muted, #666); font-size:13px;">
@@ -1462,6 +1525,13 @@ export default {
       
       <!-- 独立的对话框组件 -->
       <LineManagerDialog />
+
+      <!-- 运控线路管理器 -->
+      <RuntimeLineManager 
+        v-model="showRuntimeLineManager"
+        :pids-state="{}"
+        :on-apply-line="applyRuntimeLine"
+      />
       
       <!-- 右键菜单 -->
       <div 

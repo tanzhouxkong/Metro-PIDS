@@ -507,16 +507,17 @@ export default {
             try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
         }
 
-        // 加载更新日志
+        // 加载更新日志（通过主进程 getGitHubReleases：先请求 Worker /releases，失败则请求 GitHub API）
         const loadReleaseNotes = async () => {
-            if (loadingNotes.value || releaseNotes.value.length > 0) return;
+            if (loadingNotes.value) return;
             loadingNotes.value = true;
+            releaseNotes.value = [];
             try {
-                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getGitHubReleases) {
-                    const result = await window.electronAPI.getGitHubReleases();
-                    if (result && result.ok && result.releases) {
-                        releaseNotes.value = result.releases;
-                    }
+                const api = typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getGitHubReleases;
+                if (api) {
+                    const result = await api();
+                    const list = (result && result.ok && Array.isArray(result.releases)) ? result.releases : [];
+                    releaseNotes.value = list;
                 }
             } catch (e) {
                 console.error('加载更新日志失败:', e);
@@ -527,7 +528,7 @@ export default {
 
         // 打开更新日志弹窗
         const openReleaseNotes = async () => {
-            await loadReleaseNotes();
+            if (!loadingNotes.value) await loadReleaseNotes();
             showReleaseNotes.value = true;
         }
 

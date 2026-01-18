@@ -1,0 +1,2524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Metro-PIDS 云控管理后台</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header {
+      background: rgba(255, 255, 255, 0.95);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header .api-info {
+      font-size: 13px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header .api-info code {
+      background: #f0f0f0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      padding: 8px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+    .tab {
+      padding: 10px 20px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      background: rgba(102, 126, 234, 0.1);
+    }
+    .tab.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    .card h2 {
+      font-size: 20px;
+      margin-bottom: 16px;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card h2 i {
+      color: #667eea;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .field input:focus,
+    .field textarea:focus,
+    .field select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .field textarea {
+      min-height: 200px;
+      font-family: 'Consolas', 'Menlo', monospace;
+      resize: vertical;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .btn {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+    .btn-danger {
+      background: #ff4757;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #ff3838;
+    }
+    .btn-success {
+      background: #2ed573;
+      color: white;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin-left: 8px;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .status.info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+    .table-container {
+      overflow-x: auto;
+      margin-top: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+      font-size: 13px;
+    }
+    tr:hover {
+      background: #f8f9fa;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .badge-danger {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .badge-info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 16px;
+      border-radius: 8px;
+      font-family: 'Consolas', 'Menlo', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    .empty-state i {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal.active {
+      display: flex;
+    }
+    .modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .modal-header h3 {
+      font-size: 20px;
+      color: #333;
+    }
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #999;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.2s;
+    }
+    .close-btn:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .api-info {
+      margin-top: 8px;
+    }
+    .stat-card {
+      color: white;
+      padding: 24px;
+    }
+    .stat-card-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .stat-card-secondary {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+    }
+    .stat-label {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-top: 4px;
+    }
+    .btn-group-spaced {
+      margin-top: 16px;
+    }
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .btn-small {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .stat-meta {
+      font-size: 13px;
+      color: #666;
+    }
+    .stat-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .stat-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+      cursor: default;
+      white-space: nowrap;
+    }
+    .stat-tag:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .stat-tag strong {
+      font-weight: 600;
+    }
+    .stat-tag .stat-value {
+      font-weight: 700;
+      margin-left: 4px;
+    }
+    .stat-tag-country {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      color: #1976d2;
+      border: 1px solid rgba(25, 118, 210, 0.2);
+    }
+    .stat-tag-version {
+      background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+      color: #7b1fa2;
+      border: 1px solid rgba(123, 31, 162, 0.2);
+    }
+    .stat-tag-admin {
+      background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+      color: #e65100;
+      border: 1px solid rgba(230, 81, 0, 0.2);
+    }
+    .stat-tag-os {
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      color: #2e7d32;
+      border: 1px solid rgba(46, 125, 50, 0.2);
+    }
+    .stat-tag-device {
+      background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%);
+      color: #c2185b;
+      border: 1px solid rgba(194, 24, 91, 0.2);
+    }
+    .stat-tag-device-unknown {
+      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+      color: #616161;
+      border: 1px solid rgba(97, 97, 97, 0.2);
+    }
+    .stat-tag code {
+      font-family: 'Consolas', 'Menlo', 'Monaco', monospace;
+      font-size: 11px;
+      background: rgba(0,0,0,0.05);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .settings-check-status {
+      margin-top: 4px;
+      min-height: 24px;
+    }
+    .btn-small-spaced {
+      margin-left: 4px;
+    }
+    .date-info-card {
+      background: #f0f7ff;
+      border-left: 4px solid #667eea;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    .date-info-label {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .date-info-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+    }
+    .device-id-display {
+      font-family: monospace;
+      word-break: break-all;
+    }
+    .device-id-hint {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+    .date-group-header {
+      background: #f8f9fa;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .date-group-header:hover {
+      background: #e9ecef;
+    }
+    .date-group-header .toggle-icon {
+      display: inline-block;
+      width: 16px;
+      margin-right: 8px;
+      transition: transform 0.2s;
+    }
+    .date-group-header.collapsed .toggle-icon {
+      transform: rotate(-90deg);
+    }
+    .date-group-rows {
+      display: table-row-group;
+    }
+    .date-group-rows.collapsed {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>🚇 Metro-PIDS 云控管理后台</h1>
+        <div class="api-info">
+          <span>API 地址：</span>
+          <code id="api-base-display">未设置</code>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-secondary" id="btn-settings">
+          <i class="fas fa-cog"></i> 设置
+        </button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="runtime">运控线路</button>
+      <button class="tab" data-tab="easter-eggs">彩蛋配置</button>
+      <button class="tab" data-tab="holidays">节日配置</button>
+      <button class="tab" data-tab="updates">版本更新</button>
+      <button class="tab" data-tab="stats">统计信息</button>
+    </div>
+
+    <!-- 运控线路 -->
+    <div class="tab-content active" id="tab-runtime">
+      <div class="card">
+        <h2><i class="fas fa-sync-alt"></i> 运控线路列表</h2>
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btn-list-runtime">
+            <i class="fas fa-sync"></i> 刷新列表
+          </button>
+        </div>
+        <div class="table-container">
+          <table id="runtime-table">
+            <thead>
+              <tr>
+                <th>线路名称</th>
+                <th>站点数量</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="runtime-tbody">
+              <tr>
+                <td colspan="3" class="empty-state">
+                  <i class="fas fa-inbox"></i>
+                  <div>点击"刷新列表"加载数据</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><i class="fas fa-edit"></i> 运控线路编辑</h2>
+        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
+          <strong>💡 使用说明：</strong><br>
+          • 选择 JSON 文件上传，系统会自动读取线路数据<br>
+          • 支持一次选择多个文件，批量上传多条线路<br>
+          • 文件格式：标准的运控线路 JSON 文件（包含 meta、stations 等字段）
+        </div>
+        
+        <div class="field">
+          <label for="runtime-line-file-input">
+            <i class="fas fa-file-upload"></i> 选择运控线路 JSON 文件（支持多选）
+          </label>
+          <input type="file" id="runtime-line-file-input" accept=".json" multiple />
+          <div style="font-size:12px; color:#666; margin-top:4px;">
+            可以一次选择多个 JSON 文件，每个文件对应一条运控线路
+          </div>
+          <div id="runtime-files-list" style="margin-top:8px; padding:8px; background:#f9f9f9; border-radius:4px; display:none;">
+            <strong>已选择的文件：</strong>
+            <ul id="runtime-files-items" style="margin:4px 0 0 0; padding-left:20px; font-size:12px;"></ul>
+          </div>
+        </div>
+        
+        <div class="btn-group">
+          <button class="btn btn-info" id="btn-parse-runtime-files">
+            <i class="fas fa-magic"></i> 解析并上传文件
+          </button>
+          <button class="btn btn-secondary" id="btn-get-runtime">
+            <i class="fas fa-download"></i> 下载指定线路
+          </button>
+          <button class="btn btn-danger" id="btn-del-runtime">
+            <i class="fas fa-trash"></i> 删除指定线路
+          </button>
+        </div>
+        
+        <div class="grid" style="margin-top:16px;">
+          <div class="field">
+            <label for="runtime-line-name">线路名称（用于下载/删除）</label>
+            <input type="text" id="runtime-line-name" placeholder="例如：济南地铁1号线" />
+          </div>
+        </div>
+        
+        <div class="field" style="margin-top:16px;">
+          <label for="runtime-line-json">运控线路 JSON 数据预览</label>
+          <textarea id="runtime-line-json" placeholder='上传文件后会自动显示 JSON 数据，也可以手动编辑' style="min-height:200px;"></textarea>
+          <div style="font-size:12px; color:#666; margin-top:4px;">
+            此文本框仅用于预览和手动编辑，推荐使用文件上传方式
+          </div>
+        </div>
+        <div id="runtime-status"></div>
+      </div>
+    </div>
+
+    <!-- 彩蛋配置 -->
+    <div class="tab-content" id="tab-easter-eggs">
+      <div class="card">
+        <h2><i class="fas fa-egg"></i> 彩蛋配置</h2>
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="btn-get-easter-eggs">
+            <i class="fas fa-download"></i> 下载
+          </button>
+          <button class="btn btn-primary" id="btn-put-easter-eggs">
+            <i class="fas fa-upload"></i> 上传
+          </button>
+        </div>
+        <div class="field">
+          <label for="easter-eggs-json">彩蛋配置 JSON</label>
+          <textarea id="easter-eggs-json" placeholder='{"stations": [...], "messages": [...], "enabled": true}'></textarea>
+        </div>
+        <div id="easter-eggs-status"></div>
+      </div>
+    </div>
+
+    <!-- 节日配置 -->
+    <div class="tab-content" id="tab-holidays">
+      <div class="card">
+        <h2><i class="fas fa-calendar-alt"></i> 节日配置</h2>
+        <div class="card date-info-card">
+          <div class="date-info-label">当前日期（用于确认节日配置）</div>
+          <div class="date-info-value" id="current-date-display">加载中...</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="btn-get-holidays">
+            <i class="fas fa-download"></i> 下载
+          </button>
+          <button class="btn btn-primary" id="btn-put-holidays">
+            <i class="fas fa-upload"></i> 上传
+          </button>
+          <button class="btn btn-secondary" id="btn-get-active-holidays">
+            <i class="fas fa-check-circle"></i> 查看激活节日
+          </button>
+        </div>
+        <div class="field">
+          <label for="holidays-json">节日配置 JSON</label>
+          <textarea id="holidays-json" placeholder='{"birthday": {...}, "chineseNewYear": {...}}'></textarea>
+        </div>
+        <div id="holidays-status"></div>
+      </div>
+    </div>
+
+    <!-- 版本更新 -->
+    <div class="tab-content" id="tab-updates">
+      <div class="card">
+        <h2><i class="fas fa-shield-alt"></i> 强制更新设置</h2>
+        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
+          <strong>💡 使用说明：</strong><br>
+          • 版本信息会自动从 GitHub Releases 同步（无需手动上传）<br>
+          • 可以设置最低版本要求，低于此版本的客户端将被强制更新<br>
+          • 可以启用"强制所有版本更新"，所有客户端都必须更新到最新版本<br>
+          • 修改后点击"应用强制更新设置"保存
+        </div>
+        
+        <div class="field">
+          <label>平台/架构</label>
+          <select id="update-platform-select">
+            <option value="win32:x64">Windows x64</option>
+            <option value="win32:arm64">Windows ARM64</option>
+            <option value="darwin:x64">macOS Intel</option>
+            <option value="darwin:arm64">macOS Apple Silicon</option>
+            <option value="linux:x64">Linux x64</option>
+            <option value="linux:arm64">Linux ARM64</option>
+          </select>
+          <div style="font-size:12px; color:#666; margin-top:4px;">
+            选择要设置强制更新的平台/架构
+          </div>
+        </div>
+        
+        <div class="field">
+          <label for="update-minimum-version">最低要求版本（可选）</label>
+          <select id="update-minimum-version">
+            <option value="">不设置最低版本要求</option>
+          </select>
+          <div style="font-size:12px; color:#666; margin-top:4px;">
+            低于此版本的客户端将被强制更新（从已发布的版本中选择）
+          </div>
+        </div>
+        
+        <div class="field">
+          <label>
+            <input type="checkbox" id="update-force-update" />
+            <span style="margin-left:6px;">强制所有版本更新</span>
+          </label>
+          <div style="font-size:12px; color:#666; margin-top:4px;">
+            启用后，所有版本的客户端都必须更新到最新版本
+          </div>
+        </div>
+        
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="btn-get-update-info">
+            <i class="fas fa-download"></i> 查看当前版本信息
+          </button>
+          <button class="btn btn-primary" id="btn-sync-from-github">
+            <i class="fas fa-sync-alt"></i> 从 GitHub 同步
+          </button>
+          <button class="btn btn-success" id="btn-apply-force-update">
+            <i class="fas fa-save"></i> 应用强制更新设置
+          </button>
+        </div>
+        <div id="update-info-status"></div>
+      </div>
+      
+      <div class="card">
+        <h2><i class="fas fa-info-circle"></i> 当前版本信息（只读）</h2>
+        <div class="field">
+          <label for="update-info-json">版本信息 JSON</label>
+          <textarea id="update-info-json" placeholder='点击"查看当前版本信息"按钮加载数据' style="min-height:200px;" readonly></textarea>
+        </div>
+        <div style="font-size:12px; color:#666; margin-top:8px;">
+          💡 提示：版本信息会自动从 GitHub Releases 同步，无需手动上传
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><i class="fas fa-book"></i> 更新日志管理</h2>
+        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
+          <strong>💡 使用说明：</strong><br>
+          • 点击"添加版本"按钮添加新版本的更新日志<br>
+          • 支持上传 .md 文件自动填充内容，或手动输入<br>
+          • 可以编辑、删除已有版本的日志<br>
+          • 修改后点击"保存所有更改"上传到服务器
+        </div>
+        
+        <div class="btn-group">
+          <button class="btn btn-success" id="btn-add-changelog-version">
+            <i class="fas fa-plus"></i> 添加版本
+          </button>
+          <button class="btn btn-secondary" id="btn-get-changelog">
+            <i class="fas fa-download"></i> 从服务器加载
+          </button>
+          <button class="btn btn-primary" id="btn-sync-changelog-from-github">
+            <i class="fas fa-sync-alt"></i> 从 GitHub 同步
+          </button>
+          <button class="btn btn-primary" id="btn-put-changelog">
+            <i class="fas fa-save"></i> 保存所有更改
+          </button>
+        </div>
+        
+        <div id="changelog-list-container" style="margin-top:20px;">
+          <div id="changelog-list-empty" style="text-align:center; padding:40px; color:#999;">
+            <i class="fas fa-inbox" style="font-size:48px; margin-bottom:12px; opacity:0.3;"></i>
+            <div>暂无更新日志，点击"添加版本"开始添加</div>
+          </div>
+          <div id="changelog-list" style="display:none;"></div>
+        </div>
+        
+        <div id="changelog-status" style="margin-top:16px;"></div>
+      </div>
+      
+      <!-- 版本日志编辑模态框 -->
+      <div class="modal" id="changelog-edit-modal">
+        <div class="modal-content" style="max-width:800px;">
+          <div class="modal-header">
+            <h3 id="changelog-modal-title">添加更新日志</h3>
+            <button class="close-btn" id="changelog-modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label for="changelog-edit-version">版本号 *</label>
+              <input type="text" id="changelog-edit-version" placeholder="1.5.5" />
+            </div>
+            
+            <div class="field">
+              <label for="changelog-edit-title">版本标题</label>
+              <input type="text" id="changelog-edit-title" placeholder="版本 1.5.5" />
+              <div style="font-size:12px; color:#666; margin-top:4px;">
+                如果不填写，将自动使用"版本 {版本号}"
+              </div>
+            </div>
+            
+            <div class="field">
+              <label for="changelog-edit-md-file">
+                <i class="fas fa-file-alt"></i> 上传 Markdown 文件（可选）
+              </label>
+              <input type="file" id="changelog-edit-md-file" accept=".md,.markdown" />
+              <div style="font-size:12px; color:#666; margin-top:4px;">
+                上传 .md 文件后会自动填充版本号和内容
+              </div>
+            </div>
+            
+            <div class="field">
+              <label for="changelog-edit-content">更新内容（支持 Markdown）*</label>
+              <textarea id="changelog-edit-content" placeholder="### 新功能&#10;- 功能1&#10;- 功能2&#10;&#10;### 修复&#10;- 修复1" style="min-height:300px; font-family:monospace;"></textarea>
+            </div>
+            
+            <div class="field">
+              <label for="changelog-edit-releasedate">发布日期</label>
+              <input type="datetime-local" id="changelog-edit-releasedate" />
+              <div style="font-size:12px; color:#666; margin-top:4px;">
+                如果不填写，将使用当前时间
+              </div>
+            </div>
+            
+            <div class="field">
+              <label>
+                <input type="checkbox" id="changelog-edit-prerelease" />
+                <span style="margin-left:6px;">预发布版本（beta、alpha、rc 等）</span>
+              </label>
+            </div>
+          </div>
+          <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; padding-top:16px; border-top:1px solid #eee;">
+            <button class="btn btn-secondary" id="changelog-modal-cancel">取消</button>
+            <button class="btn btn-primary" id="changelog-modal-save">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 统计信息 -->
+    <div class="tab-content" id="tab-stats">
+      <div class="card">
+        <h2><i class="fas fa-chart-bar"></i> 数据统计</h2>
+        <div class="grid">
+          <div class="card stat-card stat-card-secondary">
+            <div class="stat-value" id="stat-runtime-count">-</div>
+            <div class="stat-label">运控线路</div>
+          </div>
+        </div>
+        <div class="btn-group btn-group-spaced">
+          <button class="btn btn-primary" id="btn-refresh-stats">
+            <i class="fas fa-sync"></i> 刷新统计
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <h2><i class="fas fa-globe"></i> 使用统计</h2>
+        <div class="grid">
+          <div class="card stat-card stat-card-primary">
+            <div class="stat-value" id="stat-users">-</div>
+            <div class="stat-label">访问次数</div>
+          </div>
+          <div class="card stat-card stat-card-secondary">
+            <div class="stat-value" id="stat-unique-devices">-</div>
+            <div class="stat-label">独立设备</div>
+          </div>
+        </div>
+        <div class="field">
+          <label><i class="fas fa-globe"></i> 全球分布</label>
+          <div id="stat-by-country" class="stat-meta stat-tags">-</div>
+        </div>
+        <div class="field">
+          <label><i class="fas fa-code-branch"></i> 使用版本</label>
+          <div id="stat-by-version" class="stat-meta stat-tags">-</div>
+        </div>
+        <div class="field">
+          <label><i class="fas fa-desktop"></i> 操作系统分布</label>
+          <div id="stat-by-os" class="stat-meta stat-tags">-</div>
+        </div>
+        <div class="field">
+          <label><i class="fas fa-mobile-alt"></i> 设备统计（前10个）</label>
+          <div id="stat-by-device" class="stat-meta stat-tags">-</div>
+        </div>
+        <div class="field">
+          <label>
+            最近记录（按日期分组，已合并5分钟内重复访问）
+            <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">💡 同一设备短时间内的重复访问已自动合并</span>
+          </label>
+          <div class="table-container" id="stat-recent-container">
+            <table>
+              <thead>
+                <tr><th>国家/地区</th><th>城市</th><th>操作系统</th><th>版本</th><th>设备ID</th><th>时间（重复访问会显示次数和持续时间）</th><th>操作</th></tr>
+              </thead>
+              <tbody id="stat-recent-tbody">
+                <tr><td colspan="6" class="empty-state">暂无</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="btn-group btn-group-spaced">
+          <button class="btn btn-primary" id="btn-refresh-usage">
+            <i class="fas fa-sync"></i> 刷新使用统计
+          </button>
+          <button class="btn btn-secondary" id="btn-download-records">
+            <i class="fas fa-download"></i> 下载访问记录
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置模态框 -->
+  <div class="modal" id="settings-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>设置</h3>
+        <button class="close-btn" id="close-settings">&times;</button>
+      </div>
+      <div class="field">
+        <label for="api-base">Cloudflare Worker API 地址</label>
+        <input type="text" id="api-base" placeholder="https://metro.tanzhouxiang.dpdns.org" />
+      </div>
+      <div class="field">
+        <label for="api-token">认证 Token（可选）</label>
+        <input type="password" id="api-token" placeholder="与 CLOUD_TOKEN 一致" />
+      </div>
+      <div id="settings-check-status" class="field settings-check-status"></div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="btn-check-api">
+          <i class="fas fa-link"></i> 校验连接
+        </button>
+        <button class="btn btn-primary" id="btn-save-settings">
+          <i class="fas fa-save"></i> 保存
+        </button>
+        <button class="btn btn-secondary" id="btn-cancel-settings">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 配置管理
+    const STORAGE_KEY = 'metro_pids_admin_config';
+    
+    function loadConfig() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : { apiBase: '', token: '' };
+      } catch {
+        return { apiBase: '', token: '' };
+      }
+    }
+    
+    function saveConfig(config) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    }
+    
+    function getConfig() {
+      return {
+        apiBase: document.getElementById('api-base').value.trim(),
+        token: document.getElementById('api-token').value.trim()
+      };
+    }
+
+    /** 校验 API 连接，返回 { ok: boolean, message?: string } */
+    async function checkApiConnection() {
+      const cfg = getConfig();
+      if (!cfg.apiBase) return { ok: false, message: '请先填写 API 地址' };
+      const url = cfg.apiBase.replace(/\/+$/, '') + '/';
+      const headers = { 'Accept': 'application/json' };
+      if (cfg.token) headers['Authorization'] = 'Bearer ' + cfg.token;
+      try {
+        const res = await fetch(url, { method: 'GET', headers });
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) {}
+        if (res.ok && data && data.ok) return { ok: true };
+        const msg = (data && (data.error || data.message)) || ('HTTP ' + res.status);
+        return { ok: false, message: msg };
+      } catch (e) {
+        return { ok: false, message: e.message || '网络错误' };
+      }
+    }
+    
+    // API 调用
+    async function callApi(method, path, body = null) {
+      const config = getConfig();
+      if (!config.apiBase) {
+        throw new Error('请先设置 API 地址');
+      }
+      
+      const url = config.apiBase.replace(/\/+$/, '') + path;
+      const headers = {
+        'Accept': 'application/json'
+      };
+      
+      if (body) {
+        headers['Content-Type'] = 'application/json';
+      }
+      
+      if (config.token) {
+        headers['Authorization'] = `Bearer ${config.token}`;
+      }
+      
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+      });
+      
+      const text = await response.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+      
+      if (!response.ok) {
+        throw new Error(data.error || data.message || `HTTP ${response.status}: ${text}`);
+      }
+      
+      return data;
+    }
+    
+    // 状态显示
+    function showStatus(elementId, message, type = 'info') {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      
+      el.innerHTML = message ? `<span class="status ${type}">${message}</span>` : '';
+    }
+    
+    // 标签页切换
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabName = tab.dataset.tab;
+        
+        // 更新标签页状态
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        // 更新内容显示
+        document.querySelectorAll('.tab-content').forEach(content => {
+          content.classList.remove('active');
+        });
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+        
+        // 根据标签页自动加载数据
+        if (tabName === 'updates') {
+          // 切换到版本更新标签页时，自动加载更新日志
+          const cfg = getConfig();
+          if (cfg.apiBase && changelogList.length === 0) {
+            setTimeout(() => {
+              document.getElementById('btn-get-changelog').click();
+            }, 100);
+          } else if (!cfg.apiBase) {
+            showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
+          }
+        } else if (tabName === 'stats') {
+          // 切换到统计信息标签页时，自动刷新统计
+          const cfg = getConfig();
+          if (cfg.apiBase) {
+            setTimeout(() => {
+              document.getElementById('btn-refresh-stats').click();
+              document.getElementById('btn-refresh-usage').click();
+            }, 100);
+          } else {
+            showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
+          }
+        }
+      });
+    });
+    
+    // 设置模态框
+    const settingsModal = document.getElementById('settings-modal');
+    const config = loadConfig();
+    
+    document.getElementById('btn-settings').addEventListener('click', () => {
+      document.getElementById('api-base').value = config.apiBase || '';
+      document.getElementById('api-token').value = config.token || '';
+      document.getElementById('settings-check-status').innerHTML = '';
+      settingsModal.classList.add('active');
+    });
+    
+    document.getElementById('close-settings').addEventListener('click', () => {
+      settingsModal.classList.remove('active');
+    });
+    
+    document.getElementById('btn-cancel-settings').addEventListener('click', () => {
+      settingsModal.classList.remove('active');
+    });
+
+    document.getElementById('btn-check-api').addEventListener('click', async () => {
+      const el = document.getElementById('settings-check-status');
+      const btn = document.getElementById('btn-check-api');
+      el.innerHTML = '';
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span> 校验中...';
+      try {
+        const r = await checkApiConnection();
+        if (r.ok) {
+          el.innerHTML = '<span class="status success"><i class="fas fa-check-circle"></i> 连接成功</span>';
+        } else {
+          el.innerHTML = '<span class="status error"><i class="fas fa-times-circle"></i> ' + (r.message || '连接失败') + '</span>';
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-link"></i> 校验连接';
+      }
+    });
+
+    document.getElementById('btn-save-settings').addEventListener('click', async () => {
+      const el = document.getElementById('settings-check-status');
+      const saveBtn = document.getElementById('btn-save-settings');
+      const newConfig = getConfig();
+      el.innerHTML = '';
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<span class="loading"></span> 校验中...';
+      try {
+        const r = await checkApiConnection();
+        if (!r.ok) {
+          el.innerHTML = '<span class="status error"><i class="fas fa-times-circle"></i> ' + (r.message || '连接失败') + '，未保存</span>';
+          return;
+        }
+        el.innerHTML = '<span class="status success"><i class="fas fa-check-circle"></i> 校验通过</span>';
+        saveConfig(newConfig);
+        Object.assign(config, newConfig);
+        document.getElementById('api-base-display').textContent = config.apiBase || '未设置';
+        settingsModal.classList.remove('active');
+        alert('设置已保存！');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> 保存';
+      }
+    });
+    
+    // 运控线路功能
+    document.getElementById('btn-list-runtime').addEventListener('click', async () => {
+      const tbody = document.getElementById('runtime-tbody');
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state"><div class="loading"></div> 加载中...</td></tr>';
+      
+      try {
+        const data = await callApi('GET', '/runtime/lines');
+        const lines = data.lines || [];
+        
+        if (lines.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" class="empty-state"><i class="fas fa-inbox"></i><div>暂无数据</div></td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = lines.map(line => {
+          const lineName = line.meta?.lineName || '未知';
+          const stationCount = line.stations?.length || 0;
+          return `
+            <tr>
+              <td><strong>${lineName}</strong></td>
+              <td><span class="badge badge-info">${stationCount} 个站点</span></td>
+              <td>
+                <button class="btn btn-secondary btn-small" onclick="loadRuntimeLine('${lineName}')">
+                  <i class="fas fa-edit"></i> 编辑
+                </button>
+                <button class="btn btn-danger btn-small btn-small-spaced" onclick="deleteRuntimeLine('${lineName}')">
+                  <i class="fas fa-trash"></i> 删除
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="3" class="empty-state"><i class="fas fa-exclamation-triangle"></i><div>加载失败：${e.message}</div></td></tr>`;
+      }
+    });
+    
+    // 运控线路文件管理
+    let runtimeFiles = [];
+    
+    // 处理文件选择
+    document.getElementById('runtime-line-file-input').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      runtimeFiles = [];
+      
+      if (files.length === 0) {
+        document.getElementById('runtime-files-list').style.display = 'none';
+        return;
+      }
+      
+      // 显示已选择的文件列表
+      const filesList = document.getElementById('runtime-files-items');
+      filesList.innerHTML = '';
+      
+      for (const file of files) {
+        const li = document.createElement('li');
+        li.innerHTML = `<code>${file.name}</code>`;
+        filesList.appendChild(li);
+        
+        runtimeFiles.push(file);
+      }
+      
+      document.getElementById('runtime-files-list').style.display = 'block';
+      showStatus('runtime-status', `已选择 ${files.length} 个文件，点击"解析并上传文件"按钮处理`, 'info');
+    });
+    
+    // 解析并上传文件
+    document.getElementById('btn-parse-runtime-files').addEventListener('click', async () => {
+      if (runtimeFiles.length === 0) {
+        showStatus('runtime-status', '请先选择 JSON 文件', 'error');
+        return;
+      }
+      
+      let successCount = 0;
+      let failCount = 0;
+      const errors = [];
+      
+      showStatus('runtime-status', `正在处理 ${runtimeFiles.length} 个文件...`, 'info');
+      
+      for (const file of runtimeFiles) {
+        try {
+          const text = await file.text();
+          const json = JSON.parse(text);
+          
+          // 验证 JSON 格式
+          if (!json.meta || !json.meta.lineName) {
+            throw new Error(`文件 ${file.name} 缺少 meta.lineName 字段`);
+          }
+          
+          if (!Array.isArray(json.stations)) {
+            throw new Error(`文件 ${file.name} 缺少 stations 数组`);
+          }
+          
+          const lineName = json.meta.lineName;
+          
+          // 上传到服务器
+          await callApi('PUT', `/runtime/lines/${encodeURIComponent(lineName)}`, json);
+          successCount++;
+          
+          // 如果只有一个文件，自动填充到预览区域
+          if (runtimeFiles.length === 1) {
+            document.getElementById('runtime-line-name').value = lineName;
+            document.getElementById('runtime-line-json').value = JSON.stringify(json, null, 2);
+          }
+        } catch (e) {
+          failCount++;
+          errors.push(`${file.name}: ${e.message}`);
+          console.error(`处理文件 ${file.name} 失败:`, e);
+        }
+      }
+      
+      // 显示结果
+      if (failCount === 0) {
+        showStatus('runtime-status', `✅ 成功上传 ${successCount} 条运控线路！`, 'success');
+        // 清空文件选择
+        document.getElementById('runtime-line-file-input').value = '';
+        document.getElementById('runtime-files-list').style.display = 'none';
+        runtimeFiles = [];
+        // 刷新列表
+        document.getElementById('btn-list-runtime').click();
+      } else {
+        const errorMsg = errors.join('; ');
+        showStatus('runtime-status', `⚠️ 成功 ${successCount} 条，失败 ${failCount} 条。错误：${errorMsg}`, 'warn');
+      }
+    });
+    
+    window.loadRuntimeLine = async (lineName) => {
+      document.getElementById('runtime-line-name').value = lineName;
+      document.querySelector('.tab[data-tab="runtime"]').click();
+      
+      try {
+        const data = await callApi('GET', `/runtime/lines/${encodeURIComponent(lineName)}`);
+        document.getElementById('runtime-line-json').value = JSON.stringify(data.line || data, null, 2);
+        showStatus('runtime-status', '下载成功', 'success');
+      } catch (e) {
+        showStatus('runtime-status', `下载失败：${e.message}`, 'error');
+      }
+    };
+
+    window.deleteRuntimeLine = async (lineName) => {
+      if (!confirm(`确定要删除运控线路 "${lineName}" 吗？此操作不可恢复！`)) {
+        return;
+      }
+      try {
+        await callApi('DELETE', `/runtime/lines/${encodeURIComponent(lineName)}`);
+        showStatus('runtime-status', '删除成功', 'success');
+        document.getElementById('btn-list-runtime').click();
+      } catch (e) {
+        showStatus('runtime-status', `删除失败：${e.message}`, 'error');
+      }
+    };
+    
+    document.getElementById('btn-get-runtime').addEventListener('click', async () => {
+      const lineName = document.getElementById('runtime-line-name').value.trim();
+      if (!lineName) {
+        showStatus('runtime-status', '请先填写线路名称', 'error');
+        return;
+      }
+      
+      try {
+        const data = await callApi('GET', `/runtime/lines/${encodeURIComponent(lineName)}`);
+        document.getElementById('runtime-line-json').value = JSON.stringify(data.line || data, null, 2);
+        showStatus('runtime-status', '下载成功', 'success');
+      } catch (e) {
+        showStatus('runtime-status', `下载失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 手动上传（从 JSON 文本框）
+    document.getElementById('runtime-line-json').addEventListener('change', () => {
+      // 如果 JSON 文本框有内容，尝试自动提取线路名称
+      const jsonText = document.getElementById('runtime-line-json').value.trim();
+      if (jsonText && !document.getElementById('runtime-line-name').value.trim()) {
+        try {
+          const json = JSON.parse(jsonText);
+          if (json.meta && json.meta.lineName) {
+            document.getElementById('runtime-line-name').value = json.meta.lineName;
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
+      }
+    });
+    
+    // 添加手动上传按钮（可选，用于编辑已有线路）
+    const manualUploadBtn = document.createElement('button');
+    manualUploadBtn.className = 'btn btn-primary';
+    manualUploadBtn.innerHTML = '<i class="fas fa-upload"></i> 手动上传（从文本框）';
+    manualUploadBtn.style.marginTop = '8px';
+    manualUploadBtn.addEventListener('click', async () => {
+      const lineName = document.getElementById('runtime-line-name').value.trim();
+      const jsonText = document.getElementById('runtime-line-json').value.trim();
+      
+      if (!lineName || !jsonText) {
+        showStatus('runtime-status', '请填写线路名称和 JSON 数据', 'error');
+        return;
+      }
+      
+      try {
+        const json = JSON.parse(jsonText);
+        if (!json.meta) json.meta = {};
+        json.meta.lineName = lineName;
+        
+        await callApi('PUT', `/runtime/lines/${encodeURIComponent(lineName)}`, json);
+        showStatus('runtime-status', '上传成功', 'success');
+        document.getElementById('btn-list-runtime').click();
+      } catch (e) {
+        showStatus('runtime-status', `上传失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 将手动上传按钮插入到 JSON 文本框下方
+    const runtimeJsonField = document.getElementById('runtime-line-json').parentElement;
+    runtimeJsonField.appendChild(manualUploadBtn);
+    
+    document.getElementById('btn-del-runtime').addEventListener('click', async () => {
+      const lineName = document.getElementById('runtime-line-name').value.trim();
+      if (!lineName) {
+        showStatus('runtime-status', '请先填写线路名称', 'error');
+        return;
+      }
+      
+      if (!confirm(`确定要删除运控线路 "${lineName}" 吗？此操作不可恢复！`)) {
+        return;
+      }
+      
+      try {
+        await callApi('DELETE', `/runtime/lines/${encodeURIComponent(lineName)}`);
+        showStatus('runtime-status', '删除成功', 'success');
+        document.getElementById('runtime-line-name').value = '';
+        document.getElementById('runtime-line-json').value = '';
+        document.getElementById('btn-list-runtime').click();
+      } catch (e) {
+        showStatus('runtime-status', `删除失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 彩蛋配置
+    document.getElementById('btn-get-easter-eggs').addEventListener('click', async () => {
+      try {
+        const data = await callApi('GET', '/easter-eggs');
+        document.getElementById('easter-eggs-json').value = JSON.stringify(data.config || data, null, 2);
+        showStatus('easter-eggs-status', '下载成功', 'success');
+      } catch (e) {
+        showStatus('easter-eggs-status', `下载失败：${e.message}`, 'error');
+      }
+    });
+    
+    document.getElementById('btn-put-easter-eggs').addEventListener('click', async () => {
+      const jsonText = document.getElementById('easter-eggs-json').value.trim();
+      if (!jsonText) {
+        showStatus('easter-eggs-status', '请填写配置 JSON', 'error');
+        return;
+      }
+      
+      try {
+        const json = JSON.parse(jsonText);
+        await callApi('PUT', '/easter-eggs', json);
+        showStatus('easter-eggs-status', '上传成功', 'success');
+      } catch (e) {
+        showStatus('easter-eggs-status', `上传失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 更新当前日期显示
+    function updateCurrentDate() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+      const weekday = weekdays[now.getDay()];
+      const time = now.toLocaleTimeString('zh-CN', { hour12: false });
+      document.getElementById('current-date-display').textContent = 
+        `${year}年${month}月${day}日（星期${weekday}） ${time} | 月份：${month}，日期：${day}`;
+    }
+    updateCurrentDate();
+    setInterval(updateCurrentDate, 1000);
+
+    // 节日配置
+    document.getElementById('btn-get-holidays').addEventListener('click', async () => {
+      try {
+        const data = await callApi('GET', '/holidays');
+        document.getElementById('holidays-json').value = JSON.stringify(data.config || data, null, 2);
+        showStatus('holidays-status', '下载成功', 'success');
+      } catch (e) {
+        showStatus('holidays-status', `下载失败：${e.message}`, 'error');
+      }
+    });
+    
+    document.getElementById('btn-put-holidays').addEventListener('click', async () => {
+      const jsonText = document.getElementById('holidays-json').value.trim();
+      if (!jsonText) {
+        showStatus('holidays-status', '请填写配置 JSON', 'error');
+        return;
+      }
+      
+      try {
+        const json = JSON.parse(jsonText);
+        await callApi('PUT', '/holidays', json);
+        showStatus('holidays-status', '上传成功', 'success');
+      } catch (e) {
+        showStatus('holidays-status', `上传失败：${e.message}`, 'error');
+      }
+    });
+    
+    document.getElementById('btn-get-active-holidays').addEventListener('click', async () => {
+      try {
+        const data = await callApi('GET', '/holidays/active');
+        const active = data.active || [];
+        if (active.length === 0) {
+          alert('当前没有激活的节日');
+        } else {
+          alert('当前激活的节日：\n' + JSON.stringify(active, null, 2));
+        }
+        showStatus('holidays-status', '查询成功', 'success');
+      } catch (e) {
+        showStatus('holidays-status', `查询失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 版本更新管理（简化版：只保留强制更新设置）
+    
+    // 获取版本信息（用于显示和设置强制更新）
+    document.getElementById('btn-get-update-info').addEventListener('click', async () => {
+      const platform = document.getElementById('update-platform-select').value;
+      const [plat, arch] = platform.split(':');
+      
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        showStatus('update-info-status', '请先配置 API 地址', 'error');
+        return;
+      }
+      
+      try {
+        showStatus('update-info-status', '正在加载版本信息...', 'info');
+        // 从 Worker API 获取版本信息
+        const checkUrl = `${cfg.apiBase}/update/check?platform=${plat}&arch=${arch}`;
+        const res = await fetch(checkUrl, {
+          headers: { 'Accept': 'application/json' }
+        });
+        const data = await res.json();
+        
+        if (data.ok && data.updateInfo) {
+          document.getElementById('update-info-json').value = JSON.stringify(data.updateInfo, null, 2);
+          
+          // 自动填充强制更新设置
+          if (data.updateInfo.minimumVersion) {
+            document.getElementById('update-minimum-version').value = data.updateInfo.minimumVersion;
+          } else {
+            document.getElementById('update-minimum-version').value = '';
+          }
+          document.getElementById('update-force-update').checked = data.updateInfo.forceUpdate === true;
+          
+          // 如果更新日志已加载，确保最低版本下拉菜单包含当前版本信息中的 minimumVersion（如果存在）
+          if (data.updateInfo.minimumVersion && changelogList.length > 0) {
+            updateMinimumVersionSelect();
+            // 恢复选择的值
+            if (data.updateInfo.minimumVersion) {
+              document.getElementById('update-minimum-version').value = data.updateInfo.minimumVersion;
+            }
+          }
+          
+          showStatus('update-info-status', '✅ 版本信息加载成功', 'success');
+        } else {
+          document.getElementById('update-info-json').value = '暂无版本信息（版本信息会自动从 GitHub Releases 同步）';
+          showStatus('update-info-status', '⚠️ 暂无版本信息，请先发布 GitHub Release', 'warn');
+        }
+      } catch (e) {
+        showStatus('update-info-status', `加载失败：${e.message}`, 'error');
+        console.error('加载版本信息失败:', e);
+      }
+    });
+
+    // 从 GitHub 同步版本信息
+    document.getElementById('btn-sync-from-github').addEventListener('click', async () => {
+      const platform = document.getElementById('update-platform-select').value;
+      const [plat, arch] = platform.split(':');
+      
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        showStatus('update-info-status', '请先配置 API 地址', 'error');
+        return;
+      }
+      
+      try {
+        showStatus('update-info-status', '正在从 GitHub 同步版本信息...', 'info');
+        
+        // 调用同步 API（强制同步，忽略节流）
+        // 使用 callApi 函数以确保认证 token 被正确传递
+        const data = await callApi('POST', `/update/sync/github?platform=${plat}&arch=${arch}`);
+        
+        if (!data.ok) {
+          throw new Error(data.error || '同步失败');
+        }
+        
+        // 同步成功后，自动刷新版本信息显示
+        showStatus('update-info-status', '✅ 已从 GitHub 同步成功，正在刷新...', 'success');
+        
+        // 延迟一下再刷新，确保 KV 已更新
+        setTimeout(async () => {
+          try {
+            const checkUrl = `${cfg.apiBase}/update/check?platform=${plat}&arch=${arch}&noCache=1`;
+            const checkRes = await fetch(checkUrl, {
+              headers: { 'Accept': 'application/json' }
+            });
+            const checkData = await checkRes.json();
+            
+            if (checkData.ok && checkData.updateInfo) {
+              document.getElementById('update-info-json').value = JSON.stringify(checkData.updateInfo, null, 2);
+              
+              // 自动填充强制更新设置
+              if (checkData.updateInfo.minimumVersion) {
+                document.getElementById('update-minimum-version').value = checkData.updateInfo.minimumVersion;
+              } else {
+                document.getElementById('update-minimum-version').value = '';
+              }
+              document.getElementById('update-force-update').checked = checkData.updateInfo.forceUpdate === true;
+              
+              showStatus('update-info-status', `✅ 同步成功！当前版本: ${checkData.updateInfo.version}`, 'success');
+            } else {
+              showStatus('update-info-status', '⚠️ 同步完成，但无法获取版本信息', 'warn');
+            }
+          } catch (e) {
+            showStatus('update-info-status', `同步成功，但刷新失败：${e.message}`, 'warn');
+          }
+        }, 500);
+        
+      } catch (e) {
+        showStatus('update-info-status', `同步失败：${e.message}`, 'error');
+        console.error('从 GitHub 同步失败:', e);
+      }
+    });
+
+    // 应用强制更新设置（只更新强制更新相关字段，不覆盖其他版本信息）
+    document.getElementById('btn-apply-force-update').addEventListener('click', async () => {
+      const platform = document.getElementById('update-platform-select').value;
+      const [plat, arch] = platform.split(':');
+      const minimumVersion = document.getElementById('update-minimum-version').value;
+      const forceUpdate = document.getElementById('update-force-update').checked;
+      
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        showStatus('update-info-status', '请先配置 API 地址', 'error');
+        return;
+      }
+      
+      try {
+        showStatus('update-info-status', '正在应用强制更新设置...', 'info');
+        
+        // 先获取当前版本信息
+        const checkUrl = `${cfg.apiBase}/update/check?platform=${plat}&arch=${arch}`;
+        const res = await fetch(checkUrl, {
+          headers: { 'Accept': 'application/json' }
+        });
+        const data = await res.json();
+        
+        if (!data.ok || !data.updateInfo) {
+          showStatus('update-info-status', '❌ 无法获取当前版本信息，请先发布 GitHub Release', 'error');
+          return;
+        }
+        
+        // 合并强制更新设置到现有版本信息
+        const updateInfo = {
+          ...data.updateInfo,
+          minimumVersion: minimumVersion || undefined,
+          forceUpdate: forceUpdate || undefined
+        };
+        
+        // 如果取消最低版本要求，删除该字段
+        if (!minimumVersion && updateInfo.minimumVersion) {
+          delete updateInfo.minimumVersion;
+        }
+        // 如果取消强制更新，删除该字段
+        if (!forceUpdate && updateInfo.forceUpdate) {
+          delete updateInfo.forceUpdate;
+        }
+        
+        // 上传更新后的版本信息
+        await callApi('PUT', `/update/info?platform=${plat}&arch=${arch}`, updateInfo);
+        
+        // 刷新显示
+        document.getElementById('update-info-json').value = JSON.stringify(updateInfo, null, 2);
+        showStatus('update-info-status', '✅ 强制更新设置已应用成功！', 'success');
+      } catch (e) {
+        showStatus('update-info-status', `应用失败：${e.message}`, 'error');
+        console.error('应用强制更新设置失败:', e);
+      }
+    });
+    
+
+    // 更新日志管理（列表模式）
+    let changelogList = [];
+    let editingIndex = -1;
+    const changelogModal = document.getElementById('changelog-edit-modal');
+    
+    // 更新最低版本下拉菜单
+    function updateMinimumVersionSelect() {
+      const select = document.getElementById('update-minimum-version');
+      const currentValue = select.value;
+      
+      // 清空现有选项（保留第一个"不设置"选项）
+      select.innerHTML = '<option value="">不设置最低版本要求</option>';
+      
+      // 从更新日志列表中提取版本号
+      const versions = changelogList.map(c => c.version).filter(v => v);
+      
+      // 按版本号排序（从高到低）
+      versions.sort((a, b) => {
+        const aParts = a.split('.').map(Number);
+        const bParts = b.split('.').map(Number);
+        for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+          const aVal = aParts[i] || 0;
+          const bVal = bParts[i] || 0;
+          if (bVal !== aVal) return bVal - aVal;
+        }
+        return 0;
+      });
+      
+      // 添加版本选项
+      versions.forEach(version => {
+        const option = document.createElement('option');
+        option.value = version;
+        option.textContent = `v${version}`;
+        select.appendChild(option);
+      });
+      
+      // 恢复之前选择的值（如果还存在）
+      if (currentValue && versions.includes(currentValue)) {
+        select.value = currentValue;
+      }
+    }
+    
+    // 从文件名提取版本号
+    function extractVersionFromFilename(filename) {
+      const patterns = [
+        /(?:CHANGELOG|changelog)[-_]?v?(\d+\.\d+\.\d+(?:[-.]\w+)?)/i,
+        /v?(\d+\.\d+\.\d+(?:[-.]\w+)?)\.md$/i,
+        /(\d+\.\d+\.\d+(?:[-.]\w+)?)\.md$/i
+      ];
+      
+      for (const pattern of patterns) {
+        const match = filename.match(pattern);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+      return null;
+    }
+    
+    // 从 Markdown 内容提取标题
+    function extractTitleFromMarkdown(content) {
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('# ')) {
+          return trimmed.substring(2).trim();
+        } else if (trimmed.startsWith('## ')) {
+          return trimmed.substring(3).trim();
+        }
+      }
+      return null;
+    }
+    
+    // 渲染更新日志列表
+    function renderChangelogList() {
+      const container = document.getElementById('changelog-list');
+      const empty = document.getElementById('changelog-list-empty');
+      
+      if (changelogList.length === 0) {
+        container.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+      
+      empty.style.display = 'none';
+      container.style.display = 'block';
+      container.innerHTML = '';
+      
+      // 按版本号排序（最新的在前）
+      const sorted = [...changelogList].sort((a, b) => {
+        const aParts = a.version.split('.').map(Number);
+        const bParts = b.version.split('.').map(Number);
+        for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+          const aVal = aParts[i] || 0;
+          const bVal = bParts[i] || 0;
+          if (bVal !== aVal) return bVal - aVal;
+        }
+        return new Date(b.releaseDate) - new Date(a.releaseDate);
+      });
+      
+      sorted.forEach((item, index) => {
+        const actualIndex = changelogList.indexOf(item);
+        const releaseDate = new Date(item.releaseDate).toLocaleString('zh-CN');
+        const contentPreview = item.content.substring(0, 100).replace(/\n/g, ' ').trim() + (item.content.length > 100 ? '...' : '');
+        
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '12px';
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:start;">
+            <div style="flex:1;">
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+                <h3 style="margin:0; font-size:18px;">
+                  ${item.prerelease ? '<span style="background:#ff9800; color:white; padding:2px 8px; border-radius:4px; font-size:12px; margin-right:8px;">预发布</span>' : ''}
+                  <span style="color:#667eea;">${item.title || `版本 ${item.version}`}</span>
+                </h3>
+                <code style="background:#f0f0f0; padding:2px 8px; border-radius:4px; font-size:12px;">v${item.version}</code>
+              </div>
+              <div style="color:#666; font-size:13px; margin-bottom:8px;">
+                <i class="fas fa-calendar"></i> ${releaseDate}
+              </div>
+              <div style="color:#888; font-size:12px; line-height:1.5; max-height:60px; overflow:hidden;">
+                ${contentPreview}
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; margin-left:16px;">
+              <button class="btn btn-sm btn-secondary" onclick="editChangelog(${actualIndex})">
+                <i class="fas fa-edit"></i> 编辑
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="deleteChangelog(${actualIndex})">
+                <i class="fas fa-trash"></i> 删除
+              </button>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+    
+    // 编辑更新日志
+    window.editChangelog = function(index) {
+      editingIndex = index;
+      const item = changelogList[index];
+      
+      document.getElementById('changelog-modal-title').textContent = '编辑更新日志';
+      document.getElementById('changelog-edit-version').value = item.version;
+      document.getElementById('changelog-edit-title').value = item.title || '';
+      document.getElementById('changelog-edit-content').value = item.content;
+      document.getElementById('changelog-edit-prerelease').checked = item.prerelease || false;
+      
+      // 设置发布日期
+      const date = new Date(item.releaseDate);
+      const dateStr = date.toISOString().slice(0, 16);
+      document.getElementById('changelog-edit-releasedate').value = dateStr;
+      
+      // 清空文件输入
+      document.getElementById('changelog-edit-md-file').value = '';
+      
+      changelogModal.classList.add('active');
+    };
+    
+    // 删除更新日志
+    window.deleteChangelog = function(index) {
+      if (confirm(`确定要删除版本 ${changelogList[index].version} 的更新日志吗？`)) {
+        changelogList.splice(index, 1);
+        renderChangelogList();
+        updateMinimumVersionSelect(); // 更新最低版本下拉菜单
+        showStatus('changelog-status', '已删除', 'success');
+      }
+    };
+    
+    // 打开添加模态框
+    document.getElementById('btn-add-changelog-version').addEventListener('click', () => {
+      editingIndex = -1;
+      document.getElementById('changelog-modal-title').textContent = '添加更新日志';
+      document.getElementById('changelog-edit-version').value = '';
+      document.getElementById('changelog-edit-title').value = '';
+      document.getElementById('changelog-edit-content').value = '';
+      document.getElementById('changelog-edit-releasedate').value = '';
+      document.getElementById('changelog-edit-prerelease').checked = false;
+      document.getElementById('changelog-edit-md-file').value = '';
+      changelogModal.classList.add('active');
+    });
+    
+    // 关闭模态框
+    document.getElementById('changelog-modal-close').addEventListener('click', () => {
+      changelogModal.classList.remove('active');
+    });
+    
+    document.getElementById('changelog-modal-cancel').addEventListener('click', () => {
+      changelogModal.classList.remove('active');
+    });
+    
+    // 处理 Markdown 文件上传
+    document.getElementById('changelog-edit-md-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      try {
+        const content = await file.text();
+        const version = extractVersionFromFilename(file.name);
+        const title = extractTitleFromMarkdown(content);
+        
+        if (version) {
+          document.getElementById('changelog-edit-version').value = version;
+        }
+        if (title) {
+          document.getElementById('changelog-edit-title').value = title;
+        }
+        document.getElementById('changelog-edit-content').value = content.trim();
+        
+        showStatus('changelog-status', 'Markdown 文件已加载', 'success');
+      } catch (e) {
+        showStatus('changelog-status', `读取文件失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 保存更新日志条目
+    document.getElementById('changelog-modal-save').addEventListener('click', () => {
+      const version = document.getElementById('changelog-edit-version').value.trim();
+      const title = document.getElementById('changelog-edit-title').value.trim();
+      const content = document.getElementById('changelog-edit-content').value.trim();
+      const releaseDate = document.getElementById('changelog-edit-releasedate').value;
+      const prerelease = document.getElementById('changelog-edit-prerelease').checked;
+      
+      if (!version) {
+        showStatus('changelog-status', '请填写版本号', 'error');
+        return;
+      }
+      
+      if (!content) {
+        showStatus('changelog-status', '请填写更新内容', 'error');
+        return;
+      }
+      
+      // 检查版本号是否重复（编辑时排除自己）
+      if (editingIndex === -1) {
+        const exists = changelogList.findIndex(c => c.version === version);
+        if (exists >= 0) {
+          if (!confirm(`版本 ${version} 已存在，是否要覆盖？`)) {
+            return;
+          }
+          changelogList[exists] = {
+            version,
+            title: title || `版本 ${version}`,
+            content,
+            releaseDate: releaseDate ? new Date(releaseDate).toISOString() : new Date().toISOString(),
+            prerelease
+          };
+        } else {
+          changelogList.unshift({
+            version,
+            title: title || `版本 ${version}`,
+            content,
+            releaseDate: releaseDate ? new Date(releaseDate).toISOString() : new Date().toISOString(),
+            prerelease
+          });
+        }
+      } else {
+        changelogList[editingIndex] = {
+          version,
+          title: title || `版本 ${version}`,
+          content,
+          releaseDate: releaseDate ? new Date(releaseDate).toISOString() : changelogList[editingIndex].releaseDate,
+          prerelease
+        };
+      }
+      
+      renderChangelogList();
+      updateMinimumVersionSelect(); // 更新最低版本下拉菜单
+      changelogModal.classList.remove('active');
+      showStatus('changelog-status', editingIndex === -1 ? '已添加' : '已更新', 'success');
+    });
+    
+    // 从服务器加载
+    document.getElementById('btn-get-changelog').addEventListener('click', async () => {
+      try {
+        showStatus('changelog-status', '正在加载...', 'info');
+        const cfg = getConfig();
+        if (!cfg.apiBase) {
+          showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
+          return;
+        }
+        // 约定：GET ${apiBase}/update/changelog?force=1，从服务器（Worker 代理 GitHub）拉取 { changelog }
+        const data = await callApi('GET', '/update/changelog?force=1');
+        changelogList = data.changelog || [];
+        renderChangelogList();
+        updateMinimumVersionSelect(); // 更新最低版本下拉菜单
+        showStatus('changelog-status', `已加载 ${changelogList.length} 条更新日志`, 'success');
+      } catch (e) {
+        console.error('加载更新日志失败:', e);
+        showStatus('changelog-status', `加载失败：${e.message}`, 'error');
+      }
+    });
+
+    // 从 GitHub 同步更新日志
+    document.getElementById('btn-sync-changelog-from-github').addEventListener('click', async () => {
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        showStatus('changelog-status', '请先配置 API 地址', 'error');
+        return;
+      }
+      
+      try {
+        showStatus('changelog-status', '正在从 GitHub 同步更新日志...', 'info');
+        
+        // 调用同步 API（强制同步，忽略节流）
+        const data = await callApi('POST', '/update/changelog/sync/github');
+        
+        if (!data.ok) {
+          throw new Error(data.error || '同步失败');
+        }
+        
+        showStatus('changelog-status', '✅ 已从 GitHub 同步成功，正在刷新...', 'success');
+        
+        // 延迟一下再刷新，确保 KV 已更新
+        setTimeout(async () => {
+          try {
+            const loadData = await callApi('GET', '/update/changelog?force=1');
+            changelogList = loadData.changelog || [];
+            renderChangelogList();
+            updateMinimumVersionSelect();
+            
+            if (changelogList.length > 0) {
+              const latestVersion = changelogList[0]?.version || 'unknown';
+              showStatus('changelog-status', `✅ 同步成功！最新版本: ${latestVersion}，共 ${changelogList.length} 条更新日志`, 'success');
+            } else {
+              showStatus('changelog-status', '⚠️ 同步完成，但暂无更新日志', 'warn');
+            }
+          } catch (e) {
+            showStatus('changelog-status', `同步成功，但刷新失败：${e.message}`, 'warn');
+          }
+        }, 500);
+        
+      } catch (e) {
+        showStatus('changelog-status', `同步失败：${e.message}`, 'error');
+        console.error('从 GitHub 同步更新日志失败:', e);
+      }
+    });
+
+    // 保存所有更改
+    document.getElementById('btn-put-changelog').addEventListener('click', async () => {
+      if (changelogList.length === 0) {
+        showStatus('changelog-status', '没有更新日志可保存', 'warn');
+        return;
+      }
+      
+      try {
+        showStatus('changelog-status', '正在保存...', 'info');
+        await callApi('PUT', '/update/changelog', { changelog: changelogList });
+        showStatus('changelog-status', `✅ 保存成功！共 ${changelogList.length} 条更新日志`, 'success');
+      } catch (e) {
+        showStatus('changelog-status', `保存失败：${e.message}`, 'error');
+      }
+    });
+    
+    // 统计信息
+    document.getElementById('btn-refresh-stats').addEventListener('click', async () => {
+      try {
+        const runtimeData = await callApi('GET', '/runtime/lines').catch(() => ({ lines: [] }));
+        document.getElementById('stat-runtime-count').textContent = (runtimeData.lines || []).length;
+      } catch (e) {
+        console.error('刷新统计失败:', e);
+      }
+    });
+
+    // 使用统计：访问次数、全球分布、使用版本、设备统计、最近记录
+    document.getElementById('btn-refresh-usage').addEventListener('click', async () => {
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
+        document.getElementById('stat-users').textContent = '-';
+        document.getElementById('stat-unique-devices').textContent = '-';
+        document.getElementById('stat-by-country').textContent = '请配置 API 地址';
+        document.getElementById('stat-by-version').textContent = '-';
+        document.getElementById('stat-by-os').textContent = '-';
+        document.getElementById('stat-by-device').textContent = '-';
+        document.getElementById('stat-recent-tbody').innerHTML = '<tr><td colspan="7" class="empty-state">请先配置 API 地址</td></tr>';
+        return;
+      }
+      try {
+        showStatus('changelog-status', '正在加载使用统计...', 'info');
+        const data = await callApi('GET', '/stats');
+        document.getElementById('stat-users').textContent = (data.total || 0);
+        document.getElementById('stat-unique-devices').textContent = (data.uniqueDevices || 0);
+        // 美化全球分布显示
+        const byC = data.byCountry || {};
+        const countryElement = document.getElementById('stat-by-country');
+        if (Object.keys(byC).length) {
+          const sortedCountries = Object.entries(byC).sort((a, b) => b[1] - a[1]);
+          const totalCountry = sortedCountries.reduce((sum, [, v]) => sum + v, 0);
+          countryElement.innerHTML = sortedCountries.map(([k, v]) => {
+            const percent = ((v / totalCountry) * 100).toFixed(1);
+            const flag = getCountryFlag(k);
+            return `<span class="stat-tag stat-tag-country" title="${k}: ${v} 次访问 (${percent}%)">
+              ${flag} <strong>${k}</strong> <span class="stat-value">${v}</span>
+            </span>`;
+          }).join('');
+        } else {
+          countryElement.textContent = '-';
+        }
+        
+        // 美化使用版本显示
+        const byV = data.byVersion || {};
+        const versionElement = document.getElementById('stat-by-version');
+        if (Object.keys(byV).length) {
+          const sortedVersions = Object.entries(byV).sort((a, b) => b[1] - a[1]);
+          const totalVersion = sortedVersions.reduce((sum, [, v]) => sum + v, 0);
+          versionElement.innerHTML = sortedVersions.map(([k, v]) => {
+            const percent = ((v / totalVersion) * 100).toFixed(1);
+            const isAdmin = k.toLowerCase() === 'admin';
+            const tagClass = isAdmin ? 'stat-tag-admin' : 'stat-tag-version';
+            const icon = isAdmin ? '👤' : '📦';
+            return `<span class="stat-tag ${tagClass}" title="版本 ${k}: ${v} 次访问 (${percent}%)">
+              ${icon} <strong>${k}</strong> <span class="stat-value">${v}</span>
+            </span>`;
+          }).join('');
+        } else {
+          versionElement.textContent = '-';
+        }
+        
+        // 美化操作系统分布显示
+        const byOS = data.byOS || {};
+        const osElement = document.getElementById('stat-by-os');
+        if (Object.keys(byOS).length) {
+          const sortedOS = Object.entries(byOS).sort((a, b) => b[1] - a[1]);
+          const totalOS = sortedOS.reduce((sum, [, v]) => sum + v, 0);
+          osElement.innerHTML = sortedOS.map(([k, v]) => {
+            const percent = ((v / totalOS) * 100).toFixed(1);
+            const osIcon = getOSIconForStat(k);
+            return `<span class="stat-tag stat-tag-os" title="${k}: ${v} 次访问 (${percent}%)">
+              ${osIcon} <strong>${k}</strong> <span class="stat-value">${v}</span>
+            </span>`;
+          }).join('');
+        } else {
+          osElement.textContent = '-';
+        }
+        
+        // 美化设备统计显示
+        const byD = data.byDevice || {};
+        const deviceElement = document.getElementById('stat-by-device');
+        const deviceEntries = Object.entries(byD)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10);
+        if (deviceEntries.length) {
+          const totalDevice = deviceEntries.reduce((sum, [, v]) => sum + v, 0);
+          deviceElement.innerHTML = deviceEntries.map(([k, v], idx) => {
+            const percent = ((v / totalDevice) * 100).toFixed(1);
+            const shortId = k.length > 12 ? k.substring(0, 12) + '...' : k;
+            const rankIcon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '📱';
+            const isUnknown = k === 'unknown';
+            const tagClass = isUnknown ? 'stat-tag-device-unknown' : 'stat-tag-device';
+            return `<span class="stat-tag ${tagClass}" title="设备 ${k}: ${v} 次访问 (${percent}%)">
+              ${rankIcon} <code>${shortId}</code> <span class="stat-value">${v}次</span>
+            </span>`;
+          }).join('');
+        } else {
+          deviceElement.textContent = '-';
+        }
+        const allRecords = data.all || data.recent || [];
+        const tbody = document.getElementById('stat-recent-tbody');
+        if (allRecords.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无</td></tr>';
+        } else {
+          // 按日期分组
+          const today = new Date();
+          const todayStr = today.toISOString().split('T')[0];
+          const groups = {};
+          allRecords.forEach(r => {
+            const date = r.ts ? new Date(r.ts).toISOString().split('T')[0] : 'unknown';
+            if (!groups[date]) groups[date] = [];
+            groups[date].push(r);
+          });
+          
+          // 按日期排序（最新的在前）
+          const sortedDates = Object.keys(groups).sort((a, b) => {
+            if (a === 'unknown') return 1;
+            if (b === 'unknown') return -1;
+            return b.localeCompare(a);
+          });
+          
+          let html = '';
+          sortedDates.forEach(date => {
+            const records = groups[date];
+            const isToday = date === todayStr;
+            const dateLabel = date === 'unknown' ? '未知日期' : date;
+            const dateDisplay = date === 'unknown' ? '未知日期' : 
+              new Date(date + 'T00:00:00').toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+            
+            // 该日期的记录行 - 合并同一设备短时间内的重复访问（先合并，再使用）
+            const mergedRecords = mergeRepeatedVisits(records, 5 * 60 * 1000); // 5分钟时间窗口
+            
+            // 日期分组标题行
+            const totalVisits = records.length;
+            const mergedCount = mergedRecords.length;
+            html += `<tr class="date-group-header ${isToday ? '' : 'collapsed'}" data-date="${date}">
+              <td colspan="7" style="padding: 8px 12px;">
+                <span class="toggle-icon">▼</span>
+                <strong>${dateDisplay}</strong> 
+                <span style="color: #999; font-weight: normal;">
+                  (${mergedCount} 组设备，共 ${totalVisits} 次访问${totalVisits > mergedCount ? '，已合并 ' + (totalVisits - mergedCount) + ' 条重复' : ''})
+                </span>
+              </td>
+            </tr>`;
+            
+            mergedRecords.forEach(item => {
+              const deviceId = item.deviceId || 'unknown';
+              const deviceShort = deviceId.length > 12 ? deviceId.substring(0, 12) + '...' : deviceId;
+              
+              // 构建时间显示
+              let timeDisplay;
+              if (item.count > 1) {
+                const firstTime = new Date(item.firstTime).toLocaleTimeString('zh-CN');
+                const duration = Math.floor((item.lastTime - item.firstTime) / 1000);
+                const durationStr = duration < 60 ? `${duration}秒` : 
+                  duration < 3600 ? `${Math.floor(duration / 60)}分钟` : 
+                  `${Math.floor(duration / 3600)}小时`;
+                timeDisplay = `${firstTime} <span style="color:#666; font-size:11px;">(${item.count}次, 持续${durationStr})</span>`;
+              } else {
+                timeDisplay = new Date(item.firstTime).toLocaleTimeString('zh-CN');
+              }
+              
+              // 重复访问超过3次的行用黄色背景高亮
+              const highlightStyle = item.count > 3 ? 'background:#fff3cd;' : '';
+              
+              // 获取操作系统图标
+              const osIcon = getOSIcon(item.os);
+              
+              // 删除按钮：如果 count > 1（合并记录），显示批量删除；否则显示单条删除
+              let deleteButton = '';
+              if (item.recordIds && item.recordIds.length > 0) {
+                if (item.count > 1) {
+                  // 合并记录：显示批量删除按钮（删除该设备的所有记录）
+                  deleteButton = `<button class="btn btn-sm btn-danger" onclick="deleteStatRecordsByDevice('${deviceId}')" title="删除该设备的所有 ${item.count} 条记录">
+                    <i class="fas fa-trash"></i> 删除全部
+                  </button>`;
+                } else if (item.recordIds.length === 1) {
+                  // 单条记录：显示单条删除按钮
+                  deleteButton = `<button class="btn btn-sm btn-danger" onclick="deleteStatRecord('${item.recordIds[0]}')" title="删除此记录">
+                    <i class="fas fa-trash"></i>
+                  </button>`;
+                }
+              }
+              
+              html += `<tr class="date-group-rows ${isToday ? '' : 'collapsed'}" data-date="${date}" style="${highlightStyle}">
+                <td>${item.country || '-'}</td>
+                <td>${item.city || '-'}</td>
+                <td>${osIcon} ${item.os || 'Unknown'}</td>
+                <td>${item.version || '-'}</td>
+                <td title="${deviceId}">${deviceShort}</td>
+                <td>${timeDisplay}</td>
+                <td>${deleteButton || '-'}</td>
+              </tr>`;
+            });
+          });
+          
+          tbody.innerHTML = html;
+          
+          // 绑定点击事件
+          document.querySelectorAll('.date-group-header').forEach(header => {
+            header.addEventListener('click', function() {
+              const date = this.dataset.date;
+              const isCollapsed = this.classList.contains('collapsed');
+              this.classList.toggle('collapsed');
+              document.querySelectorAll(`tr.date-group-rows[data-date="${date}"]`).forEach(row => {
+                row.classList.toggle('collapsed');
+              });
+            });
+          });
+          
+          // 保存 allRecords 到全局变量供下载使用
+          window.allRecords = allRecords;
+        }
+        showStatus('changelog-status', '使用统计加载成功', 'success');
+      } catch (e) {
+        console.error('加载使用统计失败:', e);
+        showStatus('changelog-status', `加载使用统计失败：${e.message}`, 'error');
+        document.getElementById('stat-users').textContent = '-';
+        document.getElementById('stat-unique-devices').textContent = '-';
+        document.getElementById('stat-by-country').textContent = '加载失败';
+        document.getElementById('stat-by-version').textContent = '-';
+        document.getElementById('stat-by-os').textContent = '-';
+        document.getElementById('stat-by-device').textContent = '-';
+        document.getElementById('stat-recent-tbody').innerHTML = '<tr><td colspan="7" class="empty-state">加载失败：' + e.message + '</td></tr>';
+        window.allRecords = [];
+      }
+    });
+
+    // 获取操作系统对应的图标（用于统计显示）
+    function getOSIconForStat(os) {
+      if (!os) return '💻';
+      const osLower = os.toLowerCase();
+      
+      if (osLower.includes('windows')) return '🪟';
+      if (osLower.includes('mac') || osLower.includes('darwin')) return '🍎';
+      if (osLower.includes('linux')) return '🐧';
+      if (osLower.includes('android')) return '🤖';
+      if (osLower.includes('ios')) return '📱';
+      
+      return '💻';
+    }
+    
+    // 获取操作系统对应的图标（用于表格显示）
+    function getOSIcon(os) {
+      return getOSIconForStat(os);
+    }
+    
+    // 获取国家/地区对应的国旗图标
+    function getCountryFlag(countryCode) {
+      const flags = {
+        'HK': '🇭🇰', 'CN': '🇨🇳', 'US': '🇺🇸', 'JP': '🇯🇵', 'KR': '🇰🇷',
+        'GB': '🇬🇧', 'FR': '🇫🇷', 'DE': '🇩🇪', 'CA': '🇨🇦', 'AU': '🇦🇺',
+        'SG': '🇸🇬', 'TW': '🇹🇼', 'MY': '🇲🇾', 'TH': '🇹🇭', 'VN': '🇻🇳',
+        'IN': '🇮🇳', 'ID': '🇮🇩', 'PH': '🇵🇭', 'BR': '🇧🇷', 'MX': '🇲🇽',
+        'RU': '🇷🇺', 'IT': '🇮🇹', 'ES': '🇪🇸', 'NL': '🇳🇱', 'SE': '🇸🇪',
+        'NO': '🇳🇴', 'DK': '🇩🇰', 'FI': '🇫🇮', 'PL': '🇵🇱', 'TR': '🇹🇷'
+      };
+      return flags[countryCode] || '🌍';
+    }
+    
+    // 合并同一设备短时间内的重复访问记录（保留原始记录 ID 列表）
+    function mergeRepeatedVisits(records, timeWindow) {
+      if (!records || records.length === 0) return [];
+      
+      // 按时间排序（最新的在前）
+      const sorted = [...records].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      
+      const merged = [];
+      let currentGroup = null;
+      
+      for (const record of sorted) {
+        const deviceKey = `${record.deviceId}_${record.version}_${record.country}_${record.city}_${record.os || 'unknown'}`;
+        
+        // 如果是新设备或时间间隔超过阈值，开始新分组
+        if (!currentGroup || 
+            currentGroup.key !== deviceKey || 
+            (currentGroup.firstTime - (record.ts || 0) > timeWindow)) {
+          // 保存当前分组
+          if (currentGroup) {
+            merged.push({
+              deviceId: currentGroup.deviceId,
+              version: currentGroup.version,
+              country: currentGroup.country,
+              city: currentGroup.city,
+              os: currentGroup.os,
+              firstTime: currentGroup.firstTime,
+              lastTime: currentGroup.lastTime,
+              count: currentGroup.count,
+              recordIds: currentGroup.recordIds // 保留原始记录 ID 列表
+            });
+          }
+          
+          // 开始新分组
+          currentGroup = {
+            key: deviceKey,
+            deviceId: record.deviceId,
+            version: record.version,
+            country: record.country,
+            city: record.city,
+            os: record.os,
+            firstTime: record.ts || 0,
+            lastTime: record.ts || 0,
+            count: 1,
+            recordIds: [record.id || `${record.ts}_${record.deviceId.substring(0, 8)}`] // 保存原始记录 ID（如果没有 id，使用时间戳+设备ID前缀）
+          };
+        } else {
+          // 合并到当前分组
+          currentGroup.count++;
+          currentGroup.lastTime = record.ts || 0; // 更新最后时间（由于已排序，这是最早的）
+          const recordId = record.id || `${record.ts}_${record.deviceId.substring(0, 8)}`;
+          if (!currentGroup.recordIds.includes(recordId)) {
+            currentGroup.recordIds.push(recordId);
+          }
+        }
+      }
+      
+      // 保存最后一个分组
+      if (currentGroup) {
+        merged.push({
+          deviceId: currentGroup.deviceId,
+          version: currentGroup.version,
+          country: currentGroup.country,
+          city: currentGroup.city,
+          os: currentGroup.os,
+          firstTime: currentGroup.firstTime,
+          lastTime: currentGroup.lastTime,
+          count: currentGroup.count,
+          recordIds: currentGroup.recordIds // 保留原始记录 ID 列表
+        });
+      }
+      
+      return merged;
+    }
+    
+    // 删除统计记录
+    window.deleteStatRecord = async function(recordId) {
+      if (!confirm('确定要删除这条统计记录吗？')) return;
+      
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        alert('请先配置 API 地址');
+        return;
+      }
+      
+      try {
+        await callApi('DELETE', `/stats/record/${encodeURIComponent(recordId)}`);
+        showStatus('changelog-status', '删除成功，正在刷新...', 'success');
+        // 刷新统计
+        setTimeout(() => {
+          document.getElementById('btn-refresh-usage').click();
+        }, 500);
+      } catch (e) {
+        showStatus('changelog-status', `删除失败：${e.message}`, 'error');
+      }
+    };
+    
+    // 批量删除统计记录（按设备ID）
+    window.deleteStatRecordsByDevice = async function(deviceId) {
+      if (!confirm(`确定要删除设备 "${deviceId}" 的所有统计记录吗？此操作不可恢复！`)) return;
+      
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        alert('请先配置 API 地址');
+        return;
+      }
+      
+      try {
+        const result = await callApi('DELETE', '/stats/records', { deviceId });
+        showStatus('changelog-status', `已删除 ${result.deleted || 0} 条记录，正在刷新...`, 'success');
+        setTimeout(() => {
+          document.getElementById('btn-refresh-usage').click();
+        }, 500);
+      } catch (e) {
+        showStatus('changelog-status', `删除失败：${e.message}`, 'error');
+      }
+    };
+
+    // 下载访问记录
+    document.getElementById('btn-download-records').addEventListener('click', async () => {
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        alert('请先设置 API 地址');
+        return;
+      }
+      
+      try {
+        // 获取所有记录
+        const data = await callApi('GET', '/stats');
+        const allRecords = data.all || data.recent || [];
+        
+        if (allRecords.length === 0) {
+          alert('暂无访问记录');
+          return;
+        }
+        
+        // 准备所有数据（包含统计信息和记录）
+        const statsData = {
+          summary: {
+            total: data.total || 0,
+            uniqueDevices: data.uniqueDevices || 0,
+            byCountry: data.byCountry || {},
+            byVersion: data.byVersion || {},
+            byOS: data.byOS || {},
+            byDevice: data.byDevice || {}
+          },
+          records: allRecords
+        };
+        
+        // 转换为 CSV 格式（包含统计信息和记录）
+        const csvLines = [];
+        csvLines.push('=== 统计摘要 ===');
+        csvLines.push(`总访问次数,${statsData.summary.total}`);
+        csvLines.push(`独立设备数,${statsData.summary.uniqueDevices}`);
+        csvLines.push('');
+        csvLines.push('=== 按国家/地区统计 ===');
+        csvLines.push('国家/地区,访问次数');
+        Object.entries(statsData.summary.byCountry).forEach(([country, count]) => {
+          csvLines.push(`"${country}",${count}`);
+        });
+        csvLines.push('');
+        csvLines.push('=== 按版本统计 ===');
+        csvLines.push('版本,访问次数');
+        Object.entries(statsData.summary.byVersion).forEach(([version, count]) => {
+          csvLines.push(`"${version}",${count}`);
+        });
+        csvLines.push('');
+        csvLines.push('=== 按设备统计 ===');
+        csvLines.push('设备ID,访问次数');
+        Object.entries(statsData.summary.byDevice).forEach(([deviceId, count]) => {
+          csvLines.push(`"${deviceId}",${count}`);
+        });
+        csvLines.push('');
+        csvLines.push('=== 详细访问记录 ===');
+        csvLines.push('时间,国家/地区,城市,版本,设备ID,IP地址');
+        allRecords.forEach(r => {
+          const t = r.ts ? new Date(r.ts).toISOString() : '';
+          const row = [
+            t,
+            r.country || '',
+            r.city || '',
+            r.version || '',
+            r.deviceId || 'unknown',
+            r.ip || ''
+          ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+          csvLines.push(row);
+        });
+        
+        const csv = csvLines.join('\n');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `metro-pids-all-data-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        alert(`已下载所有数据（${allRecords.length} 条访问记录 + 统计摘要）`);
+      } catch (e) {
+        alert('下载失败：' + e.message);
+      }
+    });
+    
+    // 初始化：启动时自动从服务器加载所有数据
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedConfig = loadConfig();
+      document.getElementById('api-base').value = savedConfig.apiBase || '';
+      document.getElementById('api-token').value = savedConfig.token || '';
+      document.getElementById('api-base-display').textContent = savedConfig.apiBase || '未设置';
+      
+      if (savedConfig.apiBase) {
+        // 延迟加载，确保所有事件监听器已注册
+        setTimeout(() => {
+          console.log('[Admin] 🚀 开始自动加载服务器数据...');
+          
+          // 1. 加载运控线路列表
+          try {
+            document.getElementById('btn-list-runtime').click();
+            console.log('[Admin] ✅ 已触发运控线路列表加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 运控线路列表加载失败:', e);
+          }
+          
+          // 2. 加载更新日志
+          try {
+            document.getElementById('btn-get-changelog').click();
+            console.log('[Admin] ✅ 已触发更新日志加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 更新日志加载失败:', e);
+          }
+          
+          // 3. 加载版本信息
+          try {
+            document.getElementById('btn-get-update-info').click();
+            console.log('[Admin] ✅ 已触发版本信息加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 版本信息加载失败:', e);
+          }
+          
+          // 4. 加载统计信息
+          try {
+            document.getElementById('btn-refresh-stats').click();
+            console.log('[Admin] ✅ 已触发统计信息加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 统计信息加载失败:', e);
+          }
+          
+          // 5. 加载使用统计
+          try {
+            document.getElementById('btn-refresh-usage').click();
+            console.log('[Admin] ✅ 已触发使用统计加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 使用统计加载失败:', e);
+          }
+          
+          // 6. 加载彩蛋配置
+          try {
+            document.getElementById('btn-get-easter-eggs').click();
+            console.log('[Admin] ✅ 已触发彩蛋配置加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 彩蛋配置加载失败:', e);
+          }
+          
+          // 7. 加载节日配置
+          try {
+            document.getElementById('btn-get-holidays').click();
+            console.log('[Admin] ✅ 已触发节日配置加载');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 节日配置加载失败:', e);
+          }
+          
+          console.log('[Admin] ✅ 所有数据加载任务已启动');
+        }, 800); // 延迟 800ms，确保所有事件监听器已注册
+      } else {
+        console.log('[Admin] ⚠️ API 地址未配置，跳过自动加载');
+      }
+    });
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+</body>
+</html>

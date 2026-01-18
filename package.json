@@ -1,11 +1,11 @@
 {
   "name": "metro-pids",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tanzhouxkong/Metro-PIDS-.git"
+    "url": "https://github.com/tanzhouxkong/Metro-PIDS.git"
   },
   "main": "./out/main/main.js",
   "scripts": {
@@ -25,11 +25,6 @@
     "prebuild": "node scripts/download-fontawesome.js",
     "build": "electron-vite build && electron-builder",
     "build:sdk": "node ./scripts/build-display-sdk.js",
-    "publish:gh": "node scripts/publish-gh.js",
-    "publish:gh:win": "node scripts/publish-gh.js --win",
-    "rebuild-mica": "npm install -g node-gyp && npm install --build-from-source mica-electron",
-    "check-build-tools": "node scripts/check-build-tools.js",
-    "clean:vite": "node scripts/clean-vite-cache.js",
     "clean:vite:all": "node scripts/clean-vite-cache.js --clean-out"
   },
   "build": {
@@ -54,7 +49,7 @@
       {
         "provider": "github",
         "owner": "tanzhouxkong",
-        "repo": "Metro-PIDS-",
+        "repo": "Metro-PIDS",
         "releaseType": "release",
         "vPrefixedTagName": true
       }
@@ -95,7 +90,7 @@
         {
           "provider": "github",
           "owner": "tanzhouxkong",
-          "repo": "Metro-PIDS-",
+          "repo": "Metro-PIDS",
           "vPrefixedTagName": true
         }
       ]
@@ -107,7 +102,7 @@
         {
           "provider": "github",
           "owner": "tanzhouxkong",
-          "repo": "Metro-PIDS-",
+          "repo": "Metro-PIDS",
           "vPrefixedTagName": true
         }
       ]
@@ -119,7 +114,7 @@
         {
           "provider": "github",
           "owner": "tanzhouxkong",
-          "repo": "Metro-PIDS-",
+          "repo": "Metro-PIDS",
           "vPrefixedTagName": true
         }
       ]

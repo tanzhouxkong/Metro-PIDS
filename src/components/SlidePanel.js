@@ -1079,12 +1079,37 @@ export default {
         
         // 网页环境：监听 postMessage 和 storage 事件
         if (typeof window !== 'undefined' && (!window.electronAPI || !window.electronAPI.onSwitchLineRequest)) {
+            // 处理运控线路数据（直接应用线路数据，不从本地文件夹查找）
+            async function applyRuntimeLineData(lineData) {
+                if (!lineData || !lineData.meta || !lineData.meta.lineName) {
+                    console.warn('[运控线路] 无效的线路数据:', lineData);
+                    return;
+                }
+                try {
+                    // 直接设置线路数据到 appData（解耦，不影响预设线路列表）
+                    pidsState.appData = JSON.parse(JSON.stringify(lineData)); // 深拷贝
+                    pidsState.rt = { idx: 0, state: 0 };
+                    pidsState.currentFilePath = null; // 运控线路没有本地文件路径
+                    saveCfg();
+                    sync();
+                    console.log('[运控线路] 已成功应用运控线路:', lineData.meta.lineName);
+                } catch (e) {
+                    console.error('[运控线路] 应用失败:', e);
+                }
+            }
+
             // 监听 postMessage（来自线路管理器窗口）
             const messageHandler = async (event) => {
                 // 安全检查：只接受来自同源的消息
                 if (event.data && event.data.type === 'switch-line-request') {
                     const { lineName, target } = event.data;
                     await handleSwitchLineRequest(lineName, target);
+                } else if (event.data && event.data.type === 'switch-runtime-line') {
+                    // 处理运控线路切换
+                    const { lineData } = event.data;
+                    if (lineData) {
+                        await applyRuntimeLineData(lineData);
+                    }
                 }
             };
             window.addEventListener('message', messageHandler);
@@ -1092,12 +1117,32 @@ export default {
             // 监听 storage 事件（用于同源页面通信）
             const storageHandler = async (event) => {
                 if (event.key === 'lineManagerSelectedLine' && event.newValue) {
-                    const lineName = event.newValue;
-                    const target = localStorage.getItem('lineManagerSelectedTarget');
-                    await handleSwitchLineRequest(lineName, target);
-                    // 清理 localStorage
-                    localStorage.removeItem('lineManagerSelectedLine');
-                    localStorage.removeItem('lineManagerSelectedTarget');
+                    // 检查是否是运控线路
+                    const isRuntimeLine = localStorage.getItem('isRuntimeLine') === 'true';
+                    if (isRuntimeLine) {
+                        // 运控线路：从 runtimeLineData 获取数据
+                        const runtimeData = localStorage.getItem('runtimeLineData');
+                        if (runtimeData) {
+                            try {
+                                const lineData = JSON.parse(runtimeData);
+                                await applyRuntimeLineData(lineData);
+                            } catch (e) {
+                                console.error('[运控线路] 解析数据失败:', e);
+                            }
+                        }
+                        // 清理
+                        localStorage.removeItem('runtimeLineData');
+                        localStorage.removeItem('isRuntimeLine');
+                        localStorage.removeItem('lineManagerSelectedLine');
+                    } else {
+                        // 预设线路：正常处理
+                        const lineName = event.newValue;
+                        const target = localStorage.getItem('lineManagerSelectedTarget');
+                        await handleSwitchLineRequest(lineName, target);
+                        // 清理 localStorage
+                        localStorage.removeItem('lineManagerSelectedLine');
+                        localStorage.removeItem('lineManagerSelectedTarget');
+                    }
                 }
             };
             window.addEventListener('storage', storageHandler);
@@ -1106,11 +1151,30 @@ export default {
             const checkInterval = setInterval(() => {
                 const lineName = localStorage.getItem('lineManagerSelectedLine');
                 if (lineName) {
-                    const target = localStorage.getItem('lineManagerSelectedTarget');
-                    handleSwitchLineRequest(lineName, target);
-                    // 清理 localStorage
-                    localStorage.removeItem('lineManagerSelectedLine');
-                    localStorage.removeItem('lineManagerSelectedTarget');
+                    // 检查是否是运控线路
+                    const isRuntimeLine = localStorage.getItem('isRuntimeLine') === 'true';
+                    if (isRuntimeLine) {
+                        const runtimeData = localStorage.getItem('runtimeLineData');
+                        if (runtimeData) {
+                            try {
+                                const lineData = JSON.parse(runtimeData);
+                                applyRuntimeLineData(lineData);
+                            } catch (e) {
+                                console.error('[运控线路] 解析数据失败:', e);
+                            }
+                        }
+                        // 清理
+                        localStorage.removeItem('runtimeLineData');
+                        localStorage.removeItem('isRuntimeLine');
+                        localStorage.removeItem('lineManagerSelectedLine');
+                    } else {
+                        // 预设线路：正常处理
+                        const target = localStorage.getItem('lineManagerSelectedTarget');
+                        handleSwitchLineRequest(lineName, target);
+                        // 清理 localStorage
+                        localStorage.removeItem('lineManagerSelectedLine');
+                        localStorage.removeItem('lineManagerSelectedTarget');
+                    }
                 }
             }, 500);
             
@@ -1670,20 +1734,42 @@ export default {
         const showReleaseNotes = ref(false);
         const releaseNotes = ref([]);
         const loadingNotes = ref(false);
+        const releaseNotesSource = ref(''); // 'worker' | 'github' | ''
 
-        // 加载更新日志
+        // 加载更新日志（仅从服务器 Worker 获取，不降级到 GitHub）
         const loadReleaseNotes = async () => {
-            if (loadingNotes.value || releaseNotes.value.length > 0) return;
+            if (loadingNotes.value) return;
             loadingNotes.value = true;
+            releaseNotes.value = [];
+            releaseNotesSource.value = ''; // 默认不显示数据来源
             try {
-                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getGitHubReleases) {
-                    const result = await window.electronAPI.getGitHubReleases();
-                    if (result && result.ok && result.releases) {
-                        releaseNotes.value = result.releases;
+                const api = typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getGitHubReleases;
+                if (!api) {
+                    console.warn('[SlidePanel] getGitHubReleases 不可用');
+                    return;
+                }
+                const result = await api();
+                
+                // 只有成功获取数据时才显示数据来源
+                if (result && result.ok && Array.isArray(result.releases) && result.releases.length > 0) {
+                    releaseNotes.value = result.releases;
+                    // 只有成功时才显示"服务器"作为数据来源
+                    releaseNotesSource.value = 'worker';
+                    console.log('[SlidePanel] ✅ 更新日志加载成功，数量:', result.releases.length, '来源: 服务器');
+                } else {
+                    // 失败或数据为空时不显示数据来源
+                    releaseNotes.value = [];
+                    releaseNotesSource.value = '';
+                    if (result && !result.ok) {
+                        console.warn('[SlidePanel] ⚠️ 更新日志加载失败:', result.error || '未知错误');
+                    } else {
+                        console.warn('[SlidePanel] ⚠️ 更新日志为空，result:', result);
                     }
                 }
             } catch (e) {
-                console.error('加载更新日志失败:', e);
+                console.error('[SlidePanel] ❌ 加载更新日志失败:', e);
+                releaseNotes.value = [];
+                releaseNotesSource.value = ''; // 失败时不显示数据来源
             } finally {
                 loadingNotes.value = false;
             }
@@ -1691,7 +1777,7 @@ export default {
 
         // 打开更新日志弹窗
         const openReleaseNotes = async () => {
-            await loadReleaseNotes();
+            if (!loadingNotes.value) await loadReleaseNotes();
             showReleaseNotes.value = true;
         }
 
@@ -2698,7 +2784,7 @@ export default {
             showColorPicker, colorPickerInitialColor, onColorConfirm,
             startWithLock, stopWithUnlock, startRecordingWithCheck,
             changeServiceMode, serviceModeLabel,
-            showReleaseNotes, releaseNotes, loadingNotes, openReleaseNotes, closeReleaseNotes, formatReleaseBody,
+            showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             openLineManagerWindow,
             // 显示端管理方法
@@ -3042,16 +3128,16 @@ export default {
       @confirm="onColorConfirm"
     />
 
-
     <!-- Release Notes Dialog -->
     <Teleport to="body">
         <Transition name="fade">
             <div v-if="showReleaseNotes" 
-                 style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);" 
+                 style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.5);" 
                  @click.self="closeReleaseNotes">
-                <div style="background:var(--card, #ffffff); border-radius:16px; padding:0; max-width:900px; max-height:85vh; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;">
+                <div style="border-radius:20px; padding:0; max-width:900px; max-height:85vh; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset; overflow:hidden; transform:scale(1); transition:transform 0.2s;" 
+                     class="release-notes-dialog">
                     <!-- Header -->
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); background:linear-gradient(135deg, rgba(22,119,255,0.05) 0%, rgba(255,159,67,0.05) 100%);">
+                    <div class="release-notes-header" style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid rgba(0,0,0,0.08); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
                         <div style="display:flex; align-items:center; gap:12px;">
                             <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #1677ff 0%, #FF9F43 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(22,119,255,0.3);">
                                 <i class="fas fa-newspaper" style="color:white; font-size:18px;"></i>
@@ -3059,6 +3145,7 @@ export default {
                             <div>
                                 <h2 style="margin:0; font-size:22px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">更新日志</h2>
                                 <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Release Notes</div>
+                                <div v-if="releaseNotesSource" style="font-size:11px; color:var(--muted, #888); margin-top:2px;">数据来源：{{ releaseNotesSource === 'worker' ? '服务器' : 'GitHub' }}</div>
                             </div>
                         </div>
                         <button @click="closeReleaseNotes" 
@@ -3070,7 +3157,7 @@ export default {
                     </div>
                     
                     <!-- Content -->
-                    <div style="flex:1; overflow-y:auto; padding:24px 28px; background:var(--bg, #fafafa);">
+                    <div class="release-notes-content" style="flex:1; overflow-y:auto; padding:24px 28px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
                         <!-- Loading State -->
                         <div v-if="loadingNotes" style="text-align:center; padding:60px 20px;">
                             <div style="display:inline-block; width:48px; height:48px; border:4px solid var(--divider, rgba(0,0,0,0.1)); border-top-color:var(--accent, #1677ff); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:16px;"></div>
@@ -3079,7 +3166,7 @@ export default {
                         
                         <!-- Empty State -->
                         <div v-else-if="releaseNotes.length === 0" style="text-align:center; padding:60px 20px;">
-                            <div style="width:80px; height:80px; margin:0 auto 20px; border-radius:50%; background:var(--card, #ffffff); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                            <div class="release-notes-empty-icon" style="width:80px; height:80px; margin:0 auto 20px; border-radius:50%; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
                                 <i class="fas fa-inbox" style="font-size:32px; color:var(--muted, #999);"></i>
                             </div>
                             <div style="color:var(--muted, #999); font-size:14px; margin-bottom:8px;">暂无更新日志</div>
@@ -3090,9 +3177,10 @@ export default {
                         <div v-else style="display:flex; flex-direction:column; gap:20px;">
                             <div v-for="(release, index) in releaseNotes" 
                                  :key="index" 
-                                 style="background:var(--card, #ffffff); border-radius:12px; padding:20px; border:1px solid var(--divider, rgba(0,0,0,0.08)); box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:all 0.2s; hover:box-shadow:0 4px 16px rgba(0,0,0,0.08); hover:transform:translateY(-2px);"
-                                 @mouseover="$event.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.08)'; $event.currentTarget.style.transform='translateY(-2px)'"
-                                 @mouseout="$event.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)'; $event.currentTarget.style.transform='translateY(0)'">
+                                 class="release-note-card"
+                                 style="backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s;"
+                                 @mouseover="$event.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.15)'; $event.currentTarget.style.transform='translateY(-2px)'"
+                                 @mouseout="$event.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'; $event.currentTarget.style.transform='translateY(0)'">
                                 <!-- Release Header -->
                                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; gap:16px;">
                                     <div style="flex:1; min-width:0;">
@@ -3224,6 +3312,92 @@ export default {
         }
         .fade-enter-from, .fade-leave-to {
             opacity: 0;
+        }
+        /* iOS 风格毛玻璃效果 - 亮色模式 */
+        .release-notes-dialog {
+            background: rgba(255, 255, 255, 0.85) !important;
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .release-notes-header {
+            background: rgba(255, 255, 255, 0.4) !important;
+        }
+        .release-notes-content {
+            background: rgba(255, 255, 255, 0.3) !important;
+        }
+        /* iOS 风格毛玻璃效果 - 暗色模式 */
+        @media (prefers-color-scheme: dark) {
+            .release-notes-dialog {
+                background: rgba(30, 30, 30, 0.85) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .release-notes-header {
+                background: rgba(30, 30, 30, 0.4) !important;
+                border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            .release-notes-content {
+                background: rgba(30, 30, 30, 0.3) !important;
+            }
+        }
+        /* 如果应用有暗色模式类 */
+        :global(.dark) .release-notes-dialog,
+        :global([data-theme="dark"]) .release-notes-dialog {
+            background: rgba(30, 30, 30, 0.85) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        :global(.dark) .release-notes-header,
+        :global([data-theme="dark"]) .release-notes-header {
+            background: rgba(30, 30, 30, 0.4) !important;
+            border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        :global(.dark) .release-notes-content,
+        :global([data-theme="dark"]) .release-notes-content {
+            background: rgba(30, 30, 30, 0.3) !important;
+        }
+        /* 更新日志卡片样式 */
+        .release-note-card {
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        @media (prefers-color-scheme: dark) {
+            .release-note-card {
+                background: rgba(50, 50, 50, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+        }
+        :global(.dark) .release-note-card,
+        :global([data-theme="dark"]) .release-note-card {
+            background: rgba(50, 50, 50, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .release-note-card:hover {
+            background: rgba(255, 255, 255, 0.7) !important;
+        }
+        @media (prefers-color-scheme: dark) {
+            .release-note-card:hover {
+                background: rgba(60, 60, 60, 0.7) !important;
+            }
+        }
+        :global(.dark) .release-note-card:hover,
+        :global([data-theme="dark"]) .release-note-card:hover {
+            background: rgba(60, 60, 60, 0.7) !important;
+        }
+        /* 空状态图标 */
+        .release-notes-empty-icon {
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        @media (prefers-color-scheme: dark) {
+            .release-notes-empty-icon {
+                background: rgba(50, 50, 50, 0.5);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+        }
+        :global(.dark) .release-notes-empty-icon,
+        :global([data-theme="dark"]) .release-notes-empty-icon {
+            background: rgba(50, 50, 50, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
     </style>
   `

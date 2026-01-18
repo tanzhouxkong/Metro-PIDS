@@ -1012,9 +1012,8 @@ function createWindow() {
       }
       
       if (allowF12) {
-        if (mainWin.webContents.isDevToolsOpened()) {
-          mainWin.webContents.closeDevTools();
-        } else {
+        // 仅打开、不关闭，避免按 F12 导致 DevTools 消失
+        if (!mainWin.webContents.isDevToolsOpened()) {
           mainWin.webContents.openDevTools();
         }
         event.preventDefault();
@@ -1028,20 +1027,11 @@ function createWindow() {
     const isCmdOptionI = isMac && input.meta && input.alt && input.key === 'I';
     
     if (isCtrlShiftI || isCmdOptionI) {
-      // 检查是否允许在打包后使用快捷键
-      let allowShortcut = !app.isPackaged; // 开发环境默认允许
-      
+      let allowShortcut = !app.isPackaged;
       if (app.isPackaged) {
-        // 打包环境：检查localStorage中的设置
         try {
           const result = await mainWin.webContents.executeJavaScript(`
-            (function() {
-              try {
-                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
-              } catch(e) {
-                return false;
-              }
-            })();
+            (function() { try { return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true'; } catch(e) { return false; } })();
           `);
           allowShortcut = result === true;
         } catch (e) {
@@ -1049,11 +1039,8 @@ function createWindow() {
           allowShortcut = false;
         }
       }
-      
       if (allowShortcut) {
-        if (mainWin.webContents.isDevToolsOpened()) {
-          mainWin.webContents.closeDevTools();
-        } else {
+        if (!mainWin.webContents.isDevToolsOpened()) {
           mainWin.webContents.openDevTools();
         }
         event.preventDefault();
@@ -3428,6 +3415,180 @@ ipcMain.handle('app/get-os-version', async () => {
   }
 });
 
+// 获取系统信息（完整信息）
+ipcMain.handle('app/get-system-info', async () => {
+  try {
+    const os = require('os');
+    const platform = os.platform();
+    
+    const systemInfo = {
+      platform: platform,           // 'win32', 'darwin', 'linux'等
+      arch: process.arch,            // 'x64', 'arm64'等
+      osName: os.type(),             // 操作系统类型
+      osVersion: os.release(),       // 操作系统版本（简化）
+      hostname: os.hostname(),       // 主机名
+      totalMem: os.totalmem(),       // 总内存(字节)
+      freeMem: os.freemem(),         // 可用内存(字节)
+      cpuCores: os.cpus().length     // CPU核心数
+    };
+    
+    // 尝试获取详细的操作系统版本（复用现有的get-os-version逻辑）
+    try {
+      const osVersionResult = await new Promise((resolve) => {
+        // 调用内部逻辑获取详细OS版本
+        const handle = async () => {
+          try {
+            const osModule = require('os');
+            const { execSync } = require('child_process');
+            const platform = osModule.platform();
+            let osVersion = '';
+            
+            if (platform === 'win32') {
+              try {
+                const psCommand = `
+                  $os = Get-CimInstance Win32_OperatingSystem;
+                  $version = $os.Version;
+                  $build = $os.BuildNumber;
+                  $caption = $os.Caption;
+                  if ([int]$build -ge 22000) {
+                    $caption = "Windows 11";
+                  }
+                  Write-Output "$caption $version (Build $build)"
+                `;
+                const result = execSync(`powershell -Command "${psCommand}"`, { 
+                  encoding: 'utf8', 
+                  timeout: 5000,
+                  windowsHide: true 
+                }).trim();
+                osVersion = result || `Windows ${osModule.release()}`;
+              } catch (e) {
+                const release = osModule.release();
+                const buildNumber = release.split('.')[2] || '';
+                osVersion = (buildNumber && parseInt(buildNumber) >= 22000) 
+                  ? `Windows 11 ${release}` 
+                  : `Windows 10 ${release}`;
+              }
+            } else if (platform === 'darwin') {
+              osVersion = `macOS ${osModule.release()}`;
+            } else if (platform === 'linux') {
+              try {
+                const fs = require('fs');
+                if (fs.existsSync('/etc/os-release')) {
+                  const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+                  const lines = osRelease.split('\n');
+                  for (const line of lines) {
+                    if (line.startsWith('PRETTY_NAME=')) {
+                      const match = line.match(/PRETTY_NAME="(.+)"/);
+                      if (match) {
+                        osVersion = match[1];
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (!osVersion) {
+                  osVersion = `Linux ${osModule.release()}`;
+                }
+              } catch (e) {
+                osVersion = `Linux ${osModule.release()}`;
+              }
+            } else {
+              osVersion = `${platform} ${osModule.release()}`;
+            }
+            
+            resolve(osVersion);
+          } catch (err) {
+            resolve(`${osModule.platform()} ${osModule.release()}`);
+          }
+        };
+        handle();
+      });
+      systemInfo.osVersionDetailed = osVersionResult;
+    } catch (e) {
+      // 忽略错误，使用默认值
+      systemInfo.osVersionDetailed = `${platform} ${os.release()}`;
+    }
+    
+    return { ok: true, ...systemInfo };
+  } catch (error) {
+    console.error('[main] 获取系统信息失败:', error);
+    return { 
+      ok: false, 
+      error: String(error),
+      platform: 'unknown',
+      arch: 'unknown',
+      osName: 'unknown',
+      osVersion: 'unknown',
+      hostname: 'unknown'
+    };
+  }
+});
+
+// 获取设备唯一ID（多层级存储：文件系统 + 综合判断）
+ipcMain.handle('app/get-device-id', async () => {
+  try {
+    const deviceIdFilePath = path.join(app.getPath('userData'), 'device_id.txt');
+    let deviceId = null;
+    
+    // 第一层：尝试从文件系统读取（卸载后重装仍可能保留）
+    try {
+      if (fs.existsSync(deviceIdFilePath)) {
+        const fileContent = await fsPromises.readFile(deviceIdFilePath, 'utf8');
+        const storedId = fileContent.trim();
+        if (storedId && storedId.length > 10) {
+          deviceId = storedId;
+          console.log('[main] 从文件系统读取设备ID:', deviceId.substring(0, 8) + '...');
+        }
+      }
+    } catch (e) {
+      console.warn('[main] 读取设备ID文件失败:', e);
+    }
+    
+    // 第二层：如果文件系统没有，尝试综合判断生成稳定的ID
+    if (!deviceId) {
+      try {
+        const os = require('os');
+        const crypto = require('crypto');
+        
+        // 收集设备特征信息（类似极光推送的做法）
+        const deviceFingerprint = [
+          os.hostname(),           // 主机名
+          os.type(),               // 操作系统类型
+          os.platform(),           // 平台
+          process.arch,            // 架构
+          os.cpus().length.toString(), // CPU核心数
+          os.totalmem().toString()     // 总内存
+        ].join('|');
+        
+        // 生成稳定的哈希值作为设备ID
+        const hash = crypto.createHash('sha256').update(deviceFingerprint).digest('hex');
+        deviceId = hash.substring(0, 32); // 使用前32位作为设备ID
+        
+        console.log('[main] 基于设备特征生成设备ID:', deviceId.substring(0, 8) + '...');
+        
+        // 保存到文件系统
+        try {
+          await fsPromises.writeFile(deviceIdFilePath, deviceId, 'utf8');
+          console.log('[main] 设备ID已保存到文件系统');
+        } catch (e) {
+          console.warn('[main] 保存设备ID到文件系统失败:', e);
+        }
+      } catch (e) {
+        console.error('[main] 生成设备ID失败:', e);
+        // 最后的降级方案：随机生成
+        deviceId = 'device-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      }
+    }
+    
+    return { ok: true, deviceId };
+  } catch (error) {
+    console.error('[main] 获取设备ID失败:', error);
+    // 生成一个随机ID作为后备方案
+    const fallbackId = 'device-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return { ok: true, deviceId: fallbackId };
+  }
+});
+
 // 应用重启（用于重置数据后彻底刷新主窗口与 BrowserView）
 ipcMain.handle('app/relaunch', () => {
   try {
@@ -5234,51 +5395,80 @@ ipcMain.handle('update/install', async () => {
   }
 });
 
-// 获取 GitHub Releases 列表（用于显示更新日志）
+// 获取 GitHub Releases 列表（仅从 Cloudflare Worker 服务器获取）
 ipcMain.handle('github/get-releases', async () => {
+  const https = require('https');
+  const CLOUD_API_BASE = 'https://metro.tanzhouxiang.dpdns.org';
+  // 企业代理或自签名证书环境常见 "unable to verify the first certificate"，放宽 TLS 校验
+  const tlsOpt = { rejectUnauthorized: false };
+
+  // 仅从 Cloudflare Worker 服务器获取（不降级到 GitHub）
   try {
-    const https = require('https');
-    const url = 'https://api.github.com/repos/tanzhouxkong/Metro-PIDS-/releases';
-    
-    return new Promise((resolve) => {
-      https.get(url, {
-        headers: {
-          'User-Agent': 'Metro-PIDS-App',
-          'Accept': 'application/vnd.github.v3+json'
-        }
+    const workerResult = await new Promise((resolve, reject) => {
+      const u = `${CLOUD_API_BASE.replace(/\/+$/, '')}/releases`;
+      const req = https.get(u, { 
+        ...tlsOpt, 
+        headers: { 
+          'Accept': 'application/json', 
+          'User-Agent': 'Metro-PIDS-App' 
+        },
+        timeout: 10000  // 10秒超时
       }, (res) => {
         let data = '';
-        
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        
+        res.on('data', (c) => { data += c; });
         res.on('end', () => {
           try {
-            const releases = JSON.parse(data);
-            // 只返回前10个最新的release
-            const recentReleases = releases.slice(0, 10).map(release => ({
-              tag_name: release.tag_name,
-              name: release.name,
-              body: release.body,
-              published_at: release.published_at,
-              html_url: release.html_url,
-              prerelease: release.prerelease,
-              draft: release.draft
-            }));
-            resolve({ ok: true, releases: recentReleases });
+            if (res.statusCode === 200) {
+              const r = JSON.parse(data || '{}');
+              if (r && r.ok && Array.isArray(r.releases)) {
+                console.log('[main] ✅ 从服务器(Worker)获取 Releases 成功，数量:', r.releases.length);
+                return resolve({ ok: true, releases: r.releases, source: 'worker' });
+              }
+              console.warn('[main] ⚠️ 服务器 /releases 返回 200 但格式不符: ok=%s, releases is array=%s', !!r?.ok, Array.isArray(r?.releases));
+              console.warn('[main] 响应内容:', data?.substring(0, 200));
+              return reject(new Error('服务器返回格式错误: ' + (r?.error || '未知错误')));
+            } else {
+              // 尝试解析错误响应
+              let errorMsg = `服务器返回状态码 ${res.statusCode}`;
+              try {
+                const errorData = JSON.parse(data || '{}');
+                if (errorData.error) {
+                  errorMsg = errorData.error;
+                  if (errorData.detail) {
+                    errorMsg += ' (' + errorData.detail + ')';
+                  }
+                }
+              } catch (e) {
+                // 忽略解析错误
+              }
+              console.warn('[main] ⚠️ 服务器 /releases 非 200: status=', res.statusCode, 'error:', errorMsg);
+              return reject(new Error(errorMsg));
+            }
           } catch (e) {
-            console.error('[main] 解析 GitHub Releases 失败:', e);
-            resolve({ ok: false, error: '解析失败: ' + String(e) });
+            console.warn('[main] ⚠️ 服务器 /releases 解析失败:', e.message);
+            console.warn('[main] 原始响应:', data?.substring(0, 200));
+            return reject(new Error('解析服务器响应失败: ' + e.message));
           }
         });
-      }).on('error', (err) => {
-        console.error('[main] 获取 GitHub Releases 失败:', err);
-        resolve({ ok: false, error: String(err) });
+      });
+      req.on('error', (e) => {
+        console.error('[main] ❌ 服务器 /releases 请求失败:', e.message);
+        reject(new Error('连接服务器失败: ' + e.message));
+      });
+      req.on('timeout', () => {
+        console.error('[main] ❌ 服务器 /releases 请求超时');
+        req.destroy();
+        reject(new Error('请求服务器超时'));
       });
     });
+    return workerResult;
   } catch (e) {
-    return { ok: false, error: String(e) };
+    console.error('[main] ❌ 从服务器获取 Releases 失败:', e.message);
+    return { 
+      ok: false, 
+      error: '无法从服务器获取更新日志: ' + e.message,
+      source: 'worker'  // 即使失败也标记为 worker，表示应该从服务器获取
+    };
   }
 });
 
@@ -5286,11 +5476,12 @@ ipcMain.handle('github/get-releases', async () => {
 ipcMain.handle('gitee/get-releases', async () => {
   try {
     const https = require('https');
-    // Gitee API v5: GET /api/v5/repos/{owner}/{repo}/releases
     const url = 'https://gitee.com/api/v5/repos/tanzhouxkong/Metro-PIDS-/releases';
-    
+    const tlsOpt = { rejectUnauthorized: false }; // 企业代理/自签名证书环境
+
     return new Promise((resolve) => {
       https.get(url, {
+        ...tlsOpt,
         headers: {
           'User-Agent': 'Metro-PIDS-App',
           'Accept': 'application/json'
@@ -6030,7 +6221,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     forceReapplyMicaEffect();
   });
   
-  // 添加快捷键支持：F12 或 Ctrl+Shift+I (Windows/Linux) / Cmd+Option+I (MacOS) 切换开发者工具
+  // 添加快捷键支持：F12 或 Ctrl+Shift+I 仅打开开发者工具（不关闭，避免“消失”）
   displayWin.webContents.on('before-input-event', async (event, input) => {
     // F12 键
     if (input.key === 'F12') {
@@ -6057,51 +6248,28 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       }
       
       if (allowF12) {
-      if (displayWin.webContents.isDevToolsOpened()) {
-        displayWin.webContents.closeDevTools();
-      } else {
-        displayWin.webContents.openDevTools();
-      }
-      event.preventDefault();
+        if (!displayWin.webContents.isDevToolsOpened()) displayWin.webContents.openDevTools();
+        event.preventDefault();
       }
       return;
     }
-    
-    // Ctrl+Shift+I (Windows/Linux) 或 Cmd+Option+I (MacOS)
     const isMac = process.platform === 'darwin';
     const isCtrlShiftI = !isMac && input.control && input.shift && input.key === 'I';
     const isCmdOptionI = isMac && input.meta && input.alt && input.key === 'I';
-    
     if (isCtrlShiftI || isCmdOptionI) {
-      // 检查是否允许在打包后使用快捷键
-      let allowShortcut = !app.isPackaged; // 开发环境默认允许
-      
+      let allowShortcut = !app.isPackaged;
       if (app.isPackaged) {
-        // 打包环境：检查localStorage中的设置
         try {
-          const result = await displayWin.webContents.executeJavaScript(`
-            (function() {
-              try {
-                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
-              } catch(e) {
-                return false;
-              }
-            })();
-          `);
+          const result = await displayWin.webContents.executeJavaScript(`(function(){try{return localStorage.getItem('metro_pids_enable_f12_devtools')==='true';}catch(e){return false;}})();`);
           allowShortcut = result === true;
         } catch (e) {
           console.warn('[DisplayWindow] 检查F12设置失败:', e);
           allowShortcut = false;
         }
       }
-      
       if (allowShortcut) {
-      if (displayWin.webContents.isDevToolsOpened()) {
-        displayWin.webContents.closeDevTools();
-      } else {
-        displayWin.webContents.openDevTools();
-      }
-      event.preventDefault();
+        if (!displayWin.webContents.isDevToolsOpened()) displayWin.webContents.openDevTools();
+        event.preventDefault();
       }
       return;
     }

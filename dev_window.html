@@ -416,6 +416,10 @@
                     <label>操作系统</label>
                     <value id="os-version">-</value>
                 </div>
+                <div class="info-item">
+                    <label>设备ID</label>
+                    <value id="device-id" style="font-size: 12px; word-break: break-all;">-</value>
+                </div>
             </div>
         </div>
         
@@ -627,6 +631,62 @@
             <div class="test-group">
                 <h3>数据对比结果</h3>
                 <div id="cloud-lines-result" class="code-block">尚未测试本地/GitHub 运控数据。</div>
+            </div>
+        </div>
+        
+        <!-- 运控线路管理 -->
+        <div class="section">
+            <h2><i class="fas fa-train"></i> 运控线路管理</h2>
+            <div class="test-group">
+                <h3>运控线路列表</h3>
+                <button class="btn btn-success" onclick="loadRuntimeLines()">
+                    <i class="fas fa-sync"></i> 获取运控线路
+                </button>
+                <span id="runtime-lines-status" class="status-badge status-inactive status-inline">未加载</span>
+                <div id="runtime-lines-result" class="code-block" style="margin-top: 12px; max-height: 300px; overflow-y: auto;">点击按钮获取运控线路列表...</div>
+            </div>
+        </div>
+
+        <!-- 节日和彩蛋配置 -->
+        <div class="section">
+            <h2><i class="fas fa-calendar-alt"></i> 节日和彩蛋配置</h2>
+            <div class="test-group">
+                <h3>节日配置</h3>
+                <button class="btn btn-success" onclick="loadHolidays()">
+                    <i class="fas fa-calendar-check"></i> 获取节日配置
+                </button>
+                <button class="btn btn-info" onclick="checkActiveHolidays()">
+                    <i class="fas fa-star"></i> 检查当前激活的节日
+                </button>
+                <span id="holidays-status" class="status-badge status-inactive status-inline">未加载</span>
+                <div id="holidays-result" class="code-block" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">点击按钮获取节日配置...</div>
+            </div>
+            <div class="test-group">
+                <h3>彩蛋配置</h3>
+                <button class="btn btn-success" onclick="loadEasterEggs()">
+                    <i class="fas fa-egg"></i> 获取彩蛋配置
+                </button>
+                <span id="easter-eggs-status" class="status-badge status-inactive status-inline">未加载</span>
+                <div id="easter-eggs-result" class="code-block" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">点击按钮获取彩蛋配置...</div>
+            </div>
+            <div class="test-group">
+                <h3>通知监听</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>节日通知</label>
+                        <value id="holiday-notification-status">未监听</value>
+                    </div>
+                    <div class="info-item">
+                        <label>彩蛋通知</label>
+                        <value id="easter-egg-notification-status">未监听</value>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="startHolidayEasterEggMonitoring()">
+                    <i class="fas fa-bell"></i> 开始监听节日/彩蛋通知
+                </button>
+                <button class="btn btn-secondary" onclick="stopHolidayEasterEggMonitoring()">
+                    <i class="fas fa-stop"></i> 停止监听
+                </button>
             </div>
         </div>
         
@@ -855,13 +915,63 @@
                     try {
                         const osResult = await window.electronAPI.getOSVersion();
                         if (osResult && osResult.ok) {
-                            document.getElementById('os-version').textContent = osResult.version || '-';
+                            document.getElementById('os-version').textContent = osResult.osVersion || osResult.version || '-';
                         }
                     } catch (e) {
                         document.getElementById('os-version').textContent = '获取失败';
                     }
                 } else {
                     document.getElementById('os-version').textContent = navigator.platform || 'N/A';
+                }
+                
+                // 设备ID（与统计上报使用相同的获取逻辑）
+                let deviceId = null;
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getDeviceId) {
+                    try {
+                        const deviceResult = await window.electronAPI.getDeviceId();
+                        if (deviceResult && deviceResult.ok && deviceResult.deviceId) {
+                            deviceId = deviceResult.deviceId;
+                            // 同步保存到localStorage，确保与统计上报一致
+                            localStorage.setItem('metro_pids_device_id', deviceId);
+                            document.getElementById('device-id').textContent = deviceId;
+                            addLog('设备ID已加载: ' + deviceId.substring(0, 12) + '...', 'success');
+                        } else {
+                            // 降级到localStorage
+                            const cachedId = localStorage.getItem('metro_pids_device_id');
+                            if (cachedId) {
+                                deviceId = cachedId;
+                                document.getElementById('device-id').textContent = cachedId + ' (缓存)';
+                                addLog('设备ID（缓存）: ' + cachedId.substring(0, 12) + '...', 'info');
+                            } else {
+                                document.getElementById('device-id').textContent = '未获取';
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('获取设备ID失败:', e);
+                        const cachedId = localStorage.getItem('metro_pids_device_id');
+                        if (cachedId) {
+                            deviceId = cachedId;
+                            document.getElementById('device-id').textContent = cachedId + ' (缓存)';
+                        } else {
+                            document.getElementById('device-id').textContent = '获取失败';
+                        }
+                    }
+                } else {
+                    // Web环境降级
+                    const cachedId = localStorage.getItem('metro_pids_device_id');
+                    if (cachedId) {
+                        deviceId = cachedId;
+                        document.getElementById('device-id').textContent = cachedId + ' (Web缓存)';
+                    } else {
+                        document.getElementById('device-id').textContent = 'N/A (Web环境)';
+                    }
+                }
+                
+                // 显示完整设备ID（用于调试）
+                if (deviceId) {
+                    console.log('[DevWindow] 当前设备ID:', deviceId);
+                    console.log('[DevWindow] 设备ID长度:', deviceId.length);
+                    console.log('[DevWindow] 设备ID格式:', deviceId.startsWith('device-') ? '随机生成' : deviceId.length === 32 ? '哈希生成' : 'UUID格式');
                 }
             } catch (e) {
                 console.error('加载环境信息失败:', e);
@@ -1450,6 +1560,289 @@
                 }
             } catch (e) {
                 addMicaLog(`设置圆角失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 运控线路相关函数
+        const CLOUD_API_BASE = 'https://metro.tanzhouxiang.dpdns.org';
+        
+        async function callCloudflareAPI(method, path, data = null) {
+            try {
+                // 优先使用 Electron IPC 代理
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.cloudflareApi) {
+                    const result = await window.electronAPI.cloudflareApi.request(method, path, data, null);
+                    return result;
+                }
+                
+                // 降级到直接 fetch
+                const url = `${CLOUD_API_BASE.replace(/\/+$/, '')}${path}`;
+                const options = {
+                    method,
+                    headers: {
+                        'Accept': 'application/json',
+                        ...(data ? { 'Content-Type': 'application/json' } : {})
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(url, options);
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || result.message || `HTTP ${response.status}`);
+                }
+                
+                return { ok: true, data: result };
+            } catch (e) {
+                console.error('[dev_window] API调用失败:', e);
+                return { ok: false, error: e.message };
+            }
+        }
+        
+        async function loadRuntimeLines() {
+            try {
+                document.getElementById('runtime-lines-status').textContent = '加载中...';
+                document.getElementById('runtime-lines-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/runtime/lines');
+                
+                if (result.ok && result.data) {
+                    const lines = result.data.lines || result.data.data?.lines || [];
+                    document.getElementById('runtime-lines-result').textContent = JSON.stringify(lines, null, 2);
+                    document.getElementById('runtime-lines-status').textContent = `已加载 ${lines.length} 条线路`;
+                    document.getElementById('runtime-lines-status').className = 'status-badge status-success status-inline';
+                    addLog(`成功获取运控线路: ${lines.length} 条`, 'success');
+                } else {
+                    throw new Error(result.error || '获取失败');
+                }
+            } catch (e) {
+                document.getElementById('runtime-lines-result').textContent = '错误: ' + e.message;
+                document.getElementById('runtime-lines-status').textContent = '加载失败';
+                document.getElementById('runtime-lines-status').className = 'status-badge status-error status-inline';
+                addLog('获取运控线路失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function loadHolidays() {
+            try {
+                document.getElementById('holidays-status').textContent = '加载中...';
+                document.getElementById('holidays-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/holidays');
+                
+                if (result.ok && result.data) {
+                    const holidays = result.data.config || result.data.data?.config || result.data;
+                    document.getElementById('holidays-result').textContent = JSON.stringify(holidays, null, 2);
+                    document.getElementById('holidays-status').textContent = '已加载';
+                    document.getElementById('holidays-status').className = 'status-badge status-success status-inline';
+                    addLog('成功获取节日配置', 'success');
+                } else {
+                    throw new Error(result.error || '获取失败');
+                }
+            } catch (e) {
+                document.getElementById('holidays-result').textContent = '错误: ' + e.message;
+                document.getElementById('holidays-status').textContent = '加载失败';
+                document.getElementById('holidays-status').className = 'status-badge status-error status-inline';
+                addLog('获取节日配置失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function checkActiveHolidays() {
+            try {
+                document.getElementById('holidays-status').textContent = '检查中...';
+                document.getElementById('holidays-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/holidays/active');
+                
+                if (result.ok && result.data) {
+                    const active = result.data.active || result.data.data?.active || result.data;
+                    document.getElementById('holidays-result').textContent = JSON.stringify(active, null, 2);
+                    document.getElementById('holidays-status').textContent = active && Object.keys(active).length > 0 ? '有激活的节日' : '无激活节日';
+                    document.getElementById('holidays-status').className = active && Object.keys(active).length > 0 
+                        ? 'status-badge status-success status-inline' 
+                        : 'status-badge status-inactive status-inline';
+                    
+                    // 如果有激活的节日，发送通知
+                    if (active && Object.keys(active).length > 0) {
+                        const holidayNames = Object.keys(active).join(', ');
+                        showNotification('节日提醒', `当前激活的节日: ${holidayNames}`, 'holiday');
+                        addLog(`检测到激活的节日: ${holidayNames}`, 'success');
+                    } else {
+                        addLog('当前无激活的节日', 'info');
+                    }
+                } else {
+                    throw new Error(result.error || '检查失败');
+                }
+            } catch (e) {
+                document.getElementById('holidays-result').textContent = '错误: ' + e.message;
+                document.getElementById('holidays-status').textContent = '检查失败';
+                document.getElementById('holidays-status').className = 'status-badge status-error status-inline';
+                addLog('检查激活节日失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function loadEasterEggs() {
+            try {
+                document.getElementById('easter-eggs-status').textContent = '加载中...';
+                document.getElementById('easter-eggs-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/easter-eggs');
+                
+                if (result.ok && result.data) {
+                    const config = result.data.config || result.data.data?.config || result.data;
+                    document.getElementById('easter-eggs-result').textContent = JSON.stringify(config, null, 2);
+                    
+                    // 根据配置状态显示不同的文本
+                    let statusText = '已禁用';
+                    let statusClass = 'status-badge status-inactive status-inline';
+                    
+                    if (config._isDefault === true) {
+                        // 未配置状态（默认值）
+                        statusText = '未配置';
+                        statusClass = 'status-badge status-inactive status-inline';
+                    } else if (config.enabled === true) {
+                        // 已启用状态
+                        statusText = '已启用';
+                        statusClass = 'status-badge status-success status-inline';
+                    } else {
+                        // 已配置但禁用状态
+                        statusText = '已禁用';
+                        statusClass = 'status-badge status-inactive status-inline';
+                    }
+                    
+                    document.getElementById('easter-eggs-status').textContent = statusText;
+                    document.getElementById('easter-eggs-status').className = statusClass;
+                    addLog('成功获取彩蛋配置', 'success');
+                    
+                    // 如果彩蛋已启用，显示通知
+                    if (config.enabled) {
+                        const stationCount = config.stations?.length || 0;
+                        const messageCount = config.messages?.length || 0;
+                        showNotification('彩蛋配置', `彩蛋已启用，${stationCount} 个触发站点，${messageCount} 条消息`, 'easter-egg');
+                    }
+                } else {
+                    throw new Error(result.error || '获取失败');
+                }
+            } catch (e) {
+                document.getElementById('easter-eggs-result').textContent = '错误: ' + e.message;
+                document.getElementById('easter-eggs-status').textContent = '加载失败';
+                document.getElementById('easter-eggs-status').className = 'status-badge status-error status-inline';
+                addLog('获取彩蛋配置失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 节日和彩蛋监听
+        let holidayEasterEggMonitoringInterval = null;
+        let lastActiveHolidays = null;
+        let lastEasterEggsEnabled = null;
+        
+        function showNotification(title, body, type = 'info') {
+            // 使用Electron通知API
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.showNotification) {
+                window.electronAPI.showNotification(title, body, {
+                    tag: type,
+                    urgency: 'normal'
+                }).then(() => {
+                    addLog(`通知已发送: ${title} - ${body}`, 'success');
+                }).catch(e => {
+                    console.warn('发送通知失败:', e);
+                    addLog(`通知发送失败: ${e.message}`, 'warn');
+                });
+            } else if ('Notification' in window) {
+                // 降级到浏览器通知
+                if (Notification.permission === 'granted') {
+                    const notification = new Notification(title, {
+                        body: body,
+                        icon: '/favicon.ico',
+                        tag: type
+                    });
+                    addLog(`浏览器通知已发送: ${title} - ${body}`, 'success');
+                } else if (Notification.permission !== 'denied') {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                            new Notification(title, { body: body, icon: '/favicon.ico', tag: type });
+                            addLog(`浏览器通知已发送: ${title} - ${body}`, 'success');
+                        }
+                    });
+                }
+            }
+        }
+        
+        async function startHolidayEasterEggMonitoring() {
+            if (holidayEasterEggMonitoringInterval) {
+                addLog('监听已在运行中', 'warn');
+                return;
+            }
+            
+            addLog('开始监听节日和彩蛋变化', 'info');
+            document.getElementById('holiday-notification-status').textContent = '监听中';
+            document.getElementById('easter-egg-notification-status').textContent = '监听中';
+            
+            // 立即检查一次
+            await checkHolidayEasterEggChanges();
+            
+            // 每30秒检查一次
+            holidayEasterEggMonitoringInterval = setInterval(async () => {
+                await checkHolidayEasterEggChanges();
+            }, 30000);
+        }
+        
+        function stopHolidayEasterEggMonitoring() {
+            if (holidayEasterEggMonitoringInterval) {
+                clearInterval(holidayEasterEggMonitoringInterval);
+                holidayEasterEggMonitoringInterval = null;
+                document.getElementById('holiday-notification-status').textContent = '已停止';
+                document.getElementById('easter-egg-notification-status').textContent = '已停止';
+                addLog('已停止监听节日和彩蛋变化', 'info');
+            }
+        }
+        
+        async function checkHolidayEasterEggChanges() {
+            try {
+                // 检查激活的节日
+                const holidaysResult = await callCloudflareAPI('GET', '/holidays/active');
+                if (holidaysResult.ok && holidaysResult.data) {
+                    const active = holidaysResult.data.active || holidaysResult.data.data?.active || holidaysResult.data;
+                    const currentHolidays = active && Object.keys(active).length > 0 ? Object.keys(active) : [];
+                    
+                    // 如果节日状态发生变化
+                    if (JSON.stringify(currentHolidays) !== JSON.stringify(lastActiveHolidays)) {
+                        if (currentHolidays.length > 0) {
+                            const holidayNames = currentHolidays.join(', ');
+                            showNotification('节日提醒', `检测到激活的节日: ${holidayNames}`, 'holiday');
+                            addLog(`节日变化: ${holidayNames}`, 'success');
+                        } else if (lastActiveHolidays && lastActiveHolidays.length > 0) {
+                            addLog('节日已结束', 'info');
+                        }
+                        lastActiveHolidays = currentHolidays;
+                    }
+                }
+                
+                // 检查彩蛋配置
+                const easterEggsResult = await callCloudflareAPI('GET', '/easter-eggs');
+                if (easterEggsResult.ok && easterEggsResult.data) {
+                    const config = easterEggsResult.data.config || easterEggsResult.data.data?.config || easterEggsResult.data;
+                    const currentEnabled = config.enabled === true;
+                    
+                    // 如果彩蛋状态发生变化
+                    if (currentEnabled !== lastEasterEggsEnabled) {
+                        if (currentEnabled) {
+                            const stationCount = config.stations?.length || 0;
+                            const messageCount = config.messages?.length || 0;
+                            showNotification('彩蛋配置', `彩蛋已启用，${stationCount} 个触发站点，${messageCount} 条消息`, 'easter-egg');
+                            addLog('彩蛋状态变化: 已启用', 'success');
+                        } else {
+                            addLog('彩蛋状态变化: 已禁用', 'info');
+                        }
+                        lastEasterEggsEnabled = currentEnabled;
+                    }
+                }
+            } catch (e) {
+                console.error('检查节日和彩蛋变化失败:', e);
+                addLog('检查节日和彩蛋变化失败: ' + e.message, 'error');
             }
         }
         

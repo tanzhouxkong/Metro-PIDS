@@ -270,6 +270,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getOSVersion: async () => {
     try { return await ipcRenderer.invoke('app/get-os-version'); } catch (e) { return { ok: false, error: String(e) }; }
   },
+  // 获取系统信息（完整信息）
+  getSystemInfo: async () => {
+    try {
+      const result = await ipcRenderer.invoke('app/get-system-info');
+      return result;
+    } catch (e) {
+      console.error('[preload] getSystemInfo 错误:', e);
+      return { ok: false, error: String(e) };
+    }
+  },
+  // 获取设备唯一ID
+  getDeviceId: async () => {
+    try {
+      const result = await ipcRenderer.invoke('app/get-device-id');
+      return result;
+    } catch (e) {
+      console.error('[preload] getDeviceId 错误:', e);
+      return { ok: false, error: String(e) };
+    }
+  },
   // 获取环境变量中的 Gitee Token
   getGiteeTokenFromEnv: async () => {
     try { return await ipcRenderer.invoke('env/get-gitee-token'); } catch (e) { return null; }

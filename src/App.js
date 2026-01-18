@@ -1,4 +1,4 @@
-import { onUnmounted, Teleport, watch } from 'vue'
+import { onUnmounted, Teleport, watch, onMounted } from 'vue'
 import AdminApp from './components/AdminApp.js'
 import Topbar from './components/Topbar.js'
 import LeftRail from './components/LeftRail.js'
@@ -11,6 +11,7 @@ import { useKeyboard } from './composables/useKeyboard.js'
 import { useController } from './composables/useController.js'
 import { useSettings } from './composables/useSettings.js'
 import { useUIState } from './composables/useUIState.js'
+import { useCloudConfig, CLOUD_API_BASE } from './composables/useCloudConfig.js'
 
 export default {
   name: 'App',
@@ -202,6 +203,26 @@ export default {
         console.log('[App] autoLocked 变化:', newVal);
       });
     }
+
+    // 上报使用统计（应用启动时）
+    const cloudConfig = useCloudConfig(CLOUD_API_BASE);
+    onMounted(async () => {
+      console.log('[App] 📊 准备上报使用统计，API地址:', CLOUD_API_BASE);
+      // 延迟上报，确保应用已完全加载
+      setTimeout(async () => {
+        try {
+          console.log('[App] 📤 开始上报使用统计...');
+          const result = await cloudConfig.sendTelemetry();
+          if (result && result.ok) {
+            console.log('[App] ✅ 使用统计已上报成功');
+          } else {
+            console.warn('[App] ⚠️ 使用统计上报返回失败:', result?.error || '未知错误');
+          }
+        } catch (e) {
+          console.error('[App] ❌ 上报使用统计异常:', e);
+        }
+      }, 2000); // 延迟2秒上报
+    });
 
     return { pidState, uiState, stopAutoplay };
   },
