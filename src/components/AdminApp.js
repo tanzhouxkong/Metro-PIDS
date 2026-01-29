@@ -3,7 +3,11 @@ import { Teleport } from 'vue'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useFileIO } from '../composables/useFileIO.js'
+<<<<<<< HEAD
 import StationEditor from './StationEditor.js'
+=======
+import StationEditor from './StationEditor.vue'
+>>>>>>> feature/ui-update
 import dialogService from '../utils/dialogService.js'
 
 export default {
@@ -100,7 +104,15 @@ export default {
             editingIndex.value = index
             isNewStation.value = false
         }
+<<<<<<< HEAD
         showEditor.value = true
+=======
+        // 注意：从右键菜单触发时，click 事件可能在同一轮冒泡中立刻命中遮罩 @click.self 导致“打开又关闭”
+        // 这里延迟到下一轮事件循环再打开，避免被当前 click 冒泡关闭
+        setTimeout(() => {
+            showEditor.value = true
+        }, 0)
+>>>>>>> feature/ui-update
     }
 
     const fileIO = useFileIO(state)
@@ -219,7 +231,14 @@ export default {
         editingIndex.value = targetIndex
         editingStation.value = { name: '', en: '', skip: false, door: 'left', dock: 'both', xfer: [], expressStop: false }
         isNewStation.value = true
+<<<<<<< HEAD
         showEditor.value = true
+=======
+        // 同 openEditor：避免与菜单 click 冒泡冲突导致立刻关闭
+        setTimeout(() => {
+            showEditor.value = true
+        }, 0)
+>>>>>>> feature/ui-update
     }
     
     // 复制站点

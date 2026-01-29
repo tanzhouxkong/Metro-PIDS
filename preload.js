@@ -264,6 +264,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUpdateSource: async () => {
     try { return await ipcRenderer.invoke('update/get-source'); } catch (e) { return { ok: false, error: String(e) }; }
   },
+<<<<<<< HEAD
+=======
+  // 获取静默/强制更新配置
+  getUpdateSilent: async () => {
+    try { return await ipcRenderer.invoke('update/get-silent'); } catch (e) { return { ok: false, error: String(e) }; }
+  },
+>>>>>>> feature/ui-update
   getAppVersion: async () => {
     try { return await ipcRenderer.invoke('app/get-version'); } catch (e) { return { ok: false, error: String(e) }; }
   },

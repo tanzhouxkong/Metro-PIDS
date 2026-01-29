@@ -526,10 +526,21 @@ export default {
             }
         }
 
+<<<<<<< HEAD
         // 打开更新日志弹窗
         const openReleaseNotes = async () => {
             if (!loadingNotes.value) await loadReleaseNotes();
             showReleaseNotes.value = true;
+=======
+        // 打开更新日志弹窗：立刻弹出，然后在后台加载内容
+        const openReleaseNotes = async () => {
+            if (!showReleaseNotes.value) {
+                showReleaseNotes.value = true;
+            }
+            if (!loadingNotes.value && releaseNotes.value.length === 0) {
+                loadReleaseNotes();
+            }
+>>>>>>> feature/ui-update
         }
 
         // 关闭更新日志弹窗

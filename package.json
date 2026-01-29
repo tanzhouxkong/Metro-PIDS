@@ -1,6 +1,10 @@
 {
   "name": "metro-pids",
+<<<<<<< HEAD
   "version": "1.5.6",
+=======
+  "version": "1.5.7",
+>>>>>>> feature/ui-update
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {

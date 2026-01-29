@@ -69,6 +69,20 @@ export default {
       if (this.type === 'confirm') return '#FF9F43';
       if (this.type === 'prompt') return '#FF9F43';
       return '#1677ff';
+<<<<<<< HEAD
+=======
+    },
+    isDarkTheme() {
+      try {
+        const el = document.documentElement;
+        return !!(el && (el.classList.contains('dark') || el.getAttribute('data-theme') === 'dark'));
+      } catch (e) {
+        return false;
+      }
+    },
+    getGlassBg() {
+      return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)';
+>>>>>>> feature/ui-update
     }
   },
   mounted() {
@@ -85,10 +99,17 @@ export default {
     <Teleport to="body">
       <Transition name="fade">
         <div v-if="visible" 
+<<<<<<< HEAD
              style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);" 
              @click.self="handleCancel">
           <div @click.stop 
                style="background:var(--card, #ffffff); border-radius:16px; padding:0; width:420px; max-width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;">
+=======
+             style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none;" 
+             @click.self="handleCancel">
+          <div @click.stop 
+               :style="{ background: getGlassBg(), backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderRadius:'16px', padding:'0', width:'420px', maxWidth:'90%', boxShadow:'0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1)', overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">
+>>>>>>> feature/ui-update
             <!-- Header -->
             <div :style="{ 
               display: 'flex', 
@@ -127,7 +148,11 @@ export default {
             </div>
             
             <!-- Content -->
+<<<<<<< HEAD
             <div style="padding:24px 28px; background:var(--bg, #fafafa);">
+=======
+            <div :style="{ padding:'24px 28px', background: (isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)') }">
+>>>>>>> feature/ui-update
               <!-- 提示信息 -->
               <div v-if="message" style="margin-bottom:20px; color:var(--text, #333); font-size:14px; line-height:1.7;">{{ message }}</div>
               

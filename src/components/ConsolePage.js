@@ -1162,6 +1162,7 @@ export default {
               <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
           </div>
           
+<<<<<<< HEAD
           <!-- 线路管理器按钮 -->
           <div style="display:flex; gap:12px; margin-bottom:12px;">
               <button class="btn" style="flex:1; background:#FF9F43; color:white; border:none; border-radius:6px; padding:12px; font-weight:bold; font-size:14px;" @click="openLineManagerWindow()">
@@ -1186,6 +1187,20 @@ export default {
           <button class="btn" style="width:100%; background:#FF6B6B; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;" @click="fileIO.resetData()">
               <i class="fas fa-trash-alt"></i> 重置数据
           </button>
+=======
+          <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
+                  <i class="fas fa-folder-open" style="font-size:18px;"></i> 打开管理器
+              </button>
+              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
+                  <i class="fas fa-save" style="font-size:18px;"></i> 保存当前线路
+              </button>
+              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
+                  <i class="fas fa-trash-alt" style="font-size:18px;"></i> 重置数据
+              </button>
+          </div>
+>>>>>>> feature/ui-update
           </div>
           
         <!-- Service Mode Settings -->

@@ -48,6 +48,11 @@ export default {
     const selectedLine = ref(null); // 选中的线路
     const contextMenu = ref({ visible: false, x: 0, y: 0, folderId: null, folderName: null }); // 文件夹右键菜单状态
     const lineContextMenu = ref({ visible: false, x: 0, y: 0, line: null }); // 线路右键菜单状态
+<<<<<<< HEAD
+=======
+    const sidebarNewMenu = ref({ visible: false, x: 0, y: 0 }); // 侧边栏空白处右键 → 新建
+    const linesNewMenu = ref({ visible: false, x: 0, y: 0 });   // 线路区空白处右键 → 新建
+>>>>>>> feature/ui-update
     const clipboard = ref({ type: null, line: null, sourceFolderId: null, sourceFolderPath: null }); // 剪贴板状态（用于复制/剪贴）
     const isSavingThroughLine = ref(false); // 是否正在保存贯通线路
     const pendingThroughLineInfo = ref(null); // 待保存的贯通线路信息
@@ -99,6 +104,10 @@ export default {
                 // 更严格的判断：必须满足 throughOperationEnabled === true 或者（有有效段且名称包含贯通）
                 const isThroughLine = l.meta?.throughOperationEnabled === true || 
                                      (hasValidSegments && hasThroughInName);
+<<<<<<< HEAD
+=======
+                const isLoopLine = l.meta?.mode === 'loop';
+>>>>>>> feature/ui-update
                 return {
                   name: l.meta?.lineName || '未命名线路',
                   filePath: '',
@@ -107,7 +116,12 @@ export default {
                   themeColor: l.meta?.themeColor || '#5F27CD',
                   firstStation: stationInfo.first,
                   lastStation: stationInfo.last,
+<<<<<<< HEAD
                   isThroughLine: isThroughLine
+=======
+                  isThroughLine: isThroughLine,
+                  isLoopLine: isLoopLine
+>>>>>>> feature/ui-update
                 };
               });
             }
@@ -179,6 +193,10 @@ export default {
                   // 更严格的判断：必须满足 throughOperationEnabled === true 或者（有有效段且名称包含贯通）
                   const isThroughLine = d.meta.throughOperationEnabled === true || 
                                        (hasValidSegments && hasThroughInName);
+<<<<<<< HEAD
+=======
+                  const isLoopLine = d.meta.mode === 'loop';
+>>>>>>> feature/ui-update
                   lines.push({
                     name: d.meta.lineName || '未命名线路',
                     filePath: it.name,
@@ -186,7 +204,12 @@ export default {
                     themeColor: d.meta.themeColor || '#5F27CD',
                     firstStation: stationInfo.first,
                     lastStation: stationInfo.last,
+<<<<<<< HEAD
                     isThroughLine: isThroughLine // 标记为贯通线路
+=======
+                    isThroughLine: isThroughLine,
+                    isLoopLine: isLoopLine
+>>>>>>> feature/ui-update
                   });
                 }
               }
@@ -467,6 +490,35 @@ export default {
       contextMenu.value.visible = false;
     }
 
+<<<<<<< HEAD
+=======
+    // 侧边栏空白处右键 → 新建文件夹
+    function showSidebarNewMenu(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      contextMenu.value.visible = false;
+      lineContextMenu.value.visible = false;
+      linesNewMenu.value.visible = false;
+      sidebarNewMenu.value = { visible: true, x: event.clientX, y: event.clientY };
+    }
+    function closeSidebarNewMenu() {
+      sidebarNewMenu.value.visible = false;
+    }
+
+    // 线路区空白处右键 → 新建文件夹 / 新建线路
+    function showLinesNewMenu(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      contextMenu.value.visible = false;
+      lineContextMenu.value.visible = false;
+      sidebarNewMenu.value.visible = false;
+      linesNewMenu.value = { visible: true, x: event.clientX, y: event.clientY };
+    }
+    function closeLinesNewMenu() {
+      linesNewMenu.value.visible = false;
+    }
+
+>>>>>>> feature/ui-update
     // 打开文件夹（在文件管理器中）
     async function openFolderInExplorer(folderId) {
       closeContextMenu();
@@ -1250,6 +1302,15 @@ export default {
       handleSaveThroughLine,
       contextMenu,
       lineContextMenu,
+<<<<<<< HEAD
+=======
+      sidebarNewMenu,
+      linesNewMenu,
+      showSidebarNewMenu,
+      closeSidebarNewMenu,
+      showLinesNewMenu,
+      closeLinesNewMenu,
+>>>>>>> feature/ui-update
       showLineContextMenu,
       closeLineContextMenu,
       openLine,
@@ -1293,12 +1354,20 @@ export default {
       <div style="display:flex; flex:1; overflow:hidden; background:transparent;">
         <!-- Left Sidebar: Folders (类似QQ群列表) -->
         <div v-if="hasFoldersAPI && folders.length > 0" style="width:200px; border-right:1px solid var(--lm-sidebar-border, rgba(0, 0, 0, 0.08)); overflow-y:auto; background:var(--lm-sidebar-bg, rgba(255, 255, 255, 0.6)); flex-shrink:0;">
+<<<<<<< HEAD
           <div style="padding:8px 0;">
+=======
+          <div style="padding:8px 0; min-height:100%;" @contextmenu.prevent="showSidebarNewMenu($event)">
+>>>>>>> feature/ui-update
             <div 
               v-for="folder in folders" 
               :key="folder.id"
               @click="isSavingThroughLine && (folder.id === 'default' || folder.name === '默认') ? null : selectFolder(folder.id)"
+<<<<<<< HEAD
               @contextmenu.prevent="showContextMenu($event, folder)"
+=======
+              @contextmenu.prevent.stop="showContextMenu($event, folder)"
+>>>>>>> feature/ui-update
               :style="{
                 padding: '10px 16px',
                 cursor: (isSavingThroughLine && (folder.id === 'default' || folder.name === '默认')) ? 'not-allowed' : 'pointer',
@@ -1344,12 +1413,21 @@ export default {
             <div v-if="currentLines.length > 0" style="padding:12px 20px; background:var(--lm-list-header-bg, #fafafa); border-bottom:1px solid var(--lm-header-border, #e0e0e0); display:flex; align-items:center; font-size:13px; color:var(--muted, #666); font-weight:500; flex-shrink:0;">
               <div style="width:40px;"></div>
               <div style="width:200px;">线路名称</div>
+<<<<<<< HEAD
+=======
+              <div style="width:76px; text-align:center;">类型</div>
+>>>>>>> feature/ui-update
               <div style="width:80px; text-align:center;">颜色</div>
               <div style="flex:1;">首末站</div>
             </div>
             
+<<<<<<< HEAD
             <!-- 线路列表 -->
             <div style="flex:1; overflow-y:auto; padding:0; min-height:0;">
+=======
+            <!-- 线路列表（空白处右键 → 新建） -->
+            <div style="flex:1; overflow-y:auto; padding:0; min-height:0;" @contextmenu.prevent="showLinesNewMenu($event)">
+>>>>>>> feature/ui-update
               <!-- 空状态 -->
               <div v-if="currentLines.length === 0" style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--muted, #999);">
                 <div style="text-align:center;">
@@ -1362,7 +1440,11 @@ export default {
               <div 
                 v-for="(line, index) in currentLines" 
                 :key="index"
+<<<<<<< HEAD
                 @contextmenu.prevent="showLineContextMenu($event, line)"
+=======
+                @contextmenu.prevent.stop="showLineContextMenu($event, line)"
+>>>>>>> feature/ui-update
                 :style="{
                   padding: '12px 20px',
                   cursor: 'pointer',
@@ -1386,11 +1468,27 @@ export default {
                 </div>
                 
                 <!-- 线路名称 -->
+<<<<<<< HEAD
                 <div style="width:200px; min-width:200px; display:flex; align-items:center; gap:10px;" @click="toggleLineSelection(line)">
                   <i :class="line.isThroughLine ? 'fas fa-exchange-alt' : 'fas fa-subway'" :style="{fontSize:'16px', color: line.isThroughLine ? '#FF9F43' : 'var(--muted, #999)'}"></i>
                   <div style="font-size:14px; font-weight:500; color:var(--text, #333); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;" v-html="parseColorMarkup(line.name)">
                   </div>
                   <span v-if="line.isThroughLine" style="background:#FF9F43; color:#fff; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:bold; white-space:nowrap;">贯通</span>
+=======
+                <div style="width:200px; min-width:200px; display:flex; align-items:center; gap:8px;" @click="toggleLineSelection(line)">
+                  <i :class="line.isThroughLine ? 'fas fa-exchange-alt' : (line.isLoopLine ? 'fas fa-circle-notch' : 'fas fa-subway')" :style="{fontSize:'16px', color: line.isThroughLine ? '#FF9F43' : (line.isLoopLine ? '#00b894' : 'var(--muted, #999)')}"></i>
+                  <div style="font-size:14px; font-weight:500; color:var(--text, #333); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; flex:1; min-width:0;" v-html="parseColorMarkup(line.name)">
+                  </div>
+                  <span v-if="line.isThroughLine" style="background:#FF9F43; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; white-space:nowrap; flex-shrink:0;">贯通</span>
+                  <span v-else-if="line.isLoopLine" style="background:#00b894; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; white-space:nowrap; flex-shrink:0;" title="环线 (Loop)">环线</span>
+                </div>
+                
+                <!-- 类型 -->
+                <div style="width:76px; min-width:76px; display:flex; justify-content:center; align-items:center;" @click="toggleLineSelection(line)">
+                  <span v-if="line.isThroughLine" style="font-size:12px; color:#FF9F43; font-weight:500;">贯通</span>
+                  <span v-else-if="line.isLoopLine" style="font-size:12px; color:#00b894; font-weight:500;">环线</span>
+                  <span v-else style="font-size:12px; color:var(--muted, #999);">单线</span>
+>>>>>>> feature/ui-update
                 </div>
                 
                 <!-- 颜色 -->
@@ -1398,9 +1496,17 @@ export default {
                   <div :style="{width:'24px', height:'24px', borderRadius:'4px', background:line.themeColor || '#5F27CD', border:'1px solid var(--lm-header-border, #e0e0e0)', flexShrink:0}"></div>
                 </div>
                 
+<<<<<<< HEAD
                 <!-- 首末站 -->
                 <div style="flex:1; min-width:0; font-size:13px; color:var(--muted, #666); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="toggleLineSelection(line)">
                   <span v-if="line.firstStation && line.lastStation">{{ line.firstStation }} → {{ line.lastStation }}</span>
+=======
+                <!-- 首末站：环线显示 首⇄末，单线/贯通显示 首→末 -->
+                <div style="flex:1; min-width:0; font-size:13px; color:var(--muted, #666); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="toggleLineSelection(line)">
+                  <span v-if="line.firstStation && line.lastStation">
+                    {{ line.isLoopLine ? (line.firstStation + ' ⇄ ' + line.lastStation) : (line.firstStation + ' → ' + line.lastStation) }}
+                  </span>
+>>>>>>> feature/ui-update
                   <span v-else style="color:var(--muted, #999);">-</span>
                 </div>
               </div>
@@ -1410,6 +1516,7 @@ export default {
             <div style="padding:12px 20px; background:var(--lm-bottom-bar-bg, rgba(250, 250, 250, 0.85)); border-top:1px solid var(--lm-bottom-bar-border, rgba(224, 224, 224, 0.5)); display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
               <!-- 左侧信息区域 -->
               <div style="display:flex; align-items:center; gap:16px; flex:1;">
+<<<<<<< HEAD
                 <button 
                   v-if="hasFoldersAPI"
                   @click="addFolder()" 
@@ -1455,6 +1562,8 @@ export default {
                   <i class="fas fa-cloud" style="font-size:12px;"></i> 运控线路
                 </button>
                 
+=======
+>>>>>>> feature/ui-update
                 <!-- 选中线路信息 -->
                 <div v-if="selectedLine" style="display:flex; align-items:center; gap:8px; color:var(--muted, #666); font-size:13px;">
                   <i class="fas fa-check-circle" style="color:var(--accent, #12b7f5); font-size:14px;"></i>
@@ -1547,11 +1656,38 @@ export default {
         borderRadius: '4px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         zIndex: 10000,
+<<<<<<< HEAD
         minWidth: '120px',
+=======
+        minWidth: '140px',
+>>>>>>> feature/ui-update
         padding: '4px 0'
       }"
     >
       <div 
+<<<<<<< HEAD
+=======
+        @click="closeContextMenu(); addFolder()"
+        style="padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 8px; transition: background 0.2s;"
+        @mouseover="$event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)'"
+        @mouseout="$event.target.style.background='transparent'"
+      >
+        <i class="fas fa-folder-plus" style="font-size: 12px; color: var(--accent, #00b894);"></i>
+        新建文件夹
+      </div>
+      <div 
+        @click="closeContextMenu(); activeFolderId !== 'default' && createNewLine()"
+        :style="{ padding: '8px 16px', cursor: activeFolderId === 'default' ? 'not-allowed' : 'pointer', fontSize: '13px', color: activeFolderId === 'default' ? 'var(--muted, #999)' : 'var(--text, #333)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s', opacity: activeFolderId === 'default' ? 0.6 : 1 }"
+        @mouseover="activeFolderId !== 'default' && ($event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)')"
+        @mouseout="$event.target.style.background='transparent'"
+        :title="activeFolderId === 'default' ? '默认文件夹不允许创建线路' : '新建线路'"
+      >
+        <i class="fas fa-plus-circle" style="font-size: 12px; color: var(--btn-blue-bg, #1677ff);"></i>
+        新建线路
+      </div>
+      <div style="height: 1px; background: var(--lm-menu-border, #e0e0e0); margin: 4px 0;"></div>
+      <div 
+>>>>>>> feature/ui-update
         @click="handleContextMenuRename(contextMenu.folderId)"
         style="padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 8px; transition: background 0.2s;"
         @mouseover="$event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)'"
@@ -1588,6 +1724,48 @@ export default {
       style="position: fixed; inset: 0; z-index: 9999; background: transparent;"
       ></div>
       
+<<<<<<< HEAD
+=======
+      <!-- 侧边栏空白处右键：新建文件夹 -->
+      <Teleport to="body">
+      <div v-if="sidebarNewMenu.visible" @click.stop @contextmenu.prevent
+        :style="{ position:'fixed', left:sidebarNewMenu.x+'px', top:sidebarNewMenu.y+'px', background:'var(--lm-menu-bg,#fff)', border:'1px solid var(--lm-menu-border,#e0e0e0)', borderRadius:'4px', boxShadow:'0 4px 12px rgba(0,0,0,0.15)', zIndex:10000, minWidth:'140px', padding:'4px 0' }">
+        <div @click="closeSidebarNewMenu(); addFolder()"
+          style="padding:8px 16px; cursor:pointer; font-size:13px; color:var(--text,#333); display:flex; align-items:center; gap:8px;"
+          @mouseover="$event.currentTarget.style.background='var(--lm-menu-item-hover,#f0f0f0)'"
+          @mouseout="$event.currentTarget.style.background='transparent'">
+          <i class="fas fa-folder-plus" style="font-size:12px; color:var(--accent,#00b894);"></i>
+          新建文件夹
+        </div>
+      </div>
+      </Teleport>
+      <div v-if="sidebarNewMenu.visible" @click="closeSidebarNewMenu()" style="position:fixed; inset:0; z-index:9998; background:transparent;"></div>
+      
+      <!-- 线路区空白处右键：新建文件夹、新建线路 -->
+      <Teleport to="body">
+      <div v-if="linesNewMenu.visible" @click.stop @contextmenu.prevent
+        :style="{ position:'fixed', left:linesNewMenu.x+'px', top:linesNewMenu.y+'px', background:'var(--lm-menu-bg,#fff)', border:'1px solid var(--lm-menu-border,#e0e0e0)', borderRadius:'4px', boxShadow:'0 4px 12px rgba(0,0,0,0.15)', zIndex:10000, minWidth:'140px', padding:'4px 0' }">
+        <div @click="closeLinesNewMenu(); addFolder()"
+          style="padding:8px 16px; cursor:pointer; font-size:13px; color:var(--text,#333); display:flex; align-items:center; gap:8px;"
+          @mouseover="$event.currentTarget.style.background='var(--lm-menu-item-hover,#f0f0f0)'"
+          @mouseout="$event.currentTarget.style.background='transparent'">
+          <i class="fas fa-folder-plus" style="font-size:12px; color:var(--accent,#00b894);"></i>
+          新建文件夹
+        </div>
+        <div style="height:1px; background:var(--lm-menu-border,#e0e0e0); margin:4px 0;"></div>
+        <div @click="closeLinesNewMenu(); activeFolderId !== 'default' && createNewLine()"
+          :style="{ padding:'8px 16px', cursor: activeFolderId === 'default' ? 'not-allowed' : 'pointer', fontSize:'13px', color: activeFolderId === 'default' ? 'var(--muted,#999)' : 'var(--text,#333)', display:'flex', alignItems:'center', gap:'8px', opacity: activeFolderId === 'default' ? 0.6 : 1 }"
+          @mouseover="activeFolderId !== 'default' && ($event.currentTarget.style.background='var(--lm-menu-item-hover,#f0f0f0)')"
+          @mouseout="$event.currentTarget.style.background='transparent'"
+          :title="activeFolderId === 'default' ? '默认文件夹不允许创建线路' : '新建线路'">
+          <i class="fas fa-plus-circle" style="font-size:12px; color:var(--btn-blue-bg,#1677ff);"></i>
+          新建线路
+        </div>
+      </div>
+      </Teleport>
+      <div v-if="linesNewMenu.visible" @click="closeLinesNewMenu()" style="position:fixed; inset:0; z-index:9998; background:transparent;"></div>
+      
+>>>>>>> feature/ui-update
       <!-- 线路右键菜单 - 使用 Teleport 传送到 body，允许溢出窗口 -->
       <Teleport to="body">
       <div 
@@ -1604,11 +1782,38 @@ export default {
           borderRadius: '4px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
           zIndex: 9999,
+<<<<<<< HEAD
           minWidth: '120px',
+=======
+          minWidth: '140px',
+>>>>>>> feature/ui-update
           padding: '4px 0'
         }"
       >
       <div 
+<<<<<<< HEAD
+=======
+        @click="closeLineContextMenu(); addFolder()"
+        style="padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 8px; transition: background 0.2s;"
+        @mouseover="$event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)'"
+        @mouseout="$event.target.style.background='transparent'"
+      >
+        <i class="fas fa-folder-plus" style="font-size: 12px; color: var(--accent, #00b894);"></i>
+        新建文件夹
+      </div>
+      <div 
+        @click="closeLineContextMenu(); activeFolderId !== 'default' && createNewLine()"
+        :style="{ padding: '8px 16px', cursor: activeFolderId === 'default' ? 'not-allowed' : 'pointer', fontSize: '13px', color: activeFolderId === 'default' ? 'var(--muted, #999)' : 'var(--text, #333)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s', opacity: activeFolderId === 'default' ? 0.6 : 1 }"
+        @mouseover="activeFolderId !== 'default' && ($event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)')"
+        @mouseout="$event.target.style.background='transparent'"
+        :title="activeFolderId === 'default' ? '默认文件夹不允许创建线路' : '新建线路'"
+      >
+        <i class="fas fa-plus-circle" style="font-size: 12px; color: var(--btn-blue-bg, #1677ff);"></i>
+        新建线路
+      </div>
+      <div style="height: 1px; background: var(--lm-menu-border, #e0e0e0); margin: 4px 0;"></div>
+      <div 
+>>>>>>> feature/ui-update
         @click="openLine(lineContextMenu.line)"
         style="padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 8px; transition: background 0.2s;"
         @mouseover="$event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)'"

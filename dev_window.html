@@ -405,7 +405,11 @@
                     <value id="env-platform">-</value>
                 </div>
                 <div class="info-item">
+<<<<<<< HEAD
                     <label>应用版本</label>
+=======
+                    <label>当前版本</label>
+>>>>>>> feature/ui-update
                     <value id="app-version">-</value>
                 </div>
                 <div class="info-item">
@@ -417,6 +421,17 @@
                     <value id="os-version">-</value>
                 </div>
                 <div class="info-item">
+<<<<<<< HEAD
+=======
+                    <label>更新源</label>
+                    <value id="update-source">-</value>
+                </div>
+                <div class="info-item">
+                    <label>静默/强制更新</label>
+                    <value id="update-silent">已关闭</value>
+                </div>
+                <div class="info-item">
+>>>>>>> feature/ui-update
                     <label>设备ID</label>
                     <value id="device-id" style="font-size: 12px; word-break: break-all;">-</value>
                 </div>
@@ -923,7 +938,46 @@
                 } else {
                     document.getElementById('os-version').textContent = navigator.platform || 'N/A';
                 }
+<<<<<<< HEAD
                 
+=======
+                // 更新源（github 视为“服务器”优先）
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getUpdateSource) {
+                    try {
+                        const srcResult = await window.electronAPI.getUpdateSource();
+                        let label = '服务器 (GitHub 优先)';
+                        if (srcResult && srcResult.ok) {
+                            const src = srcResult.source || 'github';
+                            if (src === 'gitee') {
+                                label = 'Gitee 镜像';
+                            } else {
+                                label = '服务器 (GitHub 优先)';
+                            }
+                        }
+                        document.getElementById('update-source').textContent = label;
+                    } catch (e) {
+                        document.getElementById('update-source').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('update-source').textContent = '服务器 (GitHub 优先)';
+                }
+                // 静默/强制更新配置
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getUpdateSilent) {
+                    try {
+                        const silentResult = await window.electronAPI.getUpdateSilent();
+                        if (silentResult && silentResult.ok) {
+                            document.getElementById('update-silent').textContent = silentResult.enabled ? '已开启（静默自动下载/安装）' : '已关闭';
+                        } else {
+                            document.getElementById('update-silent').textContent = '获取失败';
+                        }
+                    } catch (e) {
+                        document.getElementById('update-silent').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('update-silent').textContent = 'N/A';
+                }
+
+>>>>>>> feature/ui-update
                 // 设备ID（与统计上报使用相同的获取逻辑）
                 let deviceId = null;
                 if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getDeviceId) {

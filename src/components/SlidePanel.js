@@ -1775,10 +1775,22 @@ export default {
             }
         }
 
+<<<<<<< HEAD
         // 打开更新日志弹窗
         const openReleaseNotes = async () => {
             if (!loadingNotes.value) await loadReleaseNotes();
             showReleaseNotes.value = true;
+=======
+        // 打开更新日志弹窗：先打开，再异步加载，避免用户感觉要点两次
+        const openReleaseNotes = async () => {
+            if (!showReleaseNotes.value) {
+                showReleaseNotes.value = true;
+            }
+            // 仅在未加载且未处于加载中时触发加载
+            if (!loadingNotes.value && releaseNotes.value.length === 0) {
+                loadReleaseNotes();
+            }
+>>>>>>> feature/ui-update
         }
 
         // 关闭更新日志弹窗
@@ -2823,6 +2835,7 @@ export default {
                 <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
             </div>
             
+<<<<<<< HEAD
             <!-- 线路管理器按钮 -->
             <div style="display:flex; gap:12px; margin-bottom:12px;">
                 <button class="btn" style="flex:1; background:#FF9F43; color:white; border:none; border-radius:6px; padding:12px; font-weight:bold; font-size:14px;" @click="openLineManagerWindow()">
@@ -2847,6 +2860,20 @@ export default {
             <button class="btn" style="width:100%; background:#FF6B6B; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;" @click="fileIO.resetData()">
                 <i class="fas fa-trash-alt"></i> 重置数据
             </button>
+=======
+            <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+                <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
+                    <i class="fas fa-folder-open" style="font-size:18px;"></i> 打开管理器
+                </button>
+                <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
+                    <i class="fas fa-save" style="font-size:18px;"></i> 保存当前线路
+                </button>
+                <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
+                    <i class="fas fa-trash-alt" style="font-size:18px;"></i> 重置数据
+                </button>
+            </div>
+>>>>>>> feature/ui-update
         </div>
           
           <!-- Autoplay Control -->
@@ -3132,7 +3159,11 @@ export default {
     <Teleport to="body">
         <Transition name="fade">
             <div v-if="showReleaseNotes" 
+<<<<<<< HEAD
                  style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.5);" 
+=======
+                 style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:transparent;" 
+>>>>>>> feature/ui-update
                  @click.self="closeReleaseNotes">
                 <div style="border-radius:20px; padding:0; max-width:900px; max-height:85vh; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset; overflow:hidden; transform:scale(1); transition:transform 0.2s;" 
                      class="release-notes-dialog">

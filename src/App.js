@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { onUnmounted, Teleport, watch, onMounted } from 'vue'
+=======
+import { onUnmounted, Teleport, Transition, watch, onMounted } from 'vue'
+>>>>>>> feature/ui-update
 import AdminApp from './components/AdminApp.js'
 import Topbar from './components/Topbar.js'
 import LeftRail from './components/LeftRail.js'
@@ -15,7 +19,11 @@ import { useCloudConfig, CLOUD_API_BASE } from './composables/useCloudConfig.js'
 
 export default {
   name: 'App',
+<<<<<<< HEAD
   components: { AdminApp, Topbar, LeftRail, SlidePanel, ConsolePage, SettingsPage, UnifiedDialogs, Teleport },
+=======
+  components: { AdminApp, Topbar, LeftRail, SlidePanel, ConsolePage, SettingsPage, UnifiedDialogs, Teleport, Transition },
+>>>>>>> feature/ui-update
   setup() {
     const { uiState } = useUIState()
     const { state: pidState, bcOn } = usePidsState();
@@ -255,6 +263,7 @@ export default {
 
         <UnifiedDialogs />
         
+<<<<<<< HEAD
         <!-- Global auto-play lock overlay (covers entire app) - 使用 Teleport 传送到 body -->
         <Teleport to="body">
             <div v-if="uiState.autoLocked" style="position:fixed; inset:0; z-index:999999; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; flex-direction:column; color:#fff; padding:20px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); transition: backdrop-filter .24s ease, background .24s ease; pointer-events: auto;">
@@ -264,6 +273,50 @@ export default {
                     <button class="btn" style="background:#ff6b6b; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer; pointer-events: auto;" @click="stopAutoplay">停止自动播放</button>
                 </div>
             </div>
+=======
+        <!-- Global auto-play lock dialog - 使用 Teleport + Transition，样式对齐更新日志弹窗 -->
+        <Teleport to="body">
+            <Transition name="fade">
+                <div 
+                    v-if="uiState.autoLocked" 
+                    style="position:fixed; inset:0; z-index:20000; display:flex; align-items:center; justify-content:center; background:transparent;"
+                >
+                    <div 
+                        class="release-notes-dialog"
+                        style="border-radius:20px; padding:0; max-width:520px; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset; overflow:hidden; transform:scale(1); transition:transform 0.2s;"
+                        @click.stop
+                    >
+                        <!-- Header 对齐更新日志样式 -->
+                        <div class="release-notes-header" style="display:flex; justify-content:space-between; align-items:center; padding:20px 24px; border-bottom:1px solid rgba(0,0,0,0.08); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg, #22c55e 0%, #16a34a 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(22,163,74,0.4);">
+                                    <i class="fas fa-play" style="color:white; font-size:16px;"></i>
+                                </div>
+                                <div>
+                                    <h2 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">自动播放进行中</h2>
+                                    <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Autoplay Lock</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Content -->
+                        <div class="release-notes-content" style="flex:1; padding:18px 24px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); display:flex; flex-direction:column; gap:14px;">
+                            <div style="font-size:13px; color:var(--text, #333); line-height:1.8;">
+                                控制面板当前处于自动播放锁定状态，为避免误操作，按钮和列表已临时禁用。若需恢复正常操作，请停止自动播放。
+                            </div>
+                            <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+                                <button 
+                                    class="btn" 
+                                    style="min-width:140px; background:#ef4444; color:white; border:none; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer;"
+                                    @click="stopAutoplay"
+                                >
+                                    <i class="fas fa-stop-circle" style="margin-right:6px;"></i>停止自动播放
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+>>>>>>> feature/ui-update
         </Teleport>
     </div>
   `

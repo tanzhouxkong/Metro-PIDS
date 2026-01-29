@@ -1826,8 +1826,44 @@ function updateXferCheck(xferCheckElement, appData) {
   
   // 暂缓开通的站点
   if (issues.suspendedStations.length > 0) {
+<<<<<<< HEAD
     const stationNames = issues.suspendedStations.map(station => station.stationName);
     parts.push(`${stationNames.join('、')}暂缓开通`);
+=======
+    // 按站序索引排序
+    const sorted = [...issues.suspendedStations].sort((a, b) => a.stationIdx - b.stationIdx);
+    const ranges = [];
+    let rangeStart = sorted[0];
+    let prev = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+      const curr = sorted[i];
+      // 连续站点：索引相邻
+      if (curr.stationIdx === prev.stationIdx + 1) {
+        prev = curr;
+        continue;
+      }
+      // 结束当前区间
+      ranges.push({ start: rangeStart, end: prev });
+      rangeStart = curr;
+      prev = curr;
+    }
+    // 推入最后一个区间
+    ranges.push({ start: rangeStart, end: prev });
+
+    const rangeTexts = ranges.map(r => {
+      if (!r.start || !r.end) return '';
+      if (r.start.stationIdx === r.end.stationIdx) {
+        // 单独一个站：直接显示站名
+        return r.start.stationName;
+      }
+      // 连续区间：A站—D站
+      return `${r.start.stationName}—${r.end.stationName}`;
+    }).filter(Boolean);
+
+    if (rangeTexts.length > 0) {
+      parts.push(`${rangeTexts.join('、')}暂缓开通`);
+    }
+>>>>>>> feature/ui-update
   }
   
   if (parts.length === 0) {

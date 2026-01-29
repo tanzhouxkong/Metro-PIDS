@@ -32,6 +32,20 @@ export default {
       if (this.type === 'confirm') return '#FF9F43';
       if (this.type === 'prompt') return '#2ED573';
       return '#1677ff';
+<<<<<<< HEAD
+=======
+    },
+    isDarkTheme() {
+      try {
+        const el = document.documentElement;
+        return !!(el && (el.classList.contains('dark') || el.getAttribute('data-theme') === 'dark'));
+      } catch (e) {
+        return false;
+      }
+    },
+    getGlassBg() {
+      return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)';
+>>>>>>> feature/ui-update
     }
   },
   mounted() {
@@ -49,12 +63,22 @@ export default {
       <Transition name="fade">
         <div v-if="visible" 
              id="unified-dialogs" 
+<<<<<<< HEAD
              style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);" 
+=======
+             style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none;" 
+>>>>>>> feature/ui-update
              @click.self="type !== 'alert' && closeDialog(type==='confirm'?false:null)">
           <div id="ud-box" 
                :style="{ 
                  position: 'relative', 
+<<<<<<< HEAD
                  background: 'var(--card, #ffffff)', 
+=======
+                 background: getGlassBg(),
+                 backdropFilter: 'blur(20px) saturate(180%)',
+                 WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+>>>>>>> feature/ui-update
                  borderRadius: '16px', 
                  padding: '0', 
                  width: '420px', 
@@ -108,7 +132,11 @@ export default {
             </div>
             
             <!-- Content -->
+<<<<<<< HEAD
             <div style="padding:24px 28px; background:var(--bg, #fafafa);">
+=======
+            <div :style="{ padding:'24px 28px', background: (isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)') }">
+>>>>>>> feature/ui-update
               <div id="ud-msg" style="margin-bottom:20px; color:var(--text, #333); font-size:14px; line-height:1.7; white-space:pre-wrap;">{{ msg }}</div>
               <input v-if="type==='prompt'" 
                      v-model="inputVal" 
