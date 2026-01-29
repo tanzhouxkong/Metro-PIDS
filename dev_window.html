@@ -1,0 +1,1917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>开发者模式 - Metro PIDS</title>
+    <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[DevWindow] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg, #f5f5f5);
+            color: var(--text, #333);
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: var(--card, #fff);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: var(--text, #333);
+        }
+        
+        .header p {
+            color: var(--muted, #666);
+            font-size: 14px;
+        }
+        
+        .section {
+            background: var(--card, #fff);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: var(--text, #333);
+            border-bottom: 2px solid var(--accent, #12b7f5);
+            padding-bottom: 8px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+        
+        .info-item {
+            padding: 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 8px;
+            border-left: 4px solid var(--accent, #12b7f5);
+        }
+        
+        .info-item label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted, #666);
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        
+        .info-item value {
+            display: block;
+            font-size: 16px;
+            color: var(--text, #333);
+            font-weight: 500;
+            word-break: break-word;
+        }
+        
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin-top: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .btn {
+            background: var(--btn-blue-bg, #1677ff);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .btn:hover {
+            background: #0958d9;
+        }
+        
+        .btn-secondary {
+            background: var(--btn-gray-bg, #d9d9d9);
+            color: var(--text, #333);
+        }
+        
+        .btn-secondary:hover {
+            background: #bfbfbf;
+        }
+        
+        .btn-success {
+            background: #52c41a;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #389e0d;
+        }
+        
+        .btn-danger {
+            background: #ff4d4f;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #cf1322;
+        }
+        
+        .btn-warning {
+            background: #faad14;
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background: #d48806;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .status-inline {
+            margin-left: 12px;
+        }
+        
+        .status-active {
+            background: #52c41a;
+            color: white;
+        }
+        
+        .status-inactive {
+            background: #ff4d4f;
+            color: white;
+        }
+        
+        .status-dev {
+            background: #faad14;
+            color: white;
+        }
+        
+        .test-group {
+            margin-bottom: 20px;
+            padding: 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 8px;
+        }
+        
+        .test-group h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: var(--text, #333);
+        }
+        
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        
+        .input-group {
+            margin-bottom: 12px;
+        }
+        
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            color: var(--muted, #666);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        
+        .input-group input,
+        .input-group select,
+        .input-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--divider, #e0e0e0);
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            color: var(--text, #333);
+        }
+        
+        .input-group textarea {
+            min-height: 100px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            resize: vertical;
+        }
+        
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 4px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .log-time {
+            color: #858585;
+            margin-right: 8px;
+        }
+        
+        .log-info { color: #4ec9b0; }
+        .log-warn { color: #dcdcaa; }
+        .log-error { color: #f48771; }
+        .log-success { color: #6a9955; }
+        
+        .performance-metric {
+            display: inline-block;
+            padding: 8px 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 6px;
+            margin-right: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .performance-metric label {
+            display: block;
+            font-size: 11px;
+            color: var(--muted, #666);
+            margin-bottom: 4px;
+        }
+        
+        .performance-metric value {
+            display: block;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .f12-toggle-container {
+            margin-top: 20px;
+            padding: 16px;
+            background: var(--bg, #f5f5f5);
+            border-radius: 8px;
+        }
+        
+        .f12-toggle-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .f12-toggle-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text, #333);
+            margin-bottom: 4px;
+        }
+        
+        .f12-toggle-description {
+            font-size: 12px;
+            color: var(--muted, #666);
+            margin: 0;
+        }
+        
+        .f12-toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+        
+        .f12-toggle-input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .f12-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            border-radius: 26px;
+            transition: 0.3s;
+        }
+        
+        .f12-toggle-circle {
+            position: absolute;
+            content: '';
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .f12-toggle-input:checked + .f12-toggle-slider {
+            background-color: #1677ff;
+        }
+        
+        .f12-toggle-input:checked + .f12-toggle-slider + .f12-toggle-circle {
+            transform: translateX(24px);
+        }
+        
+        /* Mica 效果提示样式 */
+        #mica-tip {
+            display: none;
+        }
+        
+        #mica-tip h3 {
+            color: #FFC107;
+        }
+        
+        #mica-tip .mica-tip-content {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #FFC107;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text, #333);
+        }
+        
+        #mica-tip .mica-tip-content > div {
+            margin-bottom: 8px;
+        }
+        
+        #mica-tip .mica-tip-content > div:not(:first-child) {
+            margin-left: 16px;
+            margin-bottom: 4px;
+        }
+        
+        #mica-tip .mica-tip-content .mica-tip-suggestion {
+            padding-top: 8px;
+            border-top: 1px solid rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-code"></i> 开发者模式 <span class="status-badge status-dev">DEV</span></h1>
+            <p>开发者工具和测试功能</p>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-info-circle"></i> 环境信息</h2>
+            <div class="info-grid" id="env-info">
+                <div class="info-item">
+                    <label>运行环境</label>
+                    <value id="env-platform">-</value>
+                </div>
+                <div class="info-item">
+                    <label>当前版本</label>
+                    <value id="app-version">-</value>
+                </div>
+                <div class="info-item">
+                    <label>打包状态</label>
+                    <value id="packaged-status">-</value>
+                </div>
+                <div class="info-item">
+                    <label>操作系统</label>
+                    <value id="os-version">-</value>
+                </div>
+                <div class="info-item">
+                    <label>更新源</label>
+                    <value id="update-source">-</value>
+                </div>
+                <div class="info-item">
+                    <label>静默/强制更新</label>
+                    <value id="update-silent">已关闭</value>
+                </div>
+                <div class="info-item">
+                    <label>设备ID</label>
+                    <value id="device-id" style="font-size: 12px; word-break: break-all;">-</value>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-cog"></i> 开发者工具</h2>
+            <div>
+                <button class="btn" onclick="openDevTools()">
+                    <i class="fas fa-terminal"></i> 打开开发者工具
+                </button>
+                <button class="btn btn-secondary" onclick="reloadWindow()">
+                    <i class="fas fa-sync-alt"></i> 重新加载窗口
+                </button>
+                <button class="btn btn-secondary" onclick="clearLogs()">
+                    <i class="fas fa-trash"></i> 清除日志
+                </button>
+                <button class="btn btn-danger" onclick="closeDevWindow()">
+                    <i class="fas fa-times"></i> 关闭开发者模式
+                </button>
+            </div>
+            <div class="f12-toggle-container">
+                <div class="f12-toggle-wrapper">
+                    <div>
+                        <label class="f12-toggle-label" for="enable-f12-devtools">
+                            允许在打包后使用 F12 打开开发者工具
+                        </label>
+                        <p class="f12-toggle-description">
+                            开启后，即使在打包版本中也可以使用 F12 快捷键打开开发者工具
+                        </p>
+                    </div>
+                    <label class="f12-toggle-switch">
+                        <input type="checkbox" id="enable-f12-devtools" class="f12-toggle-input" aria-label="允许在打包后使用 F12 打开开发者工具" title="允许在打包后使用 F12 打开开发者工具" onchange="toggleF12DevTools(this.checked)">
+                        <span id="toggle-slider" class="f12-toggle-slider"></span>
+                        <span id="toggle-circle" class="f12-toggle-circle"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-vial"></i> 状态测试</h2>
+            <div class="test-group">
+                <h3>当前状态信息</h3>
+                <div id="state-info" class="code-block">正在加载状态信息...</div>
+                <button class="btn btn-secondary" onclick="refreshState()">
+                    <i class="fas fa-sync"></i> 刷新状态
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>状态同步测试</h3>
+                <button class="btn btn-success" onclick="testSyncRequest()">
+                    <i class="fas fa-broadcast-tower"></i> 请求状态同步
+                </button>
+                <button class="btn btn-warning" onclick="testKeyCommand('Enter')">
+                    <i class="fas fa-keyboard"></i> 模拟按键: Enter
+                </button>
+                <button class="btn btn-warning" onclick="testKeyCommand('ArrowLeft')">
+                    <i class="fas fa-arrow-left"></i> 模拟按键: ←
+                </button>
+                <button class="btn btn-warning" onclick="testKeyCommand('ArrowRight')">
+                    <i class="fas fa-arrow-right"></i> 模拟按键: →
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-desktop"></i> 显示端测试</h2>
+            <div class="test-group">
+                <h3>显示端操作</h3>
+                <button class="btn btn-success" onclick="openDisplay1()">
+                    <i class="fas fa-tv"></i> 打开 Display-1
+                </button>
+                <button class="btn btn-success" onclick="openDisplay2()">
+                    <i class="fas fa-tv"></i> 打开 Display-2
+                </button>
+                <button class="btn btn-secondary" onclick="testDisplaySync()">
+                    <i class="fas fa-sync-alt"></i> 测试显示端同步
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-bell"></i> 通知测试</h2>
+            <div class="test-group">
+                <div class="input-group">
+                    <label>通知标题</label>
+                    <input type="text" id="notif-title" value="测试通知" placeholder="通知标题">
+                </div>
+                <div class="input-group">
+                    <label>通知内容</label>
+                    <textarea id="notif-body" placeholder="通知内容">这是一条测试通知消息</textarea>
+                </div>
+                <button class="btn btn-success" onclick="testNotification()">
+                    <i class="fas fa-paper-plane"></i> 发送测试通知
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-cogs"></i> 设置测试</h2>
+            <div class="test-group">
+                <h3>查看当前设置</h3>
+                <div id="settings-info" class="code-block">正在加载设置...</div>
+                <button class="btn btn-secondary" onclick="refreshSettings()">
+                    <i class="fas fa-sync"></i> 刷新设置
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>主题测试</h3>
+                <button class="btn btn-secondary" onclick="testTheme('light')">
+                    <i class="fas fa-sun"></i> 浅色主题
+                </button>
+                <button class="btn btn-secondary" onclick="testTheme('dark')">
+                    <i class="fas fa-moon"></i> 深色主题
+                </button>
+                <button class="btn btn-secondary" onclick="testTheme('system')">
+                    <i class="fas fa-adjust"></i> 跟随系统
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-tachometer-alt"></i> 性能监控</h2>
+            <div id="performance-metrics">
+                <div class="performance-metric">
+                    <label>内存使用</label>
+                    <value id="mem-usage">-</value>
+                </div>
+                <div class="performance-metric">
+                    <label>FPS</label>
+                    <value id="fps">-</value>
+                </div>
+                <div class="performance-metric">
+                    <label>帧时间</label>
+                    <value id="frame-time">-</value>
+                </div>
+            </div>
+            <button class="btn btn-secondary" onclick="togglePerformanceMonitor()">
+                <i class="fas fa-play"></i> 开始/停止监控
+            </button>
+        </div>
+
+        <!-- 运控云控测试 -->
+        <div class="section">
+            <h2><i class="fas fa-cloud"></i> 运控云控测试（本地 API / GitHub）</h2>
+            <div class="test-group">
+                <h3>本地运控（API 模式）</h3>
+                <div class="input-group">
+                    <label for="cloud-local-api-base">本地 API 地址（apiBase）</label>
+                    <input
+                        id="cloud-local-api-base"
+                        type="text"
+                        value="http://localhost:9000"
+                        placeholder="例如：http://localhost:9000"
+                        title="本地运控 API 地址（例如：http://localhost:9000）"
+                    />
+                </div>
+                <button class="btn btn-success" onclick="testLocalCloudLines()">
+                    <i class="fas fa-cloud-download-alt"></i> 拉取本地预设线路 (/preset)
+                </button>
+                <span id="cloud-local-status" class="status-badge status-inactive status-inline">未测试</span>
+            </div>
+            <div class="test-group">
+                <h3>GitHub 仓库运控</h3>
+                <div class="input-group">
+                    <label for="cloud-gh-owner">GitHub 用户名 (owner)</label>
+                    <input
+                        id="cloud-gh-owner"
+                        type="text"
+                        value="tanzhouxkong"
+                        placeholder="例如：tanzhouxkong"
+                        title="GitHub 用户名（owner）"
+                    />
+                </div>
+                <div class="input-group">
+                    <label for="cloud-gh-repo">仓库名 (repo)</label>
+                    <input
+                        id="cloud-gh-repo"
+                        type="text"
+                        value="Metro-PIDS-"
+                        placeholder="例如：Metro-PIDS-"
+                        title="GitHub 仓库名（repo）"
+                    />
+                </div>
+                <div class="input-group">
+                    <label for="cloud-gh-branch">分支 (branch)</label>
+                    <input
+                        id="cloud-gh-branch"
+                        type="text"
+                        value="main"
+                        placeholder="例如：main"
+                        title="GitHub 分支名称（branch）"
+                    />
+                </div>
+                <div class="input-group">
+                    <label for="cloud-gh-path">路径 (path)</label>
+                    <input
+                        id="cloud-gh-path"
+                        type="text"
+                        value="preset-lines"
+                        placeholder="例如：preset-lines"
+                        title="仓库中的目录路径（path）"
+                    />
+                </div>
+                <button class="btn btn-success" onclick="testGithubCloudLines()">
+                    <i class="fab fa-github"></i> 测试 GitHub 线路列表
+                </button>
+                <span id="cloud-gh-status" class="status-badge status-inactive status-inline">未测试</span>
+            </div>
+            <div class="test-group">
+                <h3>数据对比结果</h3>
+                <div id="cloud-lines-result" class="code-block">尚未测试本地/GitHub 运控数据。</div>
+            </div>
+        </div>
+        
+        <!-- 运控线路管理 -->
+        <div class="section">
+            <h2><i class="fas fa-train"></i> 运控线路管理</h2>
+            <div class="test-group">
+                <h3>运控线路列表</h3>
+                <button class="btn btn-success" onclick="loadRuntimeLines()">
+                    <i class="fas fa-sync"></i> 获取运控线路
+                </button>
+                <span id="runtime-lines-status" class="status-badge status-inactive status-inline">未加载</span>
+                <div id="runtime-lines-result" class="code-block" style="margin-top: 12px; max-height: 300px; overflow-y: auto;">点击按钮获取运控线路列表...</div>
+            </div>
+        </div>
+
+        <!-- 节日和彩蛋配置 -->
+        <div class="section">
+            <h2><i class="fas fa-calendar-alt"></i> 节日和彩蛋配置</h2>
+            <div class="test-group">
+                <h3>节日配置</h3>
+                <button class="btn btn-success" onclick="loadHolidays()">
+                    <i class="fas fa-calendar-check"></i> 获取节日配置
+                </button>
+                <button class="btn btn-info" onclick="checkActiveHolidays()">
+                    <i class="fas fa-star"></i> 检查当前激活的节日
+                </button>
+                <span id="holidays-status" class="status-badge status-inactive status-inline">未加载</span>
+                <div id="holidays-result" class="code-block" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">点击按钮获取节日配置...</div>
+            </div>
+            <div class="test-group">
+                <h3>彩蛋配置</h3>
+                <button class="btn btn-success" onclick="loadEasterEggs()">
+                    <i class="fas fa-egg"></i> 获取彩蛋配置
+                </button>
+                <span id="easter-eggs-status" class="status-badge status-inactive status-inline">未加载</span>
+                <div id="easter-eggs-result" class="code-block" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">点击按钮获取彩蛋配置...</div>
+            </div>
+            <div class="test-group">
+                <h3>通知监听</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>节日通知</label>
+                        <value id="holiday-notification-status">未监听</value>
+                    </div>
+                    <div class="info-item">
+                        <label>彩蛋通知</label>
+                        <value id="easter-egg-notification-status">未监听</value>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="startHolidayEasterEggMonitoring()">
+                    <i class="fas fa-bell"></i> 开始监听节日/彩蛋通知
+                </button>
+                <button class="btn btn-secondary" onclick="stopHolidayEasterEggMonitoring()">
+                    <i class="fas fa-stop"></i> 停止监听
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-palette"></i> Mica Electron 测试</h2>
+            <div class="test-group">
+                <h3>系统信息</h3>
+                <div class="info-grid" id="mica-info">
+                    <div class="info-item">
+                        <label>Windows 11</label>
+                        <value id="mica-win11">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Windows 10</label>
+                        <value id="mica-win10">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>当前效果</label>
+                        <value id="mica-effect">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>当前主题</label>
+                        <value id="mica-theme">-</value>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="refreshMicaInfo()">
+                    <i class="fas fa-sync"></i> 刷新信息
+                </button>
+            </div>
+            <div class="test-group" id="mica-tip">
+                <h3><i class="fas fa-info-circle"></i> Mica 效果提示</h3>
+                <div class="mica-tip-content">
+                    <div><strong>Acrylic 可以显示但 Mica 不行？</strong> 这是正常的，Mica 效果在 Windows 11 上需要满足以下条件：</div>
+                    <div>1. 窗口背景必须完全透明（已设置）</div>
+                    <div>2. 内容区域背景必须透明（请检查 CSS）</div>
+                    <div>3. Windows 11 版本兼容性（某些版本如 24H2 可能有问题）</div>
+                    <div>4. 系统透明效果必须启用（设置 → 个性化 → 颜色 → 透明效果）</div>
+                    <div class="mica-tip-suggestion">
+                        <strong>建议：</strong>如果 Mica 效果不显示，可以继续使用 Acrylic 效果，它在 Windows 10/11 上都能正常工作。
+                    </div>
+                </div>
+            </div>
+            <div class="test-group">
+                <h3>模糊效果</h3>
+                <div class="test-grid">
+                    <button class="btn btn-success" onclick="testMicaEffect()">
+                        <i class="fas fa-magic"></i> Mica
+                    </button>
+                    <button class="btn btn-success" onclick="testAcrylicEffect()">
+                        <i class="fas fa-adjust"></i> Acrylic
+                    </button>
+                </div>
+            </div>
+            <div class="test-group">
+                <h3>主题设置</h3>
+                <div class="test-grid">
+                    <button class="btn btn-secondary" onclick="testMicaTheme('light')">
+                        <i class="fas fa-sun"></i> 浅色
+                    </button>
+                    <button class="btn btn-secondary" onclick="testMicaTheme('dark')">
+                        <i class="fas fa-moon"></i> 深色
+                    </button>
+                    <button class="btn btn-secondary" onclick="testMicaTheme('auto')">
+                        <i class="fas fa-adjust"></i> 自动
+                    </button>
+                </div>
+            </div>
+            <div class="test-group">
+                <h3>背景色设置</h3>
+                <div class="test-grid">
+                    <button class="btn btn-secondary" onclick="testMicaBackground('#00000000')">
+                        透明
+                    </button>
+                    <button class="btn btn-secondary" onclick="testMicaBackground('#FFFFFFFF')">
+                        白色
+                    </button>
+                    <button class="btn btn-secondary" onclick="testMicaBackground('#000000FF')">
+                        黑色
+                    </button>
+                    <button class="btn btn-success" onclick="testMicaRoundedCorner()">
+                        <i class="fas fa-circle"></i> 圆角
+                    </button>
+                </div>
+            </div>
+            <div class="test-group">
+                <h3>Mica 测试日志</h3>
+                <div id="mica-logs" class="log-container">
+                    <div class="log-entry"><span class="log-time">[系统]</span><span class="log-info">Mica Electron 测试模块已加载</span></div>
+                </div>
+                <button class="btn btn-secondary" onclick="clearMicaLogs()">
+                    <i class="fas fa-trash"></i> 清除日志
+                </button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-list"></i> 测试日志</h2>
+            <div id="test-logs" class="log-container">
+                <div class="log-entry"><span class="log-time">[系统]</span><span class="log-info">开发者模式已启动</span></div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2><i class="fas fa-code"></i> 调试信息</h2>
+            <div class="code-block" id="debug-info">
+                正在加载调试信息...
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let bc = null;
+        let perfMonitorInterval = null;
+        let frameCount = 0;
+        let lastFrameTime = performance.now();
+        
+        // 初始化 BroadcastChannel
+        function initBroadcastChannel() {
+            try {
+                if (typeof BroadcastChannel !== 'undefined') {
+                    bc = new BroadcastChannel('metro_pids_v3');
+                    bc.addEventListener('message', (event) => {
+                        addLog('收到 BroadcastChannel 消息', 'info', event.data);
+                    });
+                    addLog('BroadcastChannel 已初始化', 'success');
+                } else {
+                    addLog('BroadcastChannel 不可用，使用 postMessage', 'warn');
+                }
+            } catch (e) {
+                addLog('初始化 BroadcastChannel 失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 发送消息到主窗口
+        function sendToMainWindow(message) {
+            try {
+                if (bc) {
+                    bc.postMessage(message);
+                    addLog('已发送 BroadcastChannel 消息', 'info', message);
+                } else if (window.opener) {
+                    window.opener.postMessage(message, '*');
+                    addLog('已发送 postMessage 消息', 'info', message);
+                } else {
+                    addLog('无法发送消息：没有可用的通信通道', 'warn');
+                }
+            } catch (e) {
+                addLog('发送消息失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 添加日志
+        function addLog(message, type = 'info', data = null) {
+            const logsContainer = document.getElementById('test-logs');
+            if (!logsContainer) return;
+            
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            
+            const typeClass = 'log-' + type;
+            logEntry.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <span class="${typeClass}">${message}</span>
+                ${data ? '<br><span style="color: #858585; font-size: 11px;">' + JSON.stringify(data, null, 2) + '</span>' : ''}
+            `;
+            
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+            // 限制日志条数
+            const entries = logsContainer.querySelectorAll('.log-entry');
+            if (entries.length > 100) {
+                entries[0].remove();
+            }
+        }
+        
+        // 清除日志
+        function clearLogs() {
+            const logsContainer = document.getElementById('test-logs');
+            if (logsContainer) {
+                logsContainer.innerHTML = '<div class="log-entry"><span class="log-time">[系统]</span><span class="log-info">日志已清除</span></div>';
+            }
+        }
+        
+        // 加载环境信息
+        async function loadEnvInfo() {
+            try {
+                // 平台信息
+                const platform = typeof window !== 'undefined' && window.electronAPI 
+                    ? (window.electronAPI.platform || 'browser')
+                    : 'browser';
+                document.getElementById('env-platform').textContent = platform === 'browser' ? '浏览器' : platform;
+                
+                // 应用版本
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getAppVersion) {
+                    try {
+                        const versionResult = await window.electronAPI.getAppVersion();
+                        if (versionResult && versionResult.ok) {
+                            document.getElementById('app-version').textContent = versionResult.version || '-';
+                        }
+                    } catch (e) {
+                        document.getElementById('app-version').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('app-version').textContent = 'N/A';
+                }
+                
+                // 打包状态
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.isPackaged) {
+                    try {
+                        const isPackaged = await window.electronAPI.isPackaged();
+                        const statusEl = document.getElementById('packaged-status');
+                        statusEl.textContent = isPackaged ? '已打包' : '开发模式';
+                        statusEl.parentElement.querySelector('label').innerHTML += 
+                            isPackaged ? '<span class="status-badge status-active">PROD</span>' 
+                                      : '<span class="status-badge status-dev">DEV</span>';
+                    } catch (e) {
+                        document.getElementById('packaged-status').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('packaged-status').textContent = '浏览器环境';
+                }
+                
+                // 操作系统版本
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getOSVersion) {
+                    try {
+                        const osResult = await window.electronAPI.getOSVersion();
+                        if (osResult && osResult.ok) {
+                            document.getElementById('os-version').textContent = osResult.osVersion || osResult.version || '-';
+                        }
+                    } catch (e) {
+                        document.getElementById('os-version').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('os-version').textContent = navigator.platform || 'N/A';
+                }
+                // 更新源（github 视为“服务器”优先）
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getUpdateSource) {
+                    try {
+                        const srcResult = await window.electronAPI.getUpdateSource();
+                        let label = '服务器 (GitHub 优先)';
+                        if (srcResult && srcResult.ok) {
+                            const src = srcResult.source || 'github';
+                            if (src === 'gitee') {
+                                label = 'Gitee 镜像';
+                            } else {
+                                label = '服务器 (GitHub 优先)';
+                            }
+                        }
+                        document.getElementById('update-source').textContent = label;
+                    } catch (e) {
+                        document.getElementById('update-source').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('update-source').textContent = '服务器 (GitHub 优先)';
+                }
+                // 静默/强制更新配置
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getUpdateSilent) {
+                    try {
+                        const silentResult = await window.electronAPI.getUpdateSilent();
+                        if (silentResult && silentResult.ok) {
+                            document.getElementById('update-silent').textContent = silentResult.enabled ? '已开启（静默自动下载/安装）' : '已关闭';
+                        } else {
+                            document.getElementById('update-silent').textContent = '获取失败';
+                        }
+                    } catch (e) {
+                        document.getElementById('update-silent').textContent = '获取失败';
+                    }
+                } else {
+                    document.getElementById('update-silent').textContent = 'N/A';
+                }
+
+                // 设备ID（与统计上报使用相同的获取逻辑）
+                let deviceId = null;
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getDeviceId) {
+                    try {
+                        const deviceResult = await window.electronAPI.getDeviceId();
+                        if (deviceResult && deviceResult.ok && deviceResult.deviceId) {
+                            deviceId = deviceResult.deviceId;
+                            // 同步保存到localStorage，确保与统计上报一致
+                            localStorage.setItem('metro_pids_device_id', deviceId);
+                            document.getElementById('device-id').textContent = deviceId;
+                            addLog('设备ID已加载: ' + deviceId.substring(0, 12) + '...', 'success');
+                        } else {
+                            // 降级到localStorage
+                            const cachedId = localStorage.getItem('metro_pids_device_id');
+                            if (cachedId) {
+                                deviceId = cachedId;
+                                document.getElementById('device-id').textContent = cachedId + ' (缓存)';
+                                addLog('设备ID（缓存）: ' + cachedId.substring(0, 12) + '...', 'info');
+                            } else {
+                                document.getElementById('device-id').textContent = '未获取';
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('获取设备ID失败:', e);
+                        const cachedId = localStorage.getItem('metro_pids_device_id');
+                        if (cachedId) {
+                            deviceId = cachedId;
+                            document.getElementById('device-id').textContent = cachedId + ' (缓存)';
+                        } else {
+                            document.getElementById('device-id').textContent = '获取失败';
+                        }
+                    }
+                } else {
+                    // Web环境降级
+                    const cachedId = localStorage.getItem('metro_pids_device_id');
+                    if (cachedId) {
+                        deviceId = cachedId;
+                        document.getElementById('device-id').textContent = cachedId + ' (Web缓存)';
+                    } else {
+                        document.getElementById('device-id').textContent = 'N/A (Web环境)';
+                    }
+                }
+                
+                // 显示完整设备ID（用于调试）
+                if (deviceId) {
+                    console.log('[DevWindow] 当前设备ID:', deviceId);
+                    console.log('[DevWindow] 设备ID长度:', deviceId.length);
+                    console.log('[DevWindow] 设备ID格式:', deviceId.startsWith('device-') ? '随机生成' : deviceId.length === 32 ? '哈希生成' : 'UUID格式');
+                }
+            } catch (e) {
+                console.error('加载环境信息失败:', e);
+                addLog('加载环境信息失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 刷新状态
+        function refreshState() {
+            sendToMainWindow({ t: 'REQ' });
+            addLog('已请求状态同步', 'info');
+        }
+        
+        // 测试状态同步
+        function testSyncRequest() {
+            sendToMainWindow({ t: 'REQ' });
+            addLog('测试：请求状态同步', 'info');
+        }
+        
+        // 测试按键命令
+        function testKeyCommand(key) {
+            sendToMainWindow({ t: 'CMD_KEY', code: key, key: key });
+            addLog(`测试：模拟按键 ${key}`, 'info');
+        }
+        
+        // 打开显示端
+        async function openDisplay1() {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDisplay) {
+                    await window.electronAPI.openDisplay(1900, 600, 'display-1');
+                    addLog('已请求打开 Display-1', 'success');
+                } else {
+                    window.open('display_window.html', '_blank', 'width=1900,height=600');
+                    addLog('已打开 Display-1 (浏览器)', 'success');
+                }
+            } catch (e) {
+                addLog('打开 Display-1 失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function openDisplay2() {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDisplay) {
+                    await window.electronAPI.openDisplay(1920, 1080, 'display-2');
+                    addLog('已请求打开 Display-2', 'success');
+                } else {
+                    window.open('displays/display-2/display_window.html', '_blank', 'width=1920,height=1080');
+                    addLog('已打开 Display-2 (浏览器)', 'success');
+                }
+            } catch (e) {
+                addLog('打开 Display-2 失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 测试显示端同步
+        function testDisplaySync() {
+            const testData = {
+                t: 'SYNC',
+                d: {
+                    meta: {
+                        lineName: '测试线路',
+                        themeColor: '#00b894',
+                        mode: 'linear',
+                        dirType: 'up'
+                    },
+                    stations: [
+                        { name: '测试站1', en: 'Test Station 1' },
+                        { name: '测试站2', en: 'Test Station 2' }
+                    ]
+                },
+                r: {
+                    idx: 0,
+                    state: 0
+                }
+            };
+            sendToMainWindow(testData);
+            addLog('测试：发送显示端同步数据', 'info', testData);
+        }
+        
+        // 测试通知
+        function testNotification() {
+            const title = document.getElementById('notif-title').value || '测试通知';
+            const body = document.getElementById('notif-body').value || '这是一条测试通知消息';
+            
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body: body, icon: '/favicon.ico' });
+                addLog('已发送系统通知', 'success', { title, body });
+            } else if ('Notification' in window && Notification.permission !== 'denied') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification(title, { body: body, icon: '/favicon.ico' });
+                        addLog('已发送系统通知', 'success', { title, body });
+                    } else {
+                        addLog('通知权限被拒绝', 'warn');
+                    }
+                });
+            } else {
+                addLog('浏览器不支持通知或权限被拒绝', 'warn');
+            }
+        }
+        
+        // 刷新设置
+        function refreshSettings() {
+            try {
+                const settings = localStorage.getItem('pids_settings_v1');
+                if (settings) {
+                    const parsed = JSON.parse(settings);
+                    document.getElementById('settings-info').textContent = JSON.stringify(parsed, null, 2);
+                    addLog('设置已刷新', 'success');
+                } else {
+                    document.getElementById('settings-info').textContent = '未找到设置数据';
+                    addLog('未找到设置数据', 'warn');
+                }
+            } catch (e) {
+                document.getElementById('settings-info').textContent = '加载设置失败: ' + e.message;
+                addLog('加载设置失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 测试主题
+        function testTheme(theme) {
+            try {
+                const settings = JSON.parse(localStorage.getItem('pids_settings_v1') || '{}');
+                settings.themeMode = theme;
+                localStorage.setItem('pids_settings_v1', JSON.stringify(settings));
+                document.documentElement.setAttribute('data-theme', theme);
+                addLog(`主题已切换为: ${theme}`, 'success');
+                refreshSettings();
+            } catch (e) {
+                addLog('切换主题失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 性能监控
+        let perfMonitoring = false;
+        function togglePerformanceMonitor() {
+            perfMonitoring = !perfMonitoring;
+            if (perfMonitoring) {
+                startPerformanceMonitor();
+                addLog('性能监控已启动', 'success');
+            } else {
+                stopPerformanceMonitor();
+                addLog('性能监控已停止', 'info');
+            }
+        }
+        
+        function startPerformanceMonitor() {
+            frameCount = 0;
+            lastFrameTime = performance.now();
+            
+            perfMonitorInterval = setInterval(() => {
+                // 内存使用（如果可用）
+                if (performance.memory) {
+                    const memMB = (performance.memory.usedJSHeapSize / 1048576).toFixed(2);
+                    document.getElementById('mem-usage').textContent = memMB + ' MB';
+                }
+                
+                // FPS 计算
+                const now = performance.now();
+                const delta = now - lastFrameTime;
+                const fps = Math.round(1000 / delta);
+                document.getElementById('fps').textContent = fps;
+                document.getElementById('frame-time').textContent = delta.toFixed(2) + ' ms';
+                lastFrameTime = now;
+            }, 1000);
+            
+            // 使用 requestAnimationFrame 来更准确地计算 FPS
+            function countFrames() {
+                if (perfMonitoring) {
+                    frameCount++;
+                    requestAnimationFrame(countFrames);
+                }
+            }
+            requestAnimationFrame(countFrames);
+        }
+        
+        function stopPerformanceMonitor() {
+            if (perfMonitorInterval) {
+                clearInterval(perfMonitorInterval);
+                perfMonitorInterval = null;
+            }
+            document.getElementById('mem-usage').textContent = '-';
+            document.getElementById('fps').textContent = '-';
+            document.getElementById('frame-time').textContent = '-';
+        }
+        
+        // 显示应用信息
+        function showAppInfo() {
+            const info = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                screen: {
+                    width: window.screen.width,
+                    height: window.screen.height,
+                    availWidth: window.screen.availWidth,
+                    availHeight: window.screen.availHeight
+                },
+                window: {
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                },
+                localStorage: {
+                    available: typeof(Storage) !== 'undefined',
+                    size: new Blob(Object.values(localStorage)).size
+                },
+                broadcastChannel: typeof BroadcastChannel !== 'undefined'
+            };
+            
+            document.getElementById('debug-info').textContent = JSON.stringify(info, null, 2);
+        }
+
+        // ===== 运控云控测试：本地 API & GitHub =====
+        const CLOUD_GH_CONFIG_KEY = 'metro_pids_cloud_github_config';
+
+        function loadGithubCloudConfig() {
+            try {
+                const raw = localStorage.getItem(CLOUD_GH_CONFIG_KEY);
+                if (!raw) return;
+                const cfg = JSON.parse(raw);
+                if (cfg.owner) document.getElementById('cloud-gh-owner').value = cfg.owner;
+                if (cfg.repo) document.getElementById('cloud-gh-repo').value = cfg.repo;
+                if (cfg.branch) document.getElementById('cloud-gh-branch').value = cfg.branch;
+                if (cfg.path) document.getElementById('cloud-gh-path').value = cfg.path;
+            } catch (e) {
+                console.warn('加载 GitHub 云控配置失败:', e);
+            }
+        }
+
+        function saveGithubCloudConfig(owner, repo, branch, pathValue) {
+            try {
+                const cfg = { owner, repo, branch, path: pathValue };
+                localStorage.setItem(CLOUD_GH_CONFIG_KEY, JSON.stringify(cfg));
+            } catch (e) {
+                console.warn('保存 GitHub 云控配置失败:', e);
+            }
+        }
+
+        async function testLocalCloudLines() {
+            const apiBaseInput = document.getElementById('cloud-local-api-base');
+            const statusEl = document.getElementById('cloud-local-status');
+            const resultEl = document.getElementById('cloud-lines-result');
+            const apiBase = (apiBaseInput.value || 'http://localhost:9000').replace(/\/+$/, '');
+            const url = apiBase + '/preset';
+            try {
+                statusEl.textContent = '请求中...';
+                statusEl.className = 'status-badge status-dev';
+                const res = await fetch(url);
+                const json = await res.json();
+                const count = Array.isArray(json.lines) ? json.lines.length : 0;
+                resultEl.textContent = `本地 API (${url}) 返回 ${count} 条线路：\n` + JSON.stringify(json, null, 2);
+                statusEl.textContent = `成功 (${count} 条)`;
+                statusEl.className = 'status-badge status-active';
+                addLog('本地云控 API 测试成功', 'success', { url, count });
+            } catch (e) {
+                statusEl.textContent = '失败';
+                statusEl.className = 'status-badge status-inactive';
+                resultEl.textContent = `本地 API 请求失败：${e.message}`;
+                addLog('本地云控 API 测试失败', 'error', { url, error: e.message });
+            }
+        }
+
+        async function testGithubCloudLines() {
+            const owner = document.getElementById('cloud-gh-owner').value.trim();
+            const repo = document.getElementById('cloud-gh-repo').value.trim();
+            const branch = document.getElementById('cloud-gh-branch').value.trim() || 'main';
+            const pathValue = document.getElementById('cloud-gh-path').value.trim() || 'preset-lines';
+            const statusEl = document.getElementById('cloud-gh-status');
+            const resultEl = document.getElementById('cloud-lines-result');
+
+            if (!owner || !repo) {
+                alert('请填写 GitHub owner 和 repo');
+                return;
+            }
+
+            saveGithubCloudConfig(owner, repo, branch, pathValue);
+
+            const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(pathValue)}?ref=${encodeURIComponent(branch)}`;
+            try {
+                statusEl.textContent = '请求中...';
+                statusEl.className = 'status-badge status-dev';
+                const res = await fetch(apiUrl, {
+                    headers: {
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`HTTP ${res.status}: ${text}`);
+                }
+                const list = await res.json();
+                const files = Array.isArray(list)
+                    ? list.filter(item => item.type === 'file' && /\.json$/i.test(item.name))
+                    : [];
+                const fileNames = files.map(f => f.name);
+                resultEl.textContent =
+                    `GitHub (${owner}/${repo}@${branch}/${pathValue}) 返回 ${fileNames.length} 个 JSON 文件：\n` +
+                    JSON.stringify(fileNames, null, 2);
+                statusEl.textContent = `成功 (${fileNames.length} 个文件)`;
+                statusEl.className = 'status-badge status-active';
+                addLog('GitHub 运控测试成功', 'success', { apiUrl, files: fileNames });
+            } catch (e) {
+                statusEl.textContent = '失败';
+                statusEl.className = 'status-badge status-inactive';
+                resultEl.textContent = `GitHub 请求失败：${e.message}\nURL: ${apiUrl}`;
+                addLog('GitHub 运控测试失败', 'error', { apiUrl, error: e.message });
+            }
+        }
+        
+        // 打开开发者工具
+        function openDevTools() {
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openDevTools) {
+                window.electronAPI.openDevTools();
+                addLog('已打开开发者工具', 'success');
+            } else {
+                addLog('仅在 Electron 环境中可用', 'warn');
+            }
+        }
+        
+        // 切换F12开发者工具开关
+        function toggleF12DevTools(enabled) {
+            try {
+                updateToggleStyle(enabled);
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    if (enabled) {
+                        localStorage.setItem('metro_pids_enable_f12_devtools', 'true');
+                        addLog('已启用：打包后可使用 F12 打开开发者工具', 'success');
+                    } else {
+                        localStorage.removeItem('metro_pids_enable_f12_devtools');
+                        addLog('已禁用：打包后无法使用 F12 打开开发者工具', 'info');
+                    }
+                    // 通知主进程更新设置
+                    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.updateF12DevToolsSetting) {
+                        window.electronAPI.updateF12DevToolsSetting(enabled);
+                    }
+                } else {
+                    addLog('localStorage 不可用', 'warn');
+                }
+            } catch (e) {
+                addLog('切换F12开发者工具设置失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 加载F12开发者工具设置
+        function loadF12DevToolsSetting() {
+            try {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    const enabled = localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+                    const checkbox = document.getElementById('enable-f12-devtools');
+                    if (checkbox) {
+                        checkbox.checked = enabled;
+                        // 更新开关样式
+                        const slider = document.getElementById('toggle-slider');
+                        const circle = document.getElementById('toggle-circle');
+                        if (slider && circle) {
+                            slider.style.backgroundColor = enabled ? '#1677ff' : '#ccc';
+                            circle.style.transform = enabled ? 'translateX(24px)' : 'translateX(0)';
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('加载F12开发者工具设置失败:', e);
+            }
+        }
+        
+        // 更新开关样式
+        function updateToggleStyle(enabled) {
+            const slider = document.getElementById('toggle-slider');
+            const circle = document.getElementById('toggle-circle');
+            if (slider && circle) {
+                slider.style.backgroundColor = enabled ? '#1677ff' : '#ccc';
+                circle.style.transform = enabled ? 'translateX(24px)' : 'translateX(0)';
+            }
+        }
+        
+        // 重新加载窗口
+        function reloadWindow() {
+            if (typeof window !== 'undefined' && window.location) {
+                window.location.reload();
+            }
+        }
+        
+        // 关闭开发者窗口
+        async function closeDevWindow() {
+            try {
+                // 先清除 localStorage 中的开发者按钮标记
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    try {
+                        localStorage.removeItem('metro_pids_dev_button_enabled');
+                        console.log('[DevWindow] 已清除开发者按钮标记');
+                    } catch (e) {
+                        console.warn('[DevWindow] 清除标记失败:', e);
+                    }
+                }
+                
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.closeDevWindow) {
+                    await window.electronAPI.closeDevWindow();
+                    addLog('开发者窗口已关闭', 'success');
+                } else {
+                    // 浏览器环境，直接关闭窗口
+                    window.close();
+                }
+            } catch (e) {
+                addLog('关闭开发者窗口失败: ' + e.message, 'error');
+            }
+        }
+        
+        // Mica Electron 测试函数
+        let micaInfo = {
+            isWindows11: false,
+            isWindows10: false,
+            currentEffect: null,
+            currentTheme: 'auto',
+            backgroundColor: '#00000000'
+        };
+        
+        // 添加 Mica 日志
+        function addMicaLog(message, type = 'info', data = null) {
+            const logsContainer = document.getElementById('mica-logs');
+            if (!logsContainer) return;
+            
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            
+            const typeClass = 'log-' + type;
+            logEntry.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <span class="${typeClass}">${message}</span>
+                ${data ? '<br><span style="color: #858585; font-size: 11px;">' + JSON.stringify(data, null, 2) + '</span>' : ''}
+            `;
+            
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+            // 限制日志条数
+            const entries = logsContainer.querySelectorAll('.log-entry');
+            if (entries.length > 100) {
+                entries[0].remove();
+            }
+        }
+        
+        // 清除 Mica 日志
+        function clearMicaLogs() {
+            const logsContainer = document.getElementById('mica-logs');
+            if (logsContainer) {
+                logsContainer.innerHTML = '<div class="log-entry"><span class="log-time">[系统]</span><span class="log-info">日志已清除</span></div>';
+            }
+        }
+        
+        // 获取 Mica 信息
+        async function refreshMicaInfo() {
+            if (!window.electronAPI || !window.electronAPI.mica) {
+                addMicaLog('Mica Electron API 不可用', 'error');
+                return;
+            }
+            try {
+                const info = await window.electronAPI.mica.getInfo();
+                if (info && info.ok) {
+                    micaInfo = { ...micaInfo, ...info };
+                    document.getElementById('mica-win11').textContent = info.isWindows11 ? '✅' : '❌';
+                    document.getElementById('mica-win10').textContent = info.isWindows10 ? '✅' : '❌';
+                    document.getElementById('mica-effect').textContent = info.currentEffect || '未设置';
+                    document.getElementById('mica-theme').textContent = info.currentTheme || 'auto';
+                    addMicaLog('获取 Mica 信息成功', 'success', info);
+                    
+                    // 如果 Windows 11 且效果是 unknown，显示提示
+                    const tipElement = document.getElementById('mica-tip');
+                    if (tipElement) {
+                        if (info.isWindows11 && (info.currentEffect === 'unknown' || !info.currentEffect)) {
+                            tipElement.style.display = 'block';
+                        } else {
+                            tipElement.style.display = 'none';
+                        }
+                    }
+                } else {
+                    addMicaLog(`获取 Mica 信息失败: ${info?.error || '未知错误'}`, 'error');
+                }
+            } catch (e) {
+                addMicaLog(`获取 Mica 信息失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 测试 Mica 效果
+        async function testMicaEffect() {
+            if (!window.electronAPI || !window.electronAPI.mica) {
+                addMicaLog('Mica Electron API 不可用', 'error');
+                return;
+            }
+            try {
+                const result = await window.electronAPI.mica.setMicaEffect();
+                if (result && result.ok) {
+                    micaInfo.currentEffect = 'mica';
+                    document.getElementById('mica-effect').textContent = 'mica';
+                    addMicaLog('✅ 已设置 Mica 效果', 'success');
+                    await refreshMicaInfo();
+                } else {
+                    addMicaLog(`设置 Mica 效果失败: ${result?.error || '未知错误'}`, 'error');
+                }
+            } catch (e) {
+                addMicaLog(`设置 Mica 效果失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 测试 Acrylic 效果
+        async function testAcrylicEffect() {
+            if (!window.electronAPI || !window.electronAPI.mica) {
+                addMicaLog('Mica Electron API 不可用', 'error');
+                return;
+            }
+            try {
+                const result = await window.electronAPI.mica.setAcrylic();
+                if (result && result.ok) {
+                    micaInfo.currentEffect = 'acrylic';
+                    document.getElementById('mica-effect').textContent = 'acrylic';
+                    addMicaLog('✅ 已设置 Acrylic 效果', 'success');
+                    await refreshMicaInfo();
+                } else {
+                    addMicaLog(`设置 Acrylic 效果失败: ${result?.error || '未知错误'}`, 'error');
+                }
+            } catch (e) {
+                addMicaLog(`设置 Acrylic 效果失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 测试主题
+        async function testMicaTheme(theme) {
+            if (!window.electronAPI || !window.electronAPI.mica) {
+                addMicaLog('Mica Electron API 不可用', 'error');
+                return;
+            }
+            try {
+                let result;
+                if (theme === 'light') {
+                    result = await window.electronAPI.mica.setLightTheme();
+                } else if (theme === 'dark') {
+                    result = await window.electronAPI.mica.setDarkTheme();
+                } else {
+                    result = await window.electronAPI.mica.setAutoTheme();
+                }
+                if (result && result.ok) {
+                    micaInfo.currentTheme = theme;
+                    document.getElementById('mica-theme').textContent = theme;
+                    addMicaLog(`✅ 已设置主题: ${theme}`, 'success');
+                    await refreshMicaInfo();
+                } else {
+                    addMicaLog(`设置主题失败: ${result?.error || '未知错误'}`, 'error');
+                }
+            } catch (e) {
+                addMicaLog(`设置主题失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 测试背景色
+        async function testMicaBackground(color) {
+            if (!window.electronAPI || !window.electronAPI.mica) {
+                addMicaLog('Mica Electron API 不可用', 'error');
+                return;
+            }
+            try {
+                const result = await window.electronAPI.mica.setBackgroundColor(color);
+                if (result && result.ok) {
+                    micaInfo.backgroundColor = color;
+                    addMicaLog(`✅ 已设置背景色: ${color}`, 'success');
+                    await refreshMicaInfo();
+                } else {
+                    addMicaLog(`设置背景色失败: ${result?.error || '未知错误'}`, 'error');
+                }
+            } catch (e) {
+                addMicaLog(`设置背景色失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 测试圆角
+        async function testMicaRoundedCorner() {
+            if (!window.electronAPI || !window.electronAPI.mica) {
+                addMicaLog('Mica Electron API 不可用', 'error');
+                return;
+            }
+            try {
+                const result = await window.electronAPI.mica.setRoundedCorner();
+                if (result && result.ok) {
+                    addMicaLog('✅ 已设置窗口圆角', 'success');
+                } else {
+                    addMicaLog(`设置圆角失败: ${result?.error || '未知错误'}`, 'error');
+                }
+            } catch (e) {
+                addMicaLog(`设置圆角失败: ${e.message}`, 'error');
+            }
+        }
+        
+        // 运控线路相关函数
+        const CLOUD_API_BASE = 'https://metro.tanzhouxiang.dpdns.org';
+        
+        async function callCloudflareAPI(method, path, data = null) {
+            try {
+                // 优先使用 Electron IPC 代理
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.cloudflareApi) {
+                    const result = await window.electronAPI.cloudflareApi.request(method, path, data, null);
+                    return result;
+                }
+                
+                // 降级到直接 fetch
+                const url = `${CLOUD_API_BASE.replace(/\/+$/, '')}${path}`;
+                const options = {
+                    method,
+                    headers: {
+                        'Accept': 'application/json',
+                        ...(data ? { 'Content-Type': 'application/json' } : {})
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(url, options);
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || result.message || `HTTP ${response.status}`);
+                }
+                
+                return { ok: true, data: result };
+            } catch (e) {
+                console.error('[dev_window] API调用失败:', e);
+                return { ok: false, error: e.message };
+            }
+        }
+        
+        async function loadRuntimeLines() {
+            try {
+                document.getElementById('runtime-lines-status').textContent = '加载中...';
+                document.getElementById('runtime-lines-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/runtime/lines');
+                
+                if (result.ok && result.data) {
+                    const lines = result.data.lines || result.data.data?.lines || [];
+                    document.getElementById('runtime-lines-result').textContent = JSON.stringify(lines, null, 2);
+                    document.getElementById('runtime-lines-status').textContent = `已加载 ${lines.length} 条线路`;
+                    document.getElementById('runtime-lines-status').className = 'status-badge status-success status-inline';
+                    addLog(`成功获取运控线路: ${lines.length} 条`, 'success');
+                } else {
+                    throw new Error(result.error || '获取失败');
+                }
+            } catch (e) {
+                document.getElementById('runtime-lines-result').textContent = '错误: ' + e.message;
+                document.getElementById('runtime-lines-status').textContent = '加载失败';
+                document.getElementById('runtime-lines-status').className = 'status-badge status-error status-inline';
+                addLog('获取运控线路失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function loadHolidays() {
+            try {
+                document.getElementById('holidays-status').textContent = '加载中...';
+                document.getElementById('holidays-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/holidays');
+                
+                if (result.ok && result.data) {
+                    const holidays = result.data.config || result.data.data?.config || result.data;
+                    document.getElementById('holidays-result').textContent = JSON.stringify(holidays, null, 2);
+                    document.getElementById('holidays-status').textContent = '已加载';
+                    document.getElementById('holidays-status').className = 'status-badge status-success status-inline';
+                    addLog('成功获取节日配置', 'success');
+                } else {
+                    throw new Error(result.error || '获取失败');
+                }
+            } catch (e) {
+                document.getElementById('holidays-result').textContent = '错误: ' + e.message;
+                document.getElementById('holidays-status').textContent = '加载失败';
+                document.getElementById('holidays-status').className = 'status-badge status-error status-inline';
+                addLog('获取节日配置失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function checkActiveHolidays() {
+            try {
+                document.getElementById('holidays-status').textContent = '检查中...';
+                document.getElementById('holidays-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/holidays/active');
+                
+                if (result.ok && result.data) {
+                    const active = result.data.active || result.data.data?.active || result.data;
+                    document.getElementById('holidays-result').textContent = JSON.stringify(active, null, 2);
+                    document.getElementById('holidays-status').textContent = active && Object.keys(active).length > 0 ? '有激活的节日' : '无激活节日';
+                    document.getElementById('holidays-status').className = active && Object.keys(active).length > 0 
+                        ? 'status-badge status-success status-inline' 
+                        : 'status-badge status-inactive status-inline';
+                    
+                    // 如果有激活的节日，发送通知
+                    if (active && Object.keys(active).length > 0) {
+                        const holidayNames = Object.keys(active).join(', ');
+                        showNotification('节日提醒', `当前激活的节日: ${holidayNames}`, 'holiday');
+                        addLog(`检测到激活的节日: ${holidayNames}`, 'success');
+                    } else {
+                        addLog('当前无激活的节日', 'info');
+                    }
+                } else {
+                    throw new Error(result.error || '检查失败');
+                }
+            } catch (e) {
+                document.getElementById('holidays-result').textContent = '错误: ' + e.message;
+                document.getElementById('holidays-status').textContent = '检查失败';
+                document.getElementById('holidays-status').className = 'status-badge status-error status-inline';
+                addLog('检查激活节日失败: ' + e.message, 'error');
+            }
+        }
+        
+        async function loadEasterEggs() {
+            try {
+                document.getElementById('easter-eggs-status').textContent = '加载中...';
+                document.getElementById('easter-eggs-status').className = 'status-badge status-active status-inline';
+                
+                const result = await callCloudflareAPI('GET', '/easter-eggs');
+                
+                if (result.ok && result.data) {
+                    const config = result.data.config || result.data.data?.config || result.data;
+                    document.getElementById('easter-eggs-result').textContent = JSON.stringify(config, null, 2);
+                    
+                    // 根据配置状态显示不同的文本
+                    let statusText = '已禁用';
+                    let statusClass = 'status-badge status-inactive status-inline';
+                    
+                    if (config._isDefault === true) {
+                        // 未配置状态（默认值）
+                        statusText = '未配置';
+                        statusClass = 'status-badge status-inactive status-inline';
+                    } else if (config.enabled === true) {
+                        // 已启用状态
+                        statusText = '已启用';
+                        statusClass = 'status-badge status-success status-inline';
+                    } else {
+                        // 已配置但禁用状态
+                        statusText = '已禁用';
+                        statusClass = 'status-badge status-inactive status-inline';
+                    }
+                    
+                    document.getElementById('easter-eggs-status').textContent = statusText;
+                    document.getElementById('easter-eggs-status').className = statusClass;
+                    addLog('成功获取彩蛋配置', 'success');
+                    
+                    // 如果彩蛋已启用，显示通知
+                    if (config.enabled) {
+                        const stationCount = config.stations?.length || 0;
+                        const messageCount = config.messages?.length || 0;
+                        showNotification('彩蛋配置', `彩蛋已启用，${stationCount} 个触发站点，${messageCount} 条消息`, 'easter-egg');
+                    }
+                } else {
+                    throw new Error(result.error || '获取失败');
+                }
+            } catch (e) {
+                document.getElementById('easter-eggs-result').textContent = '错误: ' + e.message;
+                document.getElementById('easter-eggs-status').textContent = '加载失败';
+                document.getElementById('easter-eggs-status').className = 'status-badge status-error status-inline';
+                addLog('获取彩蛋配置失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 节日和彩蛋监听
+        let holidayEasterEggMonitoringInterval = null;
+        let lastActiveHolidays = null;
+        let lastEasterEggsEnabled = null;
+        
+        function showNotification(title, body, type = 'info') {
+            // 使用Electron通知API
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.showNotification) {
+                window.electronAPI.showNotification(title, body, {
+                    tag: type,
+                    urgency: 'normal'
+                }).then(() => {
+                    addLog(`通知已发送: ${title} - ${body}`, 'success');
+                }).catch(e => {
+                    console.warn('发送通知失败:', e);
+                    addLog(`通知发送失败: ${e.message}`, 'warn');
+                });
+            } else if ('Notification' in window) {
+                // 降级到浏览器通知
+                if (Notification.permission === 'granted') {
+                    const notification = new Notification(title, {
+                        body: body,
+                        icon: '/favicon.ico',
+                        tag: type
+                    });
+                    addLog(`浏览器通知已发送: ${title} - ${body}`, 'success');
+                } else if (Notification.permission !== 'denied') {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                            new Notification(title, { body: body, icon: '/favicon.ico', tag: type });
+                            addLog(`浏览器通知已发送: ${title} - ${body}`, 'success');
+                        }
+                    });
+                }
+            }
+        }
+        
+        async function startHolidayEasterEggMonitoring() {
+            if (holidayEasterEggMonitoringInterval) {
+                addLog('监听已在运行中', 'warn');
+                return;
+            }
+            
+            addLog('开始监听节日和彩蛋变化', 'info');
+            document.getElementById('holiday-notification-status').textContent = '监听中';
+            document.getElementById('easter-egg-notification-status').textContent = '监听中';
+            
+            // 立即检查一次
+            await checkHolidayEasterEggChanges();
+            
+            // 每30秒检查一次
+            holidayEasterEggMonitoringInterval = setInterval(async () => {
+                await checkHolidayEasterEggChanges();
+            }, 30000);
+        }
+        
+        function stopHolidayEasterEggMonitoring() {
+            if (holidayEasterEggMonitoringInterval) {
+                clearInterval(holidayEasterEggMonitoringInterval);
+                holidayEasterEggMonitoringInterval = null;
+                document.getElementById('holiday-notification-status').textContent = '已停止';
+                document.getElementById('easter-egg-notification-status').textContent = '已停止';
+                addLog('已停止监听节日和彩蛋变化', 'info');
+            }
+        }
+        
+        async function checkHolidayEasterEggChanges() {
+            try {
+                // 检查激活的节日
+                const holidaysResult = await callCloudflareAPI('GET', '/holidays/active');
+                if (holidaysResult.ok && holidaysResult.data) {
+                    const active = holidaysResult.data.active || holidaysResult.data.data?.active || holidaysResult.data;
+                    const currentHolidays = active && Object.keys(active).length > 0 ? Object.keys(active) : [];
+                    
+                    // 如果节日状态发生变化
+                    if (JSON.stringify(currentHolidays) !== JSON.stringify(lastActiveHolidays)) {
+                        if (currentHolidays.length > 0) {
+                            const holidayNames = currentHolidays.join(', ');
+                            showNotification('节日提醒', `检测到激活的节日: ${holidayNames}`, 'holiday');
+                            addLog(`节日变化: ${holidayNames}`, 'success');
+                        } else if (lastActiveHolidays && lastActiveHolidays.length > 0) {
+                            addLog('节日已结束', 'info');
+                        }
+                        lastActiveHolidays = currentHolidays;
+                    }
+                }
+                
+                // 检查彩蛋配置
+                const easterEggsResult = await callCloudflareAPI('GET', '/easter-eggs');
+                if (easterEggsResult.ok && easterEggsResult.data) {
+                    const config = easterEggsResult.data.config || easterEggsResult.data.data?.config || easterEggsResult.data;
+                    const currentEnabled = config.enabled === true;
+                    
+                    // 如果彩蛋状态发生变化
+                    if (currentEnabled !== lastEasterEggsEnabled) {
+                        if (currentEnabled) {
+                            const stationCount = config.stations?.length || 0;
+                            const messageCount = config.messages?.length || 0;
+                            showNotification('彩蛋配置', `彩蛋已启用，${stationCount} 个触发站点，${messageCount} 条消息`, 'easter-egg');
+                            addLog('彩蛋状态变化: 已启用', 'success');
+                        } else {
+                            addLog('彩蛋状态变化: 已禁用', 'info');
+                        }
+                        lastEasterEggsEnabled = currentEnabled;
+                    }
+                }
+            } catch (e) {
+                console.error('检查节日和彩蛋变化失败:', e);
+                addLog('检查节日和彩蛋变化失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            loadEnvInfo();
+            showAppInfo();
+            refreshSettings();
+            initBroadcastChannel();
+            loadGithubCloudConfig();
+            loadF12DevToolsSetting(); // 加载F12开发者工具设置
+            addLog('开发者模式初始化完成', 'success');
+            
+            // 初始化 Mica 信息
+            if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.mica) {
+                refreshMicaInfo();
+                addMicaLog('Mica Electron 测试模块已加载', 'info');
+            } else {
+                addMicaLog('Mica Electron API 不可用（可能不在 Electron 环境）', 'warn');
+            }
+        });
+        
+        // 监听来自主窗口的消息
+        window.addEventListener('message', (event) => {
+            addLog('收到 postMessage 消息', 'info', event.data);
+        });
+    </script>
+</body>
+</html>

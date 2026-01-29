@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro PIDS - Display 2</title>
+    <link rel="stylesheet" href="../../assets/fontawesome/css/all.min.css" onerror="console.warn('[Display2] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = '../../assets/local-icons.css'; document.head.appendChild(fallback);">
+    <script type="importmap">
+    {
+        "imports": {
+            "vue": "../../assets/vue.esm-browser.js"
+        }
+    }
+    </script>
+    <style>
+        /* ================= 全局样式 ================= */
+        :root {
+            --bg-body: #f5f5f5;
+            --bg-panel: #ffffff;
+            --font-main: "Microsoft YaHei", "SimHei", Arial, sans-serif;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #ffffff; /* 白色背景 */
+            font-family: var(--font-main);
+        }
+
+        /* ================= 屏幕容器 (1500x400 适配) ================= */
+        #display-app {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #ffffff; /* 白色背景，与内容背景一致 */
+            font-family: var(--font-main);
+            overflow: hidden; /* 防止出现滚动条 */
+        }
+        #scaler {
+            width: 1500px;
+            height: 400px;
+            background: #ffffff; /* 白色背景 */
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            transform-origin: center center;
+        }
+
+        /* ================= 自定义标题栏 ================= */
+        #display-titlebar.custom-titlebar {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            height: 35px;
+            width: 100%;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.3);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding-left: 12px;
+            font-size: 14px;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-app-region: drag;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+        }
+        #display-titlebar.custom-titlebar [role="controls"] {
+            -webkit-app-region: no-drag;
+        }
+        
+        #display-titlebar.custom-titlebar.darwin {
+            justify-content: center;
+        }
+        
+        #display-titlebar.custom-titlebar.linux {
+            display: none;
+        }
+
+        /* ================= 顶部 Header ================= */
+        .header {
+            height: 45px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            background: #162b75; /* 深蓝色背景 */
+            z-index: 10;
+            margin-top: 35px; /* push header below custom titlebar */
+            color: #fff;
+            position: relative;
+        }
+
+        /* ================= 底部 Footer ================= */
+        .footer {
+            height: 45px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            background: #162b75; /* 深蓝色背景 */
+            z-index: 10;
+            color: #fff;
+            flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* LED滚动文字 */
+        .footer-led {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+            min-width: 0; /* 允许flex收缩 */
+        }
+        
+        .footer-led-content {
+            white-space: nowrap;
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            display: inline-block;
+            padding-right: 50px;
+        }
+        
+        .footer-led-content.scrolling {
+            animation: footer-led-scroll 20s linear infinite;
+        }
+        
+        @keyframes footer-led-scroll {
+            0% {
+                transform: translateX(0);
+            }
+            100% {
+                transform: translateX(-50%);
+            }
+        }
+        
+        /* 水印 */
+        .footer-watermark {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            flex-shrink: 0;
+            margin-left: auto; /* 确保水印靠右显示 */
+        }
+        
+        .footer-watermark .watermark-item {
+            white-space: nowrap;
+        }
+        
+        /* 当没有LED文字时，水印居中显示 */
+        .footer:not(:has(.footer-led)) .footer-watermark {
+            margin-left: 0;
+            margin-right: auto;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-route {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .header-end-station {
+            font-size: 16px;
+            font-weight: normal;
+            color: #fff;
+        }
+        .header-direction {
+            font-size: 16px;
+            font-weight: normal;
+        }
+        .legend {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            font-size: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .legend-dot.passed {
+            background: #dc2626; /* 红色 */
+        }
+        .legend-dot.future {
+            background: #00e600; /* 绿色 */
+        }
+        .legend-text {
+            font-size: 12px;
+            color: #fff;
+        }
+
+        /* ================= 线路区域 ================= */
+        .route-map {
+            flex-grow: 1;
+            position: relative;
+            height: 355px;
+            padding: 0 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: #ffffff; /* 白色背景 */
+        }
+
+        /* 轨道线条背景容器 */
+        .track-lines {
+            position: absolute;
+            top: 50%;
+            left: 5px;
+            right: 20px;
+            height: 35px;
+            transform: translateY(-50%);
+            z-index: 0;
+        }
+
+        /* 上排路线（从左到中间） */
+        .track-line-top {
+            height: 4px;
+            background-color: #a5f3bc;
+            position: absolute;
+            top: 0;
+            left: 0;
+            border-radius: 2px;
+        }
+
+        /* 下排路线（从中间到右） */
+        .track-line-bottom {
+            height: 4px;
+            background-color: #a5f3bc;
+            position: absolute;
+            bottom: 0;
+            border-radius: 2px;
+        }
+
+        /* 中间半圆连接（半胶囊形状） */
+        .track-semicircle-svg {
+            position: absolute;
+            overflow: visible;
+            z-index: 1;
+        }
+
+        /* 左侧箭头 */
+        .arrow-left-bottom {
+            position: absolute;
+            left: 0;
+            bottom: -6px;
+            width: 0; 
+            height: 0; 
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-right: 15px solid #a5f3bc;
+        }
+
+        /* 站点列表容器 */
+        .station-row {
+            position: relative;
+            width: 100%;
+            z-index: 1;
+            height: 100px;
+        }
+
+        /* 上排站点容器 */
+        .row-top {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        /* 下排站点容器 */
+        .row-bottom {
+            margin-top: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        /* 单个站点 */
+        .station {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 30px; /* 默认宽度，两列模式时会自动扩展 */
+            position: absolute;
+        }
+        
+        /* 两列模式的站点容器需要更宽 */
+        .station:has(.station-name-two-column) {
+            width: 30px;
+        }
+        
+        /* 上排站点：定位到底部 */
+        .row-top .station {
+            bottom: 0;
+        }
+        
+        /* 下排站点：定位到顶部 */
+        .row-bottom .station {
+            top: 0;
+        }
+
+        /* 站点文字容器（单列模式） */
+        .station-name {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            height: 100px; /* 固定高度，单列模式最多7个字 */
+            width: 30px;
+            text-align: center;
+        }
+        
+        /* 两列模式：横向布局 */
+        .station-name.station-name-two-column {
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: flex-start;
+            height: 100px; /* 与单列模式保持一致的高度 */
+            width: 30px; /* 减少宽度以减少两列之间的间隔（减少50%） */
+            gap: 0; /* 减少两列之间的间隔 */
+        }
+        
+        /* 站名单个字符 */
+        .station-name-char {
+            display: block;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        
+        /* 站名列容器（两列模式） */
+        .station-name-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            justify-content: space-between; /* 字符之间均匀分布，像"后龙"那样 */
+        }
+        
+        /* 第一列：固定4个字符高度，垂直均匀分布 */
+        .station-name-col-1 {
+            width: 15px;
+            height: 88px; /* 略小于单列高度，让最下面的字往上提一些 */
+            justify-content: space-between;
+        }
+        
+        /* 第二列：剩余字符，垂直均匀分布（与第一列保持一致） */
+        .station-name-col-2 {
+            width: 15px;
+            height: 88px; /* 略小于单列高度，让最下面的字往上提一些 */
+            justify-content: space-between; /* 字符之间均匀分布，像"后龙"那样 */
+            margin-left: 0;
+        }
+
+        .row-top .station-name {
+            padding-bottom: 12px;
+        }
+
+        .row-bottom .station-name {
+            padding-top: 12px;
+        }
+
+        /* 已过站站点文字：黑色（上排和下排都适用） */
+        .station.passed .station-name {
+            color: #000000;
+        }
+
+        /* 未过站站点文字：黑色（上排和下排都适用） */
+        .station.future .station-name {
+            color: #000000;
+        }
+        
+        /* 下一站站名：红色（出站信号时） */
+        .station-name.next-station-name-red {
+            color: #dc2626 !important;
+        }
+
+        /* 下一站页面：全屏白色背景 */
+        .next-station-page {
+            flex-grow: 1;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 355px;
+        }
+        
+        .next-station-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .next-station-label {
+            font-size: 48px;
+            font-weight: 600;
+            color: #000000;
+        }
+        
+        .next-station-name {
+            font-size: 48px;
+            font-weight: 700;
+            color: #dc2626;
+        }
+
+        /* 站点圆点 */
+        .station-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 2px rgba(0,0,0,0.2);
+            position: absolute;
+            z-index: 10;
+            left: 50%;
+        }
+
+        /* 上排圆点：统一高度，定位到轨道线位置（轨道线在track-lines容器的top: 0） */
+        .row-top .station-dot {
+            bottom: 0;
+            transform: translateX(-50%) translateY(50%);
+        }
+        .row-top .station-dot.passed {
+            background-color: #dc2626; /* 已过站：红色 */
+        }
+        .row-top .station-dot.future {
+            background-color: #00e600; /* 未过站：绿色 */
+        }
+
+        /* 下排圆点：统一高度，定位到轨道线位置（轨道线在track-lines容器的bottom: 0） */
+        .row-bottom .station-dot {
+            top: 0;
+            transform: translateX(-50%) translateY(-50%);
+        }
+        .row-bottom .station-dot.passed {
+            background-color: #dc2626; /* 已过站：红色 */
+        }
+        .row-bottom .station-dot.future {
+            background-color: #00e600; /* 未过站：绿色 */
+        }
+
+        /* 当前站点指示器（白色三角形） */
+        .current-indicator {
+            position: absolute;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .row-top .current-indicator {
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 10px solid white;
+        }
+        .row-bottom .current-indicator {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 10px solid white;
+        }
+    </style>
+</head>
+<body>
+    <div id="display-root"></div>
+    <script type="module" src="./display-entry.js"></script>
+</body>
+</html>

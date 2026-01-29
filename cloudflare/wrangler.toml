@@ -1,0 +1,18 @@
+name = "metro-pids-cloud"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# 这里的 account_id 和 kv id 需要你在 Cloudflare 控制台/命令行创建后填写
+# 获取方式：
+#   1) 安装 wrangler:  npm install -g wrangler
+#   2) 登录:          wrangler login
+#   3) 创建 KV:       wrangler kv:namespace create METRO_PIDS_LINES
+#   4) 将返回的 id 填到下面的 id 字段
+
+[[kv_namespaces]]
+binding = "LINES"
+id = "efe5302781304850ac0334147f349d13"
+
+# CLOUD_TOKEN、GITHUB_TOKEN 请用 wrangler secret 配置（勿写入此文件）:
+#   wrangler secret put CLOUD_TOKEN
+#   wrangler secret put GITHUB_TOKEN

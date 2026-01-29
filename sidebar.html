@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;">
+    <title>Sidebar - Metro PIDS</title>
+    <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Sidebar] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+    <style>
+        :root { 
+            --theme: #00b894; 
+            --font: "Microsoft YaHei", sans-serif; 
+            --bg: #f0f2f5;
+            --card: #ffffff;
+            --card-border: #f0f0f0;
+            --text: #2d3436;
+            --muted: #9aa0a6;
+            --btn-blue-bg: #1677ff;
+            --accent: #00b894;
+            --titlebar-bg: rgba(255, 255, 255, 0.85);
+            --titlebar-border: rgba(0, 0, 0, 0.08);
+            --rail-bg: rgba(255,255,255,0.65);
+        }
+        html.dark {
+            --bg: #0b1116;
+            --card: #091018;
+            --card-border: rgba(255,255,255,0.04);
+            --text: #e6eef6;
+            --muted: #9aa6b2;
+            --titlebar-bg: rgba(11, 17, 22, 0.85);
+            --titlebar-border: rgba(255, 255, 255, 0.08);
+            --rail-bg: rgba(7, 16, 24, 0.65);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background: transparent; 
+            font-family: var(--font); 
+            color: var(--text); 
+        }
+        /* 毛玻璃效果通过 mica-electron 实现，不使用 CSS backdrop-filter */
+        /* 侧边栏容器：只显示侧边栏，不显示顶部栏 */
+        .sidebar-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100vh;
+            min-height: 100vh;
+            background: transparent; /* 透明背景，让 mica-electron 的 Mica 效果透出 */
+            position: relative;
+            z-index: 9999;
+            overflow: hidden;
+            pointer-events: auto; /* 侧边栏需要可以交互（点击按钮） */
+        }
+        /* 移除模糊效果覆盖层，让侧边栏完全透明，模糊效果由组件本身提供 */
+        
+        /* 侧边栏区域 */
+        .sidebar-section {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+            width: 60px; /* 侧边栏固定宽度 60px */
+            height: 100%;
+            pointer-events: auto; /* 侧边栏需要可以交互（点击按钮） */
+        }
+        
+        /* 确保 leftrail-app 容器占满整个侧边栏区域 */
+        #leftrail-app {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            pointer-events: auto; /* 侧边栏内容需要可以交互 */
+            background: transparent; /* 透明背景，让模糊效果透出 */
+        }
+        
+        /* 侧边栏模糊效果，与状态栏一致 */
+        /* 模糊效果由 mica-electron 原生控制，背景完全透明让原生模糊效果透出 */
+        .left-rail-blur {
+            background: transparent !important; /* 完全透明，让 mica-electron 的原生模糊效果透出 */
+        }
+        html.dark .left-rail-blur {
+            background: transparent !important; /* 完全透明，让 mica-electron 的原生模糊效果透出 */
+        }
+        
+        html.dark .sidebar-container {
+            background: transparent; /* 透明背景，让 mica-electron 的 Mica 效果透出 */
+        }
+        .ft-btn { 
+            transition: transform 0.2s, filter 0.2s, box-shadow 0.2s; 
+        }
+        .ft-btn:hover { 
+            filter: brightness(0.9); 
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1); 
+        }
+        .ft-btn:active { 
+            filter: brightness(0.8); 
+            transform: translateY(1px); 
+        }
+        html.dark .ft-btn:hover { 
+            filter: brightness(0.95); 
+        }
+        html.dark .ft-btn:active { 
+            filter: brightness(0.9); 
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "vue": "./assets/vue.esm-browser.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- 侧边栏布局：只显示侧边栏，不显示顶部栏（顶部栏由 topbar.html 单独处理） -->
+    <div class="sidebar-container">
+        <!-- 侧边栏区域 -->
+        <div class="sidebar-section" id="sidebar-section">
+            <div id="leftrail-app"></div>
+        </div>
+    </div>
+    <script type="module" src="./src/sidebarEntry.js"></script>
+</body>
+</html>

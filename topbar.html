@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;">
+    <title>Topbar - Metro PIDS</title>
+    <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Topbar] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+    <style>
+        :root { 
+            --theme: #00b894; 
+            --font: "Microsoft YaHei", sans-serif; 
+            --bg: #f0f2f5;
+            --text: #2d3436;
+            --muted: #9aa0a6;
+            --accent: #00b894;
+            --titlebar-bg: rgba(255, 255, 255, 0.6); /* 半透明背景，让 Mica 效果透出 */
+            --titlebar-border: rgba(0, 0, 0, 0.08);
+        }
+        html.dark {
+            --bg: #0b1116;
+            --text: #e6eef6;
+            --muted: #9aa6b2;
+            --titlebar-bg: rgba(11, 17, 22, 0.6); /* 半透明背景，让 Mica 效果透出 */
+            --titlebar-border: rgba(255, 255, 255, 0.08);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background: transparent; 
+            font-family: var(--font); 
+            color: var(--text); 
+        }
+    </style>
+</head>
+<body>
+    <div id="topbar-app"></div>
+    <script type="module" src="./src/topbarEntry.js"></script>
+</body>
+</html>
+
