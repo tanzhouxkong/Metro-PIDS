@@ -87,6 +87,45 @@
     .tab-content.active {
       display: block;
     }
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sidebar-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: none;
+      background: transparent;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #555;
+      text-align: left;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .sidebar-item i {
+      width: 16px;
+      text-align: center;
+      color: #888;
+    }
+    .sidebar-item.active {
+      background: #1677ff;
+      color: #fff;
+    }
+    .sidebar-item.active i {
+      color: #fff;
+    }
+    .sidebar-item:hover:not(.active) {
+      background: #f3f6ff;
+      color: #1677ff;
+    }
+    .section-content {
+      width: 100%;
+    }
     .card {
       background: rgba(255, 255, 255, 0.95);
       -webkit-backdrop-filter: blur(10px);
@@ -103,6 +142,103 @@
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+    .station-list {
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      max-height: 320px;
+      overflow-y: auto;
+      background: #fafafa;
+    }
+    .station-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
+      background: #fff;
+    }
+    .station-item:last-child {
+      border-bottom: none;
+    }
+    .station-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .station-index {
+      width: 32px;
+      color: #999;
+      font-weight: 600;
+    }
+    .station-names {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .station-name-cn {
+      font-weight: 600;
+      color: #333;
+    }
+    .station-name-en {
+      font-size: 11px;
+      color: #888;
+    }
+    .station-tags {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      font-size: 10px;
+    }
+    .station-tag {
+      padding: 2px 4px;
+      border-radius: 3px;
+      background: #f0f0f0;
+      color: #666;
+    }
+    .station-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .station-actions button {
+      padding: 4px 6px;
+      font-size: 11px;
+    }
+    .runtime-xfer-list {
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 8px;
+      background: #fafafa;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .runtime-xfer-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 4px;
+      border-bottom: 1px dashed #eee;
+      font-size: 12px;
+    }
+    .runtime-xfer-row:last-child {
+      border-bottom: none;
+    }
+    .runtime-xfer-line {
+      flex: 1 1 auto;
+    }
+    .runtime-xfer-color {
+      width: 80px;
+    }
+    .runtime-xfer-flags {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 120px;
+    }
+    .runtime-xfer-actions {
+      display: flex;
+      gap: 4px;
     }
     .card h2 i {
       color: #667eea;
@@ -161,15 +297,11 @@
       transition: all 0.2s;
       display: inline-flex;
       align-items: center;
-<<<<<<< HEAD
-      gap: 6px;
-=======
       justify-content: center;
       gap: 6px;
       line-height: 1.4;
       vertical-align: middle;
       box-sizing: border-box;
->>>>>>> feature/ui-update
     }
     .btn-primary {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -227,8 +359,6 @@
     .table-container {
       overflow-x: auto;
       margin-top: 16px;
-<<<<<<< HEAD
-=======
       width: 100%;
     }
     #stat-recent-container {
@@ -251,33 +381,24 @@
       .two-column-layout {
         grid-template-columns: 1fr;
       }
->>>>>>> feature/ui-update
     }
     table {
       width: 100%;
       border-collapse: collapse;
-<<<<<<< HEAD
-=======
       table-layout: auto;
->>>>>>> feature/ui-update
     }
     th, td {
       padding: 12px;
       text-align: left;
       border-bottom: 1px solid #e0e0e0;
-<<<<<<< HEAD
-=======
       vertical-align: middle;
       line-height: 1.5;
->>>>>>> feature/ui-update
     }
     th {
       background: #f8f9fa;
       font-weight: 600;
       color: #333;
       font-size: 13px;
-<<<<<<< HEAD
-=======
       vertical-align: middle;
       height: 48px;
       text-align: left;
@@ -310,7 +431,6 @@
     table td:empty::before {
       content: '-';
       color: #999;
->>>>>>> feature/ui-update
     }
     tr:hover {
       background: #f8f9fa;
@@ -452,14 +572,11 @@
     .btn-sm {
       padding: 6px 12px;
       font-size: 12px;
-<<<<<<< HEAD
-=======
       line-height: 1.4;
       vertical-align: middle;
       display: inline-flex;
       align-items: center;
       justify-content: center;
->>>>>>> feature/ui-update
     }
     .btn-small {
       padding: 6px 12px;
@@ -536,8 +653,6 @@
       border-radius: 3px;
       font-weight: 600;
     }
-<<<<<<< HEAD
-=======
     .pie-chart-container {
       display: flex;
       align-items: center;
@@ -581,7 +696,6 @@
       color: #333;
       margin-left: auto;
     }
->>>>>>> feature/ui-update
     .settings-check-status {
       margin-top: 4px;
       min-height: 24px;
@@ -634,7 +748,7 @@
       transform: rotate(-90deg);
     }
     .date-group-rows {
-      display: table-row-group;
+      /* 使用表格默认行布局，避免占不满整行 */
     }
     .date-group-rows.collapsed {
       display: none;
@@ -658,17 +772,43 @@
       </div>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="runtime">运控线路</button>
-      <button class="tab" data-tab="easter-eggs">彩蛋配置</button>
-      <button class="tab" data-tab="holidays">节日配置</button>
-      <button class="tab" data-tab="updates">版本更新</button>
-      <button class="tab" data-tab="stats">统计信息</button>
-    </div>
+    <!-- 主布局：左侧导航 + 右侧内容 -->
+    <div style="display:flex; gap:16px; align-items:flex-start;">
+      <!-- 左侧导航 -->
+      <div style="width:220px; flex-shrink:0;">
+        <div class="card" style="padding:12px;">
+          <h2 style="font-size:16px; margin:0 0 10px;">配置导航</h2>
+          <div class="sidebar-nav">
+            <button class="sidebar-item active" data-section="runtime">
+              <i class="fas fa-train"></i>
+              <span>运控线路</span>
+            </button>
+            <button class="sidebar-item" data-section="easter-eggs">
+              <i class="fas fa-egg"></i>
+              <span>彩蛋配置</span>
+            </button>
+            <button class="sidebar-item" data-section="holidays">
+              <i class="fas fa-calendar-alt"></i>
+              <span>节日配置</span>
+            </button>
+            <button class="sidebar-item" data-section="updates">
+              <i class="fas fa-sync-alt"></i>
+              <span>版本更新</span>
+            </button>
+            <button class="sidebar-item" data-section="stats">
+              <i class="fas fa-chart-bar"></i>
+              <span>统计信息</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
-    <!-- 运控线路 -->
-    <div class="tab-content active" id="tab-runtime">
-      <div class="card">
+      <!-- 右侧内容 -->
+      <div style="flex:1; min-width:0;">
+
+        <!-- 运控线路 -->
+        <div class="section-content active" id="section-runtime">
+          <div class="card">
         <h2><i class="fas fa-sync-alt"></i> 运控线路列表</h2>
         <div class="btn-group">
           <button class="btn btn-primary" id="btn-list-runtime">
@@ -738,11 +878,79 @@
           </div>
         </div>
         
-        <div class="field" style="margin-top:16px;">
-          <label for="runtime-line-json">运控线路 JSON 数据预览</label>
-          <textarea id="runtime-line-json" placeholder='上传文件后会自动显示 JSON 数据，也可以手动编辑' style="min-height:200px;"></textarea>
+        <!-- 隐藏的 JSON 文本框（供内部逻辑使用） -->
+        <textarea id="runtime-line-json" style="display:none;"></textarea>
+
+        <!-- 可视化站点编辑器（与主程序类似的站点列表） -->
+        <div class="field" id="runtime-station-editor" style="margin-top:20px; display:none;">
+          <label>站点列表（点击可编辑）</label>
+          <div id="runtime-station-list" class="station-list"></div>
+          <div class="btn-group" style="margin-top:12px;">
+            <button class="btn btn-secondary" id="btn-runtime-add-station">
+              <i class="fas fa-plus"></i> 新增站点
+            </button>
+            <button class="btn btn-primary" id="btn-runtime-sync-json">
+              <i class="fas fa-save"></i> 保存到 JSON 文本框
+            </button>
+          </div>
           <div style="font-size:12px; color:#666; margin-top:4px;">
-            此文本框仅用于预览和手动编辑，推荐使用文件上传方式
+            说明：此处提供简化版站点编辑（名称、英文名、是否跳站）。保存后会自动同步到上方 JSON 中，最终通过"解析并上传文件"或"手动上传"推送到云端。
+          </div>
+        </div>
+
+        <!-- 运控线路站点编辑模态框 -->
+        <div class="modal" id="runtime-station-modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3 id="runtime-station-modal-title">编辑站点</h3>
+              <button class="close-btn" id="runtime-station-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="field">
+                <label for="runtime-station-name">站名（中文）*</label>
+                <input type="text" id="runtime-station-name" placeholder="例如：济南站" />
+              </div>
+              <div class="field">
+                <label for="runtime-station-en">站名（英文，可选）</label>
+                <input type="text" id="runtime-station-en" placeholder="Jinan Railway Station" />
+              </div>
+              <div class="field">
+                <label>
+                  <input type="checkbox" id="runtime-station-skip" />
+                  <span style="margin-left:6px;">跳站（不停靠该站）</span>
+                </label>
+              </div>
+              <div class="field">
+                <label for="runtime-station-dock">上下行停靠</label>
+                <select id="runtime-station-dock">
+                  <option value="both">双向停靠</option>
+                  <option value="up">仅上行</option>
+                  <option value="down">仅下行</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>
+                  <input type="checkbox" id="runtime-station-express" />
+                  <span style="margin-left:6px;">大站停靠（用于大站车/直达筛选）</span>
+                </label>
+              </div>
+              <div class="field">
+                <label>换乘线路</label>
+                <div id="runtime-station-xfer-list" class="runtime-xfer-list"></div>
+                <div class="btn-group" style="margin-top:8px;">
+                  <button class="btn btn-secondary btn-small" id="runtime-station-add-xfer">
+                    <i class="fas fa-plus"></i> 添加换乘
+                  </button>
+                </div>
+                <div style="font-size:12px; color:#666; margin-top:4px;">
+                  每条换乘包含线路名称、颜色，以及是否为出站换乘 / 暂缓。与主程序站点编辑中的换乘设置保持兼容。
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid #eee;">
+              <button class="btn btn-secondary" id="runtime-station-modal-cancel">取消</button>
+              <button class="btn btn-primary" id="runtime-station-modal-save">保存</button>
+            </div>
           </div>
         </div>
         <div id="runtime-status"></div>
@@ -750,7 +958,7 @@
     </div>
 
     <!-- 彩蛋配置 -->
-    <div class="tab-content" id="tab-easter-eggs">
+    <div class="section-content" id="section-easter-eggs" style="display:none;">
       <div class="card">
         <h2><i class="fas fa-egg"></i> 彩蛋配置</h2>
         <div class="btn-group">
@@ -770,7 +978,7 @@
     </div>
 
     <!-- 节日配置 -->
-    <div class="tab-content" id="tab-holidays">
+    <div class="section-content" id="section-holidays" style="display:none;">
       <div class="card">
         <h2><i class="fas fa-calendar-alt"></i> 节日配置</h2>
         <div class="card date-info-card">
@@ -797,7 +1005,7 @@
     </div>
 
     <!-- 版本更新 -->
-    <div class="tab-content" id="tab-updates">
+    <div class="section-content" id="section-updates" style="display:none;">
       <div class="card">
         <h2><i class="fas fa-shield-alt"></i> 强制更新设置</h2>
         <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
@@ -964,7 +1172,7 @@
     </div>
 
     <!-- 统计信息 -->
-    <div class="tab-content" id="tab-stats">
+    <div class="section-content" id="section-stats" style="display:none;">
       <div class="card">
         <h2><i class="fas fa-chart-bar"></i> 数据统计</h2>
         <div class="grid">
@@ -1015,12 +1223,6 @@
           <div class="table-container" id="stat-recent-container">
             <table>
               <thead>
-<<<<<<< HEAD
-                <tr><th>国家/地区</th><th>城市</th><th>操作系统</th><th>版本</th><th>设备ID</th><th>时间（重复访问会显示次数和持续时间）</th><th>操作</th></tr>
-              </thead>
-              <tbody id="stat-recent-tbody">
-                <tr><td colspan="6" class="empty-state">暂无</td></tr>
-=======
                 <tr>
                   <th style="vertical-align:middle; text-align:left;">国家/地区</th>
                   <th style="vertical-align:middle; text-align:left;">城市</th>
@@ -1028,12 +1230,10 @@
                   <th style="vertical-align:middle; text-align:left;">版本</th>
                   <th style="vertical-align:middle; text-align:left;">设备ID</th>
                   <th style="vertical-align:middle; text-align:left;">在线时长</th>
-                  <th style="vertical-align:middle; text-align:left;">操作</th>
                 </tr>
               </thead>
               <tbody id="stat-recent-tbody">
-                <tr><td colspan="7" class="empty-state">暂无</td></tr>
->>>>>>> feature/ui-update
+                <tr><td colspan="6" class="empty-state">暂无</td></tr>
               </tbody>
             </table>
           </div>
@@ -1079,6 +1279,40 @@
   </div>
 
   <script>
+    // 侧边栏切换
+    function initSidebarNavigation() {
+      const items = document.querySelectorAll('.sidebar-item');
+      const sections = document.querySelectorAll('.section-content');
+      
+      function activateSection(sectionId) {
+        items.forEach(btn => {
+          const sec = btn.getAttribute('data-section');
+          btn.classList.toggle('active', sec === sectionId);
+        });
+        sections.forEach(sec => {
+          if (sec.id === `section-${sectionId}`) {
+            sec.style.display = '';
+            sec.classList.add('active');
+          } else {
+            sec.style.display = 'none';
+            sec.classList.remove('active');
+          }
+        });
+      }
+      
+      items.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const section = btn.getAttribute('data-section');
+          if (section) {
+            activateSection(section);
+          }
+        });
+      });
+      
+      // 默认激活运控线路
+      activateSection('runtime');
+    }
+
     // 配置管理
     const STORAGE_KEY = 'metro_pids_admin_config';
     
@@ -1184,16 +1418,12 @@
         document.querySelectorAll('.tab-content').forEach(content => {
           content.classList.remove('active');
         });
-<<<<<<< HEAD
-        document.getElementById(`tab-${tabName}`).classList.add('active');
-=======
         const targetTab = document.getElementById(`tab-${tabName}`);
         if (targetTab) {
           targetTab.classList.add('active');
         } else {
           console.error(`Tab content not found: tab-${tabName}`);
         }
->>>>>>> feature/ui-update
         
         // 根据标签页自动加载数据
         if (tabName === 'updates') {
@@ -1321,8 +1551,9 @@
       }
     });
     
-    // 运控线路文件管理
+    // 运控线路文件管理 & 站点可视化编辑
     let runtimeFiles = [];
+    let runtimeStations = [];
     
     // 处理文件选择
     document.getElementById('runtime-line-file-input').addEventListener('change', async (e) => {
@@ -1383,10 +1614,11 @@
           await callApi('PUT', `/runtime/lines/${encodeURIComponent(lineName)}`, json);
           successCount++;
           
-          // 如果只有一个文件，自动填充到预览区域
+          // 如果只有一个文件，自动填充到预览区域并加载可视化编辑器
           if (runtimeFiles.length === 1) {
             document.getElementById('runtime-line-name').value = lineName;
             document.getElementById('runtime-line-json').value = JSON.stringify(json, null, 2);
+            loadRuntimeStationsFromJson();
           }
         } catch (e) {
           failCount++;
@@ -1410,14 +1642,329 @@
       }
     });
     
+    let runtimeEditingIndex = -1;
+
+    function openRuntimeStationModal(index) {
+      const modal = document.getElementById('runtime-station-modal');
+      if (!modal) return;
+      
+      const titleEl = document.getElementById('runtime-station-modal-title');
+      const nameInput = document.getElementById('runtime-station-name');
+      const enInput = document.getElementById('runtime-station-en');
+      const skipInput = document.getElementById('runtime-station-skip');
+      const dockSelect = document.getElementById('runtime-station-dock');
+      const expressInput = document.getElementById('runtime-station-express');
+      const xferListEl = document.getElementById('runtime-station-xfer-list');
+      
+      if (index >= 0 && runtimeStations[index]) {
+        const st = runtimeStations[index];
+        runtimeEditingIndex = index;
+        titleEl.textContent = '编辑站点';
+        nameInput.value = st.name || '';
+        enInput.value = st.en || '';
+        skipInput.checked = !!st.skip;
+        dockSelect.value = st.dock || 'both';
+        expressInput.checked = st.expressStop !== false;
+        const xfers = Array.isArray(st.xfer) ? st.xfer : [];
+        renderRuntimeStationXfers(xfers);
+      } else {
+        runtimeEditingIndex = -1;
+        titleEl.textContent = '新增站点';
+        nameInput.value = '';
+        enInput.value = '';
+        skipInput.checked = false;
+        dockSelect.value = 'both';
+        expressInput.checked = true;
+        if (xferListEl) xferListEl.innerHTML = '<div class="empty-state" style="padding:4px 0;">暂无换乘</div>';
+      }
+      
+      modal.classList.add('active');
+    }
+
+    function closeRuntimeStationModal() {
+      const modal = document.getElementById('runtime-station-modal');
+      if (modal) {
+        modal.classList.remove('active');
+      }
+      runtimeEditingIndex = -1;
+    }
+
+    function saveRuntimeStationFromModal() {
+      const nameInput = document.getElementById('runtime-station-name');
+      const enInput = document.getElementById('runtime-station-en');
+      const skipInput = document.getElementById('runtime-station-skip');
+      const dockSelect = document.getElementById('runtime-station-dock');
+      const expressInput = document.getElementById('runtime-station-express');
+      const xferListEl = document.getElementById('runtime-station-xfer-list');
+      
+      const name = nameInput.value.trim();
+      if (!name) {
+        alert('请填写站名（中文）');
+        return;
+      }
+      const en = enInput.value.trim();
+      const skip = !!skipInput.checked;
+      const dock = dockSelect.value || 'both';
+      const expressStop = !!expressInput.checked;
+
+       // 收集换乘信息
+      const xfers = [];
+      if (xferListEl) {
+        xferListEl.querySelectorAll('.runtime-xfer-row').forEach(row => {
+          const lineInput = row.querySelector('.runtime-xfer-line');
+          const colorInput = row.querySelector('.runtime-xfer-color');
+          const exitCheckbox = row.querySelector('.runtime-xfer-exit');
+          const suspendedCheckbox = row.querySelector('.runtime-xfer-suspended');
+          const line = (lineInput?.value || '').trim();
+          if (!line) return;
+          xfers.push({
+            line,
+            color: colorInput?.value || '#808080',
+            exitTransfer: !!(exitCheckbox && exitCheckbox.checked),
+            suspended: !!(suspendedCheckbox && suspendedCheckbox.checked)
+          });
+        });
+      }
+      
+      if (runtimeEditingIndex >= 0 && runtimeStations[runtimeEditingIndex]) {
+        runtimeStations[runtimeEditingIndex] = {
+          ...runtimeStations[runtimeEditingIndex],
+          name,
+          en,
+          skip,
+          dock,
+          expressStop,
+          xfer: xfers
+        };
+      } else {
+        runtimeStations.push({
+          name,
+          en,
+          skip,
+          dock,
+          xfer: xfers,
+          expressStop
+        });
+      }
+      
+      closeRuntimeStationModal();
+      renderRuntimeStationList();
+    }
+
+    document.getElementById('runtime-station-modal-close').addEventListener('click', closeRuntimeStationModal);
+    document.getElementById('runtime-station-modal-cancel').addEventListener('click', closeRuntimeStationModal);
+    document.getElementById('runtime-station-modal-save').addEventListener('click', saveRuntimeStationFromModal);
+
+    function renderRuntimeStationXfers(xfers) {
+      const listEl = document.getElementById('runtime-station-xfer-list');
+      if (!listEl) return;
+      
+      listEl.innerHTML = '';
+      if (!Array.isArray(xfers) || xfers.length === 0) {
+        listEl.innerHTML = '<div class="empty-state" style="padding:4px 0;">暂无换乘</div>';
+        return;
+      }
+      
+      xfers.forEach((xf, idx) => {
+        const row = document.createElement('div');
+        row.className = 'runtime-xfer-row';
+        row.innerHTML = `
+          <input class="runtime-xfer-line" type="text" placeholder="线路名称/编号" value="${xf.line || ''}" />
+          <input class="runtime-xfer-color" type="text" placeholder="#RRGGBB" value="${xf.color || '#808080'}" />
+          <div class="runtime-xfer-flags">
+            <label><input type="checkbox" class="runtime-xfer-exit" ${xf.exitTransfer ? 'checked' : ''}/> 出站换乘</label>
+            <label><input type="checkbox" class="runtime-xfer-suspended" ${xf.suspended ? 'checked' : ''}/> 暂缓</label>
+          </div>
+          <div class="runtime-xfer-actions">
+            <button class="btn btn-secondary btn-small" data-action="remove">删除</button>
+          </div>
+        `;
+        row.querySelector('[data-action="remove"]').addEventListener('click', () => {
+          const current = Array.from(document.querySelectorAll('#runtime-station-xfer-list .runtime-xfer-row'));
+          current.splice(idx, 1);
+          const newXfers = current.map(r => {
+            const lineInput = r.querySelector('.runtime-xfer-line');
+            const colorInput = r.querySelector('.runtime-xfer-color');
+            const exitCheckbox = r.querySelector('.runtime-xfer-exit');
+            const suspendedCheckbox = r.querySelector('.runtime-xfer-suspended');
+            return {
+              line: (lineInput?.value || '').trim(),
+              color: colorInput?.value || '#808080',
+              exitTransfer: !!(exitCheckbox && exitCheckbox.checked),
+              suspended: !!(suspendedCheckbox && suspendedCheckbox.checked)
+            };
+          }).filter(x => x.line);
+          renderRuntimeStationXfers(newXfers);
+        });
+        listEl.appendChild(row);
+      });
+    }
+
+    document.getElementById('runtime-station-add-xfer').addEventListener('click', () => {
+      const listEl = document.getElementById('runtime-station-xfer-list');
+      const current = [];
+      if (listEl) {
+        listEl.querySelectorAll('.runtime-xfer-row').forEach(row => {
+          const lineInput = row.querySelector('.runtime-xfer-line');
+          const colorInput = row.querySelector('.runtime-xfer-color');
+          const exitCheckbox = row.querySelector('.runtime-xfer-exit');
+          const suspendedCheckbox = row.querySelector('.runtime-xfer-suspended');
+          const line = (lineInput?.value || '').trim();
+          if (!line) return;
+          current.push({
+            line,
+            color: colorInput?.value || '#808080',
+            exitTransfer: !!(exitCheckbox && exitCheckbox.checked),
+            suspended: !!(suspendedCheckbox && suspendedCheckbox.checked)
+          });
+        });
+      }
+      current.push({ line: '', color: '#808080', exitTransfer: false, suspended: false });
+      renderRuntimeStationXfers(current);
+    });
+
+    function renderRuntimeStationList() {
+      const editor = document.getElementById('runtime-station-editor');
+      const listEl = document.getElementById('runtime-station-list');
+      if (!editor || !listEl) return;
+      
+      if (!Array.isArray(runtimeStations) || runtimeStations.length === 0) {
+        editor.style.display = 'none';
+        listEl.innerHTML = '<div class="empty-state" style="padding:12px;">暂无站点数据，请先从 JSON 导入或上传文件。</div>';
+        return;
+      }
+      
+      editor.style.display = 'block';
+      listEl.innerHTML = '';
+      
+      runtimeStations.forEach((st, idx) => {
+        const item = document.createElement('div');
+        item.className = 'station-item';
+        
+        const skipTag = st.skip ? '<span class="station-tag" style="background:#ffe6e6;color:#d63031;">跳站</span>' : '';
+        const dockTag = st.dock === 'up'
+          ? '<span class="station-tag" style="background:#e3f2fd;color:#2980b9;">仅上行</span>'
+          : st.dock === 'down'
+          ? '<span class="station-tag" style="background:#e8f8f5;color:#16a085;">仅下行</span>'
+          : '';
+        
+        item.innerHTML = `
+          <div class="station-main">
+            <div class="station-index">[${idx + 1}]</div>
+            <div class="station-names">
+              <span class="station-name-cn">${st.name || '(未命名)'}</span>
+              <span class="station-name-en">${st.en || ''}</span>
+              <div class="station-tags">
+                ${dockTag}
+                ${skipTag}
+              </div>
+            </div>
+          </div>
+          <div class="station-actions">
+            <button class="btn btn-secondary btn-small" data-action="edit">编辑</button>
+            <button class="btn btn-secondary btn-small" data-action="up">上移</button>
+            <button class="btn btn-secondary btn-small" data-action="down">下移</button>
+            <button class="btn btn-danger btn-small" data-action="delete">删除</button>
+          </div>
+        `;
+        
+        item.querySelectorAll('.station-actions button').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const action = btn.getAttribute('data-action');
+            if (action === 'edit') {
+              openRuntimeStationModal(idx);
+            } else if (action === 'up' && idx > 0) {
+              const tmp = runtimeStations[idx - 1];
+              runtimeStations[idx - 1] = runtimeStations[idx];
+              runtimeStations[idx] = tmp;
+              renderRuntimeStationList();
+            } else if (action === 'down' && idx < runtimeStations.length - 1) {
+              const tmp = runtimeStations[idx + 1];
+              runtimeStations[idx + 1] = runtimeStations[idx];
+              runtimeStations[idx] = tmp;
+              renderRuntimeStationList();
+            } else if (action === 'delete') {
+              if (confirm(`确定要删除站点 "${st.name || '(未命名)'}" 吗？`)) {
+                runtimeStations.splice(idx, 1);
+                renderRuntimeStationList();
+              }
+            }
+          });
+        });
+        
+        listEl.appendChild(item);
+      });
+    }
+
+    function loadRuntimeStationsFromJson() {
+      const editor = document.getElementById('runtime-station-editor');
+      if (!editor) return;
+      const text = document.getElementById('runtime-line-json').value.trim();
+      if (!text) {
+        runtimeStations = [];
+        renderRuntimeStationList();
+        return;
+      }
+      try {
+        const json = JSON.parse(text);
+        const stations = Array.isArray(json?.stations) ? json.stations : [];
+        runtimeStations = stations.map(st => ({
+          name: st.name || '',
+          en: st.en || '',
+          skip: !!st.skip,
+          dock: st.dock || st.platform || undefined,
+          xfer: Array.isArray(st.xfer) ? st.xfer : [],
+          expressStop: st.expressStop !== false
+        }));
+        renderRuntimeStationList();
+      } catch (e) {
+        console.warn('解析运控线路 JSON 失败，无法加载站点编辑器:', e);
+        runtimeStations = [];
+        renderRuntimeStationList();
+      }
+    }
+
+    function syncRuntimeStationsToJson() {
+      const text = document.getElementById('runtime-line-json').value.trim();
+      let obj;
+      try {
+        obj = text ? JSON.parse(text) : {};
+      } catch {
+        obj = {};
+      }
+      if (!obj.meta) obj.meta = {};
+      if (!obj.stations || !Array.isArray(obj.stations)) obj.stations = [];
+      obj.stations = runtimeStations.map(st => ({
+        name: st.name || '',
+        en: st.en || '',
+        skip: !!st.skip,
+        dock: st.dock || undefined,
+        xfer: Array.isArray(st.xfer) ? st.xfer : [],
+        expressStop: st.expressStop !== false
+      }));
+      document.getElementById('runtime-line-json').value = JSON.stringify(obj, null, 2);
+    }
+
+    document.getElementById('btn-runtime-add-station').addEventListener('click', () => {
+      openRuntimeStationModal(-1);
+    });
+
+    document.getElementById('btn-runtime-sync-json').addEventListener('click', () => {
+      syncRuntimeStationsToJson();
+      showStatus('runtime-status', '已将站点列表同步回 JSON 文本框', 'success');
+    });
+
     window.loadRuntimeLine = async (lineName) => {
       document.getElementById('runtime-line-name').value = lineName;
-      document.querySelector('.tab[data-tab="runtime"]').click();
+      // 切换到运控线路侧边栏
+      const runtimeSidebarBtn = document.querySelector('.sidebar-item[data-section="runtime"]');
+      if (runtimeSidebarBtn) runtimeSidebarBtn.click();
       
       try {
         const data = await callApi('GET', `/runtime/lines/${encodeURIComponent(lineName)}`);
         document.getElementById('runtime-line-json').value = JSON.stringify(data.line || data, null, 2);
         showStatus('runtime-status', '下载成功', 'success');
+        loadRuntimeStationsFromJson();
       } catch (e) {
         showStatus('runtime-status', `下载失败：${e.message}`, 'error');
       }
@@ -1447,6 +1994,7 @@
         const data = await callApi('GET', `/runtime/lines/${encodeURIComponent(lineName)}`);
         document.getElementById('runtime-line-json').value = JSON.stringify(data.line || data, null, 2);
         showStatus('runtime-status', '下载成功', 'success');
+        loadRuntimeStationsFromJson();
       } catch (e) {
         showStatus('runtime-status', `下载失败：${e.message}`, 'error');
       }
@@ -1466,7 +2014,17 @@
           // 忽略解析错误
         }
       }
+      // 文本变化时尝试更新站点列表
+      loadRuntimeStationsFromJson();
     });
+
+    // 初始化时，如 JSON 中已有数据，也尝试加载站点编辑器
+    (() => {
+      const text = document.getElementById('runtime-line-json').value.trim();
+      if (text) {
+        loadRuntimeStationsFromJson();
+      }
+    })();
     
     // 添加手动上传按钮（可选，用于编辑已有线路）
     const manualUploadBtn = document.createElement('button');
@@ -2160,21 +2718,6 @@
         const data = await callApi('GET', '/stats');
         document.getElementById('stat-users').textContent = (data.total || 0);
         document.getElementById('stat-unique-devices').textContent = (data.uniqueDevices || 0);
-<<<<<<< HEAD
-        // 美化全球分布显示
-        const byC = data.byCountry || {};
-        const countryElement = document.getElementById('stat-by-country');
-        if (Object.keys(byC).length) {
-          const sortedCountries = Object.entries(byC).sort((a, b) => b[1] - a[1]);
-          const totalCountry = sortedCountries.reduce((sum, [, v]) => sum + v, 0);
-          countryElement.innerHTML = sortedCountries.map(([k, v]) => {
-            const percent = ((v / totalCountry) * 100).toFixed(1);
-            const flag = getCountryFlag(k);
-            return `<span class="stat-tag stat-tag-country" title="${k}: ${v} 次访问 (${percent}%)">
-              ${flag} <strong>${k}</strong> <span class="stat-value">${v}</span>
-            </span>`;
-          }).join('');
-=======
         
         // 从所有记录中按设备ID去重，统计设备数量（而不是访问次数）
         const allRecordsForStats = data.all || data.records || [];
@@ -2230,28 +2773,10 @@
               return `${countryName} (${label})`;
             }
           });
->>>>>>> feature/ui-update
         } else {
           countryElement.textContent = '-';
         }
         
-<<<<<<< HEAD
-        // 美化使用版本显示
-        const byV = data.byVersion || {};
-        const versionElement = document.getElementById('stat-by-version');
-        if (Object.keys(byV).length) {
-          const sortedVersions = Object.entries(byV).sort((a, b) => b[1] - a[1]);
-          const totalVersion = sortedVersions.reduce((sum, [, v]) => sum + v, 0);
-          versionElement.innerHTML = sortedVersions.map(([k, v]) => {
-            const percent = ((v / totalVersion) * 100).toFixed(1);
-            const isAdmin = k.toLowerCase() === 'admin';
-            const tagClass = isAdmin ? 'stat-tag-admin' : 'stat-tag-version';
-            const icon = isAdmin ? '👤' : '📦';
-            return `<span class="stat-tag ${tagClass}" title="版本 ${k}: ${v} 次访问 (${percent}%)">
-              ${icon} <strong>${k}</strong> <span class="stat-value">${v}</span>
-            </span>`;
-          }).join('');
-=======
         // 美化使用版本显示 - 饼图（设备数量）
         const versionElement = document.getElementById('stat-by-version');
         if (Object.keys(byVersionDevices).length) {
@@ -2268,26 +2793,10 @@
               return `${icon} ${label}`;
             }
           });
->>>>>>> feature/ui-update
         } else {
           versionElement.textContent = '-';
         }
         
-<<<<<<< HEAD
-        // 美化操作系统分布显示
-        const byOS = data.byOS || {};
-        const osElement = document.getElementById('stat-by-os');
-        if (Object.keys(byOS).length) {
-          const sortedOS = Object.entries(byOS).sort((a, b) => b[1] - a[1]);
-          const totalOS = sortedOS.reduce((sum, [, v]) => sum + v, 0);
-          osElement.innerHTML = sortedOS.map(([k, v]) => {
-            const percent = ((v / totalOS) * 100).toFixed(1);
-            const osIcon = getOSIconForStat(k);
-            return `<span class="stat-tag stat-tag-os" title="${k}: ${v} 次访问 (${percent}%)">
-              ${osIcon} <strong>${k}</strong> <span class="stat-value">${v}</span>
-            </span>`;
-          }).join('');
-=======
         // 美化操作系统分布显示 - 饼图（设备数量）
         const osElement = document.getElementById('stat-by-os');
         if (Object.keys(byOSDevices).length) {
@@ -2304,39 +2813,17 @@
               return `${osIcon} ${formattedOS}`;
             }
           });
->>>>>>> feature/ui-update
         } else {
           osElement.textContent = '-';
         }
         
-<<<<<<< HEAD
-        // 美化设备统计显示
-=======
         // 美化设备统计显示 - 饼图（显示访问次数，因为这是按设备ID统计的）
->>>>>>> feature/ui-update
         const byD = data.byDevice || {};
         const deviceElement = document.getElementById('stat-by-device');
         const deviceEntries = Object.entries(byD)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 10);
         if (deviceEntries.length) {
-<<<<<<< HEAD
-          const totalDevice = deviceEntries.reduce((sum, [, v]) => sum + v, 0);
-          deviceElement.innerHTML = deviceEntries.map(([k, v], idx) => {
-            const percent = ((v / totalDevice) * 100).toFixed(1);
-            const shortId = k.length > 12 ? k.substring(0, 12) + '...' : k;
-            const rankIcon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '📱';
-            const isUnknown = k === 'unknown';
-            const tagClass = isUnknown ? 'stat-tag-device-unknown' : 'stat-tag-device';
-            return `<span class="stat-tag ${tagClass}" title="设备 ${k}: ${v} 次访问 (${percent}%)">
-              ${rankIcon} <code>${shortId}</code> <span class="stat-value">${v}次</span>
-            </span>`;
-          }).join('');
-        } else {
-          deviceElement.textContent = '-';
-        }
-        const allRecords = data.all || data.recent || [];
-=======
           const pieData = deviceEntries.map(([k, v], idx) => ({
             label: k,
             value: v
@@ -2355,7 +2842,6 @@
         
         // 处理最近记录表格（使用原始访问记录）
         const allRecords = data.all || data.recent || data.records || [];
->>>>>>> feature/ui-update
         const tbody = document.getElementById('stat-recent-tbody');
         if (allRecords.length === 0) {
           tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无</td></tr>';
@@ -2385,53 +2871,6 @@
             const dateDisplay = date === 'unknown' ? '未知日期' : 
               new Date(date + 'T00:00:00').toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
             
-<<<<<<< HEAD
-            // 该日期的记录行 - 合并同一设备短时间内的重复访问（先合并，再使用）
-            const mergedRecords = mergeRepeatedVisits(records, 5 * 60 * 1000); // 5分钟时间窗口
-            
-            // 日期分组标题行
-            const totalVisits = records.length;
-            const mergedCount = mergedRecords.length;
-            html += `<tr class="date-group-header ${isToday ? '' : 'collapsed'}" data-date="${date}">
-              <td colspan="7" style="padding: 8px 12px;">
-                <span class="toggle-icon">▼</span>
-                <strong>${dateDisplay}</strong> 
-                <span style="color: #999; font-weight: normal;">
-                  (${mergedCount} 组设备，共 ${totalVisits} 次访问${totalVisits > mergedCount ? '，已合并 ' + (totalVisits - mergedCount) + ' 条重复' : ''})
-                </span>
-              </td>
-            </tr>`;
-            
-            mergedRecords.forEach(item => {
-              const deviceId = item.deviceId || 'unknown';
-              const deviceShort = deviceId.length > 12 ? deviceId.substring(0, 12) + '...' : deviceId;
-              
-              // 构建时间显示
-              let timeDisplay;
-              if (item.count > 1) {
-                const firstTime = new Date(item.firstTime).toLocaleTimeString('zh-CN');
-                const duration = Math.floor((item.lastTime - item.firstTime) / 1000);
-                const durationStr = duration < 60 ? `${duration}秒` : 
-                  duration < 3600 ? `${Math.floor(duration / 60)}分钟` : 
-                  `${Math.floor(duration / 3600)}小时`;
-                timeDisplay = `${firstTime} <span style="color:#666; font-size:11px;">(${item.count}次, 持续${durationStr})</span>`;
-              } else {
-                timeDisplay = new Date(item.firstTime).toLocaleTimeString('zh-CN');
-              }
-              
-              // 重复访问超过3次的行用黄色背景高亮
-              const highlightStyle = item.count > 3 ? 'background:#fff3cd;' : '';
-              
-              // 获取操作系统图标
-              const osIcon = getOSIcon(item.os);
-              
-              // 删除按钮：如果 count > 1（合并记录），显示批量删除；否则显示单条删除
-              let deleteButton = '';
-              if (item.recordIds && item.recordIds.length > 0) {
-                if (item.count > 1) {
-                  // 合并记录：显示批量删除按钮（删除该设备的所有记录）
-                  deleteButton = `<button class="btn btn-sm btn-danger" onclick="deleteStatRecordsByDevice('${deviceId}')" title="删除该设备的所有 ${item.count} 条记录">
-=======
             // 该日期的记录行 - 先合并同一设备短时间内的重复访问，然后按设备累计一天的总时长
             const mergedRecords = mergeRepeatedVisits(records, 5 * 60 * 1000); // 5分钟时间窗口
             
@@ -2553,33 +2992,6 @@
               // 格式化操作系统显示
               const osDisplay = formatOSDisplay(item.os);
               
-              // 删除按钮：如果 totalCount > 1（合并记录），显示批量删除；否则显示单条删除
-              let deleteButton = '';
-              if (item.recordIds && item.recordIds.length > 0) {
-                if (totalCount > 1) {
-                  // 合并记录：显示批量删除按钮（删除该设备的所有记录）
-                  deleteButton = `<button class="btn btn-sm btn-danger" onclick="deleteStatRecordsByDevice('${deviceId}')" title="删除该设备的所有 ${totalCount} 条记录">
->>>>>>> feature/ui-update
-                    <i class="fas fa-trash"></i> 删除全部
-                  </button>`;
-                } else if (item.recordIds.length === 1) {
-                  // 单条记录：显示单条删除按钮
-                  deleteButton = `<button class="btn btn-sm btn-danger" onclick="deleteStatRecord('${item.recordIds[0]}')" title="删除此记录">
-                    <i class="fas fa-trash"></i>
-                  </button>`;
-                }
-              }
-              
-<<<<<<< HEAD
-              html += `<tr class="date-group-rows ${isToday ? '' : 'collapsed'}" data-date="${date}" style="${highlightStyle}">
-                <td>${item.country || '-'}</td>
-                <td>${item.city || '-'}</td>
-                <td>${osIcon} ${item.os || 'Unknown'}</td>
-                <td>${item.version || '-'}</td>
-                <td title="${deviceId}">${deviceShort}</td>
-                <td>${timeDisplay}</td>
-                <td>${deleteButton || '-'}</td>
-=======
               html += `<tr class="date-group-rows ${isToday ? '' : 'collapsed'}" data-date="${date}">
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${getCountryFlag(item.country) || '-'}</td>
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${getCityName(item.city)}</td>
@@ -2587,8 +2999,6 @@
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${item.version || '-'}</td>
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;" title="${deviceId}">${deviceShort}</td>
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${durationDisplay}</td>
-                <td style="vertical-align:middle; text-align:left; line-height:1.5;">${deleteButton || '<span style="display:inline-block; height:32px; line-height:32px;">-</span>'}</td>
->>>>>>> feature/ui-update
               </tr>`;
             });
           });
@@ -2639,8 +3049,6 @@
       return '💻';
     }
     
-<<<<<<< HEAD
-=======
     // 解析Windows版本号到22H2格式
     function parseWindowsVersion(os) {
       if (!os) return os;
@@ -2720,25 +3128,11 @@
       return os;
     }
     
->>>>>>> feature/ui-update
     // 获取操作系统对应的图标（用于表格显示）
     function getOSIcon(os) {
       return getOSIconForStat(os);
     }
     
-<<<<<<< HEAD
-    // 获取国家/地区对应的国旗图标
-    function getCountryFlag(countryCode) {
-      const flags = {
-        'HK': '🇭🇰', 'CN': '🇨🇳', 'US': '🇺🇸', 'JP': '🇯🇵', 'KR': '🇰🇷',
-        'GB': '🇬🇧', 'FR': '🇫🇷', 'DE': '🇩🇪', 'CA': '🇨🇦', 'AU': '🇦🇺',
-        'SG': '🇸🇬', 'TW': '🇹🇼', 'MY': '🇲🇾', 'TH': '🇹🇭', 'VN': '🇻🇳',
-        'IN': '🇮🇳', 'ID': '🇮🇩', 'PH': '🇵🇭', 'BR': '🇧🇷', 'MX': '🇲🇽',
-        'RU': '🇷🇺', 'IT': '🇮🇹', 'ES': '🇪🇸', 'NL': '🇳🇱', 'SE': '🇸🇪',
-        'NO': '🇳🇴', 'DK': '🇩🇰', 'FI': '🇫🇮', 'PL': '🇵🇱', 'TR': '🇹🇷'
-      };
-      return flags[countryCode] || '🌍';
-=======
     // 格式化操作系统显示（带图标和版本）
     function formatOSDisplay(os) {
       if (!os) return 'Unknown';
@@ -2932,17 +3326,12 @@
       }, 10);
       
       return html;
->>>>>>> feature/ui-update
     }
     
     // 合并同一设备短时间内的重复访问记录（保留原始记录 ID 列表）
     function mergeRepeatedVisits(records, timeWindow) {
       if (!records || records.length === 0) return [];
       
-<<<<<<< HEAD
-      // 按时间排序（最新的在前）
-      const sorted = [...records].sort((a, b) => (b.ts || 0) - (a.ts || 0));
-=======
       // 兼容老版本：支持不同的时间戳字段名
       const getTimestamp = (record) => {
         return record.ts || record.timestamp || record.time || (record.date ? new Date(record.date).getTime() : 0);
@@ -2950,27 +3339,18 @@
       
       // 按时间排序（最新的在前）
       const sorted = [...records].sort((a, b) => getTimestamp(b) - getTimestamp(a));
->>>>>>> feature/ui-update
       
       const merged = [];
       let currentGroup = null;
       
       for (const record of sorted) {
-<<<<<<< HEAD
-        const deviceKey = `${record.deviceId}_${record.version}_${record.country}_${record.city}_${record.os || 'unknown'}`;
-=======
         const deviceKey = `${record.deviceId || record.device_id || 'unknown'}_${record.version || 'unknown'}_${record.country || 'unknown'}_${record.city || 'unknown'}_${record.os || 'unknown'}`;
         const recordTs = getTimestamp(record);
->>>>>>> feature/ui-update
         
         // 如果是新设备或时间间隔超过阈值，开始新分组
         if (!currentGroup || 
             currentGroup.key !== deviceKey || 
-<<<<<<< HEAD
-            (currentGroup.firstTime - (record.ts || 0) > timeWindow)) {
-=======
             (currentGroup.firstTime - recordTs > timeWindow)) {
->>>>>>> feature/ui-update
           // 保存当前分组
           if (currentGroup) {
             merged.push({
@@ -2989,17 +3369,6 @@
           // 开始新分组
           currentGroup = {
             key: deviceKey,
-<<<<<<< HEAD
-            deviceId: record.deviceId,
-            version: record.version,
-            country: record.country,
-            city: record.city,
-            os: record.os,
-            firstTime: record.ts || 0,
-            lastTime: record.ts || 0,
-            count: 1,
-            recordIds: [record.id || `${record.ts}_${record.deviceId.substring(0, 8)}`] // 保存原始记录 ID（如果没有 id，使用时间戳+设备ID前缀）
-=======
             deviceId: record.deviceId || record.device_id || 'unknown',
             version: record.version || 'unknown',
             country: record.country || '',
@@ -3009,21 +3378,15 @@
             lastTime: recordTs,  // 初始化为第一个记录的时间
             count: 1,
             recordIds: [record.id || record._id || `${recordTs}_${(record.deviceId || record.device_id || 'unknown').substring(0, 8)}`] // 保存原始记录 ID
->>>>>>> feature/ui-update
           };
         } else {
           // 合并到当前分组
           currentGroup.count++;
-<<<<<<< HEAD
-          currentGroup.lastTime = record.ts || 0; // 更新最后时间（由于已排序，这是最早的）
-          const recordId = record.id || `${record.ts}_${record.deviceId.substring(0, 8)}`;
-=======
           // 更新最早时间（因为已排序，当前记录的时间更早）
           if (recordTs < currentGroup.lastTime) {
             currentGroup.lastTime = recordTs;
           }
           const recordId = record.id || record._id || `${recordTs}_${(record.deviceId || record.device_id || 'unknown').substring(0, 8)}`;
->>>>>>> feature/ui-update
           if (!currentGroup.recordIds.includes(recordId)) {
             currentGroup.recordIds.push(recordId);
           }
@@ -3048,49 +3411,6 @@
       return merged;
     }
     
-    // 删除统计记录
-    window.deleteStatRecord = async function(recordId) {
-      if (!confirm('确定要删除这条统计记录吗？')) return;
-      
-      const cfg = getConfig();
-      if (!cfg.apiBase) {
-        alert('请先配置 API 地址');
-        return;
-      }
-      
-      try {
-        await callApi('DELETE', `/stats/record/${encodeURIComponent(recordId)}`);
-        showStatus('changelog-status', '删除成功，正在刷新...', 'success');
-        // 刷新统计
-        setTimeout(() => {
-          document.getElementById('btn-refresh-usage').click();
-        }, 500);
-      } catch (e) {
-        showStatus('changelog-status', `删除失败：${e.message}`, 'error');
-      }
-    };
-    
-    // 批量删除统计记录（按设备ID）
-    window.deleteStatRecordsByDevice = async function(deviceId) {
-      if (!confirm(`确定要删除设备 "${deviceId}" 的所有统计记录吗？此操作不可恢复！`)) return;
-      
-      const cfg = getConfig();
-      if (!cfg.apiBase) {
-        alert('请先配置 API 地址');
-        return;
-      }
-      
-      try {
-        const result = await callApi('DELETE', '/stats/records', { deviceId });
-        showStatus('changelog-status', `已删除 ${result.deleted || 0} 条记录，正在刷新...`, 'success');
-        setTimeout(() => {
-          document.getElementById('btn-refresh-usage').click();
-        }, 500);
-      } catch (e) {
-        showStatus('changelog-status', `删除失败：${e.message}`, 'error');
-      }
-    };
-
     // 下载访问记录
     document.getElementById('btn-download-records').addEventListener('click', async () => {
       const cfg = getConfig();
@@ -3180,6 +3500,7 @@
     
     // 初始化：启动时自动从服务器加载所有数据
     window.addEventListener('DOMContentLoaded', () => {
+      initSidebarNavigation();
       const savedConfig = loadConfig();
       document.getElementById('api-base').value = savedConfig.apiBase || '';
       document.getElementById('api-token').value = savedConfig.token || '';

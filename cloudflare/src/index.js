@@ -173,10 +173,31 @@ const RuntimeLinesHandler = {
   // GET /runtime/lines/:lineName - 获取单个运控线路
   async get(env, lineName) {
     const key = this.PREFIX + lineName;
-    const raw = await env.LINES.get(key);
+    let raw = await env.LINES.get(key);
+
+    // 兼容老数据：如果按 key 直接获取不到，尝试根据 meta.lineName 搜索
+    if (!raw) {
+      const list = await env.LINES.list({ prefix: this.PREFIX });
+      for (const k of list.keys) {
+        const value = await env.LINES.get(k.name);
+        if (!value) continue;
+        try {
+          const json = JSON.parse(value);
+          const metaName = json?.meta?.lineName;
+          if (metaName && String(metaName) === String(lineName)) {
+            raw = value;
+            break;
+          }
+        } catch {
+          // 忽略解析失败的数据
+        }
+      }
+    }
+
     if (!raw) {
       throw { status: 404, error: '运控线路不存在' };
     }
+
     return JSON.parse(raw);
   },
 
@@ -438,6 +459,7 @@ const ReleasesHandler = {
 const ChangelogHandler = {
   REPO_URL: 'https://api.github.com/repos/tanzhouxkong/Metro-PIDS/releases',
   CACHE_TTL: 300, // 5 分钟
+  KEY: 'config:changelog',
 
   // 从 GitHub 获取并转换为 changelog 格式
   async fetchFromGitHub(env) {
@@ -480,12 +502,31 @@ const ChangelogHandler = {
   async get(env, request) {
     const url = new URL(request.url);
     const force = url.searchParams.get('force') === '1';
-    
-    // 构建缓存键
+    const source = url.searchParams.get('source') || 'auto';
+
+    // 1. 优先从 KV 读取（除非显式指定 source=github）
+    if (source !== 'github') {
+      try {
+        const stored = await env.LINES.get(this.KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const list = Array.isArray(parsed?.changelog)
+            ? parsed.changelog
+            : (Array.isArray(parsed) ? parsed : []);
+          if (list.length > 0) {
+            return { changelog: list, source: 'kv' };
+          }
+        }
+      } catch (e) {
+        console.warn('[Changelog] 读取 KV 配置失败，回退到 GitHub 缓存/实时获取:', e);
+      }
+    }
+
+    // 2. 构建 GitHub 缓存键
     const githubHeaders = getGitHubHeaders(env);
     const cacheKey = new Request(this.REPO_URL, { headers: githubHeaders });
     
-    // 如果不是强制刷新，尝试从缓存读取
+    // 3. 如果不是强制刷新，尝试从 Cloudflare Cache 读取 GitHub Releases
     if (!force) {
       const cached = await caches.default.match(cacheKey);
       if (cached) {
@@ -497,20 +538,32 @@ const ChangelogHandler = {
           releaseDate: r.published_at || new Date().toISOString(),
           prerelease: !!r.prerelease
         }));
-        return { changelog: list, cached: true };
+        return { changelog: list, cached: true, source: 'github-cache' };
       }
     }
     
-    // 从 GitHub 获取
+    // 4. 从 GitHub 实时获取
     const changelog = await this.fetchFromGitHub(env);
     
-    // 更新缓存
-    const cacheResponse = new Response(JSON.stringify(await fetch(this.REPO_URL, { headers: githubHeaders }).then(r => r.json())), {
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${this.CACHE_TTL}` }
-    });
-    await caches.default.put(cacheKey, cacheResponse);
+    // 5. 更新 Cloudflare Cache（GitHub 原始响应）
+    try {
+      const githubRaw = await fetch(this.REPO_URL, { headers: githubHeaders }).then(r => r.json());
+      const cacheResponse = new Response(JSON.stringify(githubRaw), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${this.CACHE_TTL}` }
+      });
+      await caches.default.put(cacheKey, cacheResponse);
+    } catch (e) {
+      console.warn('[Changelog] 更新 GitHub 缓存失败（忽略）:', e);
+    }
+
+    // 6. 同步一份到 KV，便于前端只读场景直接使用
+    try {
+      await env.LINES.put(this.KEY, JSON.stringify({ changelog, updatedAt: new Date().toISOString() }));
+    } catch (e) {
+      console.warn('[Changelog] 将 GitHub 更新日志写入 KV 失败（忽略）:', e);
+    }
     
-    return { changelog };
+    return { changelog, source: 'github' };
   },
 
   // POST /update/changelog/sync/github - 强制同步
@@ -523,12 +576,52 @@ const ChangelogHandler = {
     // 从 GitHub 获取
     const changelog = await this.fetchFromGitHub(env);
     
-    // 更新缓存
-    const cacheResponse = new Response(JSON.stringify(await fetch(this.REPO_URL, { headers: githubHeaders }).then(r => r.json())), {
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${this.CACHE_TTL}` }
-    });
-    await caches.default.put(cacheKey, cacheResponse);
+    // 更新缓存（GitHub 原始响应）
+    try {
+      const githubRaw = await fetch(this.REPO_URL, { headers: githubHeaders }).then(r => r.json());
+      const cacheResponse = new Response(JSON.stringify(githubRaw), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${this.CACHE_TTL}` }
+      });
+      await caches.default.put(cacheKey, cacheResponse);
+    } catch (e) {
+      console.warn('[Changelog] 刷新 GitHub 缓存失败（忽略）:', e);
+    }
     
+    // 同步写入 KV，便于后台管理读取
+    try {
+      await env.LINES.put(this.KEY, JSON.stringify({ changelog, updatedAt: new Date().toISOString() }));
+    } catch (e) {
+      console.warn('[Changelog] 将同步后的更新日志写入 KV 失败（忽略）:', e);
+    }
+    
+    return { ok: true, changelog };
+  },
+
+  // PUT /update/changelog - 由后台保存自定义 changelog
+  async put(env, body) {
+    if (!body || typeof body !== 'object') {
+      throw { status: 400, error: '缺少请求体' };
+    }
+
+    const rawList = Array.isArray(body.changelog) ? body.changelog : (Array.isArray(body) ? body : null);
+    if (!rawList) {
+      throw { status: 400, error: '请求体中缺少 changelog 数组' };
+    }
+
+    // 规范化字段，避免把多余字段写入 KV
+    const changelog = rawList.map(item => ({
+      version: String(item.version || '').trim(),
+      title: String(item.title || '').trim(),
+      content: String(item.content || ''),
+      releaseDate: item.releaseDate || new Date().toISOString(),
+      prerelease: item.prerelease === true
+    })).filter(item => item.version && item.content);
+
+    await env.LINES.put(this.KEY, JSON.stringify({
+      changelog,
+      updatedAt: new Date().toISOString()
+    }));
+
     return { ok: true, changelog };
   }
 };
@@ -1048,6 +1141,44 @@ const EasterEggsHandler = {
 };
 
 /**
+ * 新年灯笼配置 API
+ */
+const NewYearLanternHandler = {
+  KEY: 'config:new-year-lantern',
+  async get(env) {
+    const raw = await env.LINES.get(this.KEY);
+    if (!raw) {
+      return {
+        ok: true,
+        config: {
+          messages: [],
+          enabled: false,
+          _isDefault: true
+        }
+      };
+    }
+    try {
+      const config = JSON.parse(raw);
+      if (!('_isDefault' in config)) config._isDefault = false;
+      return { ok: true, config };
+    } catch (e) {
+      return { ok: true, config: { messages: [], enabled: false, _isDefault: true } };
+    }
+  },
+  async update(env, body) {
+    if (!body || typeof body !== 'object') throw { status: 400, error: '缺少配置数据' };
+    const config = {
+      messages: Array.isArray(body.messages) ? body.messages : [],
+      enabled: body.enabled === true,
+      startDate: body.startDate || null,
+      endDate: body.endDate || null
+    };
+    await env.LINES.put(this.KEY, JSON.stringify(config));
+    return { ok: true, config: { ...config, _isDefault: false } };
+  }
+};
+
+/**
  * 节日配置 API
  */
 const HolidaysHandler = {
@@ -1191,6 +1322,8 @@ async function handleRequest(request, env) {
           'DELETE /stats/records',
           'GET    /easter-eggs',
           'PUT    /easter-eggs',
+          'GET    /new-year-lantern',
+          'PUT    /new-year-lantern',
           'GET    /holidays',
           'PUT    /holidays',
           'GET    /holidays/active',
@@ -1346,10 +1479,22 @@ async function handleRequest(request, env) {
       return json(await ChangelogHandler.get(env, request), 200, corsHeaders);
     }
     if (pathname === '/update/changelog' && method === 'PUT') {
-      return json({ 
-        ok: false, 
-        error: '当前 Worker 未配置 changelog 存储，无法保存。更新日志仅从 GitHub 只读获取。' 
-      }, 501, corsHeaders);
+      try {
+        const body = await readJson(request);
+        return json(await ChangelogHandler.put(env, body), 200, corsHeaders);
+      } catch (error) {
+        console.error('[Worker] /update/changelog PUT 端点错误:', error);
+        if (error && typeof error === 'object' && 'status' in error) {
+          return json({ 
+            ok: false, 
+            error: error.error || String(error)
+          }, error.status || 500, corsHeaders);
+        }
+        return json({ 
+          ok: false, 
+          error: error?.message || String(error || 'Internal Server Error')
+        }, 500, corsHeaders);
+      }
     }
     if (pathname === '/update/changelog/sync/github' && method === 'POST') {
       return json(await ChangelogHandler.sync(env), 200, corsHeaders);
@@ -1488,6 +1633,18 @@ async function handleRequest(request, env) {
       }
       const body = await readJson(request);
       return json(await EasterEggsHandler.update(env, body), 200, corsHeaders);
+    }
+
+    // 新年灯笼配置 API
+    if (pathname === '/new-year-lantern' && method === 'GET') {
+      return json(await NewYearLanternHandler.get(env), 200, corsHeaders);
+    }
+    if (pathname === '/new-year-lantern' && method === 'PUT') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      return json(await NewYearLanternHandler.update(env, body), 200, corsHeaders);
     }
 
     // 节日配置 API
