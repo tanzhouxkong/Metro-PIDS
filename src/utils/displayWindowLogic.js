@@ -1826,10 +1826,6 @@ function updateXferCheck(xferCheckElement, appData) {
   
   // 暂缓开通的站点
   if (issues.suspendedStations.length > 0) {
-<<<<<<< HEAD
-    const stationNames = issues.suspendedStations.map(station => station.stationName);
-    parts.push(`${stationNames.join('、')}暂缓开通`);
-=======
     // 按站序索引排序
     const sorted = [...issues.suspendedStations].sort((a, b) => a.stationIdx - b.stationIdx);
     const ranges = [];
@@ -1863,7 +1859,6 @@ function updateXferCheck(xferCheckElement, appData) {
     if (rangeTexts.length > 0) {
       parts.push(`${rangeTexts.join('、')}暂缓开通`);
     }
->>>>>>> feature/ui-update
   }
   
   if (parts.length === 0) {

@@ -102,10 +102,12 @@ export default {
 .lmcm{
   position: fixed;
   z-index: 10000;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none;
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
   padding: 6px;
 }
 .lmcm-item{
@@ -123,7 +125,7 @@ export default {
 .lmcm-item:hover{
   background: rgba(0,0,0,0.05);
 }
-.lmcm-item.danger{ color: #ff4444; }
+.lmcm-item.danger{ color: var(--btn-red-bg, #ff4444); }
 .lmcm-item.disabled{
   opacity: .5;
   cursor: not-allowed;
@@ -134,17 +136,42 @@ export default {
   color: var(--muted, #666);
   font-size: 12px;
 }
-.lmcm-item.danger .lmcm-icon{ color: #ff4444; }
+.lmcm-item.danger .lmcm-icon{ color: var(--btn-red-bg, #ff4444); }
 .lmcm-sep{
   height: 1px;
   margin: 6px 4px;
-  background: rgba(0,0,0,0.08);
+  background: var(--divider, rgba(0,0,0,0.08));
 }
 .lmcm-mask{
   position: fixed;
   inset: 0;
   z-index: 9998;
   background: transparent;
+}
+
+/* 深色模式 */
+html.dark .lmcm{
+  background: rgba(28, 28, 30, 0.95);
+  border: none;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+html.dark .lmcm-item{
+  color: var(--text);
+}
+html.dark .lmcm-item:hover{
+  background: rgba(255,255,255,0.08);
+}
+html.dark .lmcm-item.danger{
+  color: var(--btn-red-bg);
+}
+html.dark .lmcm-item.danger .lmcm-icon{
+  color: var(--btn-red-bg);
+}
+html.dark .lmcm-icon{
+  color: var(--muted);
+}
+html.dark .lmcm-sep{
+  background: var(--divider);
 }
 </style>
 

@@ -5,7 +5,10 @@ const uiState = reactive({
     sidebarCollapsed: false,
     showDisplay: false,
     autoLocked: false,
-    showDevButton: false // 是否显示开发者按钮
+    showDevButton: false, // 是否显示开发者按钮
+    // 自动播放弹窗用：暂停/继续回调与状态（由 ConsolePage/SlidePanel 的 startWithLock 注册）
+    autoplayTogglePause: null,
+    autoplayIsPausedRef: null
 })
 
 export function useUIState() {

@@ -1,11 +1,17 @@
 <script>
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
-import { ref, computed, onMounted, nextTick, Teleport, Transition } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, Teleport, Transition } from 'vue'
 import LineManagerDialog from '../LineManagerDialog.js'
 import LineManagerTopbar from '../LineManagerTopbar.js'
 import { useCloudConfig, CLOUD_API_BASE } from '../../composables/useCloudConfig.js'
 import dialogService from '../../utils/dialogService.js'
 import ContextMenu from './ContextMenu.vue'
+
+// 去除颜色标记，返回纯文本（用于搜索）
+function stripColorMarkup(text) {
+  if (!text || typeof text !== 'string') return ''
+  return text.replace(/<[^>]+>([^<]*)<\/[^>]+>/g, '$1').replace(/<[^>]+>/g, '')
+}
 
 // 解析颜色标记（仅用于显示）
 function parseColorMarkup(text) {
@@ -48,6 +54,11 @@ export default {
     const loading = ref(false)
     const selectedFolderId = ref(null)
     const selectedLine = ref(null)
+    const searchQuery = ref('')
+    const allLinesWithFolder = ref([])
+    const searchLoading = ref(false)
+    const sidebarRef = ref(null)
+    const linesRef = ref(null)
 
     // 右键菜单状态
     const contextMenu = ref({ visible: false, x: 0, y: 0, folderId: null, folderName: null })
@@ -339,7 +350,7 @@ export default {
       const pendingData = localStorage.getItem('pendingThroughLineData')
 
       if (target === 'save-through-line' && pendingData) {
-        // 仅设置状态和引导，实际保存逻辑交给 saveThroughLine
+        // 仅设置状态和引导，不自动保存；用户切换目标文件夹后点击底栏「保存贯通线路」再保存
         try {
           const pendingDataObj = JSON.parse(pendingData)
           const { lineName, validSegments } = pendingDataObj
@@ -349,8 +360,16 @@ export default {
             segmentCount: validSegments ? validSegments.length : 0
           }
           await nextTick()
-          // 自动触发保存流程（弹出文件夹选择器）
-          await saveThroughLine()
+          // 保存贯通线路时不打开默认文件夹：自动选中第一个可用文件夹（非默认、非云控）
+          const availableFolders = folders.value.filter(
+            (f) => f.id !== 'default' && f.id !== CLOUD_FOLDER_ID && f.name !== '默认' && !f.isRuntime
+          )
+          if (availableFolders.length > 0) {
+            const first = availableFolders[0]
+            currentFolderId.value = first.id
+            selectedFolderId.value = first.id
+            await loadLinesFromFolder(first.id)
+          }
         } catch (e) {
           console.error('[线路管理器] checkSaveThroughLineMode 解析失败:', e)
         }
@@ -472,14 +491,25 @@ export default {
         if (result.ok && (result.data || result.lines)) {
           const lines = (result.data?.lines || result.lines || []).map((line) => {
             const stationInfo = getStationInfo(line)
+            const lineName = line.meta?.lineName || ''
+            const hasThroughInName = lineName.includes('(贯通)') || lineName.includes('（贯通）')
+            const hasValidSegments =
+              line.meta?.throughLineSegments &&
+              Array.isArray(line.meta.throughLineSegments) &&
+              line.meta.throughLineSegments.length >= 2
+            const isThroughLine =
+              line.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
+            const isLoopLine = line.meta?.mode === 'loop'
             return {
-              name: line.meta?.lineName || '未命名线路',
+              name: lineName || '未命名线路',
               data: line,
               stationCount: line.stations?.length || 0,
               themeColor: buildLineColor(line),
               firstStation: stationInfo.first,
               lastStation: stationInfo.last,
-              isRuntime: true
+              isRuntime: true,
+              isThroughLine,
+              isLoopLine
             }
           })
           runtimeLines.value = lines
@@ -495,6 +525,93 @@ export default {
       }
     }
 
+    // 加载所有文件夹中的线路（用于全局搜索），每条附带 folderId / folderName
+    async function loadAllLinesWithFolders() {
+      if (!(window.electronAPI && window.electronAPI.lines)) return
+      searchLoading.value = true
+      try {
+        const results = []
+        const foldersToSearch = folders.value.filter((f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime)
+        for (const folder of foldersToSearch) {
+          const folderPath = folder.path ?? null
+          const items = await window.electronAPI.lines.list(folderPath)
+          for (const it of items || []) {
+            try {
+              const res = await window.electronAPI.lines.read(it.name, folderPath)
+              if (res && res.ok && res.content) {
+                const d = res.content
+                const stationInfo = getStationInfo(d)
+                const lineName = d.meta?.lineName || ''
+                const hasThroughInName = lineName.includes('(贯通)') || lineName.includes('（贯通）')
+                const hasValidSegments =
+                  d.meta?.throughLineSegments &&
+                  Array.isArray(d.meta.throughLineSegments) &&
+                  d.meta.throughLineSegments.length >= 2
+                const isThroughLine = d.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
+                const isLoopLine = d.meta?.mode === 'loop'
+                results.push({
+                  name: lineName || '未命名线路',
+                  filePath: it?.name || '',
+                  data: d,
+                  themeColor: buildLineColor(d),
+                  firstStation: stationInfo.first,
+                  lastStation: stationInfo.last,
+                  isThroughLine,
+                  isLoopLine,
+                  folderId: folder.id,
+                  folderName: folder.name || folder.id
+                })
+              }
+            } catch (e) {
+              console.warn('读取线路失败:', e)
+            }
+          }
+        }
+        // 云控线路
+        if (folders.value.some((f) => f.id === CLOUD_FOLDER_ID)) {
+          try {
+            const result = await cloudConfig.getRuntimeLines()
+            if (result.ok && (result.data || result.lines)) {
+              const lines = result.data?.lines || result.lines || []
+              for (const raw of lines) {
+                const stationInfo = getStationInfo(raw)
+                const lineName = raw.meta?.lineName || ''
+                const hasThroughInName = lineName.includes('(贯通)') || lineName.includes('（贯通）')
+                const hasValidSegments =
+                  raw.meta?.throughLineSegments &&
+                  Array.isArray(raw.meta.throughLineSegments) &&
+                  raw.meta.throughLineSegments.length >= 2
+                const isThroughLine =
+                  raw.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
+                const isLoopLine = raw.meta?.mode === 'loop'
+                results.push({
+                  name: lineName || '未命名线路',
+                  data: raw,
+                  stationCount: raw.stations?.length || 0,
+                  themeColor: buildLineColor(raw),
+                  firstStation: stationInfo.first,
+                  lastStation: stationInfo.last,
+                  isRuntime: true,
+                  isThroughLine,
+                  isLoopLine,
+                  folderId: CLOUD_FOLDER_ID,
+                  folderName: '云控线路'
+                })
+              }
+            }
+          } catch (e) {
+            console.warn('加载云控线路失败:', e)
+          }
+        }
+        allLinesWithFolder.value = results
+      } catch (e) {
+        console.error('加载全部线路失败:', e)
+        allLinesWithFolder.value = []
+      } finally {
+        searchLoading.value = false
+      }
+    }
+
     async function selectFolder(folderId) {
       selectedFolderId.value = folderId
       selectedLine.value = null
@@ -506,36 +623,52 @@ export default {
     }
 
     function toggleLineSelection(line) {
+      // 保存贯通线路模式下不允许选择已有线路（仅选择目标文件夹）
+      if (isSavingThroughLine.value) return
       if (selectedLine.value === line) {
         selectedLine.value = null
       } else {
         selectedLine.value = line
+        // 搜索模式下点击线路时，定位到其所在文件夹（高亮侧边栏）
+        if (line.folderId && line.folderId !== selectedFolderId.value) {
+          selectFolder(line.folderId)
+        }
       }
     }
 
+    // 规范化云控线路数据（兼容 API 返回 meta 或顶层 lineName），保证主应用可用的结构
+    function normalizeRuntimeLineData(raw) {
+      if (!raw || typeof raw !== 'object') return null
+      const meta = { ...(raw.meta || {}), lineName: (raw.meta && raw.meta.lineName) || raw.lineName || '未命名线路' }
+      const stations = Array.isArray(raw.stations) ? raw.stations : []
+      return { ...raw, meta, stations }
+    }
+
     async function applyRuntimeLine(lineData) {
-      if (!lineData || !lineData.meta || !lineData.meta.lineName) {
+      const normalized = normalizeRuntimeLineData(lineData)
+      if (!normalized || !normalized.meta || !normalized.meta.lineName) {
         console.warn('[线路管理器] applyRuntimeLine: invalid lineData', lineData)
+        if (window.__lineManagerDialog)
+          await window.__lineManagerDialog.alert('云控线路数据无效，无法应用', '提示')
         return
       }
       try {
-        const lineName = lineData.meta.lineName
+        const payload = JSON.parse(JSON.stringify(normalized))
+        const lineName = payload.meta.lineName
         if (window.electronAPI && window.electronAPI.switchRuntimeLine) {
-          const result = await window.electronAPI.switchRuntimeLine(lineData)
+          const result = await window.electronAPI.switchRuntimeLine(payload)
           if (result && result.ok) {
-            if (window.electronAPI.closeWindow) await window.electronAPI.closeWindow()
+            // 不自动关闭线路管理器，方便用户确认主窗口已应用后再手动关闭
+          } else if (result && result.error && window.__lineManagerDialog) {
+            await window.__lineManagerDialog.alert('应用失败：' + result.error, '错误')
           }
         } else {
-          localStorage.setItem('runtimeLineData', JSON.stringify(lineData))
+          localStorage.setItem('runtimeLineData', JSON.stringify(payload))
           localStorage.setItem('lineManagerSelectedLine', lineName)
           localStorage.setItem('isRuntimeLine', 'true')
           if (window.opener && !window.opener.closed) {
             window.opener.postMessage(
-              {
-                type: 'switch-runtime-line',
-                lineName,
-                lineData
-              },
+              { type: 'switch-runtime-line', lineName, lineData: payload },
               '*'
             )
           }
@@ -548,9 +681,9 @@ export default {
           window.close()
         }
       } catch (e) {
-        console.error('[线路管理器] 应用运控线路失败:', e)
+        console.error('[线路管理器] 应用云控线路失败:', e)
         try {
-          await dialogService.alert('应用运控线路失败：' + (e.message || e), '错误')
+          await dialogService.alert('应用云控线路失败：' + (e.message || e), '错误')
         } catch (_) {}
       }
     }
@@ -732,8 +865,8 @@ export default {
       if (window.electronAPI?.switchLine) {
         try {
           const result = await window.electronAPI.switchLine(line.name)
-          if (result && result.ok && window.electronAPI.closeWindow) {
-            await window.electronAPI.closeWindow()
+          if (result && result.ok) {
+            // 不自动关闭线路管理器，方便用户确认主窗口已切换后再手动关闭
           }
         } catch (e) {
           console.error('打开线路失败:', e)
@@ -768,14 +901,14 @@ export default {
 
     async function copyLine(line) {
       closeLineContextMenu()
-      const sourceFolderId = selectedFolderId.value || currentFolderId.value
+      const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
       clipboard.value = { type: 'copy', line, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
       if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('线路已复制', '提示')
     }
     async function cutLine(line) {
       closeLineContextMenu()
-      const sourceFolderId = selectedFolderId.value || currentFolderId.value
+      const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
       clipboard.value = { type: 'cut', line, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
       if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('线路已剪切', '提示')
@@ -916,8 +1049,35 @@ export default {
       }
     }
 
+    // 保存贯通线路：保存到当前选中的文件夹，不使用弹窗选择
     async function handleSaveThroughLine() {
-      await saveThroughLine()
+      const pendingDataStr = localStorage.getItem('pendingThroughLineData')
+      if (!pendingDataStr) {
+        if (window.__lineManagerDialog)
+          await window.__lineManagerDialog.alert('未找到待保存的贯通线路数据', '提示')
+        return
+      }
+      try {
+        const pendingData = JSON.parse(pendingDataStr)
+        const { lineData, lineName, cleanLineName } = pendingData
+        const availableFolders = folders.value.filter(
+          (f) => f.id !== 'default' && f.name !== '默认' && f.id !== CLOUD_FOLDER_ID && !f.isRuntime
+        )
+        const activeId = selectedFolderId.value ?? currentFolderId.value
+        let folder = folders.value.find((f) => f.id === activeId)
+        if (!folder || folder.id === 'default' || folder.id === CLOUD_FOLDER_ID || folder.isRuntime)
+          folder = availableFolders[0]
+        if (!folder) {
+          if (window.__lineManagerDialog)
+            await window.__lineManagerDialog.alert('当前没有可用的文件夹，请先新建一个文件夹', '提示')
+          return
+        }
+        await doSaveThroughLine(lineData, cleanLineName, folder)
+      } catch (e) {
+        console.error('[线路管理器] handleSaveThroughLine 失败:', e)
+        if (window.__lineManagerDialog)
+          await window.__lineManagerDialog.alert('保存失败：' + (e.message || e), '错误')
+      }
     }
 
     onMounted(async () => {
@@ -930,12 +1090,90 @@ export default {
     const isCloudFolderActive = computed(() => activeFolderId.value === CLOUD_FOLDER_ID)
     const isDefaultFolderActive = computed(() => activeFolderId.value === 'default')
 
+    const isSearchActive = computed(() => (searchQuery.value || '').trim().length > 0)
+
+    // 搜索过滤后的线路列表：无关键词时显示当前文件夹；有关键词时搜索所有文件夹
+    const filteredLines = computed(() => {
+      const q = (searchQuery.value || '').trim().toLowerCase()
+      if (!q) return currentLines.value
+      return allLinesWithFolder.value.filter((line) => {
+        const name = stripColorMarkup(line.name || '').toLowerCase()
+        const first = (line.firstStation || '').toLowerCase()
+        const last = (line.lastStation || '').toLowerCase()
+        const folderName = (line.folderName || '').toLowerCase()
+        return (
+          name.includes(q) ||
+          first.includes(q) ||
+          last.includes(q) ||
+          folderName.includes(q)
+        )
+      })
+    })
+
+    async function locateToFolder(line) {
+      if (!line.folderId) return
+      await selectFolder(line.folderId)
+      searchQuery.value = ''
+      await nextTick()
+      const match = currentLines.value.find((l) => {
+        if (line.isRuntime) {
+          return l.isRuntime && l.name === line.name && l.firstStation === line.firstStation && l.lastStation === line.lastStation
+        }
+        return l.filePath === line.filePath && l.name === line.name
+      })
+      if (match) selectedLine.value = match
+      await nextTick()
+      // 延迟执行滚动，确保 DOM 已更新（搜索清除后列表会重新渲染）
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // 侧边栏：滚动使当前文件夹可见
+          const sidebar = sidebarRef.value
+          if (sidebar) {
+            const activeFolder = sidebar.querySelector('.lmw-folder.active')
+            if (activeFolder) {
+              const sidebarRect = sidebar.getBoundingClientRect()
+              const folderRect = activeFolder.getBoundingClientRect()
+              const scrollTop = sidebar.scrollTop + (folderRect.top - sidebarRect.top) - sidebarRect.height / 2 + folderRect.height / 2
+              sidebar.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
+            }
+          }
+          // 线路列表：滚动使选中线路可见
+          const linesContainer = linesRef.value
+          if (linesContainer) {
+            const selectedLineEl = linesContainer.querySelector('.lmw-line.selected')
+            if (selectedLineEl) {
+              const containerRect = linesContainer.getBoundingClientRect()
+              const lineRect = selectedLineEl.getBoundingClientRect()
+              const scrollTop = linesContainer.scrollTop + (lineRect.top - containerRect.top) - containerRect.height / 2 + lineRect.height / 2
+              linesContainer.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
+            }
+          }
+        })
+      })
+    }
+
+    let searchDebounceTimer = null
+    watch(searchQuery, (val) => {
+      const q = (val || '').trim()
+      if (!q) return
+      clearTimeout(searchDebounceTimer)
+      searchDebounceTimer = setTimeout(() => {
+        loadAllLinesWithFolders()
+      }, 200)
+    })
+
     return {
       parseColorMarkup,
       hasFoldersAPI,
       folders,
+      sidebarRef,
+      linesRef,
       currentFolderId,
       currentLines,
+      filteredLines,
+      searchQuery,
+      isSearchActive,
+      searchLoading,
       loading,
       selectedFolderId,
       selectedLine,
@@ -949,6 +1187,7 @@ export default {
       pendingThroughLineInfo,
       runtimeLoading,
       selectFolder,
+      locateToFolder,
       toggleLineSelection,
       applySelectedLine,
       addFolder,
@@ -1127,7 +1366,28 @@ export default {
 
 <template>
   <div class="lmw-root">
-    <LineManagerTopbar />
+    <LineManagerTopbar>
+      <div v-if="folders.length > 0 && selectedFolderId" class="lmw-titlebar-search">
+        <div class="lmw-search-inner">
+          <i class="fas fa-search lmw-search-icon"></i>
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="lmw-search-input"
+            placeholder="搜索线路、首站、末站..."
+          />
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="lmw-search-clear"
+            @click="searchQuery = ''"
+            aria-label="清除"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+    </LineManagerTopbar>
 
     <div v-if="isSavingThroughLine && pendingThroughLineInfo" class="lmw-through-banner">
       <div class="lmw-through-banner-icon">
@@ -1143,13 +1403,14 @@ export default {
         </div>
         <div class="lmw-through-banner-tip">
           <i class="fas fa-info-circle"></i>
-          <span>请点击右下角的&quot;保存贯通线路&quot;按钮，选择文件夹并保存</span>
+          <span>请点击右下角的&quot;保存贯通线路&quot;按钮，将保存到当前选中的文件夹</span>
         </div>
       </div>
     </div>
 
     <div class="lmw-main">
-      <aside v-if="folders.length > 0" class="lmw-sidebar">
+      <div class="lmw-main-body">
+      <aside ref="sidebarRef" v-if="folders.length > 0" class="lmw-sidebar">
         <div class="lmw-sidebar-inner" @contextmenu.prevent="showSidebarNewMenu($event)">
           <button
             v-for="folder in folders"
@@ -1157,9 +1418,9 @@ export default {
             class="lmw-folder"
             :class="{
               active: selectedFolderId === folder.id,
-              disabled: folder.id === 'default' && isSavingThroughLine
+              disabled: isSavingThroughLine && (folder.id === 'default' || folder.id === 'runtime-cloud')
             }"
-            @click="folder.id === 'default' && isSavingThroughLine ? null : selectFolder(folder.id)"
+            @click="(isSavingThroughLine && (folder.id === 'default' || folder.id === 'runtime-cloud')) ? null : selectFolder(folder.id)"
             @contextmenu.prevent.stop="showContextMenu($event, folder)"
           >
             <i class="fas fa-folder" />
@@ -1174,15 +1435,20 @@ export default {
           <strong>{{ folders.find(f => f.id === selectedFolderId)?.name || selectedFolderId }}</strong>
         </header>
 
-        <div class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
-          <div v-if="loading || runtimeLoading" class="lmw-loading">正在加载...</div>
-          <div v-else-if="currentLines.length === 0" class="lmw-empty">
+        <div ref="linesRef" class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
+          <div v-if="loading || runtimeLoading || (isSearchActive && searchLoading)" class="lmw-loading">正在加载...</div>
+          <div v-else-if="!isSearchActive && currentLines.length === 0" class="lmw-empty">
             {{ activeFolderId === 'runtime-cloud' ? '暂无云控线路' : '当前文件夹暂无线路' }}
+          </div>
+          <div v-else-if="isSearchActive && filteredLines.length === 0" class="lmw-empty">
+            <i class="fas fa-search" style="font-size:32px; color:var(--muted); margin-bottom:12px;"></i>
+            <span>无匹配结果</span>
+            <span class="lmw-search-hint">尝试其他关键词，或搜索文件夹名称</span>
           </div>
 
           <button
-            v-for="(line, idx) in currentLines"
-            :key="line.filePath || (line.name + '-' + idx)"
+            v-for="(line, idx) in filteredLines"
+            :key="(line.folderId || '') + '-' + (line.filePath || line.name) + '-' + idx"
             class="lmw-line"
             :class="{ selected: selectedLine === line }"
             @click="toggleLineSelection(line)"
@@ -1198,12 +1464,37 @@ export default {
                   {{ line.firstStation }} → {{ line.lastStation }}
                   <span v-if="line.isRuntime">（云控 {{ line.stationCount || line.data?.stations?.length || 0 }} 站）</span>
                 </span>
+                <span v-if="isSearchActive && line.folderName" class="lmw-line-folder">
+                  <i class="fas fa-folder"></i> {{ line.folderName }}
+                  <button
+                    type="button"
+                    class="lmw-locate-btn"
+                    @click.stop="locateToFolder(line)"
+                    title="定位到文件夹"
+                  >
+                    定位
+                  </button>
+                </span>
               </div>
             </div>
             <div class="lmw-line-color" :style="{ background: line.themeColor || '#5F27CD' }"></div>
           </button>
         </div>
+
+        <!-- 底部操作栏：仅在保存贯通线路时显示，橙色「保存贯通线路」按钮 -->
+        <div v-if="isSavingThroughLine" class="lmw-bottom-bar">
+          <div class="lmw-bottom-bar-left">
+            <span class="lmw-bottom-bar-muted">当前将保存到：{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}</span>
+          </div>
+          <div class="lmw-bottom-bar-right">
+            <button type="button" class="lmw-btn lmw-btn-through" @click="handleSaveThroughLine">
+              <i class="fas fa-save"></i>
+              <span>保存贯通线路</span>
+            </button>
+          </div>
+        </div>
       </section>
+      </div>
     </div>
 
     <!-- 各类右键菜单统一用 ContextMenu 渲染 -->
@@ -1290,7 +1581,115 @@ export default {
 .lmw-main {
   flex: 1;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
+.lmw-main-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+/* 标题栏：左侧标题 + 中间搜索 + 右侧预留三大金刚键 */
+.lmw-titlebar.custom-titlebar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px 0 12px;
+  background: transparent !important;
+  border-bottom: 1px solid var(--titlebar-border, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.05);
+  -webkit-app-region: drag;
+}
+.lmw-titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-right: 12px;
+  -webkit-app-region: drag;
+}
+.lmw-titlebar-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag;
+}
+.lmw-titlebar-spacer {
+  width: 138px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.lmw-titlebar-search {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  user-select: text;
+  width: 240px;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+.lmw-search-inner {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  min-width: 0;
+}
+.lmw-titlebar-search .lmw-search-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted, #999);
+}
+.lmw-titlebar-search .lmw-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  outline: none;
+}
+.lmw-titlebar-search .lmw-search-input::placeholder {
+  color: var(--muted, #999);
+}
+.lmw-search-inner:focus-within {
+  border-color: var(--accent, #1677ff);
+  outline: none;
+}
+.lmw-titlebar-search .lmw-search-clear {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted, #999);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.lmw-titlebar-search .lmw-search-clear:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text, #333);
+}
+html.dark .lmw-search-inner {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+}
+html.dark .lmw-titlebar-search .lmw-search-clear:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 .lmw-sidebar {
   width: 220px;
@@ -1379,6 +1778,58 @@ export default {
   color: var(--muted, #666);
   font-size: 13px;
 }
+.lmw-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fafafa;
+}
+.lmw-search-icon {
+  color: var(--muted, #999);
+  font-size: 14px;
+}
+.lmw-search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text, #333);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.lmw-search-input:focus {
+  border-color: var(--accent, #1677ff);
+}
+.lmw-search-input::placeholder {
+  color: var(--muted, #999);
+}
+.lmw-search-clear {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted, #999);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+}
+.lmw-search-clear:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text, #333);
+}
+.lmw-search-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted, #999);
+  margin-top: 6px;
+}
 .lmw-lines {
   flex: 1;
   overflow: auto;
@@ -1386,6 +1837,56 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.lmw-bottom-bar {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--lm-bottom-bar-bg, rgba(250, 250, 250, 0.85));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.lmw-bottom-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text, #333);
+  font-size: 13px;
+}
+.lmw-bottom-bar-icon {
+  color: #22c55e;
+  font-size: 14px;
+}
+.lmw-bottom-bar-muted {
+  color: var(--muted, #666);
+  font-size: 12px;
+}
+.lmw-bottom-bar-right {
+  flex-shrink: 0;
+}
+.lmw-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.lmw-btn:active {
+  transform: scale(0.98);
+}
+.lmw-btn-through {
+  background: #ff9f43;
+  color: #fff;
+}
+.lmw-btn-through:hover {
+  background: #e88c2e;
 }
 .lmw-line {
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -1457,6 +1958,42 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.lmw-line-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  color: var(--muted, #888);
+}
+.lmw-line-folder i {
+  font-size: 11px;
+}
+.lmw-locate-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(22, 119, 255, 0.12);
+  color: #1677ff;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.lmw-locate-btn:hover {
+  background: rgba(22, 119, 255, 0.2);
+  color: #0958d9;
+}
+html.dark .lmw-line-folder {
+  border-left-color: rgba(255, 255, 255, 0.15);
+}
+html.dark .lmw-locate-btn {
+  background: rgba(22, 119, 255, 0.25);
+  color: #69b1ff;
+}
+html.dark .lmw-locate-btn:hover {
+  background: rgba(22, 119, 255, 0.35);
+}
 .lmw-line-color {
   width: 10px;
   height: 42px;
@@ -1497,6 +2034,16 @@ export default {
   background: #ff9f43;
   color: #fff;
 }
+/* 底栏「保存贯通线路」按钮：强制橙色，避免被 .lmw-btn 的 background:#fff 覆盖 */
+.lmw-btn.lmw-btn-through {
+  border-color: rgba(255, 159, 67, 0.5);
+  background: #ff9f43;
+  color: #fff;
+}
+.lmw-btn.lmw-btn-through:hover {
+  background: #e88c2e;
+  border-color: rgba(232, 140, 46, 0.6);
+}
 .lmw-btn.ghost {
   background: #fafafa;
 }
@@ -1523,10 +2070,37 @@ html.dark .lmw-content {
   background: rgba(10, 14, 18, 0.90);
 }
 
+html.dark .lmw-search-bar {
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .lmw-search-input {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+html.dark .lmw-search-input:focus {
+  border-color: var(--accent);
+}
+html.dark .lmw-search-clear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
 html.dark .lmw-content-header {
   background: rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--muted, rgba(230, 238, 246, 0.65));
+}
+
+html.dark .lmw-bottom-bar {
+  background: rgba(9, 21, 27, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+html.dark .lmw-bottom-bar-left {
+  color: var(--text, #e6eef6);
+}
+html.dark .lmw-bottom-bar-muted {
+  color: rgba(230, 238, 246, 0.6);
 }
 
 html.dark .lmw-folder {
@@ -1595,6 +2169,14 @@ html.dark .lmw-btn.primary {
   background: #ff9f43;
   border-color: rgba(255, 159, 67, 0.60);
   color: #fff;
+}
+html.dark .lmw-btn.lmw-btn-through {
+  background: #ff9f43;
+  border-color: rgba(255, 159, 67, 0.60);
+  color: #fff;
+}
+html.dark .lmw-btn.lmw-btn-through:hover {
+  background: #e88c2e;
 }
 
 /* 深色模式滚动条 */

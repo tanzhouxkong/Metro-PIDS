@@ -1,6 +1,6 @@
 <script>
 import { reactive, ref, watch, computed, Teleport, Transition } from 'vue'
-import ColorPicker from './ColorPicker.js'
+import ColorPicker from './ColorPicker.vue'
 
 export default {
   name: 'StationEditor',
@@ -200,7 +200,7 @@ export default {
             <div class="se-section">
               <div class="se-section-head">
                 <div class="se-section-title">换乘线路</div>
-                <button class="se-mini" @click.prevent="addXfer">+ 添加换乘</button>
+                <button class="se-mini se-mini-add" @click.prevent="addXfer">+ 添加换乘</button>
               </div>
 
               <div v-if="form.xfer.length === 0" class="se-empty">暂无换乘</div>
@@ -209,12 +209,16 @@ export default {
                   <input v-model="xf.line" class="se-input se-xfer-line" placeholder="线路名称/编号" />
 
                   <div class="se-color">
-                    <div class="se-color-swatch" :style="{ backgroundColor: xf.color || '#808080' }" @click="openColorPicker(idx)" title="选择颜色"></div>
-                    <button class="se-mini" @click.prevent="pickColor(idx)" title="取色">取色</button>
+                    <div class="se-color-swatch" :style="{ backgroundColor: xf.color || '#808080' }" title="当前颜色"></div>
+                    <button
+                      class="se-mini se-mini-color"
+                      @click.prevent="openColorPicker(idx)"
+                      title="选择颜色"
+                    >取色</button>
                   </div>
 
                   <button
-                    class="se-tag"
+                    class="se-tag se-tag-exit"
                     :class="{ on: xf.exitTransfer }"
                     :disabled="xf.suspended"
                     :title="xf.suspended ? '暂缓时不能设置出站换乘' : '出站换乘'"
@@ -224,7 +228,7 @@ export default {
                   </button>
 
                   <button
-                    class="se-tag warn"
+                    class="se-tag se-tag-instation warn"
                     :class="{ on: xf.suspended }"
                     :disabled="xf.exitTransfer"
                     :title="xf.exitTransfer ? '出站换乘时不能暂缓' : xf.suspended ? '暂缓' : '正常'"
@@ -233,9 +237,7 @@ export default {
                     {{ xf.suspended ? '暂缓' : '正常' }}
                   </button>
 
-                  <button class="se-danger" @click="removeXfer(idx)" title="删除">
-                    <i class="fas fa-times"></i>
-                  </button>
+                  <button class="se-tag se-tag-danger" @click="removeXfer(idx)" title="删除">删除</button>
                 </div>
               </div>
             </div>
@@ -345,6 +347,7 @@ export default {
 .se-close:hover {
   color: var(--text, #333);
   background: rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .se-content {
@@ -408,15 +411,17 @@ export default {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 .se-seg-btn.on {
   background: var(--accent, #1677ff);
   color: #fff;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
 }
 .se-seg-btn.warn.on {
   background: var(--btn-org-bg, #ff9f43);
   color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 159, 67, 0.35);
 }
 
 .se-section {
@@ -450,9 +455,32 @@ export default {
   padding: 0 12px;
   border-radius: 6px;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 .se-mini:hover {
   background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+.se-mini-color {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-color: rgba(102, 126, 234, 0.5);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+}
+.se-mini-color:hover {
+  background: linear-gradient(135deg, #7b8ff0 0%, #8a5fb5 100%);
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.45);
+}
+.se-mini-add {
+  background: var(--accent, #1677ff);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
+}
+.se-mini-add:hover {
+  background: var(--accent, #1677ff);
+  filter: brightness(1.1);
+  box-shadow: 0 3px 10px rgba(22, 119, 255, 0.45);
 }
 .se-empty {
   color: var(--muted);
@@ -483,6 +511,10 @@ export default {
   border-radius: 6px;
   border: 2px solid rgba(0, 0, 0, 0.1);
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+.se-color-swatch:hover {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
 }
 .se-tag {
   height: 34px;
@@ -498,38 +530,73 @@ export default {
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
-.se-tag:hover:not(:disabled):not(.on) {
+.se-tag:not(.se-tag-exit):not(.se-tag-instation):not(.se-tag-danger):hover:not(:disabled):not(.on) {
   background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
 }
 .se-tag.on {
   background: var(--btn-blue-bg, #1677ff);
   border-color: transparent;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
 }
 .se-tag.warn.on {
   background: var(--btn-org-bg, #ff9f43);
   border-color: transparent;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 159, 67, 0.4);
 }
 .se-tag:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.se-danger {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
+.se-tag-exit {
+  background: #ff9f43;
+  color: #fff;
+  border-color: rgba(255, 159, 67, 0.6);
+  box-shadow: 0 2px 8px rgba(255, 159, 67, 0.35);
+}
+.se-tag-exit:hover:not(:disabled):not(.on) {
+  background: #ff9f43;
+  filter: brightness(1.1);
+  box-shadow: 0 3px 10px rgba(255, 159, 67, 0.45);
+}
+.se-tag-exit.on {
+  background: #e88c2e;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(232, 140, 46, 0.4);
+}
+.se-tag-instation {
+  background: #2ed573;
+  color: #fff;
+  border-color: rgba(46, 213, 115, 0.6);
+  box-shadow: 0 2px 8px rgba(46, 213, 115, 0.35);
+}
+.se-tag-instation:hover:not(:disabled):not(.on) {
+  background: #2ed573;
+  filter: brightness(1.1);
+  box-shadow: 0 3px 10px rgba(46, 213, 115, 0.45);
+}
+.se-tag-instation.on {
+  background: #f0ad4e;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(240, 173, 78, 0.4);
+}
+.se-tag-danger {
+  min-width: 52px;
   background: var(--btn-red-bg, #ff4444);
   color: #fff;
-  cursor: pointer;
+  border-color: rgba(255, 68, 68, 0.5);
+  box-shadow: 0 2px 8px rgba(255, 68, 68, 0.35);
 }
-.se-danger:hover {
-  filter: brightness(1.05);
+.se-tag-danger:hover {
+  background: #ff4444;
+  filter: brightness(1.1);
+  box-shadow: 0 3px 10px rgba(255, 68, 68, 0.45);
 }
 
 .se-footer {
@@ -557,11 +624,18 @@ export default {
 .se-btn-gray {
   background: var(--btn-gray-bg, #f5f5f5);
   color: var(--btn-gray-text, #666);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.se-btn-gray:hover:not(:disabled) {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
 }
 .se-btn-green {
   background: #2ed573;
   color: #fff;
   box-shadow: 0 4px 12px rgba(46, 213, 115, 0.4);
+}
+.se-btn-green:hover:not(:disabled) {
+  box-shadow: 0 5px 14px rgba(46, 213, 115, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -582,10 +656,25 @@ export default {
   }
   .se-input,
   .se-seg,
-  .se-mini,
-  .se-tag {
+  .se-mini:not(.se-mini-color):not(.se-mini-add),
+  .se-tag:not(.se-tag-exit):not(.se-tag-instation):not(.se-tag-danger) {
     background: rgba(50, 50, 50, 0.6);
     border-color: rgba(255, 255, 255, 0.12);
+  }
+  /* 取色、添加换乘在深色下保持原色，仅加强对比 */
+  .se-mini-color {
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 10px rgba(102, 126, 234, 0.5);
+  }
+  .se-mini-color:hover {
+    box-shadow: 0 3px 12px rgba(102, 126, 234, 0.6);
+  }
+  .se-mini-add {
+    border-color: transparent;
+    box-shadow: 0 2px 10px rgba(22, 119, 255, 0.5);
+  }
+  .se-mini-add:hover {
+    box-shadow: 0 3px 12px rgba(22, 119, 255, 0.6);
   }
   .se-color-swatch {
     border-color: rgba(255, 255, 255, 0.12);

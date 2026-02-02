@@ -4967,6 +4967,103 @@ async function checkGiteeUpdate() {
   }
 }
 
+// 检查 GitHub 更新（electron-updater），失败时抛错
+async function checkGithubUpdate() {
+  // 使用 GitHub（electron-updater）
+  console.log('[main] checkGithubUpdate: autoUpdater 状态:', autoUpdater ? '已加载' : '未加载');
+  console.log('[main] checkGithubUpdate: app.isPackaged:', app.isPackaged);
+
+  // 开发模式下也允许检查更新
+  if (!app.isPackaged) {
+    console.log('[main] checkGithubUpdate: 当前为开发模式，将检查 GitHub releases 是否有新版本');
+  }
+
+  if (!autoUpdater) {
+    console.error('[main] checkGithubUpdate: autoUpdater is null');
+    console.error('[main] checkGithubUpdate: 尝试重新加载 electron-updater...');
+
+    // 尝试重新加载
+    try {
+      delete require.cache[require.resolve('electron-updater')];
+      const updater = require('electron-updater');
+      autoUpdater = updater.autoUpdater;
+      console.log('[main] checkGithubUpdate: 重新加载成功，autoUpdater:', autoUpdater ? '已加载' : '未加载');
+
+      if (autoUpdater) {
+        // 重新初始化配置
+        autoUpdater.disableWebInstaller = false;
+        const silentUpdateEnabled = getSilentUpdateEnabled();
+        autoUpdater.autoDownload = silentUpdateEnabled;
+        if (logger) {
+          autoUpdater.logger = logger;
+        }
+        // 重新绑定事件监听
+        await initAutoUpdater();
+      }
+    } catch (e) {
+      console.error('[main] checkGithubUpdate: 重新加载失败:', e);
+      console.error('[main] checkGithubUpdate: 错误详情:', {
+        message: e.message,
+        stack: e.stack,
+        code: e.code
+      });
+    }
+
+    if (!autoUpdater) {
+      throw new Error('autoUpdater 未加载，请确保应用已正确打包');
+    }
+  }
+
+  console.log('[main] checkGithubUpdate: checking for updates...');
+  console.log('[main] app.getVersion():', app.getVersion());
+
+  // 检查更新配置
+  if (autoUpdater.config) {
+    console.log('[main] updater config:', {
+      provider: autoUpdater.config.provider,
+      owner: autoUpdater.config.owner,
+      repo: autoUpdater.config.repo,
+      channel: autoUpdater.config.channel
+    });
+  } else {
+    if (app.isPackaged) {
+      console.warn('[main] updater config 为空，将使用 app-update.yml 中的配置');
+    } else {
+      console.log('[main] 开发模式：将使用 package.json 中的 build.publish 配置检查更新');
+      console.log('[main] GitHub 仓库:', 'tanzhouxkong/Metro-PIDS-');
+    }
+  }
+
+  // GitHub releases 检查（加 30 秒超时）
+  console.log('[main] 开始检查 GitHub releases...');
+  const checkPromise = autoUpdater.checkForUpdates();
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('检查更新超时（30秒）')), 30000)
+  );
+
+  const result = await Promise.race([checkPromise, timeoutPromise]);
+  console.log('[main] checkForUpdates result:', result);
+
+  // 输出详细信息用于调试
+  if (result && result.updateInfo) {
+    console.log('[main] 检查到的更新信息:', {
+      version: result.updateInfo.version,
+      releaseDate: result.updateInfo.releaseDate,
+      path: result.updateInfo.path,
+      sha512: result.updateInfo.sha512
+    });
+    console.log('[main] 当前应用版本:', app.getVersion());
+    console.log('[main] 版本比较:', {
+      current: app.getVersion(),
+      latest: result.updateInfo.version,
+      needsUpdate: result.updateInfo.version !== app.getVersion()
+    });
+  }
+
+  // 成功：具体是否有更新由事件通知
+  return { ok: true };
+}
+
 // 供渲染层触发更新动作的 IPC
 ipcMain.handle('update/check', async () => {
   console.log('[main] update/check: 收到检查更新请求');
@@ -4980,145 +5077,78 @@ ipcMain.handle('update/check', async () => {
       const result = await checkGiteeUpdate();
       return { ok: true, source: 'gitee', ...result };
     } catch (e) {
-      const errorDetails = {
+      // Gitee 失败：尝试回退到 GitHub；只有两边都失败才提示错误
+      const giteeErrorDetails = {
         message: String(e),
         stack: e.stack,
         code: e.code,
         name: e.name
       };
-      console.error('[main] Gitee update/check error:', errorDetails);
-      if (logger) {
-        logger.error('Gitee update/check error:', errorDetails);
-      }
-      
+      console.error('[main] Gitee update/check error:', giteeErrorDetails);
+      if (logger) logger.error('Gitee update/check error:', giteeErrorDetails);
+
       try {
-        mainWin && mainWin.webContents.send('update/error', String(e));
-      } catch (sendErr) {
-        console.error('[main] 发送更新错误事件失败:', sendErr);
-      }
-      
-      return { ok: false, error: String(e), source: 'gitee' };
-    }
-  }
-  
-  // 使用 GitHub（electron-updater）
-  console.log('[main] update/check: autoUpdater 状态:', autoUpdater ? '已加载' : '未加载');
-  console.log('[main] update/check: app.isPackaged:', app.isPackaged);
-  
-  // 开发模式下也允许检查更新
-  if (!app.isPackaged) {
-    console.log('[main] update/check: 当前为开发模式，将检查 GitHub releases 是否有新版本');
-    // 开发模式下，electron-updater 会使用 package.json 中的配置来检查更新
-  }
-  
-  if (!autoUpdater) {
-    console.error('[main] update/check: autoUpdater is null');
-    console.error('[main] update/check: 尝试重新加载 electron-updater...');
-    
-    // 尝试重新加载
-    try {
-      delete require.cache[require.resolve('electron-updater')];
-      const updater = require('electron-updater');
-      autoUpdater = updater.autoUpdater;
-      console.log('[main] update/check: 重新加载成功，autoUpdater:', autoUpdater ? '已加载' : '未加载');
-      
-      if (autoUpdater) {
-        // 重新初始化配置
-        autoUpdater.disableWebInstaller = false;
-        const silentUpdateEnabled = getSilentUpdateEnabled();
-        autoUpdater.autoDownload = silentUpdateEnabled;
-        if (logger) {
-          autoUpdater.logger = logger;
+        console.log('[main] update/check: Gitee 失败，回退尝试 GitHub...');
+        await checkGithubUpdate();
+        return { ok: true, source: 'github-fallback' };
+      } catch (githubErr) {
+        const githubErrorDetails = {
+          message: String(githubErr),
+          stack: githubErr && githubErr.stack,
+          code: githubErr && githubErr.code,
+          name: githubErr && githubErr.name
+        };
+        console.error('[main] update/check: GitHub fallback 也失败:', githubErrorDetails);
+        if (logger) logger.error('GitHub fallback update/check error:', githubErrorDetails);
+
+        const finalMsg = `更新检查失败：Gitee 与 GitHub 均不可用。\nGitee: ${String(e)}\nGitHub: ${String(githubErr)}`;
+        try {
+          mainWin && mainWin.webContents.send('update/error', finalMsg);
+        } catch (sendErr) {
+          console.error('[main] 发送更新错误事件失败:', sendErr);
         }
-        // 重新绑定事件监听（如果之前已经绑定过，这里会重复绑定，但不影响功能）
-        await initAutoUpdater();
+        return { ok: false, error: finalMsg, source: 'gitee' };
       }
-    } catch (e) {
-      console.error('[main] update/check: 重新加载失败:', e);
-      console.error('[main] update/check: 错误详情:', {
-        message: e.message,
-        stack: e.stack,
-        code: e.code
-      });
-    }
-    
-    if (!autoUpdater) {
-      return { ok: false, error: 'autoUpdater 未加载，请确保应用已正确打包' };
     }
   }
   
   try {
-    console.log('[main] update/check: checking for updates...');
-    console.log('[main] app.getVersion():', app.getVersion());
-    
-    // 检查更新配置
-    if (autoUpdater.config) {
-      console.log('[main] updater config:', {
-        provider: autoUpdater.config.provider,
-        owner: autoUpdater.config.owner,
-        repo: autoUpdater.config.repo,
-        channel: autoUpdater.config.channel
-      });
-    } else {
-      if (app.isPackaged) {
-        console.warn('[main] updater config 为空，将使用 app-update.yml 中的配置');
-      } else {
-        console.log('[main] 开发模式：将使用 package.json 中的 build.publish 配置检查更新');
-        console.log('[main] GitHub 仓库:', 'tanzhouxkong/Metro-PIDS-');
-      }
-    }
-    
-    // 强制刷新更新检查
-    // electron-updater 会在每次 checkForUpdates 时自动检查 GitHub releases
-    // 但为了确保获取最新信息，我们使用 checkForUpdates() 而不是缓存的检查结果
-    console.log('[main] 开始检查 GitHub releases...');
-    const checkPromise = autoUpdater.checkForUpdates();
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('检查更新超时（30秒）')), 30000)
-    );
-    
-    const result = await Promise.race([checkPromise, timeoutPromise]);
-    console.log('[main] checkForUpdates result:', result);
-    
-    // 输出详细信息用于调试
-    if (result && result.updateInfo) {
-      console.log('[main] 检查到的更新信息:', {
-        version: result.updateInfo.version,
-        releaseDate: result.updateInfo.releaseDate,
-        path: result.updateInfo.path,
-        sha512: result.updateInfo.sha512
-      });
-      console.log('[main] 当前应用版本:', app.getVersion());
-      console.log('[main] 版本比较:', {
-        current: app.getVersion(),
-        latest: result.updateInfo.version,
-        needsUpdate: result.updateInfo.version !== app.getVersion()
-      });
-    }
-    
-    // 如果返回了 result，说明检查已完成，但事件可能稍后触发
-    // 所以这里只返回成功，实际结果通过事件通知
+    await checkGithubUpdate();
     return { ok: true, source: 'github' };
   } catch (e) {
-    const errorDetails = {
+    // GitHub 失败：尝试回退到 Gitee；只有两边都失败才提示错误
+    const githubErrorDetails = {
       message: String(e),
       stack: e.stack,
       code: e.code,
       name: e.name
     };
-    console.error('[main] update/check error:', errorDetails);
-    if (logger) {
-      logger.error('update/check error:', errorDetails);
-    }
-    
-    // 尝试发送错误事件给渲染进程
+    console.error('[main] update/check (GitHub) error:', githubErrorDetails);
+    if (logger) logger.error('update/check (GitHub) error:', githubErrorDetails);
+
     try {
-      mainWin && mainWin.webContents.send('update/error', String(e));
-    } catch (sendErr) {
-      console.error('[main] 发送更新错误事件失败:', sendErr);
+      console.log('[main] update/check: GitHub 失败，回退尝试 Gitee...');
+      const result = await checkGiteeUpdate();
+      // 注意：checkGiteeUpdate 内部会负责发 available/not-available 事件
+      return { ok: true, source: 'gitee-fallback', ...result };
+    } catch (giteeErr) {
+      const giteeErrorDetails = {
+        message: String(giteeErr),
+        stack: giteeErr && giteeErr.stack,
+        code: giteeErr && giteeErr.code,
+        name: giteeErr && giteeErr.name
+      };
+      console.error('[main] update/check: Gitee fallback 也失败:', giteeErrorDetails);
+      if (logger) logger.error('Gitee fallback update/check error:', giteeErrorDetails);
+
+      const finalMsg = `更新检查失败：GitHub 与 Gitee 均不可用。\nGitHub: ${String(e)}\nGitee: ${String(giteeErr)}`;
+      try {
+        mainWin && mainWin.webContents.send('update/error', finalMsg);
+      } catch (sendErr) {
+        console.error('[main] 发送更新错误事件失败:', sendErr);
+      }
+      return { ok: false, error: finalMsg, source: 'github' };
     }
-    
-    return { ok: false, error: String(e), source: 'github' };
   }
 });
 
@@ -6593,14 +6623,24 @@ ipcMain.handle('line-manager/switch-line', async (event, lineName) => {
     // 通知主窗口切换线路，同时传递 target 信息（如果有）
     if (mainWin && !mainWin.isDestroyed()) {
       mainWin.webContents.send('switch-line-request', lineName, throughOperationTarget);
-      // 清除 target（使用后清除）
       const target = throughOperationTarget;
       throughOperationTarget = null;
-      // 关闭线路管理器窗口
-      if (lineManagerWin && !lineManagerWin.isDestroyed()) {
-        lineManagerWin.close();
-      }
+      // 不自动关闭线路管理器，方便用户确认主窗口已切换后再手动关闭
       return { ok: true, target: target };
+    }
+    return { ok: false, error: '主窗口不存在' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 处理线路管理器的云控线路应用请求（传递完整线路数据）
+ipcMain.handle('line-manager/switch-runtime-line', async (event, lineData) => {
+  try {
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('switch-runtime-line', lineData);
+      // 不自动关闭线路管理器，方便用户确认主窗口已应用后再手动关闭
+      return { ok: true };
     }
     return { ok: false, error: '主窗口不存在' };
   } catch (e) {

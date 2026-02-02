@@ -8,7 +8,7 @@ import dialogService from '../utils/dialogService.js'
 import { showNotification } from '../utils/notificationService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount, nextTick, reactive, toRefs, Teleport, Transition } from 'vue'
-import ColorPicker from './ColorPicker.js'
+import ColorPicker from './ColorPicker.vue'
 
 const ENABLE_SLIDE_LOG = false;
 const ENABLE_MAIN_LOG_BRIDGE = false; // 关闭主进程日志转发到渲染层
@@ -793,7 +793,15 @@ export default {
     async function applyThroughOperation() {
         const meta = pidsState.appData.meta || {};
         const throughDirection = meta.throughDirection;
-        const segments = meta.throughLineSegments || [];
+        // 使用界面显示的 throughLineSegments 作为数据源，避免线路切换或刷新导致 meta 与界面不同步
+        const segments = (throughLineSegments.value && throughLineSegments.value.length > 0)
+            ? throughLineSegments.value
+            : (meta.throughLineSegments || []);
+        // 先同步到 meta，确保数据一致
+        if (segments !== meta.throughLineSegments) {
+            meta.throughLineSegments = [...segments];
+            saveCfg();
+        }
         
         // 检查是否有足够的线路段
         if (!segments || segments.length < 2) {
@@ -936,8 +944,18 @@ export default {
             await showMsg('请先设置短交路的起点和终点');
             return;
         }
-        const presetName = await promptUser('请输入预设名称', '短交路预设');
-        if (!presetName) return;
+        const startName = pidsState.appData.stations[startIdx]?.name || `站点${startIdx + 1}`;
+        const termName = pidsState.appData.stations[termIdx]?.name || `站点${termIdx + 1}`;
+        const defaultName = `${startName}→${termName}`;
+        const existingNames = new Set(shortTurnPresets.value.map(p => p.name));
+        let suggestedName = defaultName;
+        let n = 1;
+        while (existingNames.has(suggestedName)) {
+            suggestedName = `${defaultName} ${++n}`;
+        }
+        const presetName = await promptUser('请输入预设名称（留空使用建议名称）', suggestedName);
+        const finalName = (presetName && presetName.trim()) ? presetName.trim() : suggestedName;
+        if (!finalName) return;
         try {
             const presetData = {
                 lineName: pidsState.appData.meta.lineName,
@@ -947,7 +965,7 @@ export default {
                 termStationName: pidsState.appData.stations[termIdx]?.name || '',
                 createdAt: new Date().toISOString()
             };
-            const res = await window.electronAPI.shortturns.save(presetName, presetData);
+            const res = await window.electronAPI.shortturns.save(finalName, presetData);
             if (res && res.ok) {
                 await showMsg('预设已保存');
                 await loadShortTurnPresets();
@@ -1064,6 +1082,24 @@ export default {
     // 存储清理函数（用于网页环境的事件监听器）
     let cleanupWebListeners = null;
 
+    // 处理云控/运控线路数据（Electron 与网页环境共用，用于“应用”云控线路）
+    async function applyRuntimeLineData(lineData) {
+        if (!lineData || !lineData.meta || !lineData.meta.lineName) {
+            console.warn('[云控线路] 无效的线路数据:', lineData);
+            return;
+        }
+        try {
+            pidsState.appData = JSON.parse(JSON.stringify(lineData));
+            pidsState.rt = { idx: 0, state: 0 };
+            pidsState.currentFilePath = null;
+            saveCfg();
+            sync();
+            console.log('[云控线路] 已成功应用云控线路:', lineData.meta.lineName);
+        } catch (e) {
+            console.error('[云控线路] 应用失败:', e);
+        }
+    }
+
     // 监听来自线路管理器的线路切换请求
     onMounted(async () => {
         // Electron 环境：通过 IPC 监听
@@ -1075,29 +1111,19 @@ export default {
             } catch (e) {
                 console.warn('无法设置线路切换监听:', e);
             }
+            if (window.electronAPI.onSwitchRuntimeLine) {
+                try {
+                    window.electronAPI.onSwitchRuntimeLine((lineData) => {
+                        applyRuntimeLineData(lineData);
+                    });
+                } catch (e) {
+                    console.warn('无法设置云控线路切换监听:', e);
+                }
+            }
         }
         
         // 网页环境：监听 postMessage 和 storage 事件
         if (typeof window !== 'undefined' && (!window.electronAPI || !window.electronAPI.onSwitchLineRequest)) {
-            // 处理运控线路数据（直接应用线路数据，不从本地文件夹查找）
-            async function applyRuntimeLineData(lineData) {
-                if (!lineData || !lineData.meta || !lineData.meta.lineName) {
-                    console.warn('[运控线路] 无效的线路数据:', lineData);
-                    return;
-                }
-                try {
-                    // 直接设置线路数据到 appData（解耦，不影响预设线路列表）
-                    pidsState.appData = JSON.parse(JSON.stringify(lineData)); // 深拷贝
-                    pidsState.rt = { idx: 0, state: 0 };
-                    pidsState.currentFilePath = null; // 运控线路没有本地文件路径
-                    saveCfg();
-                    sync();
-                    console.log('[运控线路] 已成功应用运控线路:', lineData.meta.lineName);
-                } catch (e) {
-                    console.error('[运控线路] 应用失败:', e);
-                }
-            }
-
             // 监听 postMessage（来自线路管理器窗口）
             const messageHandler = async (event) => {
                 // 安全检查：只接受来自同源的消息
@@ -1588,6 +1614,8 @@ export default {
         const ok = await askUser('开启自动播放将锁定控制面板，期间请不要操作控制界面，是否继续？');
         if (!ok) return;
         uiState.autoLocked = true;
+        uiState.autoplayTogglePause = togglePause;
+        uiState.autoplayIsPausedRef = isPaused;
         try {
             // 确保显示端已打开并绑定
             await ensureDisplayOpen();
@@ -1598,6 +1626,8 @@ export default {
             start(intervalSec);
         } catch (e) {
             uiState.autoLocked = false;
+            uiState.autoplayTogglePause = null;
+            uiState.autoplayIsPausedRef = null;
             throw e;
         }
     }
@@ -1655,6 +1685,8 @@ export default {
     function stopWithUnlock() {
         try { stop(); } catch (e) {}
         uiState.autoLocked = false;
+        uiState.autoplayTogglePause = null;
+        uiState.autoplayIsPausedRef = null;
         // 发送自动播放结束通知
         showNotification('自动播放已停止', '自动播放已结束，控制面板已解锁', {
             tag: 'autoplay-stopped',
@@ -1775,12 +1807,6 @@ export default {
             }
         }
 
-<<<<<<< HEAD
-        // 打开更新日志弹窗
-        const openReleaseNotes = async () => {
-            if (!loadingNotes.value) await loadReleaseNotes();
-            showReleaseNotes.value = true;
-=======
         // 打开更新日志弹窗：先打开，再异步加载，避免用户感觉要点两次
         const openReleaseNotes = async () => {
             if (!showReleaseNotes.value) {
@@ -1790,13 +1816,30 @@ export default {
             if (!loadingNotes.value && releaseNotes.value.length === 0) {
                 loadReleaseNotes();
             }
->>>>>>> feature/ui-update
         }
 
         // 关闭更新日志弹窗
         const closeReleaseNotes = () => {
             showReleaseNotes.value = false;
         }
+
+        // 内置图片查看器（更新日志内图片点击放大）
+        const imageViewerSrc = ref(null);
+        const openImageViewer = (src) => {
+            if (src) imageViewerSrc.value = src;
+        };
+        const closeImageViewer = () => { imageViewerSrc.value = null; };
+        const onReleaseBodyClick = (e) => {
+            const wrap = e.target && e.target.closest && e.target.closest('.release-note-img-wrap');
+            if (wrap) {
+                const img = wrap.querySelector('img');
+                if (img && img.src) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openImageViewer(img.src);
+                }
+            }
+        };
 
         // 格式化更新日志内容（将Markdown转换为简单的HTML）
         const formatReleaseBody = (body, release) => {
@@ -1832,8 +1875,8 @@ export default {
                     }
                 }
                 
-                // 返回img标签，支持响应式和样式
-                return `<div style="margin:16px 0; text-align:center;"><img src="${imageUrl}" alt="${alt || ''}" style="max-width:100%; height:auto; border-radius:8px; margin:0 auto; box-shadow:0 4px 12px rgba(0,0,0,0.15); display:block;" onerror="this.style.display='none';"><div style="color:var(--muted, #999); font-size:12px; margin-top:8px; font-style:italic;">${alt || ''}</div></div>`;
+                // 返回img标签，支持点击查看大图
+                return `<div class="release-note-img-wrap" style="margin:16px 0; text-align:center;"><img src="${imageUrl}" alt="${alt || ''}" class="release-note-img" style="max-width:100%; height:auto; border-radius:8px; margin:0 auto; box-shadow:0 4px 12px rgba(0,0,0,0.15); display:block; cursor:pointer; transition:opacity 0.2s;" onerror="this.style.display='none';"><div style="color:var(--muted, #999); font-size:12px; margin-top:8px; font-style:italic;">${alt || ''}</div></div>`;
             });
             
             // 处理链接：[text](url)
@@ -1898,6 +1941,122 @@ export default {
         
         // 显示端右键菜单状态
         const displayContextMenu = ref({ visible: false, x: 0, y: 0, displayId: null });
+
+        // 编辑显示端弹窗（与更新日志同风格）
+        const showDisplayEditDialog = ref(false);
+        const displayEdit = reactive({
+            displayId: '', name: '', source: 'builtin', url: '', description: '',
+            lineNameMerge: false, showAllStations: false, nextStationDurationSeconds: 10,
+            isSystem: false, isDisplay1: false, isDisplay2: false
+        });
+
+        function openDisplayEditDialog(displayId) {
+            const display = settings.display.displays[displayId];
+            if (!display) return;
+            let nextStationDurationSeconds = 10;
+            if (settings.display && settings.display.display2NextStationDuration != null) {
+                nextStationDurationSeconds = Math.round(settings.display.display2NextStationDuration / 1000);
+            }
+            displayEdit.displayId = displayId;
+            displayEdit.name = display.name || '';
+            displayEdit.source = display.source === 'builtin' ? 'builtin' : (display.source === 'online' || display.source === 'custom' || display.source === 'gitee' ? 'online' : 'builtin');
+            displayEdit.url = display.url || '';
+            displayEdit.description = display.description || '';
+            // 显示器1 的开关：若当前就是该显示端，以 meta 为准（与显示端实际一致）；否则用 display 的存储值
+            const isCurrentDisplay1 = displayId === 'display-1' && settings.display.currentDisplayId === 'display-1';
+            const meta = pidsState && pidsState.appData && pidsState.appData.meta;
+            if (displayId === 'display-1') {
+                if (isCurrentDisplay1 && meta) {
+                    displayEdit.lineNameMerge = meta.lineNameMerge === true || meta.lineNameMerge === 'true';
+                    displayEdit.showAllStations = meta.showAllStations === true || meta.showAllStations === 'true';
+                } else {
+                    displayEdit.lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
+                    displayEdit.showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
+                }
+            } else {
+                displayEdit.lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
+                displayEdit.showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
+            }
+            displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
+            displayEdit.isSystem = display.isSystem === true;
+            displayEdit.isDisplay1 = displayId === 'display-1';
+            displayEdit.isDisplay2 = displayId === 'display-2';
+            showDisplayEditDialog.value = true;
+        }
+
+        function closeDisplayEditDialog() {
+            showDisplayEditDialog.value = false;
+        }
+
+        async function pickDisplayEditFile() {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.showOpenDialog) {
+                    const result = await window.electronAPI.showOpenDialog({
+                        filters: [
+                            { name: 'HTML文件', extensions: ['html', 'htm'] },
+                            { name: '所有文件', extensions: ['*'] }
+                        ],
+                        properties: ['openFile']
+                    });
+                    if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
+                        displayEdit.url = result.filePaths[0];
+                    }
+                }
+            } catch (e) {
+                console.error('选择文件失败:', e);
+                showMsg('选择文件失败: ' + (e.message || e));
+            }
+        }
+
+        async function saveDisplayEdit() {
+            const id = displayEdit.displayId;
+            if (displayEdit.isSystem) {
+                const payload = displayEdit.isDisplay2
+                    ? { nextStationDuration: displayEdit.nextStationDurationSeconds * 1000, isSystem: true, isDisplay2: true }
+                    : { lineNameMerge: displayEdit.lineNameMerge, showAllStations: displayEdit.showAllStations, isSystem: true, isDisplay1: true };
+                const updateResult = await editDisplayInternal(id, payload);
+                if (updateResult && updateResult.ok) {
+                    closeDisplayEditDialog();
+                    await showMsg(`显示端 "${displayEdit.name}" 已更新`);
+                }
+                return;
+            }
+            const name = (displayEdit.name || '').trim();
+            const source = displayEdit.source;
+            const url = (displayEdit.url || '').trim();
+            const description = (displayEdit.description || '').trim();
+            if (!name) {
+                showMsg('请输入显示端名称');
+                return;
+            }
+            if (source === 'builtin' && !url) {
+                showMsg('请选择本地网页文件');
+                return;
+            }
+            if (source === 'online' && !url) {
+                showMsg('请输入在线显示器的URL');
+                return;
+            }
+            if (source === 'online' && url) {
+                try { new URL(url); } catch (e) {
+                    showMsg('请输入有效的URL格式，例如：https://example.com/display.html');
+                    return;
+                }
+            }
+            const result = {
+                name, source, url, description,
+                lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
+                showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
+                isDisplay1: displayEdit.isDisplay1,
+                nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
+                isDisplay2: displayEdit.isDisplay2
+            };
+            const updateResult = await editDisplayInternal(id, result);
+            if (updateResult && updateResult.ok) {
+                closeDisplayEditDialog();
+                await showMsg(`显示端 "${name}" 已更新`);
+            }
+        }
 
         // 点击卡片切换显示端
         async function selectDisplay(displayId) {
@@ -2226,359 +2385,9 @@ export default {
             return null;
         }
 
-        // 编辑显示端（UI调用）
-        async function editDisplay(displayId) {
-            const display = settings.display.displays[displayId];
-            if (!display) return;
-
-            // 获取当前显示端的设置，如果没有则使用默认值
-            const lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
-            const showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
-            const isSystem = display.isSystem === true;
-            const isDisplay1 = displayId === 'display-1'; // 判断是否为显示器1
-            const isDisplay2 = displayId === 'display-2'; // 判断是否为显示器2
-            // 获取"下一站"页面显示时长（秒），默认10秒，需要将毫秒转换为秒显示
-            let nextStationDurationSeconds = 10;
-            if (settings.display && settings.display.display2NextStationDuration !== undefined && settings.display.display2NextStationDuration !== null) {
-                const durationMs = settings.display.display2NextStationDuration;
-                nextStationDurationSeconds = Math.round(durationMs / 1000);
-            }
-            
-            // 创建编辑对话框的内容
-            // 如果是系统显示器，只显示开关；否则显示所有字段
-            const basicFields = isSystem ? '' : `
-                    <div>
-                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">显示端名称</label>
-                        <input id="displayName" type="text" value="${display.name}" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
-                    </div>
-                    <div>
-                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">显示端类型</label>
-                        <select id="displaySource" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box; cursor:pointer;" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
-                            <option value="builtin" ${display.source === 'builtin' ? 'selected' : ''}>本地显示器</option>
-                            <option value="online" ${display.source === 'online' || display.source === 'custom' || display.source === 'gitee' ? 'selected' : ''}>在线显示器</option>
-                        </select>
-                    </div>
-                    <div id="fileContainer" style="display:${display.source === 'builtin' ? 'block' : 'none'};">
-                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">本地网页文件</label>
-                        <div style="display:flex; gap:10px;">
-                            <input id="displayFile" type="text" value="${display.source === 'builtin' ? (display.url || '') : ''}" style="flex:1; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" placeholder="请选择本地HTML文件" readonly>
-                            <button id="selectFileBtn" type="button" style="padding:12px 20px; background:#4A90E2; color:white; border:none; border-radius:8px; cursor:pointer; white-space:nowrap; font-size:14px; font-weight:500; transition:all 0.2s; box-shadow:0 2px 8px rgba(74,144,226,0.3);" onmouseover="this.style.boxShadow='0 4px 12px rgba(74,144,226,0.5)'; this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(74,144,226,0.3)'; this.style.transform='translateY(0)'">
-                                <i class="fas fa-folder-open" style="margin-right:6px;"></i>选择文件
-                            </button>
-                        </div>
-                    </div>
-                    <div id="urlContainer" style="display:${display.source === 'builtin' ? 'none' : 'block'};">
-                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">在线URL</label>
-                        <input id="displayUrl" type="text" value="${display.source !== 'builtin' ? (display.url || '') : ''}" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" placeholder="请输入在线显示器的URL，例如：https://example.com/display.html" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
-                    </div>
-                    <div>
-                        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:14px; color:var(--text, #333);">描述 <span style="font-weight:normal; color:var(--muted, #999); font-size:12px;">(可选)</span></label>
-                        <input id="displayDescription" type="text" value="${display.description || ''}" style="width:100%; padding:12px 16px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;" placeholder="请输入显示端描述" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
-                    </div>
-            `;
-            
-            // 显示器2的"下一站/到站"页面显示时长设置
-            const display2Fields = isDisplay2 ? `
-                    <!-- 下一站/到站 页面显示时长 -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; background:var(--card, #ffffff); border:1px solid var(--divider, rgba(0,0,0,0.08)); border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
-                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
-                            <span style="font-weight:600; font-size:14px; color:var(--text, #333);">下一站 / 到站 页面显示时长</span>
-                            <span style="font-size:12px; color:var(--muted, #999); line-height:1.4;">设置显示器2的“下一站”白屏和“到站”白屏页面显示多长时间后切回线路图（秒）</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <input id="nextStationDuration" type="number" value="${nextStationDurationSeconds}" min="1" max="60" step="1" style="width:100px; padding:8px 12px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box; text-align:right;" onfocus="this.style.borderColor='var(--accent, #1677ff)'" onblur="this.style.borderColor='var(--divider, rgba(0,0,0,0.1))'">
-                            <span style="font-size:14px; color:var(--text, #333); font-weight:500;">秒</span>
-                        </div>
-                    </div>
-            ` : '';
-            
-            // 只有显示器1才显示这两个开关
-            const switchFields = isDisplay1 ? `
-                    <!-- 线路名合并开关 -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; ${isSystem ? '' : 'margin-top:8px;'} padding:16px; background:var(--card, #ffffff); border:1px solid var(--divider, rgba(0,0,0,0.08)); border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
-                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
-                            <span style="font-weight:600; font-size:14px; color:var(--text, #333);">线路名合并</span>
-                            <span style="font-size:12px; color:var(--muted, #999); line-height:1.4;">显示端左侧按多段线路名拼接展示</span>
-                        </div>
-                        <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; flex-shrink:0; cursor:pointer;">
-                            <input type="checkbox" id="lineNameMerge" ${lineNameMerge ? 'checked' : ''} style="opacity:0; width:0; height:0;">
-                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:${lineNameMerge ? 'var(--accent, #1677ff)' : '#ccc'}; transition:.3s; border-radius:24px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></span>
-                            <span style="position:absolute; height:18px; width:18px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; transform:${lineNameMerge ? 'translateX(20px)' : 'translateX(0)'}; box-shadow:0 2px 4px rgba(0,0,0,0.2);"></span>
-                        </label>
-                    </div>
-                    
-                    <!-- 显示全部站点开关 -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; background:var(--card, #ffffff); border:1px solid var(--divider, rgba(0,0,0,0.08)); border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
-                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
-                            <span style="font-weight:600; font-size:14px; color:var(--text, #333);">显示全部站点</span>
-                            <span style="font-size:12px; color:var(--muted, #999); line-height:1.4;">启用后，所有站点都会显示在屏幕上，使用 flexbox 布局均匀分布</span>
-                        </div>
-                        <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; flex-shrink:0; cursor:pointer;">
-                            <input type="checkbox" id="showAllStations" ${showAllStations ? 'checked' : ''} style="opacity:0; width:0; height:0;">
-                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:${showAllStations ? 'var(--accent, #1677ff)' : '#ccc'}; transition:.3s; border-radius:24px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></span>
-                            <span style="position:absolute; height:18px; width:18px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; transform:${showAllStations ? 'translateX(20px)' : 'translateX(0)'}; box-shadow:0 2px 4px rgba(0,0,0,0.2);"></span>
-                        </label>
-                    </div>
-            ` : '';
-            
-            const editForm = `
-                <div style="display:flex; flex-direction:column; gap:12px;">
-                    ${basicFields}
-                    ${switchFields}
-                    ${display2Fields}
-                </div>
-            `;
-
-            // 使用自定义对话框
-            const result = await new Promise((resolve) => {
-                const dialog = document.createElement('div');
-                dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:30000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); animation:fadeIn 0.3s ease;';
-                
-                dialog.innerHTML = `
-                    <div style="background:var(--card, #ffffff); border-radius:16px; padding:0; max-width:600px; width:92%; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;">
-                        <!-- Header -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); background:linear-gradient(135deg, rgba(22,119,255,0.05) 0%, rgba(255,159,67,0.05) 100%);">
-                            <div style="display:flex; align-items:center; gap:12px;">
-                                <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #1677ff 0%, #FF9F43 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(22,119,255,0.3);">
-                                    <i class="fas fa-edit" style="color:white; font-size:18px;"></i>
-                                </div>
-                                <div>
-                                    <h3 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">编辑显示端</h3>
-                                    <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">${display.name}</div>
-                                </div>
-                            </div>
-                            <button id="closeBtn" style="background:none; border:none; color:var(--muted, #999); cursor:pointer; font-size:20px; padding:8px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:all 0.2s;" onmouseover="this.style.color='var(--text, #333)'" onmouseout="this.style.color='var(--muted, #999)'">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        
-                        <!-- Content -->
-                        <div style="padding:24px 28px; background:var(--bg, #fafafa); max-height:70vh; overflow-y:auto;">
-                            ${editForm}
-                        </div>
-                        
-                        <!-- Footer -->
-                        <div style="padding:20px 28px; border-top:1px solid var(--divider, rgba(0,0,0,0.1)); background:var(--card, #ffffff); display:flex; gap:12px; justify-content:flex-end;">
-                            <button id="cancelBtn" style="padding:10px 20px; background:var(--btn-gray-bg, #f5f5f5); color:var(--btn-gray-text, #666); border:none; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.2s; min-width:80px;" onmouseover="this.style.background='var(--bg, #e5e5e5)'" onmouseout="this.style.background='var(--btn-gray-bg, #f5f5f5)'">取消</button>
-                            <button id="saveBtn" style="padding:10px 20px; background:#2ED573; color:white; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:all 0.2s; min-width:80px; box-shadow:0 4px 12px rgba(46,213,115,0.4);" onmouseover="this.style.boxShadow='0 6px 16px rgba(46,213,115,0.6)'; this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 4px 12px rgba(46,213,115,0.4)'; this.style.transform='translateY(0)'">保存</button>
-                        </div>
-                    </div>
-                    <style>
-                        @keyframes fadeIn {
-                            from { opacity: 0; }
-                            to { opacity: 1; }
-                        }
-                    </style>
-                `;
-
-                document.body.appendChild(dialog);
-
-                // 如果不是系统显示器，添加文件选择相关的事件监听和类型切换逻辑
-                if (!isSystem) {
-                    const displaySourceSelect = dialog.querySelector('#displaySource');
-                    const fileContainer = dialog.querySelector('#fileContainer');
-                    const urlContainer = dialog.querySelector('#urlContainer');
-                    const displayFileInput = dialog.querySelector('#displayFile');
-                    const displayUrlInput = dialog.querySelector('#displayUrl');
-                    const selectFileBtn = dialog.querySelector('#selectFileBtn');
-                    
-                    // 添加类型切换事件监听
-                    if (displaySourceSelect) {
-                        displaySourceSelect.addEventListener('change', function() {
-                            const source = this.value;
-                            if (source === 'builtin') {
-                                // 显示本地文件选择器，隐藏URL输入框
-                                if (fileContainer) fileContainer.style.display = 'block';
-                                if (urlContainer) urlContainer.style.display = 'none';
-                            } else {
-                                // 显示URL输入框，隐藏本地文件选择器
-                                if (fileContainer) fileContainer.style.display = 'none';
-                                if (urlContainer) urlContainer.style.display = 'block';
-                            }
-                        });
-                    }
-                    
-                    // 添加文件选择按钮事件
-                    if (selectFileBtn && displayFileInput) {
-                        selectFileBtn.addEventListener('click', async () => {
-                            try {
-                                // 在Electron环境中使用文件选择对话框
-                                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.showOpenDialog) {
-                                    const result = await window.electronAPI.showOpenDialog({
-                                        filters: [
-                                            { name: 'HTML文件', extensions: ['html', 'htm'] },
-                                            { name: '所有文件', extensions: ['*'] }
-                                        ],
-                                        properties: ['openFile']
-                                    });
-                                    if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
-                                        displayFileInput.value = result.filePaths[0];
-                                    }
-                                } else {
-                                    // 在浏览器环境中使用input file
-                                    const fileInput = document.createElement('input');
-                                    fileInput.type = 'file';
-                                    fileInput.accept = '.html,.htm';
-                                    fileInput.onchange = (e) => {
-                                        const file = e.target.files[0];
-                                        if (file) {
-                                            // 在浏览器中，使用file://协议
-                                            displayFileInput.value = file.name;
-                                            // 注意：浏览器中无法直接获取完整路径，只能获取文件名
-                                            // 实际使用时需要通过URL.createObjectURL创建临时URL
-                                        }
-                                    };
-                                    fileInput.click();
-                                }
-                            } catch (error) {
-                                console.error('选择文件失败:', error);
-                                alert('选择文件失败: ' + error.message);
-                            }
-                        });
-                    }
-                }
-                
-                // 只有显示器1才添加开关切换事件
-                if (isDisplay1) {
-                    const lineNameMergeCheckbox = dialog.querySelector('#lineNameMerge');
-                    const showAllStationsCheckbox = dialog.querySelector('#showAllStations');
-                    
-                    if (lineNameMergeCheckbox) {
-                        lineNameMergeCheckbox.addEventListener('change', function() {
-                            const toggle = this.nextElementSibling;
-                            const thumb = toggle.nextElementSibling;
-                            if (this.checked) {
-                                toggle.style.backgroundColor = 'var(--accent, #1677ff)';
-                                thumb.style.transform = 'translateX(20px)';
-                            } else {
-                                toggle.style.backgroundColor = '#ccc';
-                                thumb.style.transform = 'translateX(0)';
-                            }
-                        });
-                    }
-                    
-                    if (showAllStationsCheckbox) {
-                        showAllStationsCheckbox.addEventListener('change', function() {
-                            const toggle = this.nextElementSibling;
-                            const thumb = toggle.nextElementSibling;
-                            if (this.checked) {
-                                toggle.style.backgroundColor = 'var(--accent, #1677ff)';
-                                thumb.style.transform = 'translateX(20px)';
-                            } else {
-                                toggle.style.backgroundColor = '#ccc';
-                                thumb.style.transform = 'translateX(0)';
-                            }
-                        });
-                    }
-                }
-
-                // 关闭按钮事件
-                const closeBtn = dialog.querySelector('#closeBtn');
-                if (closeBtn) {
-                    closeBtn.onclick = () => {
-                        document.body.removeChild(dialog);
-                        resolve(null);
-                    };
-                }
-                
-                dialog.querySelector('#cancelBtn').onclick = () => {
-                    document.body.removeChild(dialog);
-                    resolve(null);
-                };
-
-                dialog.querySelector('#saveBtn').onclick = () => {
-                    // 只有显示器1才读取开关值
-                    let lineNameMerge = false;
-                    let showAllStations = false;
-                    if (isDisplay1) {
-                        const lineNameMergeCheckbox = dialog.querySelector('#lineNameMerge');
-                        const showAllStationsCheckbox = dialog.querySelector('#showAllStations');
-                        lineNameMerge = lineNameMergeCheckbox ? lineNameMergeCheckbox.checked : false;
-                        showAllStations = showAllStationsCheckbox ? showAllStationsCheckbox.checked : false;
-                    }
-                    
-                    // 显示器2读取"下一站/到站"页面显示时长（秒），转换为毫秒存储
-                    let nextStationDuration = 10000;
-                    if (isDisplay2) {
-                        const durationInput = dialog.querySelector('#nextStationDuration');
-                        if (durationInput) {
-                            const value = parseInt(durationInput.value, 10);
-                            if (!isNaN(value)) {
-                                nextStationDuration = value * 1000; // 将秒转换为毫秒
-                            }
-                        }
-                    }
-                    
-                    // 如果是系统显示器，只保存开关值（仅显示器1）或显示器2的设置
-                    if (isSystem) {
-                        document.body.removeChild(dialog);
-                        if (isDisplay2) {
-                            resolve({ nextStationDuration, isSystem: true, isDisplay2 });
-                        } else {
-                            resolve({ lineNameMerge, showAllStations, isSystem: true, isDisplay1 });
-                        }
-                        return;
-                    }
-                    
-                    // 非系统显示器，需要验证并保存所有字段
-                    const name = dialog.querySelector('#displayName').value.trim();
-                    const source = dialog.querySelector('#displaySource').value;
-                    // 根据 source 类型读取对应的 URL
-                    let url = '';
-                    if (source === 'builtin') {
-                        url = dialog.querySelector('#displayFile').value.trim();
-                    } else {
-                        url = dialog.querySelector('#displayUrl').value.trim();
-                    }
-                    const description = dialog.querySelector('#displayDescription').value.trim();
-
-                    if (!name) {
-                        alert('请输入显示端名称');
-                        return;
-                    }
-                    
-                    if (source === 'builtin' && !url) {
-                        alert('请选择本地网页文件');
-                        return;
-                    }
-                    
-                    if (source === 'online' && !url) {
-                        alert('请输入在线显示器的URL');
-                        return;
-                    }
-                    
-                    // 验证 URL 格式（如果是在线显示器）
-                    if (source === 'online' && url) {
-                        try {
-                            new URL(url);
-                        } catch (e) {
-                            alert('请输入有效的URL格式，例如：https://example.com/display.html');
-                            return;
-                        }
-                    }
-
-                    document.body.removeChild(dialog);
-                    resolve({ name, source, url, description, lineNameMerge, showAllStations, isDisplay1, nextStationDuration, isDisplay2 });
-                };
-
-                // 点击背景关闭
-                dialog.onclick = (e) => {
-                    if (e.target === dialog) {
-                        document.body.removeChild(dialog);
-                        resolve(null);
-                    }
-                };
-            });
-
-            if (result) {
-                // 调用内部函数更新显示端
-                const updateResult = await editDisplayInternal(displayId, result);
-                if (updateResult && updateResult.ok) {
-                    if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端已更新:', displayId, result);
-                    const displayName = isSystem ? display.name : result.name;
-                    await showMsg(`显示端 "${displayName}" 已更新`);
-                }
-            }
+        // 编辑显示端（UI调用）：打开与更新日志同风格的 Vue 弹窗
+        function editDisplay(displayId) {
+            openDisplayEditDialog(displayId);
         }
 
         // 显示显示端右键菜单
@@ -2796,7 +2605,7 @@ export default {
             showColorPicker, colorPickerInitialColor, onColorConfirm,
             startWithLock, stopWithUnlock, startRecordingWithCheck,
             changeServiceMode, serviceModeLabel,
-            showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody,
+            showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             openLineManagerWindow,
             // 显示端管理方法
@@ -2804,6 +2613,8 @@ export default {
             draggedDisplayId, dragOverDisplayId,
             handleDragStart, handleDragEnd, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
             addNewDisplay, editDisplay, toggleDisplayEnabled, deleteDisplay, openAllDisplays, closeAllDisplays,
+            // 编辑显示端弹窗（与更新日志同风格）
+            showDisplayEditDialog, displayEdit, closeDisplayEditDialog, saveDisplayEdit, pickDisplayEditFile,
             // 显示端右键菜单
             displayContextMenu, showDisplayContextMenu, closeDisplayContextMenu,
             editDisplayFromMenu, toggleDisplayEnabledFromMenu, deleteDisplayFromMenu, addNewDisplayFromMenu
@@ -2835,32 +2646,6 @@ export default {
                 <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
             </div>
             
-<<<<<<< HEAD
-            <!-- 线路管理器按钮 -->
-            <div style="display:flex; gap:12px; margin-bottom:12px;">
-                <button class="btn" style="flex:1; background:#FF9F43; color:white; border:none; border-radius:6px; padding:12px; font-weight:bold; font-size:14px;" @click="openLineManagerWindow()">
-                    <i class="fas fa-folder-open"></i> 打开管理器
-                </button>
-            </div>
-            
-            <!-- 线路存储操作按钮 -->
-            <div style="display:flex; gap:8px; margin-bottom:12px;">
-                <button class="btn" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 4px; background:#DFE4EA; color:#2F3542; border:none; border-radius:6px; font-size:12px; gap:6px;" @click="fileIO.refreshLinesFromFolder()">
-                    <i class="fas fa-sync-alt" style="font-size:14px;"></i> 刷新线路
-                </button>
-                <button class="btn" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 4px; background:#DFE4EA; color:#2F3542; border:none; border-radius:6px; font-size:12px; gap:6px;" @click="fileIO.openLinesFolder()">
-                    <i class="fas fa-folder-open" style="font-size:14px;"></i> 打开文件夹
-                </button>
-                <button class="btn" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 4px; background:#DFE4EA; color:#2F3542; border:none; border-radius:6px; font-size:12px; gap:6px;" @click="fileIO.saveCurrentLine()">
-                    <i class="fas fa-save" style="font-size:14px;"></i> 保存当前线路
-                </button>
-            </div>
-            
-            <!-- 重置数据按钮 -->
-            <button class="btn" style="width:100%; background:#FF6B6B; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;" @click="fileIO.resetData()">
-                <i class="fas fa-trash-alt"></i> 重置数据
-            </button>
-=======
             <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
             <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
                 <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
@@ -2873,7 +2658,6 @@ export default {
                     <i class="fas fa-trash-alt" style="font-size:18px;"></i> 重置数据
                 </button>
             </div>
->>>>>>> feature/ui-update
         </div>
           
           <!-- Autoplay Control -->
@@ -2906,18 +2690,20 @@ export default {
         </div>
       </div>
 
-      <!-- Panel 4: Settings -->
-      <div v-if="uiState.activePanel === 'panel-4'" class="panel-body" style="padding:24px 16px; overflow-y:auto;">
+      <!-- Panel 4: Settings（与 PIDS 控制台同一套卡片与配色） -->
+      <div v-if="uiState.activePanel === 'panel-4'" class="panel-body" style="flex:1; display:flex; flex-direction:column; overflow:auto; background:var(--bg); padding:24px 16px;">
         
-        <!-- Header -->
-        <div style="text-align:center; margin-bottom:24px;">
-            <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">设置</div>
-            <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">Preferences</div>
+        <!-- Header（与控制台一致左对齐） -->
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
+            <div style="text-align:left;">
+                <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">设置</div>
+                <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">Preferences</div>
+            </div>
         </div>
         
         
         <!-- Theme Settings -->
-        <div class="card" style="border-left: 6px solid #2ED573; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+        <div class="card" style="border-left: 6px solid #2ED573; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#2ED573; font-weight:bold; margin-bottom:16px; font-size:15px;">外观 (Appearance)</div>
             
             <div style="margin-bottom:16px;">
@@ -2950,7 +2736,7 @@ export default {
         </div>
 
         <!-- Display Management -->
-        <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+        <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">显示端管理 (Display Management)</div>
             
             <!-- 显示端列表标题 -->
@@ -2958,15 +2744,16 @@ export default {
                 <div style="font-size:14px; font-weight:bold; color:var(--text);">显示端列表</div>
             </div>
             
-            <!-- 拖拽提示 -->
-            <div style="font-size:12px; color:var(--muted); margin-bottom:12px; padding:8px; background:var(--card); border-radius:6px; border:1px dashed var(--divider);">
+            <!-- 拖拽提示（与控制台内框一致） -->
+            <div style="font-size:12px; color:var(--muted); margin-bottom:12px; padding:12px; background:rgba(255, 255, 255, 0.15); border-radius:12px; border:2px solid var(--divider);">
                 <i class="fas fa-info-circle"></i> 点击卡片切换当前选中的显示端，右键卡片或空白处可进行新建、编辑、启用/禁用、删除操作，拖拽卡片可调整顺序
             </div>
             
             <!-- 显示端卡片列表 -->
-            <div style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:16px;" @contextmenu.prevent="showDisplayContextMenu($event, null)">
+            <div style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:12px; padding:8px; margin-bottom:16px;" @contextmenu.prevent="showDisplayContextMenu($event, null)">
                 <div v-for="(display, id) in displayState.displays" :key="id" 
                      :draggable="true"
+                     :class="{ 'display-card-selected': id === displayState.currentDisplayId }"
                      @dragstart="handleDragStart($event, id)"
                      @dragend="handleDragEnd($event)"
                      @dragenter="handleDragEnter($event, id)"
@@ -2976,34 +2763,33 @@ export default {
                      @click="selectDisplay(id)"
                      @contextmenu.prevent="showDisplayContextMenu($event, id)"
                      :style="[
-                         !display.enabled ? 'opacity: 0.5; cursor: not-allowed; background: #f5f5f5;' : '',
-                         id === displayState.currentDisplayId ? 'border-color: #FF9F43; background: rgba(255,159,67,0.1); box-shadow: 0 2px 8px rgba(255,159,67,0.3);' : '',
+                         'display:flex; align-items:center; justify-content:space-between; padding:12px; margin-bottom:8px; background:var(--input-bg); border-radius:12px; border:2px solid var(--divider); cursor:pointer; transition:all 0.2s; user-select:none;',
                          dragOverDisplayId === id ? 'border-color: #4A90E2; background: rgba(74,144,226,0.1); transform: translateY(-2px);' : '',
                          draggedDisplayId === id ? 'opacity: 0.5;' : '',
-                         'display:flex; align-items:center; justify-content:space-between; padding:12px; margin-bottom:8px; background:var(--card); border-radius:6px; border:2px solid var(--divider); cursor:pointer; transition:all 0.2s; user-select:none;'
+                         !display.enabled ? 'opacity: 0.5; cursor: not-allowed; background: var(--input-bg);' : ''
                      ]">
                     
                     <!-- 拖拽手柄 -->
-                    <div style="color:var(--muted); margin-right:8px; cursor:grab;" 
+                    <div class="display-card-muted" style="color:var(--muted); margin-right:8px; cursor:grab;" 
                          @mousedown="$event.stopPropagation()">
                         <i class="fas fa-grip-vertical"></i>
                     </div>
                     
                     <!-- 显示端信息 -->
                     <div style="flex:1; min-width:0;">
-                        <div style="font-size:14px; font-weight:bold; color:var(--text); margin-bottom:4px;">
+                        <div class="display-card-title" style="font-size:14px; font-weight:bold; color:var(--text); margin-bottom:4px;">
                             {{ display.name }}
-                            <span v-if="id === displayState.currentDisplayId" style="color:#FF9F43; font-size:12px; margin-left:8px;">
+                            <span v-if="id === displayState.currentDisplayId" class="display-card-badge" style="color:#FF9F43; font-size:12px; margin-left:8px;">
                                 <i class="fas fa-star"></i> 当前
                             </span>
                         </div>
-                        <div style="font-size:12px; color:var(--muted);">
+                        <div class="display-card-muted" style="font-size:12px; color:var(--muted);">
                             {{ display.source === 'builtin' ? '本地显示器' : display.source === 'online' ? '在线显示器' : display.source === 'custom' ? '自定义URL' : display.source === 'gitee' ? 'Gitee页面' : display.source }}
                             <span v-if="!display.enabled" style="color:#FF6B6B; margin-left:8px;">
                                 <i class="fas fa-pause"></i> 已禁用
                             </span>
                         </div>
-                        <div v-if="display.description" style="font-size:11px; color:var(--muted); margin-top:2px;">
+                        <div v-if="display.description" class="display-card-muted" style="font-size:11px; color:var(--muted); margin-top:2px;">
                             {{ display.description }}
                         </div>
                     </div>
@@ -3023,7 +2809,7 @@ export default {
         </div>
 
         <!-- API Server Settings -->
-        <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+        <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#9B59B6; font-weight:bold; margin-bottom:16px; font-size:15px;">API 服务器 (API Server)</div>
             
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
@@ -3049,14 +2835,14 @@ export default {
                 </label>
             </div>
             
-            <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.1); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.2); line-height:1.6;">
+            <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.12); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.25); line-height:1.6;">
                 <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
                 <strong>提示：</strong>如果第三方显示器（特别是 Python 客户端）显示异常或无法连接，请尝试更改此开关状态并<strong>重启应用</strong>重试。
             </div>
         </div>
 
         <!-- Keybindings -->
-        <div class="card" style="border-left: 6px solid #1E90FF; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+        <div class="card" style="border-left: 6px solid #1E90FF; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#1E90FF; font-weight:bold; margin-bottom:16px; font-size:15px;">快捷键 (Keybindings)</div>
             
             <div style="display:flex; flex-direction:column; gap:12px;">
@@ -3075,7 +2861,7 @@ export default {
                 </div>
             </div>
             
-            <div style="margin-top:16px; font-size:12px; color:var(--muted); background:rgba(0,0,0,0.03); padding:8px; border-radius:6px; margin-bottom:12px;">
+            <div class="settings-hint-box" style="margin-top:16px; font-size:12px; color:var(--muted); padding:12px; border-radius:8px; margin-bottom:12px; border:2px solid var(--divider);">
                 <i class="fas fa-info-circle"></i> 点击输入框并按下键盘按键以修改快捷键。
             </div>
 
@@ -3085,7 +2871,7 @@ export default {
         </div>
 
         <!-- Version & Update -->
-        <div class="card" style="border-left: 6px solid #4b7bec; border-radius:12px; padding:16px; margin-bottom:20px; background:var(--bg); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+        <div class="card" style="border-left: 6px solid #4b7bec; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#4b7bec; font-weight:bold; margin-bottom:12px; font-size:15px;">版本与更新</div>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
                 <div style="font-size:14px; color:var(--text);">当前版本</div>
@@ -3134,7 +2920,7 @@ export default {
                 </div>
             </div>
             <div v-if="updateState.downloading" style="margin-top:10px;">
-                <div style="width:100%; height:12px; background:rgba(0,0,0,0.08); border-radius:6px; overflow:hidden; margin-bottom:6px;">
+                <div class="settings-progress-bg" style="width:100%; height:12px; border-radius:6px; overflow:hidden; margin-bottom:6px;">
                     <div :style="{ width: updateState.progress + '%', height:'100%', background:'linear-gradient(90deg, #4b7bec 0%, #2d98da 100%)', transition:'width .3s ease', boxShadow:'0 0 10px rgba(75,123,236,0.3)' }"></div>
                 </div>
                 <div style="text-align:center; font-size:12px; color:var(--muted);">
@@ -3155,15 +2941,107 @@ export default {
       @confirm="onColorConfirm"
     />
 
+    <!-- Edit Display Dialog（与编辑站点 StationEditor 同结构同样式：se-overlay + se-dialog） -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showDisplayEditDialog" class="se-overlay" @click.self="closeDisplayEditDialog">
+                <div class="se-dialog" role="dialog" aria-modal="true" style="max-width:600px;">
+                    <div class="se-header">
+                        <div class="se-header-left">
+                            <div class="se-icon">
+                                <i class="fas fa-edit"></i>
+                            </div>
+                            <div class="se-titles">
+                                <div class="se-title">编辑显示端</div>
+                                <div class="se-subtitle">{{ displayEdit.name || 'Edit Display' }}</div>
+                            </div>
+                        </div>
+                        <button type="button" class="se-close" @click="closeDisplayEditDialog" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div class="se-content" style="display:flex; flex-direction:column; gap:12px;">
+                        <template v-if="!displayEdit.isSystem">
+                            <div>
+                                <label class="se-label">显示端名称</label>
+                                <input v-model="displayEdit.name" type="text" class="se-input" placeholder="例如：主显示器">
+                            </div>
+                            <div>
+                                <label class="se-label">显示端类型</label>
+                                <select v-model="displayEdit.source" class="se-input" style="cursor:pointer;">
+                                    <option value="builtin">本地显示器</option>
+                                    <option value="online">在线显示器</option>
+                                </select>
+                            </div>
+                            <div v-show="displayEdit.source === 'builtin'">
+                                <label class="se-label">本地网页文件</label>
+                                <div style="display:flex; gap:10px;">
+                                    <input v-model="displayEdit.url" type="text" readonly class="se-input" style="flex:1;" placeholder="请选择本地HTML文件">
+                                    <button type="button" class="se-btn se-btn-green" style="min-width:auto; white-space:nowrap;" @click="pickDisplayEditFile()"><i class="fas fa-folder-open" style="margin-right:6px;"></i>选择文件</button>
+                                </div>
+                            </div>
+                            <div v-show="displayEdit.source !== 'builtin'">
+                                <label class="se-label">在线URL</label>
+                                <input v-model="displayEdit.url" type="text" class="se-input" placeholder="https://example.com/display.html">
+                            </div>
+                            <div>
+                                <label class="se-label">描述 <span style="font-weight:normal; color:var(--muted); font-size:11px;">(可选)</span></label>
+                                <input v-model="displayEdit.description" type="text" class="se-input" placeholder="显示端描述">
+                            </div>
+                        </template>
+                        <template v-if="displayEdit.isDisplay1">
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">线路名合并</div>
+                                    <div class="se-display-option-desc">显示端左侧按多段线路名拼接展示</div>
+                                </div>
+                                <label class="se-toggle-wrap">
+                                    <input v-model="displayEdit.lineNameMerge" type="checkbox" class="se-toggle-input">
+                                    <span class="se-toggle-track" :class="{ on: displayEdit.lineNameMerge }"></span>
+                                    <span class="se-toggle-thumb" :class="{ on: displayEdit.lineNameMerge }"></span>
+                                </label>
+                            </div>
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">显示全部站点</div>
+                                    <div class="se-display-option-desc">启用后，所有站点都会显示在屏幕上</div>
+                                </div>
+                                <label class="se-toggle-wrap">
+                                    <input v-model="displayEdit.showAllStations" type="checkbox" class="se-toggle-input">
+                                    <span class="se-toggle-track" :class="{ on: displayEdit.showAllStations }"></span>
+                                    <span class="se-toggle-thumb" :class="{ on: displayEdit.showAllStations }"></span>
+                                </label>
+                            </div>
+                        </template>
+                        <template v-if="displayEdit.isDisplay2">
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">下一站 / 到站 页面显示时长</div>
+                                    <div class="se-display-option-desc">“下一站”白屏和“到站”白屏显示时长（秒）</div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <input v-model.number="displayEdit.nextStationDurationSeconds" type="number" min="1" max="60" step="1" class="se-input" style="width:100px; text-align:right;">
+                                    <span style="font-size:14px; color:var(--text); font-weight:500;">秒</span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="se-footer">
+                        <button type="button" class="se-btn se-btn-gray" @click="closeDisplayEditDialog">取消</button>
+                        <button type="button" class="se-btn se-btn-green" @click="saveDisplayEdit">保存</button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
     <!-- Release Notes Dialog -->
     <Teleport to="body">
         <Transition name="fade">
             <div v-if="showReleaseNotes" 
-<<<<<<< HEAD
-                 style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.5);" 
-=======
                  style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:transparent;" 
->>>>>>> feature/ui-update
                  @click.self="closeReleaseNotes">
                 <div style="border-radius:20px; padding:0; max-width:900px; max-height:85vh; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset; overflow:hidden; transform:scale(1); transition:transform 0.2s;" 
                      class="release-notes-dialog">
@@ -3238,18 +3116,10 @@ export default {
                                             </div>
                                         </div>
                                     </div>
-                                    <a :href="release.html_url" 
-                                       target="_blank" 
-                                       style="display:flex; align-items:center; gap:6px; color:var(--btn-blue-bg, #1677ff); text-decoration:none; font-size:13px; font-weight:500; padding:6px 12px; border-radius:6px; transition:all 0.2s; white-space:nowrap; hover:background:rgba(22,119,255,0.1);"
-                                       @mouseover="$event.target.style.background='rgba(22,119,255,0.1)'"
-                                       @mouseout="$event.target.style.background='transparent'">
-                                        <span>查看详情</span>
-                                        <i class="fas fa-external-link-alt" style="font-size:11px;"></i>
-                                    </a>
                                 </div>
                                 
                                 <!-- Release Body -->
-                                <div style="color:var(--text, #333); line-height:1.7; font-size:14px; padding-top:16px; border-top:1px solid var(--divider, rgba(0,0,0,0.08));" v-html="formatReleaseBody(release.body, release)"></div>
+                                <div class="release-body-content" style="color:var(--text, #333); line-height:1.7; font-size:14px; padding-top:16px; border-top:1px solid var(--divider, rgba(0,0,0,0.08)); cursor:default;" @click="onReleaseBodyClick" v-html="formatReleaseBody(release.body, release)"></div>
                             </div>
                         </div>
                     </div>
@@ -3257,7 +3127,27 @@ export default {
             </div>
         </Transition>
     </Teleport>
-    
+
+    <!-- 内置图片查看器 - 更新日志内图片点击放大 -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="imageViewerSrc"
+                 style="position:fixed; inset:0; z-index:25000; background:rgba(0,0,0,0.92); display:flex; align-items:center; justify-content:center; cursor:pointer;"
+                 @click="closeImageViewer">
+                <img :src="imageViewerSrc"
+                     alt="查看大图"
+                     style="max-width:95vw; max-height:95vh; object-fit:contain; border-radius:8px; pointer-events:none; box-shadow:0 8px 32px rgba(0,0,0,0.5);"
+                     @click.stop>
+                <button @click.stop="closeImageViewer"
+                        style="position:absolute; top:20px; right:20px; width:44px; height:44px; border-radius:50%; border:none; background:rgba(255,255,255,0.2); color:white; cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; transition:background 0.2s;"
+                        @mouseover="$event.currentTarget.style.background='rgba(255,255,255,0.35)'"
+                        @mouseout="$event.currentTarget.style.background='rgba(255,255,255,0.2)'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </Transition>
+    </Teleport>
+
     <!-- 显示端右键菜单 - 使用 Teleport 传送到 body -->
     <Teleport to="body">
         <div 
@@ -3414,6 +3304,8 @@ export default {
         :global([data-theme="dark"]) .release-note-card:hover {
             background: rgba(60, 60, 60, 0.7) !important;
         }
+        .release-note-img:hover { opacity: 0.9; }
+        .release-note-img-wrap { cursor: pointer; }
         /* 空状态图标 */
         .release-notes-empty-icon {
             background: rgba(255, 255, 255, 0.5);
@@ -3429,6 +3321,29 @@ export default {
         :global([data-theme="dark"]) .release-notes-empty-icon {
             background: rgba(50, 50, 50, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* 设置页内框/进度条 - 与 PIDS 控制台一致（浅色/深色） */
+        .settings-hint-box {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        @media (prefers-color-scheme: dark) {
+            .settings-hint-box {
+                background: rgba(255, 255, 255, 0.15);
+            }
+        }
+        :global(html.dark) .settings-hint-box {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .settings-progress-bg {
+            background: rgba(0, 0, 0, 0.08);
+        }
+        @media (prefers-color-scheme: dark) {
+            .settings-progress-bg {
+                background: rgba(255, 255, 255, 0.12);
+            }
+        }
+        :global(html.dark) .settings-progress-bg {
+            background: rgba(255, 255, 255, 0.12);
         }
     </style>
   `

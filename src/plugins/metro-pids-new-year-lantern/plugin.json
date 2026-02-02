@@ -1,0 +1,18 @@
+{
+  "name": "metro-pids/new-year-lantern",
+  "title": "新年灯笼",
+  "description": "春节期间（农历春节前后）切换线路时弹出新年祝福消息",
+  "version": "1.0.0",
+  "author": "Metro-PIDS",
+  "category": "metro-pids-trigger",
+  "apiVersion": 2,
+  "metroPids": {
+    "hooks": ["lineSwitch", "dateCheck"],
+    "configSchema": {
+      "messages": { "type": "array", "items": { "type": "string" }, "description": "新年祝福消息" },
+      "enabled": { "type": "boolean", "description": "是否启用" },
+      "startDate": { "type": "string", "format": "date", "description": "开始日期 YYYY-MM-DD" },
+      "endDate": { "type": "string", "format": "date", "description": "结束日期 YYYY-MM-DD" }
+    }
+  }
+}

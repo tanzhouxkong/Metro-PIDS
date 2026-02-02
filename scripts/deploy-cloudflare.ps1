@@ -6,34 +6,33 @@
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Metro-PIDS Cloudflare 部署脚本" -ForegroundColor Cyan
+Write-Host "Metro-PIDS Cloudflare Deployment Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 检查 wrangler 是否已安装
-Write-Host "📦 检查 wrangler 是否已安装..." -ForegroundColor Yellow
+# Check wrangler
+Write-Host "Checking if wrangler is installed..." -ForegroundColor Yellow
 $wranglerInstalled = Get-Command wrangler -ErrorAction SilentlyContinue
 
 if (-not $wranglerInstalled) {
-    Write-Host "❌ wrangler 未安装，正在安装..." -ForegroundColor Red
+    Write-Host "wrangler not found, installing with npm..." -ForegroundColor Yellow
     npm install -g wrangler
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ 安装 wrangler 失败，请手动运行: npm install -g wrangler" -ForegroundColor Red
+        Write-Host "Failed to install wrangler. Please run: npm install -g wrangler" -ForegroundColor Red
         exit 1
     }
 } else {
-    Write-Host "✅ wrangler 已安装" -ForegroundColor Green
+    Write-Host "wrangler is installed." -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "🔐 检查是否已登录 Cloudflare..." -ForegroundColor Yellow
+Write-Host "Checking Cloudflare login status..." -ForegroundColor Yellow
 $wranglerWhoami = wrangler whoami 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "⚠️  未登录 Cloudflare，请先登录..." -ForegroundColor Yellow
-    Write-Host "正在打开登录流程..." -ForegroundColor Yellow
+    Write-Host "Not logged in to Cloudflare. Opening login flow..." -ForegroundColor Yellow
     wrangler login
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ 登录失败，请手动运行: wrangler login" -ForegroundColor Red
+        Write-Host "Login failed. Please run: wrangler login" -ForegroundColor Red
         exit 1
     }
 } else {
@@ -42,79 +41,78 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "开始部署..." -ForegroundColor Cyan
+Write-Host "Starting Cloudflare deployment..." -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 进入 cloudflare 目录
+# Change to cloudflare directory
 $cloudflareDir = Join-Path $PSScriptRoot "..\cloudflare"
 if (-not (Test-Path $cloudflareDir)) {
-    Write-Host "❌ 找不到 cloudflare 目录: $cloudflareDir" -ForegroundColor Red
+    Write-Host "Cloudflare directory not found: $cloudflareDir" -ForegroundColor Red
     exit 1
 }
 
 Push-Location $cloudflareDir
 
 try {
-    # 1. 部署 Worker
-    Write-Host "📤 部署 Cloudflare Worker..." -ForegroundColor Yellow
+    # 1. Deploy Worker
+    Write-Host "Deploying Cloudflare Worker..." -ForegroundColor Yellow
     wrangler deploy
     
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Worker 部署成功！" -ForegroundColor Green
+        Write-Host "Worker deployed successfully." -ForegroundColor Green
     } else {
-        Write-Host "❌ Worker 部署失败" -ForegroundColor Red
+        Write-Host "Worker deployment failed." -ForegroundColor Red
         exit 1
     }
     
     Write-Host ""
     
-    # 2. 部署 Pages（如果有 admin.html）
-    Write-Host "📤 部署 Cloudflare Pages..." -ForegroundColor Yellow
+    # 2. Deploy Pages (if admin.html exists)
+    Write-Host "Deploying Cloudflare Pages..." -ForegroundColor Yellow
     $adminHtmlPath = Join-Path $cloudflareDir "admin.html"
     if (Test-Path $adminHtmlPath) {
-        Write-Host "   检测到 admin.html，准备部署 Pages..." -ForegroundColor Yellow
+        Write-Host "   Found admin.html, ready to deploy Pages..." -ForegroundColor Yellow
         
-        # 检查是否已配置 Pages 项目
-        Write-Host "   ⚠️  注意: Pages 需要在 Cloudflare Dashboard 中配置项目" -ForegroundColor Yellow
-        Write-Host "   或者使用命令: wrangler pages deploy --project-name=metro-pids-admin" -ForegroundColor Yellow
+        # Inform about Pages project
+        Write-Host "   Note: a Pages project named metro-pids-admin must exist in Cloudflare Dashboard." -ForegroundColor Yellow
+        Write-Host "   You can also run manually: wrangler pages deploy --project-name=metro-pids-admin" -ForegroundColor Yellow
         Write-Host ""
         
-        $deployPages = Read-Host "是否部署 Pages? (Y/N)"
-        if ($deployPages -eq 'Y' -or $deployPages -eq 'y') {
-            wrangler pages deploy . --project-name=metro-pids-admin --commit-dirty=true
-            
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Pages 部署成功！" -ForegroundColor Green
-            } else {
-                Write-Host "⚠️  Pages 部署可能失败，请检查错误信息" -ForegroundColor Yellow
-            }
+        # Always deploy to Pages production (branch master) when admin.html exists
+        Write-Host "Deploying Pages to production (branch: master)..." -ForegroundColor Yellow
+        wrangler pages deploy . --project-name=metro-pids-admin --commit-dirty=true --branch=master
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Pages deployed successfully (production: master)." -ForegroundColor Green
         } else {
-            Write-Host "⏭️  跳过 Pages 部署" -ForegroundColor Yellow
+            Write-Host "Pages deployment may have failed, please check the output above." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "⚠️  未找到 admin.html，跳过 Pages 部署" -ForegroundColor Yellow
+        Write-Host "admin.html not found, skipping Pages deployment." -ForegroundColor Yellow
     }
     
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "部署完成！" -ForegroundColor Green
+    Write-Host "Deployment finished." -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "📋 部署结果:" -ForegroundColor Cyan
+    Write-Host "Result:" -ForegroundColor Cyan
     Write-Host "   Worker:  https://metro.tanzhouxiang.dpdns.org" -ForegroundColor White
-    Write-Host "   API 文档: https://metro.tanzhouxiang.dpdns.org/" -ForegroundColor White
-    Write-Host "   管理后台: https://metro-pids-admin.pages.dev" -ForegroundColor White
+    Write-Host "   API docs: https://metro.tanzhouxiang.dpdns.org/" -ForegroundColor White
+    Write-Host "   Admin (Pages): https://metro-pids-admin.pages.dev" -ForegroundColor White
     Write-Host ""
-    Write-Host "💡 提示:" -ForegroundColor Cyan
-    Write-Host "   - 如果部署了 Pages，管理后台地址可能会不同" -ForegroundColor White
-    Write-Host "   - 可以在 Cloudflare Dashboard 中查看详细的部署日志" -ForegroundColor White
+    Write-Host "Tips:" -ForegroundColor Cyan
+    Write-Host "   - If you deployed Pages, the final admin domain may be an alias (for example master.*)." -ForegroundColor White
+    Write-Host "   - You can see detailed deployment logs in Cloudflare Dashboard." -ForegroundColor White
     Write-Host ""
-    
-} catch {
+}
+
+catch {
     Write-Host ""
-    Write-Host "❌ 部署过程中出错: $_" -ForegroundColor Red
+    Write-Host "Error during deployment: $($_)" -ForegroundColor Red
     exit 1
-} finally {
+}
+finally {
     Pop-Location
 }

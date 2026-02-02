@@ -1,5 +1,6 @@
 import { useUIState } from '../composables/useUIState.js'
 import { useAutoplay } from '../composables/useAutoplay.js'
+import { showNotification } from '../utils/notificationService.js'
 import { useFileIO } from '../composables/useFileIO.js'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
@@ -7,7 +8,7 @@ import { useSettings } from '../composables/useSettings.js'
 import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
-import ColorPicker from './ColorPicker.js'
+import ColorPicker from './ColorPicker.vue'
 
 export default {
   name: 'ConsolePage',
@@ -511,7 +512,15 @@ export default {
     
     async function applyThroughOperation() {
         const meta = pidsState.appData.meta || {};
-        const segments = meta.throughLineSegments || [];
+        // 使用界面显示的 throughLineSegments 作为数据源，避免线路切换或刷新导致 meta 与界面不同步
+        const segments = (throughLineSegments.value && throughLineSegments.value.length > 0)
+            ? throughLineSegments.value
+            : (meta.throughLineSegments || []);
+        // 先同步到 meta，确保数据一致
+        if (segments !== meta.throughLineSegments) {
+            meta.throughLineSegments = [...segments];
+            saveCfg();
+        }
         
         // 只处理连续的有线路名称的段（从第一段开始，连续的有线路名称的段）
         const validSegments = [];
@@ -740,8 +749,18 @@ export default {
             await showMsg('请先设置短交路的起点和终点');
             return;
         }
-        const presetName = await promptUser('请输入预设名称', '短交路预设');
-        if (!presetName) return;
+        const startName = pidsState.appData.stations[startIdx]?.name || `站点${startIdx + 1}`;
+        const termName = pidsState.appData.stations[termIdx]?.name || `站点${termIdx + 1}`;
+        const defaultName = `${startName}→${termName}`;
+        const existingNames = new Set(shortTurnPresets.value.map(p => p.name));
+        let suggestedName = defaultName;
+        let n = 1;
+        while (existingNames.has(suggestedName)) {
+            suggestedName = `${defaultName} ${++n}`;
+        }
+        const presetName = await promptUser('请输入预设名称（留空使用建议名称）', suggestedName);
+        const finalName = (presetName && presetName.trim()) ? presetName.trim() : suggestedName;
+        if (!finalName) return;
         try {
             const presetData = {
                 lineName: pidsState.appData.meta.lineName,
@@ -751,7 +770,7 @@ export default {
                 termStationName: pidsState.appData.stations[termIdx]?.name || '',
                 createdAt: new Date().toISOString()
             };
-            const res = await window.electronAPI.shortturns.save(presetName, presetData);
+            const res = await window.electronAPI.shortturns.save(finalName, presetData);
             if (res && res.ok) {
                 await showMsg('预设已保存');
                 await loadShortTurnPresets();
@@ -1071,13 +1090,59 @@ export default {
     const autoplay = useAutoplay(controllerNext, shouldStop)
     const { isPlaying, isPaused, nextIn, start, stop, togglePause } = autoplay
 
-    // 自动播放控制函数
-    function startWithLock(interval) {
-        start(interval);
+    // 开启自动播放时确保当前选中的显示器已打开
+    async function ensureDisplayOpen() {
+        try {
+            if (typeof window === 'undefined' || !window.electronAPI) return;
+            const disp = settings.display;
+            if (!disp || !disp.displays) return;
+            const displayId = disp.currentDisplayId || 'display-1';
+            const displayConfig = disp.displays[displayId] || disp.displays['display-1'] || disp.displays[Object.keys(disp.displays)[0]];
+            if (!displayConfig) return;
+            const w = displayConfig.width ? Number(displayConfig.width) : 1900;
+            const h = displayConfig.height ? Number(displayConfig.height) : 600;
+            const id = displayConfig.id || displayId;
+            if (typeof window.electronAPI.openDisplay === 'function') {
+                await window.electronAPI.openDisplay(w, h, id);
+                return true;
+            }
+            if (typeof window.electronAPI.switchDisplay === 'function') {
+                await window.electronAPI.switchDisplay(id, w, h);
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    // 自动播放控制函数（与 SlidePanel 一致：确认弹窗 + 锁定弹窗 + 自动打开当前显示器）
+    async function startWithLock(interval = 8) {
+        if (uiState.autoLocked) return;
+        const ok = await askUser('开启自动播放将锁定控制面板，期间请不要操作控制界面，是否继续？');
+        if (!ok) return;
+        uiState.autoLocked = true;
+        uiState.autoplayTogglePause = togglePause;
+        uiState.autoplayIsPausedRef = isPaused;
+        try {
+            await ensureDisplayOpen();
+            try { sync(); } catch (e) {}
+            start(interval);
+        } catch (e) {
+            uiState.autoLocked = false;
+            uiState.autoplayTogglePause = null;
+            uiState.autoplayIsPausedRef = null;
+            throw e;
+        }
     }
 
     function stopWithUnlock() {
-        stop();
+        try { stop(); } catch (e) {}
+        uiState.autoLocked = false;
+        uiState.autoplayTogglePause = null;
+        uiState.autoplayIsPausedRef = null;
+        showNotification('自动播放已停止', '自动播放已结束，控制面板已解锁', {
+            tag: 'autoplay-stopped',
+            urgency: 'low'
+        });
     }
     
     // 监听 autoLocked 变化，如果外部设置为 false，则停止自动播放
@@ -1162,32 +1227,6 @@ export default {
               <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
           </div>
           
-<<<<<<< HEAD
-          <!-- 线路管理器按钮 -->
-          <div style="display:flex; gap:12px; margin-bottom:12px;">
-              <button class="btn" style="flex:1; background:#FF9F43; color:white; border:none; border-radius:6px; padding:12px; font-weight:bold; font-size:14px;" @click="openLineManagerWindow()">
-                  <i class="fas fa-folder-open"></i> 打开管理器
-              </button>
-          </div>
-          
-          <!-- 线路存储操作按钮 -->
-          <div style="display:flex; gap:8px; margin-bottom:12px;">
-              <button class="btn" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 4px; background:#DFE4EA; color:#2F3542; border:none; border-radius:6px; font-size:12px; gap:6px;" @click="fileIO.refreshLinesFromFolder()">
-                  <i class="fas fa-sync-alt" style="font-size:14px;"></i> 刷新线路
-              </button>
-              <button class="btn" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 4px; background:#DFE4EA; color:#2F3542; border:none; border-radius:6px; font-size:12px; gap:6px;" @click="fileIO.openLinesFolder()">
-                  <i class="fas fa-folder-open" style="font-size:14px;"></i> 打开文件夹
-              </button>
-              <button class="btn" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 4px; background:#DFE4EA; color:#2F3542; border:none; border-radius:6px; font-size:12px; gap:6px;" @click="fileIO.saveCurrentLine()">
-                  <i class="fas fa-save" style="font-size:14px;"></i> 保存当前线路
-              </button>
-          </div>
-          
-          <!-- 重置数据按钮 -->
-          <button class="btn" style="width:100%; background:#FF6B6B; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;" @click="fileIO.resetData()">
-              <i class="fas fa-trash-alt"></i> 重置数据
-          </button>
-=======
           <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
           <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
@@ -1200,7 +1239,6 @@ export default {
                   <i class="fas fa-trash-alt" style="font-size:18px;"></i> 重置数据
               </button>
           </div>
->>>>>>> feature/ui-update
           </div>
           
         <!-- Service Mode Settings -->

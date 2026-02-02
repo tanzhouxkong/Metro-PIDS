@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { onUnmounted, Teleport, watch, onMounted } from 'vue'
-=======
-import { onUnmounted, Teleport, Transition, watch, onMounted } from 'vue'
->>>>>>> feature/ui-update
+import { onUnmounted, Teleport, Transition, watch, onMounted, ref } from 'vue'
 import AdminApp from './components/AdminApp.js'
 import Topbar from './components/Topbar.js'
 import LeftRail from './components/LeftRail.js'
@@ -16,20 +12,18 @@ import { useController } from './composables/useController.js'
 import { useSettings } from './composables/useSettings.js'
 import { useUIState } from './composables/useUIState.js'
 import { useCloudConfig, CLOUD_API_BASE } from './composables/useCloudConfig.js'
+import { usePlugins } from './composables/usePlugins.js'
 
 export default {
   name: 'App',
-<<<<<<< HEAD
-  components: { AdminApp, Topbar, LeftRail, SlidePanel, ConsolePage, SettingsPage, UnifiedDialogs, Teleport },
-=======
   components: { AdminApp, Topbar, LeftRail, SlidePanel, ConsolePage, SettingsPage, UnifiedDialogs, Teleport, Transition },
->>>>>>> feature/ui-update
   setup() {
     const { uiState } = useUIState()
     const { state: pidState, bcOn } = usePidsState();
     const { next, move, setArr, setDep, getStep, sync } = useController();
     const { settings } = useSettings();
     const kbd = useKeyboard();
+    const cloudConfig = useCloudConfig(CLOUD_API_BASE);
 
     // 监听来自侧边栏的面板切换消息
     let panelStateCleanup = null;
@@ -45,6 +39,40 @@ export default {
         panelStateCleanup();
       }
     });
+
+    // 切换线路后保持 display-1 的「线路名合并」「显示全部站点」与设置一致，避免被线路文件覆盖
+    watch(
+      () => pidState.appData,
+      (appData) => {
+        if (!appData || !appData.meta) return;
+        const disp = settings.display;
+        if (!disp || disp.currentDisplayId !== 'display-1') return;
+        const d1 = disp.displays && disp.displays['display-1'];
+        if (!d1) return;
+        if (d1.lineNameMerge !== undefined) appData.meta.lineNameMerge = d1.lineNameMerge;
+        if (d1.showAllStations !== undefined) appData.meta.showAllStations = d1.showAllStations;
+      },
+      { flush: 'post' }
+    );
+
+    // 插件系统：切换线路时触发 lineSwitch 钩子（彩蛋、节日等）
+    const { doAction, initPlugins } = usePlugins(cloudConfig);
+    const lastPluginLineName = ref(null);
+    onMounted(() => initPlugins());
+    watch(
+      () => ({ lineName: pidState.appData?.meta?.lineName, stations: pidState.appData?.stations }),
+      async (curr) => {
+        const lineName = curr?.lineName;
+        const stations = curr?.stations;
+        if (!lineName || !stations || !Array.isArray(stations) || stations.length === 0) return;
+        const isSwitch = lastPluginLineName.value != null && lastPluginLineName.value !== lineName;
+        lastPluginLineName.value = lineName;
+        if (!isSwitch) return;
+        initPlugins();
+        await doAction('lineSwitch', { lineName, stations });
+      },
+      { flush: 'post' }
+    );
 
     // 键盘处理
     kbd.install();
@@ -202,7 +230,15 @@ export default {
     function stopAutoplay() {
       console.log('[App] 停止自动播放，设置 autoLocked = false');
       uiState.autoLocked = false;
+      uiState.autoplayTogglePause = null;
+      uiState.autoplayIsPausedRef = null;
       // 通过设置 autoLocked 为 false，SlidePanel 和 ConsolePage 中的 watch 会自动停止自动播放
+    }
+
+    function toggleAutoplayPause() {
+      if (typeof uiState.autoplayTogglePause === 'function') {
+        uiState.autoplayTogglePause();
+      }
     }
     
     // 调试：监听 autoLocked 变化
@@ -213,7 +249,6 @@ export default {
     }
 
     // 上报使用统计（应用启动时）
-    const cloudConfig = useCloudConfig(CLOUD_API_BASE);
     onMounted(async () => {
       console.log('[App] 📊 准备上报使用统计，API地址:', CLOUD_API_BASE);
       // 延迟上报，确保应用已完全加载
@@ -232,7 +267,7 @@ export default {
       }, 2000); // 延迟2秒上报
     });
 
-    return { pidState, uiState, stopAutoplay };
+    return { pidState, uiState, stopAutoplay, toggleAutoplayPause };
   },
   template: `
     <div class="root" style="
@@ -263,17 +298,6 @@ export default {
 
         <UnifiedDialogs />
         
-<<<<<<< HEAD
-        <!-- Global auto-play lock overlay (covers entire app) - 使用 Teleport 传送到 body -->
-        <Teleport to="body">
-            <div v-if="uiState.autoLocked" style="position:fixed; inset:0; z-index:999999; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; flex-direction:column; color:#fff; padding:20px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); transition: backdrop-filter .24s ease, background .24s ease; pointer-events: auto;">
-                <div style="font-size:20px; font-weight:800; margin-bottom:10px;">自动播放进行中 — 整个应用已锁定</div>
-                <div style="font-size:14px; opacity:0.95; margin-bottom:18px; text-align:center; max-width:680px;">为避免干扰演示，请勿操作控制面板或其他窗口内容。若需停止自动播放，请使用下面的按钮。</div>
-                <div style="display:flex; gap:10px;">
-                    <button class="btn" style="background:#ff6b6b; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer; pointer-events: auto;" @click="stopAutoplay">停止自动播放</button>
-                </div>
-            </div>
-=======
         <!-- Global auto-play lock dialog - 使用 Teleport + Transition，样式对齐更新日志弹窗 -->
         <Teleport to="body">
             <Transition name="fade">
@@ -303,7 +327,15 @@ export default {
                             <div style="font-size:13px; color:var(--text, #333); line-height:1.8;">
                                 控制面板当前处于自动播放锁定状态，为避免误操作，按钮和列表已临时禁用。若需恢复正常操作，请停止自动播放。
                             </div>
-                            <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+                            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:4px;">
+                                <button 
+                                    class="btn" 
+                                    style="min-width:120px; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+                                    @click="toggleAutoplayPause"
+                                >
+                                    <i :class="uiState.autoplayIsPausedRef ? 'fas fa-play' : 'fas fa-pause'" style="margin-right:6px;"></i>
+                                    {{ uiState.autoplayIsPausedRef ? '继续' : '暂停' }}
+                                </button>
                                 <button 
                                     class="btn" 
                                     style="min-width:140px; background:#ef4444; color:white; border:none; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer;"
@@ -316,7 +348,6 @@ export default {
                     </div>
                 </div>
             </Transition>
->>>>>>> feature/ui-update
         </Teleport>
     </div>
   `

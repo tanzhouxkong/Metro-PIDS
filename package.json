@@ -1,10 +1,6 @@
 {
   "name": "metro-pids",
-<<<<<<< HEAD
-  "version": "1.5.6",
-=======
-  "version": "1.5.7",
->>>>>>> feature/ui-update
+  "version": "1.5.8",
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -86,7 +82,10 @@
     "asarUnpack": [
       "preset-lines/**/*"
     ],
-    "electronLanguages": ["zh-CN", "en-US"],
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico",
@@ -129,12 +128,14 @@
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
     "mica-electron": "^1.5.16",
+    "photoviewer": "^3.11.1",
     "vue": "^3.5.26"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.0",
     "electron": "^32.0.0",
     "electron-builder": "^24.13.3",
-    "electron-vite": "^5.0.0"
+    "electron-vite": "^5.0.0",
+    "sass": "^1.97.3"
   }
 }

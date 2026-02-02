@@ -1,0 +1,17 @@
+{
+  "name": "metro-pids/easter-egg",
+  "title": "彩蛋",
+  "description": "切换线路时，若当前线路包含指定站点则弹出随机消息通知",
+  "version": "1.0.0",
+  "author": "Metro-PIDS",
+  "category": "metro-pids-trigger",
+  "apiVersion": 2,
+  "metroPids": {
+    "hooks": ["lineSwitch"],
+    "configSchema": {
+      "stations": { "type": "array", "items": { "type": "string" }, "description": "触发站点名称" },
+      "messages": { "type": "array", "items": { "type": "string" }, "description": "随机展示的消息" },
+      "enabled": { "type": "boolean", "description": "是否启用" }
+    }
+  }
+}

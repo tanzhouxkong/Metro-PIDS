@@ -79,6 +79,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return { ok: false, error: String(e) };
     }
   },
+  switchRuntimeLine: async (lineData) => {
+    try {
+      return await ipcRenderer.invoke('line-manager/switch-runtime-line', lineData);
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  },
+  onSwitchRuntimeLine: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (event, lineData) => callback(lineData);
+    ipcRenderer.on('switch-runtime-line', handler);
+    return () => ipcRenderer.removeListener('switch-runtime-line', handler);
+  },
   closeWindow: async () => {
     try {
       return await ipcRenderer.invoke('line-manager/close');
@@ -264,13 +277,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUpdateSource: async () => {
     try { return await ipcRenderer.invoke('update/get-source'); } catch (e) { return { ok: false, error: String(e) }; }
   },
-<<<<<<< HEAD
-=======
   // 获取静默/强制更新配置
   getUpdateSilent: async () => {
     try { return await ipcRenderer.invoke('update/get-silent'); } catch (e) { return { ok: false, error: String(e) }; }
   },
->>>>>>> feature/ui-update
   getAppVersion: async () => {
     try { return await ipcRenderer.invoke('app/get-version'); } catch (e) { return { ok: false, error: String(e) }; }
   },

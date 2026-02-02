@@ -1,13 +1,9 @@
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { Teleport } from 'vue'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useFileIO } from '../composables/useFileIO.js'
-<<<<<<< HEAD
-import StationEditor from './StationEditor.js'
-=======
 import StationEditor from './StationEditor.vue'
->>>>>>> feature/ui-update
 import dialogService from '../utils/dialogService.js'
 
 export default {
@@ -24,6 +20,7 @@ export default {
     const draggingIndex = ref(-1)
     const dragOverIndex = ref(-1)
     const listRef = ref(null)
+    const routeTextRef = ref(null)
     
     // 右键菜单状态
     const stationContextMenu = ref({ visible: false, x: 0, y: 0, station: null, index: -1 })
@@ -104,15 +101,11 @@ export default {
             editingIndex.value = index
             isNewStation.value = false
         }
-<<<<<<< HEAD
-        showEditor.value = true
-=======
         // 注意：从右键菜单触发时，click 事件可能在同一轮冒泡中立刻命中遮罩 @click.self 导致“打开又关闭”
         // 这里延迟到下一轮事件循环再打开，避免被当前 click 冒泡关闭
         setTimeout(() => {
             showEditor.value = true
         }, 0)
->>>>>>> feature/ui-update
     }
 
     const fileIO = useFileIO(state)
@@ -231,14 +224,10 @@ export default {
         editingIndex.value = targetIndex
         editingStation.value = { name: '', en: '', skip: false, door: 'left', dock: 'both', xfer: [], expressStop: false }
         isNewStation.value = true
-<<<<<<< HEAD
-        showEditor.value = true
-=======
         // 同 openEditor：避免与菜单 click 冒泡冲突导致立刻关闭
         setTimeout(() => {
             showEditor.value = true
         }, 0)
->>>>>>> feature/ui-update
     }
     
     // 复制站点
@@ -407,15 +396,29 @@ export default {
         const isFirst = currentIdx === firstIdx
         const isLast = currentIdx === lastIdx
         
-        // 统一的标签样式基础 - 使用更深的背景色和更强的阴影，确保白色文字清晰可见
-        const tagBaseStyle = 'display: inline-block; color: #fff; padding: 4px 12px; border-radius: 6px; font-weight: 500; font-size: 13px; line-height: 1.4; margin: 0 3px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); text-shadow: 0 1px 2px rgba(0,0,0,0.2);'
+        // 检测深色模式
+        const isDarkMode = document.documentElement.classList.contains('dark') || 
+                          document.documentElement.getAttribute('data-theme') === 'dark' ||
+                          window.matchMedia('(prefers-color-scheme: dark)').matches
+        
+        // 统一的标签样式基础 - 与应用整体风格一致
+        const tagBaseStyle = isDarkMode
+            ? 'display: inline-block; color: #fff; padding: 4px 12px; border-radius: 6px; font-weight: 500; font-size: 13px; line-height: 1.4; margin: 0 3px; box-shadow: 0 2px 6px rgba(0,0,0,0.25);'
+            : 'display: inline-block; color: #fff; padding: 4px 12px; border-radius: 6px; font-weight: 500; font-size: 13px; line-height: 1.4; margin: 0 3px; box-shadow: 0 2px 6px rgba(0,0,0,0.12);'
+        
+        // 箭头和省略号颜色 - 使用应用的 muted
+        const arrowColor = isDarkMode ? '#9aa6b2' : '#8e8e93'
+        const ellipsisColor = isDarkMode ? '#9aa6b2' : '#8e8e93'
+        
+        // 首站/末站 - 中性灰，与 var(--muted) 协调
+        const firstStationBg = isDarkMode ? '#5a6572' : '#8e8e93'
         
         // 如果当前站是首站，显示"始发"，否则显示首站名称
         if (isFirst) {
-            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">始发</span>`
+            result += `<span style="${tagBaseStyle} background: ${firstStationBg};">始发</span>`
         } else {
             // 显示首站名称（深灰色背景）
-            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">${firstSt.name}</span>`
+            result += `<span style="${tagBaseStyle} background: ${firstStationBg};">${firstSt.name}</span>`
         }
         
         // 判断是否需要显示省略号和上一站
@@ -426,16 +429,25 @@ export default {
         if (needPrevSection) {
             // 如果不是第二站，显示省略号
             if (!isSecond) {
-                result += '<span style="color: #aaa; margin: 0 6px; font-size: 12px;">···</span>'
+                result += `<span style="color: ${ellipsisColor}; margin: 0 6px; font-size: 12px;">···</span>`
             }
-            // 上一站（如果存在且不是首站，使用深橙色背景）
+            // 上一站 - 应用主色 #FF9F43（线路管理、确认弹窗）
+            const prevStationBg = isDarkMode ? '#e8923d' : '#FF9F43'
+            
+            // 上一站（如果存在且不是首站）
             if (prevSt && prevSt.name && prevIdx !== firstIdx) {
-                result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);">${prevSt.name}</span>`
+                result += `<span style="${tagBaseStyle} background: ${prevStationBg};">${prevSt.name}</span>`
             }
         }
         
-        // 箭头和当前站（深蓝色背景，白色文字，突出显示）
-        result += `<span style="color: #888; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span><span style="${tagBaseStyle} background: linear-gradient(135deg, #1E90FF 0%, #0056b3 100%); font-weight: 700; font-size: 14px; box-shadow: 0 3px 8px rgba(30, 144, 255, 0.4);">${currentSt.name}</span>`
+        // 当前站 - 应用主色 accent #00b894（品牌色）
+        const currentStationBg = isDarkMode ? '#22c1a3' : '#00b894'
+        const currentStationShadow = isDarkMode
+            ? '0 2px 8px rgba(34, 193, 163, 0.4)'
+            : '0 2px 8px rgba(0, 184, 148, 0.35)'
+        
+        // 箭头和当前站（深蓝色背景，白色文字，突出显示，id 用于滚动到可见）
+        result += `<span style="color: ${arrowColor}; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span><span id="admin-route-current-station" style="${tagBaseStyle} background: ${currentStationBg}; font-weight: 700; font-size: 14px; box-shadow: ${currentStationShadow};">${currentSt.name}</span>`
         
         // 判断是否需要显示下一站和省略号
         const needNextSection = !isLast
@@ -443,27 +455,42 @@ export default {
         const isSecondLast = (step > 0 && currentIdx === lastIdx - 1) || (step < 0 && currentIdx === lastIdx + 1)
         
         if (needNextSection) {
-            // 下一站（如果存在且不是末站，使用深绿色背景）
+            // 下一站 - 应用主色 #2ED573（成功、应用按钮）
+            const nextStationBg = isDarkMode ? '#27d16a' : '#2ED573'
+            
+            // 下一站（如果存在且不是末站）
             if (nextSt && nextSt.name && nextIdx !== lastIdx) {
-                result += `<span style="color: #888; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span><span style="${tagBaseStyle} background: linear-gradient(135deg, #27ae60 0%, #229954 100%);">${nextSt.name}</span>`
+                result += `<span style="color: ${arrowColor}; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span><span style="${tagBaseStyle} background: ${nextStationBg};">${nextSt.name}</span>`
             }
             // 如果不是倒数第二站，显示省略号
             if (!isSecondLast) {
-                result += '<span style="color: #aaa; margin: 0 6px; font-size: 12px;">···</span>'
+                result += `<span style="color: ${ellipsisColor}; margin: 0 6px; font-size: 12px;">···</span>`
             }
             // 显示末站名称（深灰色背景）
             // 如果是倒数第二站，下一站就是末站，需要显示箭头
             if (isSecondLast) {
-                result += `<span style="color: #888; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span>`
+                result += `<span style="color: ${arrowColor}; margin: 0 4px; font-size: 14px; font-weight: 400;">→</span>`
             }
-            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">${lastSt.name}</span>`
+            result += `<span style="${tagBaseStyle} background: ${firstStationBg};">${lastSt.name}</span>`
         } else {
             // 当前站是末站，显示"终到"，前面不需要箭头
-            result += `<span style="${tagBaseStyle} background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">终到</span>`
+            result += `<span style="${tagBaseStyle} background: ${firstStationBg};">终到</span>`
         }
         
         return result
     })
+
+    // 当前站变化时滚动顶栏使当前站可见（第三站及以后跟随显示）
+    watch(() => state.rt?.idx, () => {
+        nextTick(() => {
+            requestAnimationFrame(() => {
+                const el = document.getElementById('admin-route-current-station')
+                if (el && routeTextRef.value) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+                }
+            })
+        })
+    }, { immediate: true })
 
     const routeInfo = computed(() => {
         if (!state.appData || !state.appData.stations) return ''
@@ -566,7 +593,7 @@ export default {
             next: handleNext, move, setArr, setDep, jumpTo,
             showEditor, editingStation, editingIndex, isNewStation,
             openEditor, saveStation, deleteStation,
-            currentStation, routeInfo, statusDesc, serviceModeLabel, stationRouteInfo,
+            currentStation, routeInfo, statusDesc, serviceModeLabel, stationRouteInfo, routeTextRef,
             onDragStart, onDragOver, onDrop, onDragEnter, onDragEnd, onDragLeave, draggingIndex, dragOverIndex, listRef,
             stationContextMenu, clipboard,
             showStationContextMenu, closeStationContextMenu,
@@ -577,27 +604,19 @@ export default {
   template: `
     <div id="admin-app-vue" style="flex:1; display:flex; flex-direction:column; height:100%; overflow:hidden; padding:20px; gap:20px; background:var(--bg);">
         
-        <!-- Header Info Card -->
-        <div class="card" style="padding:18px 24px; display:flex; flex-direction:column; gap:12px; border-left: 4px solid #1E90FF; border-radius:10px; background: linear-gradient(135deg, rgba(240, 242, 245, 0.98) 0%, rgba(245, 247, 250, 0.95) 100%); box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-size:20px; font-weight:600; color:var(--text); line-height:1.5;" v-html="stationRouteInfo"></div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                <div class="badge" :style="{ background: (state.rt.state === 0 ? '#27c93f' : '#ff5f56'), padding: '6px 16px', borderRadius: '16px', fontSize: '14px', color: '#fff', fontWeight: '700', boxShadow: '0 6px 18px rgba(0,0,0,0.12)' }">
-                    {{ state.rt.state === 0 ? '进站' : '出站' }}
-                </div>
-                <div style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; background:rgba(255, 255, 255, 0.1); border:1px solid var(--divider); border-radius:8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-                    <span style="font-size:11px; color:var(--muted); font-weight:500;">运营模式</span>
-                    <span :style="{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        color: '#fff',
-                        fontWeight: 'bold',
-                        background: serviceModeLabel === '大站车' ? '#ffa502' : (serviceModeLabel === '直达' ? '#ff4757' : 'var(--btn-blue-bg)'),
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                    }">
-                        {{ serviceModeLabel }}
-                    </span>
+        <!-- Header Info Card（与 PIDS 控制台卡片样式一致） -->
+        <div class="card admin-header-card">
+            <div class="admin-header-inner">
+                <div ref="routeTextRef" class="admin-route-text" v-html="stationRouteInfo"></div>
+                <div class="admin-header-right">
+                    <div class="badge admin-badge-arrdep" :class="state.rt.state === 0 ? 'arr' : 'dep'">
+                        {{ state.rt.state === 0 ? '进站' : '出站' }}
+                    </div>
+                    <div class="admin-mode-group">
+                        <span class="admin-mode-label">运营模式</span>
+                        <span class="admin-mode-value" :class="{ express: serviceModeLabel === '大站车', direct: serviceModeLabel === '直达' }">
+                            {{ serviceModeLabel }}
+                        </span>
                     </div>
                 </div>
             </div>
@@ -612,17 +631,17 @@ export default {
             <button class="btn b-red" style="height:48px; font-size:14px;" @click="next()"><i class="fas fa-step-forward"></i> 下一步</button>
         </div>
 
-        <!-- Station List Header -->
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="font-weight:bold; color:var(--btn-red-bg);">站点管理</div>
-            <div style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:8px;">
-                <i class="fas fa-info-circle" style="font-size:11px;"></i>
+        <!-- Station List Header（与 PIDS 控制台区块标题一致） -->
+        <div class="admin-section-header">
+            <div class="admin-section-title">站点管理</div>
+            <div class="admin-section-hint">
+                <i class="fas fa-info-circle"></i>
                 <span>拖拽站点条可改变顺序，右键站点可进行编辑、删除、复制、剪切、粘贴操作，右键空白处可新建站点</span>
             </div>
         </div>
 
-        <!-- Station List -->
-        <div class="card" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding:0; border-left: 6px solid #FF9F43; border-radius:12px;">
+        <!-- Station List（与顶栏卡片同一套卡片样式） -->
+        <div class="card admin-station-card">
             <div class="st-list" ref="listRef" style="flex:1; overflow-y:auto; padding:0;" @dragover="onDragOver($event)" @contextmenu.prevent="showStationContextMenu($event, null, -1)">
                 <div v-if="state.appData && state.appData.stations" 
                      v-for="(st, i) in state.appData.stations" 
@@ -631,7 +650,7 @@ export default {
                      :class="{ active: i === state.rt.idx }"
                      :style="{
                         padding: '14px 16px',
-                        borderBottom: (i < state.appData.stations.length - 1) ? '1px solid rgba(0, 0, 0, 0.08)' : 'none',
+                        borderBottom: (i < state.appData.stations.length - 1) ? '1px solid var(--divider)' : 'none',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -639,7 +658,7 @@ export default {
                         transition: 'background 0.2s, border-color 0.2s',
                         opacity: i === draggingIndex ? 0.5 : 1,
                         borderTop: (i === dragOverIndex && i < draggingIndex) ? '2px solid var(--accent)' : 'none',
-                        borderBottom: (i === dragOverIndex && i > draggingIndex) ? '2px solid var(--accent)' : ((i < state.appData.stations.length - 1) ? '1px solid rgba(0, 0, 0, 0.08)' : 'none'),
+                        borderBottom: (i === dragOverIndex && i > draggingIndex) ? '2px solid var(--accent)' : ((i < state.appData.stations.length - 1) ? '1px solid var(--divider)' : 'none'),
                         background: (i === state.rt.idx) ? 'rgba(22, 119, 255, 0.08)' : ((i === dragOverIndex) ? 'rgba(255, 255, 255, 0.05)' : 'transparent'),
                         borderLeft: (i === state.rt.idx) ? '4px solid var(--btn-blue-bg)' : '4px solid transparent'
                      }"
@@ -698,6 +717,7 @@ export default {
         <Teleport to="body">
             <div 
                 v-if="stationContextMenu.visible"
+                class="station-context-menu"
                 data-station-context-menu
                 @click.stop
                 @contextmenu.prevent
@@ -705,86 +725,38 @@ export default {
                     position: 'fixed',
                     left: stationContextMenu.x + 'px',
                     top: stationContextMenu.y + 'px',
-                    background: 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(12px)',
-                    WebkitBackdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(224, 224, 224, 0.8)',
-                    borderRadius: '8px',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-                    zIndex: 9999,
-                    minWidth: '140px',
-                    padding: '6px 0'
+                    zIndex: 9999
                 }"
             >
-                <div 
-                    @click="newStationFromMenu()"
-                    style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                    @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                    @mouseout="$event.target.style.background='transparent'"
-                >
-                    <i class="fas fa-plus" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                <div class="station-context-menu-item" @click="newStationFromMenu()">
+                    <i class="fas fa-plus"></i>
                     新建
                 </div>
-                <div v-if="stationContextMenu.index >= 0" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
-                <div 
-                    v-if="stationContextMenu.index >= 0"
-                    @click="editStationFromMenu()"
-                    style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                    @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                    @mouseout="$event.target.style.background='transparent'"
-                >
-                    <i class="fas fa-edit" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-divider"></div>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item" @click="editStationFromMenu()">
+                    <i class="fas fa-edit"></i>
                     编辑
                 </div>
-                <div v-if="stationContextMenu.index >= 0" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
-                <div 
-                    v-if="stationContextMenu.index >= 0"
-                    @click="copyStation()"
-                    style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                    @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                    @mouseout="$event.target.style.background='transparent'"
-                >
-                    <i class="fas fa-copy" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-divider"></div>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item" @click="copyStation()">
+                    <i class="fas fa-copy"></i>
                     复制
                 </div>
-                <div 
-                    v-if="stationContextMenu.index >= 0"
-                    @click="cutStation()"
-                    style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                    @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                    @mouseout="$event.target.style.background='transparent'"
-                >
-                    <i class="fas fa-cut" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item" @click="cutStation()">
+                    <i class="fas fa-cut"></i>
                     剪切
                 </div>
                 <div 
+                    class="station-context-menu-item"
+                    :class="{ disabled: !clipboard.station }"
                     @click="pasteStation()"
-                    :style="{
-                        padding: '10px 16px',
-                        cursor: clipboard.station ? 'pointer' : 'not-allowed',
-                        fontSize: '13px',
-                        color: clipboard.station ? 'var(--text, #333)' : 'var(--muted, #999)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        transition: 'background 0.2s',
-                        opacity: clipboard.station ? 1 : 0.5
-                    }"
-                    @mouseover="clipboard.station && ($event.target.style.background='rgba(0,0,0,0.05)')"
-                    @mouseout="clipboard.station && ($event.target.style.background='transparent')"
                 >
-                    <i class="fas fa-paste" :style="{fontSize: '12px', color: clipboard.station ? 'var(--muted, #666)' : 'var(--muted, #999)', width: '16px'}"></i>
+                    <i class="fas fa-paste"></i>
                     粘贴
                 </div>
-                <div v-if="stationContextMenu.index >= 0" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
-                <div 
-                    v-if="stationContextMenu.index >= 0"
-                    @click="deleteStationFromMenu()"
-                    style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                    @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"
-                    @mouseout="$event.target.style.background='transparent'"
-                >
-                    <i class="fas fa-trash" style="font-size: 12px; color: var(--btn-red-bg, #ff4444); width: 16px;"></i>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-divider"></div>
+                <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item danger" @click="deleteStationFromMenu()">
+                    <i class="fas fa-trash"></i>
                     删除
                 </div>
             </div>

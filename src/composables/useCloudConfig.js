@@ -233,6 +233,14 @@ export function useCloudConfig(apiBase, token = null) {
         return await request('PUT', '/easter-eggs', config);
     }
 
+    // ==================== 新年灯笼配置 ====================
+    async function getNewYearLantern() {
+        return await request('GET', '/new-year-lantern');
+    }
+    async function updateNewYearLantern(config) {
+        return await request('PUT', '/new-year-lantern', config);
+    }
+
     // ==================== 节日配置 ====================
     
     /**
@@ -388,6 +396,10 @@ export function useCloudConfig(apiBase, token = null) {
         // 彩蛋配置
         getEasterEggs,
         updateEasterEggs,
+        
+        // 新年灯笼配置
+        getNewYearLantern,
+        updateNewYearLantern,
         
         // 节日配置
         getHolidays,

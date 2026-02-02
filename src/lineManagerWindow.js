@@ -1,9 +1,5 @@
 import { createApp } from 'vue'
-<<<<<<< HEAD
-import FolderLineManagerWindow from './components/FolderLineManagerWindow.js'
-=======
 import LineManagerWindow from './components/line-manager/LineManagerWindow.vue'
->>>>>>> feature/ui-update
 import LineManagerTopbar from './components/LineManagerTopbar.js'
 import LineManagerDialog from './components/LineManagerDialog.js'
 
@@ -54,11 +50,7 @@ function applyThemeMode() {
 // 初始化时应用主题
 applyThemeMode();
 
-<<<<<<< HEAD
-const app = createApp(FolderLineManagerWindow)
-=======
 const app = createApp(LineManagerWindow)
->>>>>>> feature/ui-update
 // 全局注册组件以确保可用
 app.component('LineManagerTopbar', LineManagerTopbar)
 app.component('LineManagerDialog', LineManagerDialog)
