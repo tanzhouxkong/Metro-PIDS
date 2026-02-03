@@ -506,6 +506,15 @@
                     <i class="fas fa-sync-alt"></i> 测试显示端同步
                 </button>
             </div>
+            <div class="test-group">
+                <h3>服务器显示端开关（云控）</h3>
+                <p class="help-text">检测云控接口返回的显示端开关：各显示器在服务器侧是开启还是关闭。</p>
+                <button class="btn btn-primary" onclick="checkServerDisplayFlags()">
+                    <i class="fas fa-cloud-download-alt"></i> 检测服务器显示端开关
+                </button>
+                <div id="display-flags-status" class="status-badge status-inactive status-inline" style="margin-left:8px;">未检测</div>
+                <div id="display-flags-result" class="code-block" style="margin-top:10px; min-height:60px; font-size:13px;">点击按钮后显示结果</div>
+            </div>
         </div>
         
         <div class="section">
@@ -1642,6 +1651,50 @@
             } catch (e) {
                 console.error('[dev_window] API调用失败:', e);
                 return { ok: false, error: e.message };
+            }
+        }
+        
+        async function checkServerDisplayFlags() {
+            const statusEl = document.getElementById('display-flags-status');
+            const resultEl = document.getElementById('display-flags-result');
+            try {
+                statusEl.textContent = '检测中...';
+                statusEl.className = 'status-badge status-active status-inline';
+                resultEl.textContent = '正在请求 /display-flags ...';
+                
+                const result = await callCloudflareAPI('GET', '/display-flags');
+                
+                if (!result.ok) {
+                    throw new Error(result.error || '请求失败');
+                }
+                
+                const cfg = result.data?.config || result.data?.data?.config || result.data || {};
+                const showSystem = cfg.showSystemDisplayOption !== false;
+                const displays = cfg.displays || {};
+                
+                let lines = [];
+                lines.push('【全局】显示“系统显示器”选项: ' + (showSystem ? '开启' : '关闭'));
+                lines.push('');
+                lines.push('【各显示器开关】（云控未配置的显示器默认视为开启）');
+                lines.push('---');
+                
+                const ids = Object.keys(displays).length > 0 ? Object.keys(displays).sort() : ['display-1', 'display-2'];
+                for (const id of ids) {
+                    const d = displays[id];
+                    const enabled = d && typeof d.enabled === 'boolean' ? d.enabled : true;
+                    const label = enabled ? '开启' : '关闭';
+                    lines.push(`${id}: ${label}`);
+                }
+                
+                resultEl.textContent = lines.join('\n');
+                statusEl.textContent = '已检测';
+                statusEl.className = 'status-badge status-success status-inline';
+                addLog('服务器显示端开关检测完成', 'success');
+            } catch (e) {
+                resultEl.textContent = '错误: ' + e.message;
+                statusEl.textContent = '检测失败';
+                statusEl.className = 'status-badge status-error status-inline';
+                addLog('检测服务器显示端开关失败: ' + e.message, 'error');
             }
         }
         

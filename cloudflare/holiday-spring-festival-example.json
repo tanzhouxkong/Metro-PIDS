@@ -1,0 +1,12 @@
+{
+  "spring-festival-2025": {
+    "name": "春节",
+    "tag": "法定节假日",
+    "typeDes": "春节",
+    "label": "春节假期",
+    "content": "恭贺新禧，阖家团圆。\n\n春节假期期间请注意运营安排，祝您出行愉快！",
+    "enabled": true,
+    "dateStart": "20250128",
+    "dateEnd": "20250204"
+  }
+}

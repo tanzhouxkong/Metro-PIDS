@@ -126,6 +126,32 @@
     .section-content {
       width: 100%;
     }
+
+    .inline-input {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .tag-list {
+      margin-top: 6px;
+    }
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      margin: 2px;
+      border-radius: 999px;
+      background: #e3f2fd;
+      font-size: 12px;
+    }
+    .tag-chip-del {
+      border: none;
+      background: transparent;
+      color: #1976d2;
+      cursor: pointer;
+      margin-left: 4px;
+      padding: 0 2px;
+    }
     .card {
       background: rgba(255, 255, 255, 0.95);
       -webkit-backdrop-filter: blur(10px);
@@ -281,6 +307,19 @@
       font-family: 'Consolas', 'Menlo', monospace;
       resize: vertical;
     }
+    .field-row-inline {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .field-row-inline input {
+      flex: 1;
+      min-width: 0;
+    }
+    .field-row-inline .btn {
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
     .btn-group {
       display: flex;
       gap: 8px;
@@ -334,6 +373,66 @@
       opacity: 0.6;
       cursor: not-allowed;
       transform: none !important;
+    }
+    /* 与应用程序一致的开关样式（se-toggle） */
+    .field-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .field-toggle-row .field-toggle-label {
+      display: block;
+      font-size: 13px;
+      color: #666;
+      font-weight: 500;
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+    .field-toggle-row .field-toggle-desc {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+    .se-toggle-wrap {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .se-toggle-input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+    .se-toggle-track {
+      position: absolute;
+      inset: 0;
+      background-color: #ccc;
+      border-radius: 24px;
+      transition: background-color 0.3s, box-shadow 0.2s;
+    }
+    .se-toggle-input:checked ~ .se-toggle-track {
+      background-color: var(--admin-accent, #667eea);
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+    }
+    .se-toggle-thumb {
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    .se-toggle-input:checked ~ .se-toggle-thumb {
+      transform: translateX(20px);
     }
     .status {
       display: inline-flex;
@@ -453,6 +552,10 @@
     .badge-info {
       background: #d1ecf1;
       color: #0c5460;
+    }
+    .badge-secondary {
+      background: #e2e3e5;
+      color: #383d41;
     }
     pre {
       background: #1e1e1e;
@@ -787,6 +890,14 @@
               <i class="fas fa-egg"></i>
               <span>彩蛋配置</span>
             </button>
+            <button class="sidebar-item" data-section="startup">
+              <i class="fas fa-bullhorn"></i>
+              <span>启动公告</span>
+            </button>
+            <button class="sidebar-item" data-section="display-flags">
+              <i class="fas fa-desktop"></i>
+              <span>显示端功能</span>
+            </button>
             <button class="sidebar-item" data-section="holidays">
               <i class="fas fa-calendar-alt"></i>
               <span>节日配置</span>
@@ -957,50 +1068,555 @@
       </div>
     </div>
 
-    <!-- 彩蛋配置 -->
+    <!-- 彩蛋配置（与节日配置同构：列表 + 编辑） -->
     <div class="section-content" id="section-easter-eggs" style="display:none;">
+      <!-- 彩蛋列表 -->
       <div class="card">
-        <h2><i class="fas fa-egg"></i> 彩蛋配置</h2>
+        <h2><i class="fas fa-egg"></i> 彩蛋列表</h2>
         <div class="btn-group">
-          <button class="btn btn-secondary" id="btn-get-easter-eggs">
-            <i class="fas fa-download"></i> 下载
+          <button class="btn btn-primary" id="btn-list-easter-eggs">
+            <i class="fas fa-sync"></i> 刷新列表
           </button>
-          <button class="btn btn-primary" id="btn-put-easter-eggs">
-            <i class="fas fa-upload"></i> 上传
+          <button class="btn btn-info" id="btn-add-easter-egg">
+            <i class="fas fa-plus"></i> 添加一条
           </button>
+        </div>
+        <div class="table-container">
+          <table id="easter-eggs-table">
+            <thead>
+              <tr>
+                <th style="width:50px;">序号</th>
+                <th style="width:100px;">ID</th>
+                <th>名称</th>
+                <th style="width:70px;">启用</th>
+                <th style="width:80px;">站点数</th>
+                <th style="width:80px;">消息数</th>
+                <th style="width:140px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="easter-eggs-list-tbody">
+              <tr>
+                <td colspan="7" class="empty-state">
+                  <i class="fas fa-inbox"></i>
+                  <div>点击「刷新列表」加载数据</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><i class="fas fa-edit"></i> 彩蛋配置编辑</h2>
+        <div class="field">
+          <div class="field-toggle-row">
+            <div>
+              <span class="field-toggle-label">启用彩蛋</span>
+              <div class="field-toggle-desc">总开关关闭后所有彩蛋不弹。每条彩蛋可配置多个触发站点和多条消息，并可单独开关；切换线路时若包含某条的站点之一，将随机弹出一条消息。公告在「启动公告」中配置。</div>
+            </div>
+            <label class="se-toggle-wrap">
+              <input type="checkbox" id="easter-eggs-enabled" class="se-toggle-input" />
+              <span class="se-toggle-track"></span>
+              <span class="se-toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
+          <strong>💡 编辑 JSON：</strong>格式为 <code>{ "enabled": true, "items": [ { "id": "egg-1", "name": "名称", "enabled": true, "stations": ["站点1", "站点2"], "messages": ["消息1", "消息2"] } ] }</code>，每条可设 <code>enabled</code> 单独开关。<br>
+          <strong>导入 JSON 文件：</strong>一个文件对应一条彩蛋（可含 id、name、stations、messages），会追加到列表。
         </div>
         <div class="field">
-          <label for="easter-eggs-json">彩蛋配置 JSON</label>
-          <textarea id="easter-eggs-json" placeholder='{"stations": [...], "messages": [...], "enabled": true}'></textarea>
+          <label for="easter-eggs-file-input">选择 JSON 文件（一个文件 = 一条彩蛋）</label>
+          <input type="file" id="easter-eggs-file-input" accept=".json" multiple />
+        </div>
+        <div class="field">
+          <label for="easter-eggs-json">彩蛋配置 JSON（与列表同步）</label>
+          <textarea id="easter-eggs-json" placeholder='{"enabled": true, "items": [{"id": "egg-1", "name": "白鹭文案", "enabled": true, "stations": ["经十路", "千佛山"], "messages": ["人生路漫漫 白鹭常相伴。"]}]}' style="min-height:220px; font-family:Consolas, monospace;"></textarea>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-secondary" id="easter-eggs-sync-from-json">
+            <i class="fas fa-sync-alt"></i> 从 JSON 同步到列表
+          </button>
+          <button class="btn btn-secondary" id="btn-get-easter-eggs">
+            <i class="fas fa-download"></i> 从服务器加载
+          </button>
+          <button class="btn btn-primary" id="btn-put-easter-eggs">
+            <i class="fas fa-save"></i> 保存到服务器
+          </button>
         </div>
         <div id="easter-eggs-status"></div>
+      </div>
+
+      <!-- 彩蛋编辑模态框（一条 = id + name + stations[] + messages[]） -->
+      <div class="modal" id="easter-egg-edit-modal">
+        <div class="modal-content" style="max-width:560px;">
+          <div class="modal-header">
+            <h3 id="easter-egg-edit-modal-title">编辑彩蛋</h3>
+            <button class="close-btn" id="easter-egg-edit-modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label for="easter-egg-edit-id">ID（唯一标识）</label>
+              <input type="text" id="easter-egg-edit-id" placeholder="例如：egg-1" />
+            </div>
+            <div class="field">
+              <label for="easter-egg-edit-name">名称</label>
+              <input type="text" id="easter-egg-edit-name" placeholder="例如：白鹭文案" />
+            </div>
+            <div class="field">
+              <div class="field-toggle-row">
+                <div>
+                  <span class="field-toggle-label">启用本条彩蛋</span>
+                  <div class="field-toggle-desc">关闭后该条不参与站点匹配，不会弹窗。</div>
+                </div>
+                <label class="se-toggle-wrap">
+                  <input type="checkbox" id="easter-egg-edit-enabled" class="se-toggle-input" />
+                  <span class="se-toggle-track"></span>
+                  <span class="se-toggle-thumb"></span>
+                </label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="easter-egg-edit-stations">触发站点（每行一个）</label>
+              <textarea id="easter-egg-edit-stations" rows="4" placeholder="经十路&#10;经十东路&#10;千佛山" style="font-family:Consolas, monospace;"></textarea>
+            </div>
+            <div class="field">
+              <label for="easter-egg-edit-messages">消息内容（每行一条）</label>
+              <textarea id="easter-egg-edit-messages" rows="4" placeholder="人生路漫漫 白鹭常相伴。&#10;今人不见古时月 今月曾经照古人。" style="font-family:Consolas, monospace;"></textarea>
+            </div>
+            <div class="field">
+              <label for="easter-egg-edit-date">选择日期（格式 yyyyMMdd 用于接口）</label>
+              <input type="date" id="easter-egg-edit-date" style="max-width:180px;" />
+              <div style="font-size:12px; color:#666; margin-top:4px;">选填，保存时会转为 yyyyMMdd 存储</div>
+            </div>
+            <div class="btn-group" style="margin-top:12px;">
+              <button class="btn btn-primary" id="easter-egg-edit-save">
+                <i class="fas fa-save"></i> 保存
+              </button>
+              <button class="btn btn-secondary" id="easter-egg-edit-cancel">取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 启动公告配置 -->
+    <div class="section-content" id="section-startup" style="display:none;">
+      <div class="card">
+        <h2><i class="fas fa-bullhorn"></i> 启动公告</h2>
+        <div class="field">
+          <div class="field-toggle-row">
+            <div>
+              <span class="field-toggle-label">启用启动公告</span>
+              <div class="field-toggle-desc">总开关关闭后所有公告不弹。每条公告可单独开关；客户端启动时按顺序取第一条启用的公告弹出，可配置为每次运行或每天一次。</div>
+            </div>
+            <label class="se-toggle-wrap">
+              <input type="checkbox" id="startup-enabled" class="se-toggle-input" />
+              <span class="se-toggle-track"></span>
+              <span class="se-toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+        <h3 style="margin-top: 16px; font-size: 16px; color: #333;">公告列表</h3>
+        <div class="table-container">
+          <table class="simple-table">
+            <thead>
+              <tr>
+                <th style="width:50px;">序号</th>
+                <th>标题</th>
+                <th style="width:70px;">启用</th>
+                <th style="width:120px;">模式</th>
+                <th style="width:140px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="startup-notices-tbody"></tbody>
+          </table>
+        </div>
+        <div class="btn-group" style="margin-top:8px;">
+          <button type="button" class="btn btn-secondary" id="startup-add-notice">
+            <i class="fas fa-plus"></i> 添加公告
+          </button>
+        </div>
+        <div class="btn-group" style="margin-top:16px;">
+          <button class="btn btn-secondary" id="btn-get-startup">
+            <i class="fas fa-download"></i> 从服务器加载
+          </button>
+          <button class="btn btn-primary" id="btn-save-startup">
+            <i class="fas fa-save"></i> 保存到服务器
+          </button>
+        </div>
+        <div id="startup-status"></div>
+      </div>
+      <!-- 启动公告编辑弹窗 -->
+      <div class="modal" id="startup-notice-modal">
+        <div class="modal-content" style="max-width:560px;">
+          <div class="modal-header">
+            <h3 id="startup-notice-modal-title">编辑公告</h3>
+            <button type="button" class="close-btn" id="startup-notice-modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label>公告编号（ID）</label>
+              <div class="field-row-inline">
+                <input type="text" id="startup-modal-id" placeholder="留空则自动生成" />
+                <button type="button" class="btn btn-secondary" id="startup-modal-generate-id"><i class="fas fa-fingerprint"></i> 生成</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="startup-modal-mode">弹出模式</label>
+              <select id="startup-modal-mode">
+                <option value="everyRun">每次运行都弹出</option>
+                <option value="oncePerDay">每天只弹一次</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="field-toggle-row">
+                <div>
+                  <span class="field-toggle-label">启用本条公告</span>
+                  <div class="field-toggle-desc">关闭后该条不参与弹出，客户端会跳过。</div>
+                </div>
+                <label class="se-toggle-wrap">
+                  <input type="checkbox" id="startup-modal-enabled" class="se-toggle-input" />
+                  <span class="se-toggle-track"></span>
+                  <span class="se-toggle-thumb"></span>
+                </label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="startup-modal-title">公告标题</label>
+              <input type="text" id="startup-modal-title" placeholder="例如：系统维护公告" />
+            </div>
+            <div class="field">
+              <label for="startup-modal-message">公告内容</label>
+              <textarea id="startup-modal-message" rows="4" placeholder="公告正文"></textarea>
+            </div>
+            <div class="grid">
+              <div class="field">
+                <label for="startup-modal-start-time">开始时间</label>
+                <input type="datetime-local" id="startup-modal-start-time" />
+              </div>
+              <div class="field">
+                <label for="startup-modal-end-time">结束时间</label>
+                <input type="datetime-local" id="startup-modal-end-time" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="startup-modal-allowed-countries">允许的国家代码（每行一个或逗号分隔）</label>
+              <textarea id="startup-modal-allowed-countries" rows="2" placeholder="CN, US"></textarea>
+            </div>
+            <div class="field">
+              <label for="startup-modal-blocked-countries">禁止的国家代码</label>
+              <textarea id="startup-modal-blocked-countries" rows="2"></textarea>
+            </div>
+            <div class="field">
+              <label for="startup-modal-allowed-cities">允许的城市</label>
+              <textarea id="startup-modal-allowed-cities" rows="2" placeholder="北京, 上海"></textarea>
+            </div>
+            <div class="field">
+              <label for="startup-modal-blocked-cities">禁止的城市</label>
+              <textarea id="startup-modal-blocked-cities" rows="2"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid #eee;">
+            <button type="button" class="btn btn-secondary" id="startup-notice-modal-cancel">取消</button>
+            <button type="button" class="btn btn-primary" id="startup-notice-modal-save">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 显示端功能开关 -->
+    <div class="section-content" id="section-display-flags" style="display:none;">
+      <div class="card">
+        <h2><i class="fas fa-desktop"></i> 显示端功能开关</h2>
+        <div class="field">
+          <div class="field-toggle-row">
+            <div>
+              <span class="field-toggle-label">在客户端 UI 中显示「系统显示器」选项</span>
+              <div class="field-toggle-desc">关闭后，主程序中的系统显示器卡片入口将被隐藏，但本地保护机制仍然生效。</div>
+            </div>
+            <label class="se-toggle-wrap">
+              <input type="checkbox" id="display-show-system" class="se-toggle-input" />
+              <span class="se-toggle-track"></span>
+              <span class="se-toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
+
+        <h3 style="margin-top: 0; font-size: 16px; color: #333;">显示器列表</h3>
+        <table class="simple-table">
+          <thead>
+            <tr>
+              <th style="width: 140px;">显示器</th>
+              <th style="width: 140px;">启用状态</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>显示器 1</td>
+              <td>
+                <select id="display-1-enabled">
+                  <option value="on">启用</option>
+                  <option value="off">禁用</option>
+                </select>
+              </td>
+              <td>主显示端（display-1）</td>
+            </tr>
+            <tr>
+              <td>显示器 2</td>
+              <td>
+                <select id="display-2-enabled">
+                  <option value="on">启用</option>
+                  <option value="off">禁用</option>
+                </select>
+              </td>
+              <td>济南样式显示端（display-2）</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
+
+        <h3 style="margin-top: 0; font-size: 16px; color: #333;">时间范围控制（可选）</h3>
+        <div class="grid">
+          <div class="field">
+            <label for="display-start-time">开始时间（ISO 8601 格式，如：2025-01-01T00:00:00Z）</label>
+            <input type="datetime-local" id="display-start-time" />
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+              留空表示不限制开始时间
+            </div>
+          </div>
+          <div class="field">
+            <label for="display-end-time">结束时间（ISO 8601 格式）</label>
+            <input type="datetime-local" id="display-end-time" />
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+              留空表示不限制结束时间
+            </div>
+          </div>
+        </div>
+
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
+
+        <h3 style="margin-top: 0; font-size: 16px; color: #333;">地理位置控制（可选）</h3>
+        <div class="grid">
+          <div class="field">
+            <label>允许的国家代码（ISO 3166-1 alpha-2）</label>
+            <div class="inline-input">
+              <input id="display-allowed-country-input" list="country-code-options" placeholder="例如：CN" />
+              <button type="button" class="btn btn-secondary" id="btn-add-display-allowed-country">添加</button>
+            </div>
+            <datalist id="country-code-options">
+              <option value="CN"></option>
+              <option value="US"></option>
+              <option value="JP"></option>
+              <option value="GB"></option>
+              <option value="DE"></option>
+            </datalist>
+            <div id="display-allowed-countries-list" class="tag-list"></div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+              留空表示不限制国家
+            </div>
+          </div>
+          <div class="field">
+            <label>禁止的国家代码</label>
+            <div class="inline-input">
+              <input id="display-blocked-country-input" list="country-code-options" placeholder="例如：XX" />
+              <button type="button" class="btn btn-secondary" id="btn-add-display-blocked-country">添加</button>
+            </div>
+            <div id="display-blocked-countries-list" class="tag-list"></div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+              留空表示不禁止任何国家
+            </div>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="field">
+            <label>允许的城市名称</label>
+            <div class="inline-input">
+              <input id="display-allowed-city-input" placeholder="例如：北京" />
+              <button type="button" class="btn btn-secondary" id="btn-add-display-allowed-city">添加</button>
+            </div>
+            <div id="display-allowed-cities-list" class="tag-list"></div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+              留空表示不限制城市
+            </div>
+          </div>
+          <div class="field">
+            <label>禁止的城市名称</label>
+            <div class="inline-input">
+              <input id="display-blocked-city-input" placeholder="例如：城市1" />
+              <button type="button" class="btn btn-secondary" id="btn-add-display-blocked-city">添加</button>
+            </div>
+            <div id="display-blocked-cities-list" class="tag-list"></div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+              留空表示不禁止任何城市
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="btn-get-display-flags">
+            <i class="fas fa-download"></i> 从服务器加载
+          </button>
+          <button class="btn btn-primary" id="btn-save-display-flags">
+            <i class="fas fa-save"></i> 保存到服务器
+          </button>
+        </div>
+        <div id="display-flags-status"></div>
       </div>
     </div>
 
     <!-- 节日配置 -->
     <div class="section-content" id="section-holidays" style="display:none;">
+      <!-- 节日列表（与运控线路列表同构） -->
       <div class="card">
-        <h2><i class="fas fa-calendar-alt"></i> 节日配置</h2>
+        <h2><i class="fas fa-calendar-alt"></i> 节日列表</h2>
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btn-list-holidays">
+            <i class="fas fa-sync"></i> 刷新列表
+          </button>
+          <button class="btn btn-info" id="btn-add-holiday">
+            <i class="fas fa-plus"></i> 添加节日
+          </button>
+        </div>
+        <div class="table-container">
+          <table id="holidays-table">
+            <thead>
+              <tr>
+                <th style="width:100px;">ID</th>
+                <th>名称</th>
+                <th style="width:100px;">类型</th>
+                <th style="width:70px;">启用</th>
+                <th style="width:120px;">开始～结束（yyyyMMdd）</th>
+                <th style="width:140px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="holidays-tbody">
+              <tr>
+                <td colspan="6" class="empty-state">
+                  <i class="fas fa-inbox"></i>
+                  <div>点击「刷新列表」加载数据</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><i class="fas fa-edit"></i> 节日配置编辑</h2>
         <div class="card date-info-card">
           <div class="date-info-label">当前日期（用于确认节日配置）</div>
           <div class="date-info-value" id="current-date-display">加载中...</div>
         </div>
-        <div class="btn-group">
-          <button class="btn btn-secondary" id="btn-get-holidays">
-            <i class="fas fa-download"></i> 下载
-          </button>
-          <button class="btn btn-primary" id="btn-put-holidays">
-            <i class="fas fa-upload"></i> 上传
-          </button>
-          <button class="btn btn-secondary" id="btn-get-active-holidays">
-            <i class="fas fa-check-circle"></i> 查看激活节日
-          </button>
+        <h3 style="margin-top: 16px; font-size: 16px; color: #333;">查询指定日期节假日（mxnzp 接口）</h3>
+        <div style="background:#e8f5e9; padding:12px; border-radius:8px; margin-bottom:12px; font-size:13px; line-height:1.6;">
+          通过 <strong>mxnzp.com</strong> 接口获取指定日期的节假日及万年历信息（需在 Worker 配置 MXNZP_APP_ID、MXNZP_APP_SECRET）。
+        </div>
+        <div class="field">
+          <label for="holiday-query-date">选择日期（格式 yyyyMMdd 用于接口）</label>
+          <div class="field-row-inline">
+            <input type="date" id="holiday-query-date" style="max-width:180px;" />
+            <button type="button" class="btn btn-secondary" id="btn-query-holiday-single">
+              <i class="fas fa-search"></i> 查询节假日
+            </button>
+          </div>
+        </div>
+        <div class="field" id="holiday-query-result-wrap" style="display:none;">
+          <label for="holiday-query-result">查询结果</label>
+          <textarea id="holiday-query-result" readonly placeholder="查询后将显示 JSON 结果" style="min-height:220px; font-family:Consolas, monospace; resize:vertical;"></textarea>
+        </div>
+        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
+        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
+          <strong>💡 编辑 JSON：</strong>每条节日含 <code>name</code>、<code>typeDes</code>、<code>enabled</code>、<code>dateStart</code>/<code>dateEnd</code>（yyyyMMdd 格式，如 20250101）。<br>
+          <strong>导入 JSON 文件：</strong>选择多个 .json 文件时，<strong>每个文件识别为一条节日信息</strong>（文件名不含 .json 作为键名，文件内容作为该节日配置）。
+        </div>
+        <div class="field">
+          <label for="holidays-file-input">选择 JSON 文件（每个文件识别为一条节日，键名=文件名）</label>
+          <input type="file" id="holidays-file-input" accept=".json" multiple />
         </div>
         <div class="field">
           <label for="holidays-json">节日配置 JSON</label>
-          <textarea id="holidays-json" placeholder='{"birthday": {...}, "chineseNewYear": {...}}'></textarea>
+          <textarea id="holidays-json" placeholder='{"new-year": {"name":"元旦","typeDes":"元旦","enabled":true,"dateStart":"20250101","dateEnd":"20250101"}, "spring-festival": {"name":"春节","typeDes":"春节","enabled":true,"dateStart":"20250128","dateEnd":"20250204"}}' style="min-height:220px; font-family:Consolas, monospace;"></textarea>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="btn-get-active-holidays">
+            <i class="fas fa-check-circle"></i> 查看激活节日
+          </button>
+          <button class="btn btn-secondary" id="btn-get-holidays">
+            <i class="fas fa-download"></i> 从服务器加载
+          </button>
+          <button class="btn btn-primary" id="btn-put-holidays">
+            <i class="fas fa-save"></i> 保存到服务器
+          </button>
         </div>
         <div id="holidays-status"></div>
+      </div>
+
+      <!-- 节日编辑模态框 -->
+      <div class="modal" id="holiday-edit-modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="holiday-edit-modal-title">编辑节日</h3>
+            <button class="close-btn" id="holiday-edit-modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="holiday-edit-key" />
+            <div class="field">
+              <label for="holiday-edit-name">名称</label>
+              <input type="text" id="holiday-edit-name" placeholder="例如：元旦" />
+            </div>
+            <div class="field">
+              <label for="holiday-edit-typeDes">类型（typeDes）</label>
+              <select id="holiday-edit-typeDes">
+                <option value="">— 请选择 —</option>
+                <option value="全部">全部</option>
+                <option value="工作日">工作日</option>
+                <option value="周末">周末</option>
+                <option value="元旦">元旦</option>
+                <option value="春节">春节</option>
+                <option value="清明节">清明节</option>
+                <option value="劳动节">劳动节</option>
+                <option value="端午节">端午节</option>
+                <option value="中秋节">中秋节</option>
+                <option value="国庆节">国庆节</option>
+                <option value="调休">调休</option>
+                <option value="其他">其他</option>
+              </select>
+              <div style="font-size:12px; color:#666; margin-top:4px;">选「全部」表示不区分节假日/工作日，仅按日期范围生效</div>
+            </div>
+            <div class="field">
+              <label for="holiday-edit-content">内容</label>
+              <textarea id="holiday-edit-content" rows="3" placeholder="节日说明或公告内容"></textarea>
+            </div>
+            <div class="field field-toggle-row">
+              <label>启用</label>
+              <label class="se-toggle-wrap">
+                <input type="checkbox" id="holiday-edit-enabled" class="se-toggle-input" checked />
+                <span class="se-toggle-track"></span>
+                <span class="se-toggle-thumb"></span>
+              </label>
+            </div>
+            <div class="field">
+              <label for="holiday-edit-dateStart">开始日期</label>
+              <input type="date" id="holiday-edit-dateStart" style="max-width:180px;" />
+            </div>
+            <div class="field">
+              <label for="holiday-edit-dateEnd">结束日期</label>
+              <input type="date" id="holiday-edit-dateEnd" style="max-width:180px;" />
+              <div style="font-size:12px; color:#666; margin-top:4px;">单日节日可选相同日期或只选开始日期，保存时转为 yyyyMMdd</div>
+            </div>
+            <div class="btn-group" style="margin-top:12px;">
+              <button class="btn btn-primary" id="holiday-edit-save">
+                <i class="fas fa-save"></i> 保存
+              </button>
+              <button class="btn btn-secondary" id="holiday-edit-cancel">取消</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1042,12 +1658,16 @@
         </div>
         
         <div class="field">
-          <label>
-            <input type="checkbox" id="update-force-update" />
-            <span style="margin-left:6px;">强制所有版本更新</span>
-          </label>
-          <div style="font-size:12px; color:#666; margin-top:4px;">
-            启用后，所有版本的客户端都必须更新到最新版本
+          <div class="field-toggle-row">
+            <div>
+              <span class="field-toggle-label">强制所有版本更新</span>
+              <div class="field-toggle-desc">启用后，所有版本的客户端都必须更新到最新版本</div>
+            </div>
+            <label class="se-toggle-wrap">
+              <input type="checkbox" id="update-force-update" class="se-toggle-input" />
+              <span class="se-toggle-track"></span>
+              <span class="se-toggle-thumb"></span>
+            </label>
           </div>
         </div>
         
@@ -1403,6 +2023,12 @@
       if (!el) return;
       
       el.innerHTML = message ? `<span class="status ${type}">${message}</span>` : '';
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      const t = String(s);
+      return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
     
     // 标签页切换
@@ -2079,30 +2705,531 @@
       }
     });
     
-    // 彩蛋配置
-    document.getElementById('btn-get-easter-eggs').addEventListener('click', async () => {
-      try {
-        const data = await callApi('GET', '/easter-eggs');
-        document.getElementById('easter-eggs-json').value = JSON.stringify(data.config || data, null, 2);
-        showStatus('easter-eggs-status', '下载成功', 'success');
-      } catch (e) {
-        showStatus('easter-eggs-status', `下载失败：${e.message}`, 'error');
+    // 彩蛋配置 - items 列表：每项 id、name、stations[]、messages[]
+    let easterItems = [];
+
+    function generateEasterId() {
+      return 'egg-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    }
+
+    function normalizeEasterConfig(cfg) {
+      if (Array.isArray(cfg.items) && cfg.items.length > 0) {
+        return cfg.items.map((it) => {
+          const o = {
+            id: it.id != null ? String(it.id) : generateEasterId(),
+            name: it.name != null ? String(it.name) : '',
+            enabled: it.enabled !== false,
+            stations: Array.isArray(it.stations) ? it.stations.map((s) => String(s).trim()).filter(Boolean) : [],
+            messages: Array.isArray(it.messages) ? it.messages.map((m) => String(m).trim()).filter(Boolean) : []
+          };
+          if (it.date != null && String(it.date).trim()) o.date = String(it.date).trim().slice(0, 8);
+          return o;
+        });
       }
-    });
-    
-    document.getElementById('btn-put-easter-eggs').addEventListener('click', async () => {
-      const jsonText = document.getElementById('easter-eggs-json').value.trim();
-      if (!jsonText) {
-        showStatus('easter-eggs-status', '请填写配置 JSON', 'error');
+      const stations = Array.isArray(cfg.stations) ? cfg.stations.map((s) => String(s).trim()).filter(Boolean) : [];
+      const messages = Array.isArray(cfg.messages) ? cfg.messages.map((m) => String(m).trim()).filter(Boolean) : [];
+      if (stations.length || messages.length) {
+        return [{ id: 'default', name: '默认', enabled: true, stations, messages }];
+      }
+      return [];
+    }
+
+    function renderEasterEggsList() {
+      const tbody = document.getElementById('easter-eggs-list-tbody');
+      if (easterItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-inbox"></i><div>暂无数据，请从服务器加载或下方编辑后保存</div></td></tr>';
         return;
       }
-      
+      tbody.innerHTML = easterItems.map((it, i) => {
+        const idEsc = escapeHtml(it.id || '-');
+        const nameEsc = escapeHtml(it.name || '-');
+        const enabled = it.enabled !== false;
+        const stationsCount = (it.stations && it.stations.length) || 0;
+        const messagesCount = (it.messages && it.messages.length) || 0;
+        return `
+          <tr>
+            <td>${i + 1}</td>
+            <td><code>${idEsc}</code></td>
+            <td><strong>${nameEsc}</strong></td>
+            <td><span class="badge ${enabled ? 'badge-success' : 'badge-secondary'}">${enabled ? '启用' : '关闭'}</span></td>
+            <td><span class="badge badge-info">${stationsCount}</span></td>
+            <td><span class="badge badge-info">${messagesCount}</span></td>
+            <td>
+              <button type="button" class="btn btn-secondary btn-small" data-action="edit-easter" data-index="${i}">
+                <i class="fas fa-edit"></i> 编辑
+              </button>
+              <button type="button" class="btn btn-danger btn-small btn-small-spaced" data-action="delete-easter" data-index="${i}">
+                <i class="fas fa-trash"></i> 删除
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function syncEasterJsonFromList() {
+      document.getElementById('easter-eggs-json').value = JSON.stringify({
+        enabled: document.getElementById('easter-eggs-enabled').checked,
+        items: easterItems.map((it) => {
+          const o = { id: it.id, name: it.name, enabled: it.enabled !== false, stations: it.stations || [], messages: it.messages || [] };
+          if (it.date) o.date = String(it.date).slice(0, 8);
+          return o;
+        })
+      }, null, 2);
+    }
+
+    async function loadEasterEggsFromServer() {
+      const tbody = document.getElementById('easter-eggs-list-tbody');
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="loading"></div> 加载中...</td></tr>';
       try {
-        const json = JSON.parse(jsonText);
-        await callApi('PUT', '/easter-eggs', json);
-        showStatus('easter-eggs-status', '上传成功', 'success');
+        const data = await callApi('GET', '/easter-eggs');
+        const cfg = data.config || data;
+        document.getElementById('easter-eggs-enabled').checked = !!cfg.enabled;
+        easterItems = normalizeEasterConfig(cfg);
+        syncEasterJsonFromList();
+        renderEasterEggsList();
+        showStatus('easter-eggs-status', '加载成功', 'success');
       } catch (e) {
-        showStatus('easter-eggs-status', `上传失败：${e.message}`, 'error');
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><i class="fas fa-exclamation-triangle"></i><div>加载失败：${e.message}</div></td></tr>`;
+        showStatus('easter-eggs-status', `加载失败：${e.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btn-list-easter-eggs').addEventListener('click', loadEasterEggsFromServer);
+
+    document.getElementById('btn-add-easter-egg').addEventListener('click', () => {
+      openEasterEggEditModal(null);
+    });
+
+    document.getElementById('easter-eggs-list-tbody').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="edit-easter"], [data-action="delete-easter"]');
+      if (!btn) return;
+      const index = parseInt(btn.getAttribute('data-index'), 10);
+      if (Number.isNaN(index) || index < 0) return;
+      if (btn.getAttribute('data-action') === 'delete-easter') {
+        if (!confirm(`确定要删除「${easterItems[index].name || easterItems[index].id}」吗？`)) return;
+        easterItems.splice(index, 1);
+        syncEasterJsonFromList();
+        renderEasterEggsList();
+        showStatus('easter-eggs-status', '已删除', 'success');
+      } else {
+        openEasterEggEditModal(index);
+      }
+    });
+
+    let easterEggEditIndex = null;
+
+    function openEasterEggEditModal(index) {
+      easterEggEditIndex = index;
+      document.getElementById('easter-egg-edit-modal-title').textContent = index === null ? '添加彩蛋' : '编辑彩蛋';
+      if (index === null) {
+        document.getElementById('easter-egg-edit-id').value = generateEasterId();
+        document.getElementById('easter-egg-edit-name').value = '';
+        document.getElementById('easter-egg-edit-enabled').checked = true;
+        document.getElementById('easter-egg-edit-stations').value = '';
+        document.getElementById('easter-egg-edit-messages').value = '';
+        document.getElementById('easter-egg-edit-date').value = '';
+      } else {
+        const it = easterItems[index];
+        document.getElementById('easter-egg-edit-id').value = it.id || '';
+        document.getElementById('easter-egg-edit-name').value = it.name || '';
+        document.getElementById('easter-egg-edit-enabled').checked = it.enabled !== false;
+        document.getElementById('easter-egg-edit-stations').value = (it.stations || []).join('\n');
+        document.getElementById('easter-egg-edit-messages').value = (it.messages || []).join('\n');
+        const dateYyyyMMdd = it.date ? String(it.date).trim().slice(0, 8) : '';
+        document.getElementById('easter-egg-edit-date').value = dateYyyyMMdd.length === 8
+          ? dateYyyyMMdd.slice(0, 4) + '-' + dateYyyyMMdd.slice(4, 6) + '-' + dateYyyyMMdd.slice(6, 8)
+          : '';
+      }
+      document.getElementById('easter-egg-edit-modal').classList.add('active');
+    }
+
+    function closeEasterEggEditModal() {
+      document.getElementById('easter-egg-edit-modal').classList.remove('active');
+      easterEggEditIndex = null;
+    }
+
+    document.getElementById('easter-egg-edit-modal-close').addEventListener('click', closeEasterEggEditModal);
+    document.getElementById('easter-egg-edit-cancel').addEventListener('click', closeEasterEggEditModal);
+
+    document.getElementById('easter-egg-edit-save').addEventListener('click', () => {
+      const id = document.getElementById('easter-egg-edit-id').value.trim() || generateEasterId();
+      const name = document.getElementById('easter-egg-edit-name').value.trim();
+      const enabled = document.getElementById('easter-egg-edit-enabled').checked;
+      const stationsText = document.getElementById('easter-egg-edit-stations').value || '';
+      const messagesText = document.getElementById('easter-egg-edit-messages').value || '';
+      const stations = stationsText.split(/\n/).map((s) => s.trim()).filter(Boolean);
+      const messages = messagesText.split(/\n/).map((m) => m.trim()).filter(Boolean);
+      const dateInput = document.getElementById('easter-egg-edit-date').value.trim();
+      const dateYyyyMMdd = dateInput ? dateInput.replace(/-/g, '') : '';
+      const item = { id, name, enabled, stations, messages };
+      if (dateYyyyMMdd.length === 8) item.date = dateYyyyMMdd;
+      if (easterEggEditIndex === null) {
+        easterItems.push(item);
+      } else {
+        easterItems[easterEggEditIndex] = item;
+      }
+      syncEasterJsonFromList();
+      renderEasterEggsList();
+      closeEasterEggEditModal();
+      showStatus('easter-eggs-status', '已更新列表，请点击「保存到服务器」持久化', 'success');
+    });
+
+    document.getElementById('btn-get-easter-eggs').addEventListener('click', loadEasterEggsFromServer);
+
+    document.getElementById('easter-eggs-sync-from-json').addEventListener('click', () => {
+      const jsonText = document.getElementById('easter-eggs-json').value.trim();
+      if (!jsonText) {
+        showStatus('easter-eggs-status', 'JSON 为空', 'error');
+        return;
+      }
+      try {
+        const cfg = JSON.parse(jsonText);
+        if (cfg.enabled !== undefined) document.getElementById('easter-eggs-enabled').checked = !!cfg.enabled;
+        easterItems = normalizeEasterConfig(cfg);
+        syncEasterJsonFromList();
+        renderEasterEggsList();
+        showStatus('easter-eggs-status', '已从 JSON 同步到列表', 'success');
+      } catch (e) {
+        showStatus('easter-eggs-status', `JSON 解析失败：${e.message}`, 'error');
+      }
+    });
+
+    document.getElementById('easter-eggs-file-input').addEventListener('change', async function () {
+      const files = this.files;
+      if (!files || files.length === 0) return;
+      let config = { enabled: document.getElementById('easter-eggs-enabled').checked, items: [] };
+      try {
+        const jsonText = document.getElementById('easter-eggs-json').value.trim();
+        if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          config.items = normalizeEasterConfig(parsed);
+        }
+      } catch (e) {
+        showStatus('easter-eggs-status', '当前 JSON 无效，将在此基础上追加', 'info');
+      }
+      for (let i = 0; i < files.length; i++) {
+        const text = await files[i].text();
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object') {
+            const item = {
+              id: parsed.id != null ? String(parsed.id) : generateEasterId(),
+              name: parsed.name != null ? String(parsed.name) : '',
+              enabled: parsed.enabled !== false,
+              stations: Array.isArray(parsed.stations) ? parsed.stations.map((s) => String(s).trim()).filter(Boolean) : (parsed.station != null ? [String(parsed.station)] : []),
+              messages: Array.isArray(parsed.messages) ? parsed.messages.map((m) => String(m).trim()).filter(Boolean) : (parsed.message != null ? [String(parsed.message)] : [])
+            };
+            if (parsed.date != null && String(parsed.date).trim()) item.date = String(parsed.date).trim().slice(0, 8);
+            config.items.push(item);
+          }
+        } catch (_) {
+          config.items.push({ id: generateEasterId(), name: '', stations: [], messages: [text.trim()] });
+        }
+      }
+      document.getElementById('easter-eggs-enabled').checked = config.enabled;
+      easterItems = config.items;
+      syncEasterJsonFromList();
+      renderEasterEggsList();
+      showStatus('easter-eggs-status', `已导入 ${files.length} 个文件`, 'success');
+      document.getElementById('easter-eggs-file-input').value = '';
+    });
+
+    document.getElementById('btn-put-easter-eggs').addEventListener('click', async () => {
+      try {
+        const payload = {
+          enabled: document.getElementById('easter-eggs-enabled').checked,
+          items: easterItems.map((it) => {
+            const o = { id: it.id, name: it.name, enabled: it.enabled !== false, stations: it.stations || [], messages: it.messages || [] };
+            if (it.date) o.date = String(it.date).slice(0, 8);
+            return o;
+          })
+        };
+        await callApi('PUT', '/easter-eggs', payload);
+        syncEasterJsonFromList();
+        renderEasterEggsList();
+        showStatus('easter-eggs-status', '保存成功', 'success');
+      } catch (e) {
+        showStatus('easter-eggs-status', `保存失败：${e.message}`, 'error');
+      }
+    });
+
+    // 辅助函数：解析时间字符串（ISO 8601）为 datetime-local 格式
+    function isoToLocalDateTime(isoString) {
+      if (!isoString) return '';
+      try {
+        const date = new Date(isoString);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+      } catch (e) {
+        return '';
+      }
+    }
+    
+    // 辅助函数：将 datetime-local 格式转换为 ISO 8601
+    function localDateTimeToIso(localDateTime) {
+      if (!localDateTime) return null;
+      try {
+        const date = new Date(localDateTime);
+        return date.toISOString();
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    // 辅助函数：解析文本区域内容（支持换行和逗号分隔）
+    function parseTextArea(text) {
+      if (!text || !text.trim()) return null;
+      const lines = text.split(/[\n,，]/).map(s => s.trim()).filter(s => s);
+      return lines.length > 0 ? lines : null;
+    }
+    
+    // 辅助函数：将数组格式化为文本区域内容（每行一个）
+    function formatTextArea(arr) {
+      if (!arr || !Array.isArray(arr) || arr.length === 0) return '';
+      return arr.join('\n');
+    }
+
+    // 生成公告编号（32 位十六进制）
+    function generateAnnouncementId() {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // 启动公告配置 - 列表增删查改
+    let startupNotices = [];
+    let startupNoticeEditIndex = -1;
+
+    function renderStartupNotices() {
+      const tbody = document.getElementById('startup-notices-tbody');
+      tbody.innerHTML = '';
+      if (startupNotices.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-inbox"></i> 暂无公告，点击「添加公告」</td></tr>';
+        return;
+      }
+      startupNotices.forEach((n, i) => {
+        const enabled = n.enabled !== false;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${i + 1}</td><td>${escapeHtml(n.title || '')}</td><td><span class="badge ${enabled ? 'badge-success' : 'badge-secondary'}">${enabled ? '启用' : '关闭'}</span></td><td>${n.mode === 'oncePerDay' ? '每天一次' : '每次运行'}</td><td><button type="button" class="btn btn-secondary btn-sm startup-edit-notice" data-i="${i}"><i class="fas fa-edit"></i> 编辑</button> <button type="button" class="btn btn-danger btn-sm startup-del-notice" data-i="${i}"><i class="fas fa-trash"></i> 删除</button></td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.startup-edit-notice').forEach((btn) => {
+        btn.addEventListener('click', function () { openStartupNoticeModal(parseInt(this.dataset.i, 10)); });
+      });
+      tbody.querySelectorAll('.startup-del-notice').forEach((btn) => {
+        btn.addEventListener('click', function () {
+          startupNotices.splice(parseInt(this.dataset.i, 10), 1);
+          renderStartupNotices();
+        });
+      });
+    }
+
+    function openStartupNoticeModal(index) {
+      startupNoticeEditIndex = index;
+      const modal = document.getElementById('startup-notice-modal');
+      document.getElementById('startup-notice-modal-title').textContent = index >= 0 ? '编辑公告' : '添加公告';
+      const n = index >= 0 ? startupNotices[index] : {};
+      document.getElementById('startup-modal-id').value = n.id || '';
+      document.getElementById('startup-modal-mode').value = n.mode === 'oncePerDay' ? 'oncePerDay' : 'everyRun';
+      document.getElementById('startup-modal-enabled').checked = n.enabled !== false;
+      document.getElementById('startup-modal-title').value = n.title || '';
+      document.getElementById('startup-modal-message').value = n.message || '';
+      document.getElementById('startup-modal-start-time').value = isoToLocalDateTime(n.startTime);
+      document.getElementById('startup-modal-end-time').value = isoToLocalDateTime(n.endTime);
+      document.getElementById('startup-modal-allowed-countries').value = formatTextArea(n.allowedCountries);
+      document.getElementById('startup-modal-blocked-countries').value = formatTextArea(n.blockedCountries);
+      document.getElementById('startup-modal-allowed-cities').value = formatTextArea(n.allowedCities);
+      document.getElementById('startup-modal-blocked-cities').value = formatTextArea(n.blockedCities);
+      modal.style.display = 'flex';
+    }
+
+    function closeStartupNoticeModal() {
+      document.getElementById('startup-notice-modal').style.display = 'none';
+      startupNoticeEditIndex = -1;
+    }
+
+    document.getElementById('startup-modal-generate-id').addEventListener('click', () => {
+      document.getElementById('startup-modal-id').value = generateAnnouncementId();
+    });
+    document.getElementById('startup-add-notice').addEventListener('click', () => { startupNoticeEditIndex = -1; openStartupNoticeModal(-1); });
+    document.getElementById('startup-notice-modal-close').addEventListener('click', closeStartupNoticeModal);
+    document.getElementById('startup-notice-modal-cancel').addEventListener('click', closeStartupNoticeModal);
+    document.getElementById('startup-notice-modal-save').addEventListener('click', () => {
+      const n = {
+        id: document.getElementById('startup-modal-id').value.trim() || null,
+        mode: document.getElementById('startup-modal-mode').value,
+        enabled: document.getElementById('startup-modal-enabled').checked,
+        title: document.getElementById('startup-modal-title').value,
+        message: document.getElementById('startup-modal-message').value,
+        startTime: localDateTimeToIso(document.getElementById('startup-modal-start-time').value),
+        endTime: localDateTimeToIso(document.getElementById('startup-modal-end-time').value),
+        allowedCountries: parseTextArea(document.getElementById('startup-modal-allowed-countries').value),
+        blockedCountries: parseTextArea(document.getElementById('startup-modal-blocked-countries').value),
+        allowedCities: parseTextArea(document.getElementById('startup-modal-allowed-cities').value),
+        blockedCities: parseTextArea(document.getElementById('startup-modal-blocked-cities').value)
+      };
+      if (startupNoticeEditIndex >= 0) {
+        startupNotices[startupNoticeEditIndex] = n;
+      } else {
+        startupNotices.push(n);
+      }
+      renderStartupNotices();
+      closeStartupNoticeModal();
+    });
+
+    document.getElementById('btn-get-startup').addEventListener('click', async () => {
+      try {
+        const data = await callApi('GET', '/startup-notice?t=' + Date.now());
+        const cfg = data.config || data;
+        document.getElementById('startup-enabled').checked = !!cfg.enabled;
+        startupNotices = Array.isArray(cfg.notices) ? cfg.notices.map((n) => ({ ...n, enabled: n.enabled !== false })) : [];
+        renderStartupNotices();
+        showStatus('startup-status', '加载成功', 'success');
+      } catch (e) {
+        showStatus('startup-status', `加载失败：${e.message}`, 'error');
+      }
+    });
+
+    document.getElementById('btn-save-startup').addEventListener('click', async () => {
+      try {
+        await callApi('PUT', '/startup-notice', {
+          enabled: document.getElementById('startup-enabled').checked,
+          notices: startupNotices
+        });
+        showStatus('startup-status', '保存成功', 'success');
+      } catch (e) {
+        showStatus('startup-status', `保存失败：${e.message}`, 'error');
+      }
+    });
+
+    // ==================== 显示端功能开关 ====================
+    // 内存中的地理位置列表
+    let displayFlagsAllowedCountries = [];
+    let displayFlagsBlockedCountries = [];
+    let displayFlagsAllowedCities = [];
+    let displayFlagsBlockedCities = [];
+
+    // 渲染列表的通用函数
+    function renderTagList(containerId, items) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      if (!items || items.length === 0) {
+        container.innerHTML = '<div style="font-size:12px; color:#999;">当前列表为空</div>';
+        return;
+      }
+      items.forEach((item, index) => {
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.textContent = item;
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'tag-chip-del';
+        del.textContent = '×';
+        del.addEventListener('click', () => {
+          items.splice(index, 1);
+          renderAllDisplayGeoLists();
+        });
+        chip.appendChild(del);
+        container.appendChild(chip);
+      });
+    }
+
+    function renderAllDisplayGeoLists() {
+      renderTagList('display-allowed-countries-list', displayFlagsAllowedCountries);
+      renderTagList('display-blocked-countries-list', displayFlagsBlockedCountries);
+      renderTagList('display-allowed-cities-list', displayFlagsAllowedCities);
+      renderTagList('display-blocked-cities-list', displayFlagsBlockedCities);
+    }
+
+    // 简单的“添加”助手
+    function addItemToList(inputId, listRef) {
+      const el = document.getElementById(inputId);
+      const val = (el.value || '').trim();
+      if (!val) return;
+      if (!listRef.includes(val)) {
+        listRef.push(val);
+        renderAllDisplayGeoLists();
+      }
+      el.value = '';
+    }
+
+    document.getElementById('btn-add-display-allowed-country').addEventListener('click', () => {
+      addItemToList('display-allowed-country-input', displayFlagsAllowedCountries);
+    });
+    document.getElementById('btn-add-display-blocked-country').addEventListener('click', () => {
+      addItemToList('display-blocked-country-input', displayFlagsBlockedCountries);
+    });
+    document.getElementById('btn-add-display-allowed-city').addEventListener('click', () => {
+      addItemToList('display-allowed-city-input', displayFlagsAllowedCities);
+    });
+    document.getElementById('btn-add-display-blocked-city').addEventListener('click', () => {
+      addItemToList('display-blocked-city-input', displayFlagsBlockedCities);
+    });
+
+    // 显示端功能开关
+    document.getElementById('btn-get-display-flags').addEventListener('click', async () => {
+      try {
+        const data = await callApi('GET', '/display-flags');
+        const cfg = data.config || data;
+
+        // 全局系统显示开关
+        const val = (typeof cfg.showSystemDisplayOption === 'boolean') ? cfg.showSystemDisplayOption : true;
+        document.getElementById('display-show-system').checked = val;
+
+        // 每个显示器的启用状态
+        const displays = cfg.displays || {};
+        const d1 = displays['display-1'] || {};
+        const d2 = displays['display-2'] || {};
+        document.getElementById('display-1-enabled').value = d1.enabled === false ? 'off' : 'on';
+        document.getElementById('display-2-enabled').value = d2.enabled === false ? 'off' : 'on';
+
+        // 时间范围
+        document.getElementById('display-start-time').value = isoToLocalDateTime(cfg.startTime);
+        document.getElementById('display-end-time').value = isoToLocalDateTime(cfg.endTime);
+
+        // 地理位置列表
+        displayFlagsAllowedCountries = Array.isArray(cfg.allowedCountries) ? [...cfg.allowedCountries] : [];
+        displayFlagsBlockedCountries = Array.isArray(cfg.blockedCountries) ? [...cfg.blockedCountries] : [];
+        displayFlagsAllowedCities    = Array.isArray(cfg.allowedCities)    ? [...cfg.allowedCities]    : [];
+        displayFlagsBlockedCities    = Array.isArray(cfg.blockedCities)    ? [...cfg.blockedCities]    : [];
+        renderAllDisplayGeoLists();
+
+        showStatus('display-flags-status', '加载成功', 'success');
+      } catch (e) {
+        showStatus('display-flags-status', `加载失败：${e.message}`, 'error');
+      }
+    });
+
+    document.getElementById('btn-save-display-flags').addEventListener('click', async () => {
+      const showSystem = document.getElementById('display-show-system').checked;
+      const d1Enabled  = document.getElementById('display-1-enabled').value === 'on';
+      const d2Enabled  = document.getElementById('display-2-enabled').value === 'on';
+      const startTime = localDateTimeToIso(document.getElementById('display-start-time').value);
+      const endTime = localDateTimeToIso(document.getElementById('display-end-time').value);
+
+      const payload = {
+        showSystemDisplayOption: !!showSystem,
+        displays: {
+          'display-1': { enabled: d1Enabled },
+          'display-2': { enabled: d2Enabled }
+        },
+        startTime,
+        endTime,
+        allowedCountries: displayFlagsAllowedCountries,
+        blockedCountries: displayFlagsBlockedCountries,
+        allowedCities: displayFlagsAllowedCities,
+        blockedCities: displayFlagsBlockedCities
+      };
+      try {
+        await callApi('PUT', '/display-flags', payload);
+        showStatus('display-flags-status', '保存成功', 'success');
+      } catch (e) {
+        showStatus('display-flags-status', `保存失败：${e.message}`, 'error');
       }
     });
     
@@ -2121,46 +3248,361 @@
     updateCurrentDate();
     setInterval(updateCurrentDate, 1000);
 
-    // 节日配置
-    document.getElementById('btn-get-holidays').addEventListener('click', async () => {
+    // 查询指定日期节假日（mxnzp 接口）
+    document.getElementById('btn-query-holiday-single').addEventListener('click', async () => {
+      const dateInput = document.getElementById('holiday-query-date').value;
+      if (!dateInput) {
+        showStatus('holidays-status', '请先选择日期', 'error');
+        return;
+      }
+      const yyyyMMdd = dateInput.replace(/-/g, '');
+      const resultEl = document.getElementById('holiday-query-result');
+      const wrapEl = document.getElementById('holiday-query-result-wrap');
       try {
-        const data = await callApi('GET', '/holidays');
-        document.getElementById('holidays-json').value = JSON.stringify(data.config || data, null, 2);
-        showStatus('holidays-status', '下载成功', 'success');
+        showStatus('holidays-status', '查询中...', 'info');
+        const data = await callApi('GET', `/holiday/single/${yyyyMMdd}`);
+        wrapEl.style.display = 'block';
+        if (data.ok && data.data) {
+          resultEl.value = JSON.stringify(data.data, null, 2);
+          showStatus('holidays-status', '查询成功', 'success');
+        } else {
+          resultEl.value = JSON.stringify({ ok: false, error: data.error || data.msg || '未知错误' }, null, 2);
+          showStatus('holidays-status', data.error || '查询失败', 'error');
+        }
       } catch (e) {
-        showStatus('holidays-status', `下载失败：${e.message}`, 'error');
+        wrapEl.style.display = 'block';
+        resultEl.value = JSON.stringify({ ok: false, error: e.message }, null, 2);
+        showStatus('holidays-status', `查询失败：${e.message}`, 'error');
       }
     });
-    
+
+    // 节日配置 - 列表数据源（与运控线路列表同构）
+    let holidaysConfig = {};
+
+    function syncHolidaysJsonFromConfig() {
+      document.getElementById('holidays-json').value = JSON.stringify(holidaysConfig, null, 2);
+    }
+
+    function renderHolidaysList() {
+      const tbody = document.getElementById('holidays-tbody');
+      const keys = Object.keys(holidaysConfig);
+      if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><i class="fas fa-inbox"></i><div>暂无数据，请从服务器加载或下方编辑 JSON 后保存</div></td></tr>';
+        return;
+      }
+      tbody.innerHTML = keys.map(key => {
+        const item = holidaysConfig[key];
+        const name = (item && item.name) ? item.name : key;
+        const typeDes = (item && item.typeDes) ? item.typeDes : '';
+        const enabled = item && item.enabled;
+        const dateStart = (item && item.dateStart) ? String(item.dateStart) : '';
+        const dateEnd = (item && item.dateEnd) ? String(item.dateEnd) : '';
+        const dateStr = dateStart ? (dateEnd && dateEnd !== dateStart ? `${dateStart}～${dateEnd}` : dateStart) : '-';
+        const keyEsc = key.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const typeEsc = (typeDes + '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `
+          <tr>
+            <td><code>${keyEsc}</code></td>
+            <td><strong>${(name + '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</strong></td>
+            <td><span class="badge badge-info">${typeEsc || '-'}</span></td>
+            <td><span class="badge ${enabled ? 'badge-success' : 'badge-secondary'}">${enabled ? '启用' : '关闭'}</span></td>
+            <td>${dateStr}</td>
+            <td>
+              <button type="button" class="btn btn-secondary btn-small" data-action="edit-holiday" data-key="${keyEsc}">
+                <i class="fas fa-edit"></i> 编辑
+              </button>
+              <button type="button" class="btn btn-danger btn-small btn-small-spaced" data-action="delete-holiday" data-key="${keyEsc}">
+                <i class="fas fa-trash"></i> 删除
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function loadHolidaysFromServer() {
+      const tbody = document.getElementById('holidays-tbody');
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="loading"></div> 加载中...</td></tr>';
+      try {
+        const data = await callApi('GET', '/holidays');
+        const cfg = data.config || data;
+        holidaysConfig = typeof cfg === 'object' && cfg !== null ? { ...cfg } : {};
+        syncHolidaysJsonFromConfig();
+        renderHolidaysList();
+        showStatus('holidays-status', '加载成功', 'success');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><i class="fas fa-exclamation-triangle"></i><div>加载失败：${e.message}</div></td></tr>`;
+        showStatus('holidays-status', `加载失败：${e.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btn-list-holidays').addEventListener('click', loadHolidaysFromServer);
+
+    document.getElementById('btn-add-holiday').addEventListener('click', () => {
+      openHolidayEditModal(null);
+    });
+
+    document.getElementById('holidays-tbody').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="edit-holiday"], [data-action="delete-holiday"]');
+      if (!btn) return;
+      const key = btn.getAttribute('data-key');
+      if (!key) return;
+      if (btn.getAttribute('data-action') === 'delete-holiday') {
+        if (!confirm(`确定要删除节日「${key}」吗？`)) return;
+        delete holidaysConfig[key];
+        syncHolidaysJsonFromConfig();
+        renderHolidaysList();
+        showStatus('holidays-status', '已删除', 'success');
+      } else {
+        openHolidayEditModal(key);
+      }
+    });
+
+    let holidayEditCurrentKey = null;
+
+    function generateHolidayId() {
+      return 'holiday-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    }
+
+    function openHolidayEditModal(key) {
+      holidayEditCurrentKey = key;
+      const id = key || generateHolidayId();
+      document.getElementById('holiday-edit-key').value = id;
+      document.getElementById('holiday-edit-modal-title').textContent = key ? '编辑节日' : '添加节日';
+      const item = holidaysConfig[key] || {};
+      document.getElementById('holiday-edit-name').value = item.name || '';
+      document.getElementById('holiday-edit-typeDes').value = item.typeDes || '';
+      document.getElementById('holiday-edit-content').value = item.content || '';
+      document.getElementById('holiday-edit-enabled').checked = item.enabled !== false;
+      if (item.dateStart != null || item.dateEnd != null) {
+        const startStr = item.dateStart != null ? String(item.dateStart).slice(0, 8) : '';
+        const endStr = item.dateEnd != null ? String(item.dateEnd).slice(0, 8) : '';
+        document.getElementById('holiday-edit-dateStart').value = startStr.length === 8 ? startStr.slice(0, 4) + '-' + startStr.slice(4, 6) + '-' + startStr.slice(6, 8) : '';
+        document.getElementById('holiday-edit-dateEnd').value = endStr.length === 8 ? endStr.slice(0, 4) + '-' + endStr.slice(4, 6) + '-' + endStr.slice(6, 8) : '';
+      } else if (item.date && item.date.month != null && item.date.day != null) {
+        const y = new Date().getFullYear();
+        const m = String(item.date.month).padStart(2, '0');
+        const d = String(item.date.day).padStart(2, '0');
+        const dateVal = y + '-' + m + '-' + d;
+        document.getElementById('holiday-edit-dateStart').value = dateVal;
+        document.getElementById('holiday-edit-dateEnd').value = dateVal;
+      } else {
+        document.getElementById('holiday-edit-dateStart').value = '';
+        document.getElementById('holiday-edit-dateEnd').value = '';
+      }
+      document.getElementById('holiday-edit-modal').classList.add('active');
+    }
+
+    function closeHolidayEditModal() {
+      document.getElementById('holiday-edit-modal').classList.remove('active');
+      holidayEditCurrentKey = null;
+    }
+
+    document.getElementById('holiday-edit-modal-close').addEventListener('click', closeHolidayEditModal);
+    document.getElementById('holiday-edit-cancel').addEventListener('click', closeHolidayEditModal);
+
+    document.getElementById('holiday-edit-save').addEventListener('click', () => {
+      const newKey = document.getElementById('holiday-edit-key').value.trim();
+      if (!newKey) {
+        showStatus('holidays-status', 'ID 未生成，请重试', 'error');
+        return;
+      }
+      const name = document.getElementById('holiday-edit-name').value.trim();
+      const typeDes = document.getElementById('holiday-edit-typeDes').value.trim();
+      const content = document.getElementById('holiday-edit-content').value.trim();
+      const enabled = document.getElementById('holiday-edit-enabled').checked;
+      const dateStartInput = document.getElementById('holiday-edit-dateStart').value.trim();
+      const dateEndInput = document.getElementById('holiday-edit-dateEnd').value.trim();
+      const dateStart = dateStartInput ? dateStartInput.replace(/-/g, '').slice(0, 8) : '';
+      let dateEnd = dateEndInput ? dateEndInput.replace(/-/g, '').slice(0, 8) : '';
+      if (dateStart && !dateEnd) dateEnd = dateStart;
+      if (holidayEditCurrentKey && holidayEditCurrentKey !== newKey) {
+        delete holidaysConfig[holidayEditCurrentKey];
+      }
+      const payload = {
+        name: name || newKey,
+        typeDes: typeDes || undefined,
+        content: content || undefined,
+        enabled
+      };
+      if (dateStart) payload.dateStart = dateStart;
+      if (dateEnd) payload.dateEnd = dateEnd;
+      holidaysConfig[newKey] = payload;
+      syncHolidaysJsonFromConfig();
+      renderHolidaysList();
+      closeHolidayEditModal();
+      showStatus('holidays-status', '已更新列表，请点击「保存到服务器」持久化', 'success');
+    });
+
+    // 从服务器加载（与刷新列表一致，并更新下方 JSON）
+    document.getElementById('btn-get-holidays').addEventListener('click', loadHolidaysFromServer);
+
+    document.getElementById('holidays-file-input').addEventListener('change', async function () {
+      const files = this.files;
+      if (!files || files.length === 0) return;
+      let config = {};
+      try {
+        const jsonText = document.getElementById('holidays-json').value.trim();
+        if (jsonText) config = JSON.parse(jsonText);
+      } catch (e) {
+        showStatus('holidays-status', '当前 JSON 无效，将用导入内容覆盖', 'info');
+      }
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const key = file.name.replace(/\.json$/i, '') || `holiday-${i}`;
+        const text = await file.text();
+        try {
+          config[key] = JSON.parse(text);
+        } catch (_) {
+          config[key] = { name: key, enabled: true, message: text };
+        }
+      }
+      document.getElementById('holidays-json').value = JSON.stringify(config, null, 2);
+      holidaysConfig = typeof config === 'object' && config !== null ? { ...config } : {};
+      renderHolidaysList();
+      showStatus('holidays-status', `已导入 ${files.length} 个文件，每个文件识别为一条节日`, 'success');
+      document.getElementById('holidays-file-input').value = '';
+    });
+
     document.getElementById('btn-put-holidays').addEventListener('click', async () => {
       const jsonText = document.getElementById('holidays-json').value.trim();
       if (!jsonText) {
         showStatus('holidays-status', '请填写配置 JSON', 'error');
         return;
       }
-      
       try {
         const json = JSON.parse(jsonText);
         await callApi('PUT', '/holidays', json);
-        showStatus('holidays-status', '上传成功', 'success');
+        holidaysConfig = typeof json === 'object' && json !== null ? { ...json } : {};
+        syncHolidaysJsonFromConfig();
+        renderHolidaysList();
+        showStatus('holidays-status', '保存成功', 'success');
       } catch (e) {
-        showStatus('holidays-status', `上传失败：${e.message}`, 'error');
+        showStatus('holidays-status', `保存失败：${e.message}`, 'error');
       }
     });
-    
-    document.getElementById('btn-get-active-holidays').addEventListener('click', async () => {
-      try {
-        const data = await callApi('GET', '/holidays/active');
-        const active = data.active || [];
-        if (active.length === 0) {
-          alert('当前没有激活的节日');
-        } else {
-          alert('当前激活的节日：\n' + JSON.stringify(active, null, 2));
+
+    // 根据当前列表（holidaysConfig）和当前日期计算激活节日，与 Worker 逻辑一致
+    // todayTypeDes：可选，当日 API 返回的 typeDes；传入时非「全部」的节日需与之一致才计入激活
+    function computeActiveHolidaysFromConfig(config, todayTypeDes) {
+      if (!config || typeof config !== 'object') return {};
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const today = y + m + d;
+      const currentMonth = now.getMonth() + 1;
+      const currentDay = now.getDate();
+      const active = {};
+      for (const [key, holiday] of Object.entries(config)) {
+        if (!holiday || holiday.enabled !== true) continue;
+        const typeDes = holiday.typeDes != null ? String(holiday.typeDes).trim() : '';
+        const isTypeAll = typeDes === '全部'; // 全部：不区分节假日/工作日，仅按日期范围
+        let isActive = false;
+        if (holiday.dateStart != null && holiday.dateEnd != null) {
+          const start = String(holiday.dateStart).trim().slice(0, 8);
+          const end = String(holiday.dateEnd).trim().slice(0, 8);
+          if (start.length === 8 && end.length === 8 && today >= start && today <= end) isActive = true;
+        } else if (holiday.dateStart != null) {
+          const start = String(holiday.dateStart).trim().slice(0, 8);
+          if (start.length === 8 && today === start) isActive = true;
+        } else if (holiday.date && holiday.date.month != null && holiday.date.day != null) {
+          if (holiday.date.month === currentMonth && holiday.date.day === currentDay) isActive = true;
+        } else if (holiday.startDate && holiday.endDate) {
+          const start = new Date(holiday.startDate);
+          const end = new Date(holiday.endDate);
+          if (now >= start && now <= end) isActive = true;
+        } else if (holiday.duration && holiday.date) {
+          const startMonth = holiday.date.month;
+          const startDay = holiday.date.day;
+          const startDate = new Date(y, startMonth - 1, startDay);
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + (holiday.duration - 1));
+          if (now >= startDate && now <= endDate) isActive = true;
         }
-        showStatus('holidays-status', '查询成功', 'success');
-      } catch (e) {
-        showStatus('holidays-status', `查询失败：${e.message}`, 'error');
+        // typeDes 为「全部」时仅按日期范围；非全部时需与当日 API typeDes 一致才弹窗
+        if (isTypeAll) {
+          if (isActive) active[key] = holiday;
+        } else if (isActive && typeDes) {
+          if (todayTypeDes != null && todayTypeDes === typeDes) {
+            active[key] = holiday;
+          }
+        } else if (isActive) {
+          active[key] = holiday;
+        }
       }
+      return active;
+    }
+
+    // 计算「今日在日期范围内但因 typeDes 与 API 不一致而未激活」的节日，用于弹窗提示
+    function computeSkippedByTypeDes(config, todayTypeDes) {
+      if (!config || typeof config !== 'object') return [];
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const today = y + m + d;
+      const currentMonth = now.getMonth() + 1;
+      const currentDay = now.getDate();
+      const skipped = [];
+      for (const [key, holiday] of Object.entries(config)) {
+        if (!holiday || holiday.enabled !== true) continue;
+        const typeDes = holiday.typeDes != null ? String(holiday.typeDes).trim() : '';
+        if (!typeDes || typeDes === '全部') continue;
+        let inRange = false;
+        if (holiday.dateStart != null && holiday.dateEnd != null) {
+          const start = String(holiday.dateStart).trim().slice(0, 8);
+          const end = String(holiday.dateEnd).trim().slice(0, 8);
+          if (start.length === 8 && end.length === 8 && today >= start && today <= end) inRange = true;
+        } else if (holiday.dateStart != null) {
+          const start = String(holiday.dateStart).trim().slice(0, 8);
+          if (start.length === 8 && today === start) inRange = true;
+        } else if (holiday.date && holiday.date.month != null && holiday.date.day != null) {
+          if (holiday.date.month === currentMonth && holiday.date.day === currentDay) inRange = true;
+        } else if (holiday.startDate && holiday.endDate) {
+          const start = new Date(holiday.startDate);
+          const end = new Date(holiday.endDate);
+          if (now >= start && now <= end) inRange = true;
+        } else if (holiday.duration && holiday.date) {
+          const startMonth = holiday.date.month;
+          const startDay = holiday.date.day;
+          const startDate = new Date(y, startMonth - 1, startDay);
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + (holiday.duration - 1));
+          if (now >= startDate && now <= endDate) inRange = true;
+        }
+        if (inRange && (todayTypeDes == null || todayTypeDes !== typeDes)) {
+          skipped.push({ key, name: holiday.name || key, typeDes });
+        }
+      }
+      return skipped;
+    }
+
+    document.getElementById('btn-get-active-holidays').addEventListener('click', async () => {
+      const today = new Date();
+      const yyyyMMdd = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+      let todayTypeDes = null;
+      try {
+        const data = await callApi('GET', `/holiday/single/${yyyyMMdd}`);
+        if (data.ok && data.data && data.data.typeDes != null) {
+          todayTypeDes = String(data.data.typeDes).trim();
+        }
+      } catch (_) {
+        // 未获取到当日 typeDes 时按仅日期范围计算，不弹「不一致」提示
+      }
+      const active = computeActiveHolidaysFromConfig(holidaysConfig, todayTypeDes);
+      const skipped = computeSkippedByTypeDes(holidaysConfig, todayTypeDes);
+      if (skipped.length > 0) {
+        const apiLabel = todayTypeDes != null ? '「' + todayTypeDes + '」' : '「未获取到」';
+        const list = skipped.map(s => s.name + '（配置 typeDes：' + s.typeDes + '）').join('\n');
+        alert('今日 API 返回的 typeDes 为 ' + apiLabel + '，与以下节日的类型不一致，这些节日今日不会弹窗：\n\n' + list);
+      }
+      if (Object.keys(active).length === 0) {
+        alert('当前日期（' + yyyyMMdd + '）不在任何节日的开始～结束范围内，或未与当日 typeDes 匹配。\n\n请确认列表中的节日已设置开始/结束日期（yyyyMMdd）且包含今天；若类型非「全部」，需与 API 当日 typeDes 一致才会弹窗。');
+      } else {
+        alert('当前日期：' + yyyyMMdd + (todayTypeDes != null ? '，当日 API typeDes：' + todayTypeDes : '') + '\n\n激活的节日：\n' + JSON.stringify(active, null, 2));
+      }
+      showStatus('holidays-status', '已根据当前列表计算', 'success');
     });
     
     // 版本更新管理（简化版：只保留强制更新设置）
@@ -3505,6 +4947,8 @@
       document.getElementById('api-base').value = savedConfig.apiBase || '';
       document.getElementById('api-token').value = savedConfig.token || '';
       document.getElementById('api-base-display').textContent = savedConfig.apiBase || '未设置';
+      const today = new Date();
+      document.getElementById('holiday-query-date').value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
       
       if (savedConfig.apiBase) {
         // 延迟加载，确保所有事件监听器已注册

@@ -109,14 +109,205 @@ function getDeviceId() {
 }
 
 /**
+ * 获取设备地理位置信息（优先使用操作系统原生 API，降级到浏览器 Geolocation API）
+ * @returns {Promise<{country: string|null, city: string|null, latitude: number|null, longitude: number|null}>}
+ */
+async function getGeolocation() {
+    const STORAGE_KEY_COUNTRY = 'metro_pids_location_country';
+    const STORAGE_KEY_CITY = 'metro_pids_location_city';
+    const STORAGE_KEY_LAT = 'metro_pids_location_lat';
+    const STORAGE_KEY_LON = 'metro_pids_location_lon';
+    const STORAGE_KEY_TIMESTAMP = 'metro_pids_location_timestamp';
+    
+    // 缓存有效期：24小时
+    const CACHE_DURATION = 24 * 60 * 60 * 1000;
+    
+    // 先检查缓存
+    const cachedTimestamp = localStorage.getItem(STORAGE_KEY_TIMESTAMP);
+    if (cachedTimestamp) {
+        const age = Date.now() - parseInt(cachedTimestamp, 10);
+        if (age < CACHE_DURATION) {
+            const cachedCountry = localStorage.getItem(STORAGE_KEY_COUNTRY);
+            const cachedCity = localStorage.getItem(STORAGE_KEY_CITY);
+            const cachedLat = localStorage.getItem(STORAGE_KEY_LAT);
+            const cachedLon = localStorage.getItem(STORAGE_KEY_LON);
+            
+            console.log('[useCloudConfig] 📍 使用缓存的地理位置:', {
+                country: cachedCountry || 'unknown',
+                city: cachedCity || 'unknown',
+                age: Math.round(age / 1000 / 60) + '分钟前'
+            });
+            
+            return {
+                country: cachedCountry || null,
+                city: cachedCity || null,
+                latitude: cachedLat ? parseFloat(cachedLat) : null,
+                longitude: cachedLon ? parseFloat(cachedLon) : null
+            };
+        }
+    }
+    
+    // 优先使用操作系统原生 API（通过 Electron IPC）
+    if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.getGeolocation === 'function') {
+        try {
+            console.log('[useCloudConfig] 📍 尝试使用操作系统原生 API 获取地理位置...');
+            const location = await Promise.race([
+                window.electronAPI.getGeolocation(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('原生 API 超时')), 10000))
+            ]);
+            
+            if (location && (location.country || location.city || location.latitude || location.longitude)) {
+                // 保存到缓存
+                if (location.country) localStorage.setItem(STORAGE_KEY_COUNTRY, location.country);
+                if (location.city) localStorage.setItem(STORAGE_KEY_CITY, location.city);
+                if (location.latitude !== null && location.latitude !== undefined) {
+                    localStorage.setItem(STORAGE_KEY_LAT, location.latitude.toString());
+                }
+                if (location.longitude !== null && location.longitude !== undefined) {
+                    localStorage.setItem(STORAGE_KEY_LON, location.longitude.toString());
+                }
+                localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
+                
+                console.log('[useCloudConfig] ✅ 通过操作系统原生 API 获取地理位置成功:', {
+                    country: location.country,
+                    city: location.city,
+                    latitude: location.latitude ? location.latitude.toFixed(4) : null,
+                    longitude: location.longitude ? location.longitude.toFixed(4) : null
+                });
+                
+                return location;
+            }
+        } catch (nativeError) {
+            console.warn('[useCloudConfig] ⚠️ 操作系统原生 API 获取地理位置失败，降级到浏览器 API:', nativeError.message);
+        }
+    }
+    
+    // 降级：尝试使用浏览器 Geolocation API
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    reject,
+                    {
+                        enableHighAccuracy: false,
+                        timeout: 10000,
+                        maximumAge: 3600000 // 1小时内的缓存位置可以使用
+                    }
+                );
+            });
+            
+            const { latitude, longitude } = position.coords;
+            
+            // 使用反向地理编码 API 获取国家/城市信息
+            // 这里使用免费的 Nominatim API（OpenStreetMap）
+            try {
+                const reverseGeocodeUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`;
+                const response = await fetch(reverseGeocodeUrl, {
+                    headers: {
+                        'User-Agent': 'Metro-PIDS/1.0'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const address = data.address || {};
+                    
+                    // 提取国家代码（ISO 3166-1 alpha-2）
+                    let country = address.country_code ? address.country_code.toUpperCase() : null;
+                    // 如果没有 country_code，尝试从 country 字段提取
+                    if (!country && address.country) {
+                        // 简单的国家代码映射（常见国家）
+                        const countryMap = {
+                            '中国': 'CN',
+                            'United States': 'US',
+                            'United Kingdom': 'GB',
+                            'Japan': 'JP',
+                            'South Korea': 'KR',
+                            'Germany': 'DE',
+                            'France': 'FR'
+                        };
+                        country = countryMap[address.country] || null;
+                    }
+                    
+                    const city = address.city || address.town || address.village || address.county || null;
+                    
+                    // 保存到缓存
+                    if (country) localStorage.setItem(STORAGE_KEY_COUNTRY, country);
+                    if (city) localStorage.setItem(STORAGE_KEY_CITY, city);
+                    localStorage.setItem(STORAGE_KEY_LAT, latitude.toString());
+                    localStorage.setItem(STORAGE_KEY_LON, longitude.toString());
+                    localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
+                    
+                    console.log('[useCloudConfig] ✅ 获取地理位置成功:', {
+                        country,
+                        city,
+                        latitude: latitude.toFixed(4),
+                        longitude: longitude.toFixed(4)
+                    });
+                    
+                    return { country, city, latitude, longitude };
+                }
+            } catch (geocodeError) {
+                console.warn('[useCloudConfig] ⚠️ 反向地理编码失败:', geocodeError);
+            }
+            
+            // 如果反向地理编码失败，至少保存坐标
+            localStorage.setItem(STORAGE_KEY_LAT, latitude.toString());
+            localStorage.setItem(STORAGE_KEY_LON, longitude.toString());
+            localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
+            
+            return { country: null, city: null, latitude, longitude };
+        } catch (error) {
+            console.warn('[useCloudConfig] ⚠️ 获取地理位置失败:', error.message);
+            
+            // 如果获取失败，尝试使用缓存的旧数据（即使过期）
+            const cachedCountry = localStorage.getItem(STORAGE_KEY_COUNTRY);
+            const cachedCity = localStorage.getItem(STORAGE_KEY_CITY);
+            
+            if (cachedCountry || cachedCity) {
+                console.log('[useCloudConfig] 📦 使用过期的缓存地理位置:', {
+                    country: cachedCountry || 'unknown',
+                    city: cachedCity || 'unknown'
+                });
+                return {
+                    country: cachedCountry || null,
+                    city: cachedCity || null,
+                    latitude: null,
+                    longitude: null
+                };
+            }
+        }
+    }
+    
+    return { country: null, city: null, latitude: null, longitude: null };
+}
+
+/**
  * 云控配置管理
  * @param {string} apiBase - Cloudflare Worker API 地址
  * @param {string} token - 可选的认证 Token
  * @returns {Object} 云控配置管理方法
  */
 export function useCloudConfig(apiBase, token = null) {
-    // 获取请求头
-    function getHeaders(needsBody = false) {
+    // 缓存地理位置信息（避免每次请求都获取）
+    let cachedLocation = null;
+    let locationCacheTime = 0;
+    const LOCATION_CACHE_DURATION = 60 * 60 * 1000; // 1小时
+    
+    // 后台更新地理位置（不阻塞请求）
+    function updateLocationInBackground() {
+        getGeolocation().then(location => {
+            cachedLocation = location;
+            locationCacheTime = Date.now();
+        }).catch(e => {
+            // 忽略错误
+            console.warn('[useCloudConfig] 后台更新地理位置失败:', e);
+        });
+    }
+    
+    // 获取请求头（包含地理位置信息）
+    async function getHeaders(needsBody = false) {
         const headers = {
             'Accept': 'application/json'
         };
@@ -126,7 +317,54 @@ export function useCloudConfig(apiBase, token = null) {
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
         }
+        
+        // 添加地理位置信息到请求头（优先使用缓存）
+        try {
+            let location = cachedLocation;
+            const cacheAge = Date.now() - locationCacheTime;
+            
+            // 如果缓存过期或不存在，尝试从 localStorage 读取
+            if (!location || cacheAge > LOCATION_CACHE_DURATION) {
+                const cachedCountry = localStorage.getItem('metro_pids_location_country');
+                const cachedCity = localStorage.getItem('metro_pids_location_city');
+                if (cachedCountry || cachedCity) {
+                    location = {
+                        country: cachedCountry || null,
+                        city: cachedCity || null,
+                        latitude: null,
+                        longitude: null
+                    };
+                    cachedLocation = location;
+                    locationCacheTime = Date.now();
+                }
+                
+                // 后台更新地理位置（不阻塞当前请求）
+                updateLocationInBackground();
+            }
+            
+            if (location) {
+                if (location.country) {
+                    headers['X-Client-Country'] = location.country;
+                }
+                if (location.city) {
+                    headers['X-Client-City'] = location.city;
+                }
+            }
+        } catch (e) {
+            // 忽略定位错误，不影响请求
+            console.warn('[useCloudConfig] 添加地理位置到请求头失败:', e);
+        }
+        try {
+            headers['X-Device-Id'] = getDeviceId();
+        } catch (e) {
+            // 忽略设备 ID 获取失败
+        }
         return headers;
+    }
+    
+    // 初始化时后台获取地理位置
+    if (typeof window !== 'undefined') {
+        updateLocationInBackground();
     }
 
     // 发送请求（直接使用 fetch，Electron 环境支持跨域请求）
@@ -139,9 +377,12 @@ export function useCloudConfig(apiBase, token = null) {
         } : null;
         console.log(`[useCloudConfig] 📤 发送请求: ${method} ${url}`, logData);
         
+        // 获取请求头（包含地理位置信息）
+        const headers = await getHeaders(!!data);
+        
         const options = {
             method,
-            headers: getHeaders(!!data)
+            headers
         };
         
         if (data) {
@@ -224,13 +465,65 @@ export function useCloudConfig(apiBase, token = null) {
     async function getEasterEggs() {
         return await request('GET', '/easter-eggs');
     }
-
+    
     /**
      * 更新彩蛋配置
      * @param {Object} config - 彩蛋配置
      */
     async function updateEasterEggs(config) {
         return await request('PUT', '/easter-eggs', config);
+    }
+
+    // ==================== 启动公告配置 ====================
+    async function getStartupNotice() {
+        return await request('GET', '/startup-notice');
+    }
+    async function updateStartupNotice(config) {
+        return await request('PUT', '/startup-notice', config);
+    }
+
+    // ==================== 显示端功能开关 ====================
+    async function getDisplayFlags() {
+        return await request('GET', '/display-flags');
+    }
+    async function updateDisplayFlags(config) {
+        return await request('PUT', '/display-flags', config);
+    }
+
+    /**
+     * 从云端拉取显示端开关并写入 uiState（供 App 启动时与设置页「刷新云控显示端开关」调用）
+     * @param {Object} uiState - 来自 useUIState() 的 uiState（reactive）
+     * @returns {{ ok: boolean, config?: object, error?: string }}
+     */
+    async function syncDisplayFlags(uiState) {
+        try {
+            const res = await getDisplayFlags();
+            const cfg = res?.config ?? res?.data?.config ?? res ?? null;
+
+            if (cfg && cfg._isEffective === false) {
+                if (uiState) {
+                    uiState.showSystemDisplayOption = true;
+                    uiState.displayFlags = cfg;
+                }
+                return { ok: true, config: cfg };
+            }
+
+            if (uiState) {
+                if (cfg && typeof cfg.showSystemDisplayOption === 'boolean') {
+                    uiState.showSystemDisplayOption = !!cfg.showSystemDisplayOption;
+                }
+                // 确保赋值新对象以触发响应式更新
+                uiState.displayFlags = cfg ? { ...cfg } : null;
+            }
+            return { ok: true, config: cfg };
+        } catch (e) {
+            console.warn('[useCloudConfig] 获取显示端功能开关失败（未连接成功时使用本地默认）:', e);
+            if (uiState) {
+                uiState.showSystemDisplayOption = true;
+                uiState.displayFlags = null;
+            }
+            return { ok: false, error: e?.message || String(e) };
+        }
     }
 
     // ==================== 新年灯笼配置 ====================
@@ -396,6 +689,15 @@ export function useCloudConfig(apiBase, token = null) {
         // 彩蛋配置
         getEasterEggs,
         updateEasterEggs,
+
+        // 启动公告
+        getStartupNotice,
+        updateStartupNotice,
+
+        // 显示端功能开关
+        getDisplayFlags,
+        updateDisplayFlags,
+        syncDisplayFlags,   // 拉取并写入 uiState（App 启动 / 设置页刷新）
         
         // 新年灯笼配置
         getNewYearLantern,
@@ -410,6 +712,9 @@ export function useCloudConfig(apiBase, token = null) {
         sendTelemetry,
         getDeviceId,        // 同步版本（返回localStorage缓存或临时生成）
         getDeviceIdAsync,   // 异步版本（优先从Electron IPC获取）
+        
+        // 地理位置
+        getGeolocation,     // 获取设备地理位置信息
         
         // 更新日志和安装包
         getReleases,        // 获取 Releases 列表

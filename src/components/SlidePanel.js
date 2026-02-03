@@ -1915,7 +1915,7 @@ export default {
         // 创建本地响应式状态来确保UI更新
         const displayState = reactive({
             currentDisplayId: settings.display.currentDisplayId,
-            displays: settings.display.displays
+            displays: settings.display.displays || {}
         });
 
         // 监听设置变化，同步到本地状态
@@ -1926,13 +1926,57 @@ export default {
 
         watch(() => settings.display.displays, (newDisplays) => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 displays 变化');
-            displayState.displays = { ...newDisplays }; // 创建新对象确保响应性
+            displayState.displays = newDisplays && typeof newDisplays === 'object' ? { ...newDisplays } : {}; // 创建新对象确保响应性，确保始终是对象
         }, { deep: true, immediate: true });
 
         // 当前显示端ID的响应式引用（用于确保模板更新）
         const currentDisplayId = computed(() => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] currentDisplayId computed:', displayState.currentDisplayId);
             return displayState.currentDisplayId;
+        });
+
+        // 检查显示端是否应该显示（考虑云控配置）
+        function shouldShowDisplay(display, displayId) {
+            if (!display) return false;
+            
+            // 检查系统显示器选项
+            if (!uiState.showSystemDisplayOption && display.isSystem) {
+                return false;
+            }
+            
+            // 检查云控配置：服务器显式关闭的显示器不显示
+            const flags = uiState.displayFlags;
+            if (flags && flags.displays && typeof flags.displays === 'object') {
+                const key = displayId;
+                const cloudDisplay = flags.displays[key];
+                // 如果云控配置中存在该显示器，则按 enabled 字段决定；不存在则默认显示（向后兼容）
+                if (cloudDisplay != null && Object.prototype.hasOwnProperty.call(cloudDisplay, 'enabled')) {
+                    const enabled = cloudDisplay.enabled;
+                    if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 检查显示端云控状态:', displayId, { enabled, cloudDisplay });
+                    if (enabled === false || enabled === 'false' || enabled === 0) {
+                        if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端被云控关闭，不显示:', displayId);
+                        return false;
+                    }
+                }
+            }
+            
+            return true;
+        }
+
+        // 可见显示端列表：按云控过滤；若过滤后为空则显示全部；显式依赖 uiState.displayFlags
+        const visibleDisplayEntries = computed(() => {
+            void uiState.displayFlags; // 依赖：云控配置变化时重算
+            const fromState = displayState.displays;
+            const fromSettings = settings.display && settings.display.displays;
+            const displays = (fromState && typeof fromState === 'object' && Object.keys(fromState).length > 0)
+                ? fromState
+                : (fromSettings && typeof fromSettings === 'object') ? fromSettings : {};
+            if (!displays || typeof displays !== 'object') return [];
+            const entries = Object.entries(displays).filter(([id, d]) => shouldShowDisplay(d, id));
+            if (entries.length === 0) {
+                return Object.entries(displays).map(([id, d]) => [id, d]);
+            }
+            return entries;
         });
 
         // 拖拽相关状态
@@ -2613,6 +2657,7 @@ export default {
             draggedDisplayId, dragOverDisplayId,
             handleDragStart, handleDragEnd, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
             addNewDisplay, editDisplay, toggleDisplayEnabled, deleteDisplay, openAllDisplays, closeAllDisplays,
+            shouldShowDisplay, visibleDisplayEntries, // 显示端可见列表（过滤后若为空则回退为全部）
             // 编辑显示端弹窗（与更新日志同风格）
             showDisplayEditDialog, displayEdit, closeDisplayEditDialog, saveDisplayEdit, pickDisplayEditFile,
             // 显示端右键菜单
@@ -2751,7 +2796,8 @@ export default {
             
             <!-- 显示端卡片列表 -->
             <div style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:12px; padding:8px; margin-bottom:16px;" @contextmenu.prevent="showDisplayContextMenu($event, null)">
-                <div v-for="(display, id) in displayState.displays" :key="id" 
+                <template v-if="visibleDisplayEntries.length">
+                <div v-for="[id, display] in visibleDisplayEntries" :key="id" 
                      :draggable="true"
                      :class="{ 'display-card-selected': id === displayState.currentDisplayId }"
                      @dragstart="handleDragStart($event, id)"
@@ -2795,6 +2841,7 @@ export default {
                     </div>
 
                 </div>
+                </template>
             </div>
 
             <!-- 批量操作 -->

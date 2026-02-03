@@ -1667,6 +1667,73 @@ function createWindow() {
     }
   });
 
+  // 获取设备地理位置（使用操作系统原生 API / IP 定位）
+  ipcMain.handle('system/get-geolocation', async () => {
+    try {
+      // 使用免费的 IP 定位服务（ipapi.co）
+      // 这个服务不需要用户授权，通过 IP 地址获取大致位置
+      const https = require('https');
+      const http = require('http');
+      
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('获取地理位置超时'));
+        }, 8000); // 8秒超时
+        
+        const req = https.get('https://ipapi.co/json/', {
+          headers: {
+            'User-Agent': 'Metro-PIDS/1.0'
+          },
+          timeout: 8000
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            clearTimeout(timeout);
+            try {
+              const json = JSON.parse(data);
+              if (json.error) {
+                reject(new Error(json.reason || '获取地理位置失败'));
+                return;
+              }
+              
+              // 提取国家代码（ISO 3166-1 alpha-2）
+              const country = json.country_code ? json.country_code.toUpperCase() : null;
+              const city = json.city || null;
+              const latitude = json.latitude ? parseFloat(json.latitude) : null;
+              const longitude = json.longitude ? parseFloat(json.longitude) : null;
+              
+              console.log('[main] ✅ 通过 IP 定位获取地理位置成功:', {
+                country,
+                city,
+                latitude: latitude ? latitude.toFixed(4) : null,
+                longitude: longitude ? longitude.toFixed(4) : null
+              });
+              
+              resolve({ country, city, latitude, longitude });
+            } catch (parseError) {
+              reject(new Error('解析地理位置数据失败'));
+            }
+          });
+        });
+        
+        req.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+        
+        req.on('timeout', () => {
+          req.destroy();
+          clearTimeout(timeout);
+          reject(new Error('获取地理位置超时'));
+        });
+      });
+    } catch (error) {
+      console.warn('[main] ⚠️ 获取地理位置失败:', error.message);
+      return { country: null, city: null, latitude: null, longitude: null };
+    }
+  });
+
   // 主窗口模糊开关（通过 mica-electron 控制，而非 CSS）
   ipcMain.handle('effects/main-blur', (event, enable) => {
     MAIN_BLUR_ENABLED = !!enable;

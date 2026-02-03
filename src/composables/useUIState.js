@@ -8,7 +8,11 @@ const uiState = reactive({
     showDevButton: false, // 是否显示开发者按钮
     // 自动播放弹窗用：暂停/继续回调与状态（由 ConsolePage/SlidePanel 的 startWithLock 注册）
     autoplayTogglePause: null,
-    autoplayIsPausedRef: null
+    autoplayIsPausedRef: null,
+    // 云控显示端相关：是否在界面中展示“系统显示器”选项（由云端配置控制）
+    showSystemDisplayOption: true,
+    // 云控显示端配置完整对象（包含 displays、时间范围、地理位置等），供其他组件使用
+    displayFlags: null
 })
 
 export function useUIState() {

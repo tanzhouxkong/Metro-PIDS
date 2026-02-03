@@ -13,6 +13,7 @@ import { useSettings } from './composables/useSettings.js'
 import { useUIState } from './composables/useUIState.js'
 import { useCloudConfig, CLOUD_API_BASE } from './composables/useCloudConfig.js'
 import { usePlugins } from './composables/usePlugins.js'
+import dialogService from './utils/dialogService.js'
 
 export default {
   name: 'App',
@@ -248,8 +249,69 @@ export default {
       });
     }
 
-    // 上报使用统计（应用启动时）
+    // 启动公告：从云端获取配置，根据模式（每次 / 每天一次）决定是否弹窗
+    async function checkStartupNotice() {
+      try {
+        if (!cloudConfig || typeof cloudConfig.getStartupNotice !== 'function') return;
+        const res = await cloudConfig.getStartupNotice();
+        const cfg = res?.config || res?.data?.config || res;
+        if (!cfg || cfg.enabled !== true) return;
+
+        const enabledNotices = (cfg.notices && cfg.notices.length > 0) ? cfg.notices.filter((n) => n.enabled !== false) : [];
+        const notice = enabledNotices.length > 0 ? enabledNotices[0] : null;
+        if (!notice) return;
+
+        // 检查服务器返回的有效性标记（如果服务器已经检查过时间范围和地理位置）
+        if (notice._isEffective === false) {
+          console.log('[App] 启动公告未生效（时间范围或地理位置不匹配）');
+          return;
+        }
+
+        const id = (notice.id && String(notice.id).trim()) || 'default';
+        const mode = notice.mode === 'oncePerDay' ? 'oncePerDay' : 'everyRun';
+        const storageKey = `startup_notice_${id}`;
+        const today = new Date().toISOString().slice(0, 10);
+
+        let shouldShow = false;
+        if (mode === 'everyRun') {
+          shouldShow = true;
+        } else if (mode === 'oncePerDay') {
+          const last = typeof localStorage !== 'undefined' ? localStorage.getItem(storageKey) : null;
+          if (last !== today) {
+            shouldShow = true;
+            try { localStorage.setItem(storageKey, today); } catch (e) {}
+          }
+        }
+
+        if (!shouldShow) return;
+
+        const title = notice.title || '启动公告';
+        const message = notice.message || '';
+        try {
+          await dialogService.alert(message, title);
+        } catch (e) {
+          console.warn('[App] 显示启动公告失败:', e);
+        }
+      } catch (e) {
+        console.warn('[App] 获取启动公告配置失败:', e);
+      }
+    }
+
+    // 从云端获取显示端功能开关（逻辑在 useCloudConfig.syncDisplayFlags）
+    async function syncDisplayFlags() {
+      if (cloudConfig && typeof cloudConfig.syncDisplayFlags === 'function') {
+        await cloudConfig.syncDisplayFlags(uiState);
+      }
+    }
+
+    // 启动时：同步云控开关 + 启动公告 + 节日弹窗 + 上报统计
     onMounted(async () => {
+      // 优先同步云控显示端开关和启动公告（不阻塞主线程）
+      syncDisplayFlags();
+      checkStartupNotice();
+      // 节日列表：与公告一样弹窗（由节日插件 dateCheck 处理）
+      doAction('dateCheck', {});
+
       console.log('[App] 📊 准备上报使用统计，API地址:', CLOUD_API_BASE);
       // 延迟上报，确保应用已完全加载
       setTimeout(async () => {

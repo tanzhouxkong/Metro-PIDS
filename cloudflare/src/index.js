@@ -38,7 +38,7 @@ function getCorsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Client-City,X-Client-Country,X-Device-Id'
   };
 }
 
@@ -77,6 +77,89 @@ function checkWriteAuth(request, env) {
   
   const auth = request.headers.get('Authorization') || '';
   return auth === `Bearer ${expectedToken}`;
+}
+
+/**
+ * 单独生成一个公告编号（32 位十六进制，用于区分不同公告版本）
+ * 格式示例：c42064405d4b9dc8c84f592e88facd87
+ * @returns {string} 32 位十六进制字符串
+ */
+function generateAnnouncementId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 检查时间范围是否有效
+ * @param {string|null} startTime - 开始时间 (ISO 8601 格式，如 "2025-01-01T00:00:00Z")
+ * @param {string|null} endTime - 结束时间 (ISO 8601 格式)
+ * @returns {boolean} 当前时间是否在范围内
+ */
+function isWithinTimeRange(startTime, endTime) {
+  if (!startTime && !endTime) return true; // 未设置时间范围，始终有效
+  
+  const now = new Date();
+  const start = startTime ? new Date(startTime) : null;
+  const end = endTime ? new Date(endTime) : null;
+  
+  if (start && now < start) return false; // 还未到开始时间
+  if (end && now > end) return false; // 已过结束时间
+  
+  return true;
+}
+
+/**
+ * 检查地理位置是否匹配
+ * @param {string|null} country - 客户端国家代码（ISO 3166-1 alpha-2，如 "CN", "US"）
+ * @param {string|null} city - 客户端城市名称
+ * @param {Array<string>|null} allowedCountries - 允许的国家代码列表（null 表示不限制）
+ * @param {Array<string>|null} blockedCountries - 禁止的国家代码列表（null 表示不限制）
+ * @param {Array<string>|null} allowedCities - 允许的城市名称列表（null 表示不限制）
+ * @param {Array<string>|null} blockedCities - 禁止的城市名称列表（null 表示不限制）
+ * @returns {boolean} 地理位置是否匹配
+ */
+function isLocationAllowed(country, city, allowedCountries, blockedCountries, allowedCities, blockedCities) {
+  // 如果所有限制都为空，表示不限制地理位置
+  if (!allowedCountries && !blockedCountries && !allowedCities && !blockedCities) {
+    return true;
+  }
+  
+  // 检查国家限制
+  if (country) {
+    const countryUpper = country.toUpperCase();
+    
+    // 如果设置了允许列表，且当前国家不在允许列表中，则拒绝
+    if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
+      const allowed = allowedCountries.some(c => c.toUpperCase() === countryUpper);
+      if (!allowed) return false;
+    }
+    
+    // 如果设置了禁止列表，且当前国家在禁止列表中，则拒绝
+    if (blockedCountries && Array.isArray(blockedCountries) && blockedCountries.length > 0) {
+      const blocked = blockedCountries.some(c => c.toUpperCase() === countryUpper);
+      if (blocked) return false;
+    }
+  }
+  
+  // 检查城市限制
+  if (city) {
+    const cityLower = city.toLowerCase();
+    
+    // 如果设置了允许列表，且当前城市不在允许列表中，则拒绝
+    if (allowedCities && Array.isArray(allowedCities) && allowedCities.length > 0) {
+      const allowed = allowedCities.some(c => c.toLowerCase() === cityLower);
+      if (!allowed) return false;
+    }
+    
+    // 如果设置了禁止列表，且当前城市在禁止列表中，则拒绝
+    if (blockedCities && Array.isArray(blockedCities) && blockedCities.length > 0) {
+      const blocked = blockedCities.some(c => c.toLowerCase() === cityLower);
+      if (blocked) return false;
+    }
+  }
+  
+  return true;
 }
 
 // ==================== 路由处理器 ====================
@@ -477,14 +560,20 @@ const ChangelogHandler = {
         }
       } catch {}
       
+      if (response.status === 401) {
+        throw {
+          status: 401,
+          error: 'GitHub 认证失败（Bad credentials）',
+          detail: '请为 Worker 配置有效的 GITHUB_TOKEN：在 cloudflare 目录执行 wrangler secret put GITHUB_TOKEN，然后输入 GitHub Personal Access Token（需 repo 或 public_repo 权限）。Token 可在 GitHub → Settings → Developer settings → Personal access tokens 创建。'
+        };
+      }
       if (response.status === 403) {
-        throw { 
+        throw {
           status: 503,
           error: 'GitHub API 访问受限（可能是速率限制），请稍后重试',
           detail: errorDetail
         };
       }
-      
       throw { status: response.status, error: errorDetail };
     }
     
@@ -504,8 +593,8 @@ const ChangelogHandler = {
     const force = url.searchParams.get('force') === '1';
     const source = url.searchParams.get('source') || 'auto';
 
-    // 1. 优先从 KV 读取（除非显式指定 source=github）
-    if (source !== 'github') {
+    // 1. 优先从 KV 读取（除非 force=1 或 source=github。force=1 时跳过 KV，避免「从 GitHub 同步」后立刻「从服务器加载」仍读到旧 KV 因最终一致性未生效）
+    if (source !== 'github' && !force) {
       try {
         const stored = await env.LINES.get(this.KEY);
         if (stored) {
@@ -542,9 +631,41 @@ const ChangelogHandler = {
       }
     }
     
-    // 4. 从 GitHub 实时获取
-    const changelog = await this.fetchFromGitHub(env);
-    
+    // 4. 从 GitHub 实时获取（若 403 等失败则回退到 KV / 缓存，避免直接 503）
+    let changelog;
+    try {
+      changelog = await this.fetchFromGitHub(env);
+    } catch (githubError) {
+      console.warn('[Changelog] GitHub 获取失败，回退到 KV/缓存:', githubError?.status || githubError?.message);
+      // 回退 1：从 KV 读取
+      try {
+        const stored = await env.LINES.get(this.KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const list = Array.isArray(parsed?.changelog) ? parsed.changelog : (Array.isArray(parsed) ? parsed : []);
+          if (list.length > 0) {
+            return { changelog: list, source: 'kv', _fallback: true, _reason: 'GitHub API 受限或暂时不可用，已返回服务器已保存的版本' };
+          }
+        }
+      } catch (e) {}
+      // 回退 2：从 Cloudflare Cache 读取
+      const cached = await caches.default.match(cacheKey);
+      if (cached) {
+        const cachedData = await cached.json();
+        const list = (cachedData || []).slice(0, 20).map(r => ({
+          version: (r.tag_name || '').replace(/^v/, ''),
+          title: r.name || `版本 ${(r.tag_name || '').replace(/^v/, '')}`,
+          content: r.body || '',
+          releaseDate: r.published_at || new Date().toISOString(),
+          prerelease: !!r.prerelease
+        }));
+        if (list.length > 0) {
+          return { changelog: list, cached: true, source: 'github-cache', _fallback: true, _reason: 'GitHub API 受限或暂时不可用，已返回缓存版本' };
+        }
+      }
+      throw githubError;
+    }
+
     // 5. 更新 Cloudflare Cache（GitHub 原始响应）
     try {
       const githubRaw = await fetch(this.REPO_URL, { headers: githubHeaders }).then(r => r.json());
@@ -562,7 +683,7 @@ const ChangelogHandler = {
     } catch (e) {
       console.warn('[Changelog] 将 GitHub 更新日志写入 KV 失败（忽略）:', e);
     }
-    
+
     return { changelog, source: 'github' };
   },
 
@@ -1121,21 +1242,285 @@ const EasterEggsHandler = {
     }
   },
   
-  // PUT /easter-eggs - 更新彩蛋配置
+  // PUT /easter-eggs - 更新彩蛋配置（支持 items 列表：每项 id/name + stations[] + messages[]，或兼容旧格式 stations/messages）
   async update(env, body) {
     if (!body || typeof body !== 'object') {
       throw { status: 400, error: '缺少配置数据' };
     }
-    
-    // 只保存有效的配置字段，排除 _isDefault 等内部字段
-    const config = {
-      stations: Array.isArray(body.stations) ? body.stations : [],
-      messages: Array.isArray(body.messages) ? body.messages : [],
-      enabled: body.enabled === true
-    };
-    
+    const enabled = body.enabled === true;
+    let config;
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      config = {
+        enabled,
+        items: body.items.map((it) => {
+          const o = {
+            id: it.id != null ? String(it.id) : '',
+            name: it.name != null ? String(it.name) : '',
+            enabled: it.enabled !== false,
+            stations: Array.isArray(it.stations) ? it.stations.map((s) => String(s)) : [],
+            messages: Array.isArray(it.messages) ? it.messages.map((m) => String(m)) : []
+          };
+          if (it.date != null && String(it.date).trim()) o.date = String(it.date).trim().slice(0, 8);
+          return o;
+        })
+      };
+    } else {
+      config = {
+        enabled,
+        stations: Array.isArray(body.stations) ? body.stations : [],
+        messages: Array.isArray(body.messages) ? body.messages : []
+      };
+    }
     await env.LINES.put(this.KEY, JSON.stringify(config));
-    // 返回时添加 _isDefault: false 表示这是已配置的数据
+    return { ok: true, config: { ...config, _isDefault: false } };
+  }
+};
+
+/**
+ * 启动公告配置 API
+ * 用于在客户端启动时弹出公告（每次运行 / 每天一次）
+ * 支持时间范围和地理位置控制
+ */
+const StartupNoticeHandler = {
+  KEY: 'config:startup-notice',
+
+  // 将旧版单条公告格式转为 notices 列表
+  _normalizeToNotices(config) {
+    if (config.notices && Array.isArray(config.notices) && config.notices.length > 0) {
+      return config;
+    }
+    const one = {
+      id: config.id || generateAnnouncementId(),
+      mode: config.mode === 'oncePerDay' ? 'oncePerDay' : 'everyRun',
+      enabled: config.enabled !== false,
+      title: config.title || '',
+      message: config.message || '',
+      startTime: config.startTime ?? null,
+      endTime: config.endTime ?? null,
+      allowedCountries: config.allowedCountries ?? null,
+      blockedCountries: config.blockedCountries ?? null,
+      allowedCities: config.allowedCities ?? null,
+      blockedCities: config.blockedCities ?? null,
+      updatedAt: config.updatedAt ?? null
+    };
+    return {
+      enabled: !!config.enabled,
+      notices: [one]
+    };
+  },
+
+  // GET /startup-notice - 获取启动公告配置（返回 { enabled, notices: [...] }）
+  async get(env, request = null) {
+    const raw = await env.LINES.get(this.KEY);
+    if (!raw) {
+      return {
+        ok: true,
+        config: {
+          enabled: false,
+          notices: [],
+          _isDefault: true
+        }
+      };
+    }
+    try {
+      let config = JSON.parse(raw);
+      config = this._normalizeToNotices(config);
+      if (!('_isDefault' in config)) {
+        config._isDefault = false;
+      }
+      if (!config.notices) {
+        config.notices = [];
+      }
+
+      if (request && config.notices.length > 0) {
+        const country = request.cf?.country || request.headers?.get('CF-IPCountry') || null;
+        const city = request.cf?.city || null;
+        const clientCountry = request.headers?.get('X-Client-Country') || country;
+        const clientCity = request.headers?.get('X-Client-City') || city;
+        for (const notice of config.notices) {
+          const timeValid = isWithinTimeRange(notice.startTime, notice.endTime);
+          const locationValid = isLocationAllowed(
+            clientCountry,
+            clientCity,
+            notice.allowedCountries,
+            notice.blockedCountries,
+            notice.allowedCities,
+            notice.blockedCities
+          );
+          notice._isEffective = config.enabled && (notice.enabled !== false) && timeValid && locationValid;
+          notice._timeValid = timeValid;
+          notice._locationValid = locationValid;
+        }
+      }
+
+      // 确保每条公告的 enabled 明确出现在响应中，避免旧客户端/缓存导致丢失
+      config.notices = config.notices.map((n) => ({ ...n, enabled: n.enabled !== false }));
+      return { ok: true, config };
+    } catch (e) {
+      console.error('[StartupNotice] 解析配置失败:', e);
+      return {
+        ok: true,
+        config: {
+          enabled: false,
+          notices: [],
+          _isDefault: true
+        }
+      };
+    }
+  },
+
+  // PUT /startup-notice - 更新启动公告配置（body: { enabled, notices: [ { id?, title, message, mode, ... } ] }）
+  async update(env, body) {
+    if (!body || typeof body !== 'object') {
+      throw { status: 400, error: '缺少配置数据' };
+    }
+
+    const now = new Date().toISOString();
+    const notices = Array.isArray(body.notices) ? body.notices : [];
+    const normalized = notices.map((n) => {
+      let id = typeof n.id === 'string' && n.id.trim() ? n.id.trim() : null;
+      if (!id) {
+        id = generateAnnouncementId();
+      }
+      // 明确持久化 enabled：仅当客户端显式传 false 时存 false，否则存 true
+      const enabled = n && Object.prototype.hasOwnProperty.call(n, 'enabled') && n.enabled === false ? false : true;
+      return {
+        id,
+        mode: n.mode === 'oncePerDay' ? 'oncePerDay' : 'everyRun',
+        enabled,
+        title: typeof n.title === 'string' ? n.title : '',
+        message: typeof n.message === 'string' ? n.message : '',
+        startTime: typeof n.startTime === 'string' && n.startTime.trim() ? n.startTime.trim() : null,
+        endTime: typeof n.endTime === 'string' && n.endTime.trim() ? n.endTime.trim() : null,
+        allowedCountries: Array.isArray(n.allowedCountries) ? n.allowedCountries.filter(c => typeof c === 'string') : null,
+        blockedCountries: Array.isArray(n.blockedCountries) ? n.blockedCountries.filter(c => typeof c === 'string') : null,
+        allowedCities: Array.isArray(n.allowedCities) ? n.allowedCities.filter(c => typeof c === 'string') : null,
+        blockedCities: Array.isArray(n.blockedCities) ? n.blockedCities.filter(c => typeof c === 'string') : null,
+        updatedAt: n.updatedAt || now
+      };
+    });
+
+    const config = {
+      enabled: body.enabled === true,
+      notices: normalized
+    };
+
+    await env.LINES.put(this.KEY, JSON.stringify(config));
+    return { ok: true, config: { ...config, _isDefault: false } };
+  }
+};
+
+/**
+ * 显示端功能开关 API（例如云控控制系统显示器选项是否可见）
+ * 支持时间范围和地理位置控制
+ */
+const DisplayFlagsHandler = {
+  KEY: 'config:display-flags',
+
+  // GET /display-flags - 获取显示端功能开关
+  async get(env, request = null) {
+    const raw = await env.LINES.get(this.KEY);
+    if (!raw) {
+      return {
+        ok: true,
+        config: {
+          showSystemDisplayOption: true,
+          // 每个显示器的独立开关（例如 display-1, display-2），默认不限制
+          displays: null,
+          startTime: null, // ISO 8601 格式
+          endTime: null,
+          allowedCountries: null,
+          blockedCountries: null,
+          allowedCities: null,
+          blockedCities: null,
+          _isDefault: true
+        }
+      };
+    }
+    try {
+      const config = JSON.parse(raw);
+      if (!('_isDefault' in config)) {
+        config._isDefault = false;
+      }
+      
+      // 兼容旧数据，补齐字段
+      if (typeof config.showSystemDisplayOption !== 'boolean') {
+        config.showSystemDisplayOption = true;
+      }
+      if (config.displays === undefined) config.displays = null;
+      if (config.startTime === undefined) config.startTime = null;
+      if (config.endTime === undefined) config.endTime = null;
+      if (config.allowedCountries === undefined) config.allowedCountries = null;
+      if (config.blockedCountries === undefined) config.blockedCountries = null;
+      if (config.allowedCities === undefined) config.allowedCities = null;
+      if (config.blockedCities === undefined) config.blockedCities = null;
+      
+      // 如果提供了请求对象，检查是否应该生效（基于时间范围和地理位置）
+      if (request) {
+        const country = request.cf?.country || request.headers?.get('CF-IPCountry') || null;
+        const city = request.cf?.city || null;
+        const clientCountry = request.headers?.get('X-Client-Country') || country;
+        const clientCity = request.headers?.get('X-Client-City') || city;
+        
+        const timeValid = isWithinTimeRange(config.startTime, config.endTime);
+        const locationValid = isLocationAllowed(
+          clientCountry,
+          clientCity,
+          config.allowedCountries,
+          config.blockedCountries,
+          config.allowedCities,
+          config.blockedCities
+        );
+        
+        // 只有在时间范围和地理位置都有效时，才应用配置
+        config._isEffective = timeValid && locationValid;
+        config._timeValid = timeValid;
+        config._locationValid = locationValid;
+        
+        // 如果无效，使用默认值
+        if (!config._isEffective) {
+          config.showSystemDisplayOption = true; // 默认显示
+        }
+      }
+      
+      return { ok: true, config };
+    } catch (e) {
+      console.error('[DisplayFlags] 解析配置失败:', e);
+      return {
+        ok: true,
+        config: {
+          showSystemDisplayOption: true,
+          startTime: null,
+          endTime: null,
+          allowedCountries: null,
+          blockedCountries: null,
+          allowedCities: null,
+          blockedCities: null,
+          _isDefault: true
+        }
+      };
+    }
+  },
+
+  // PUT /display-flags - 更新显示端功能开关
+  async update(env, body) {
+    if (!body || typeof body !== 'object') {
+      throw { status: 400, error: '缺少配置数据' };
+    }
+
+    const config = {
+      showSystemDisplayOption: body.showSystemDisplayOption !== false,
+      // 每个显示器的独立开关（例如 display-1, display-2）
+      displays: body.displays && typeof body.displays === 'object' ? body.displays : null,
+      startTime: typeof body.startTime === 'string' && body.startTime.trim() ? body.startTime.trim() : null,
+      endTime: typeof body.endTime === 'string' && body.endTime.trim() ? body.endTime.trim() : null,
+      allowedCountries: Array.isArray(body.allowedCountries) ? body.allowedCountries.filter(c => typeof c === 'string') : null,
+      blockedCountries: Array.isArray(body.blockedCountries) ? body.blockedCountries.filter(c => typeof c === 'string') : null,
+      allowedCities: Array.isArray(body.allowedCities) ? body.allowedCities.filter(c => typeof c === 'string') : null,
+      blockedCities: Array.isArray(body.blockedCities) ? body.blockedCities.filter(c => typeof c === 'string') : null
+    };
+
+    await env.LINES.put(this.KEY, JSON.stringify(config));
     return { ok: true, config: { ...config, _isDefault: false } };
   }
 };
@@ -1215,7 +1600,7 @@ const HolidaysHandler = {
     return { ok: true, config: body };
   },
   
-  // GET /holidays/active - 获取当前激活的节日
+  // GET /holidays/active - 获取当前激活的节日（日期支持 dateStart/dateEnd yyyyMMdd；非「全部」时需与 mxnzp 当日 typeDes 一致才弹窗）
   async getActive(env) {
     const raw = await env.LINES.get(this.KEY);
     if (!raw) {
@@ -1225,40 +1610,75 @@ const HolidaysHandler = {
     try {
       const config = JSON.parse(raw);
       const now = new Date();
-      const currentMonth = now.getMonth() + 1; // 1-12
-      const currentDay = now.getDate(); // 1-31
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const today = `${y}${m}${d}`; // yyyyMMdd
+      const currentMonth = now.getMonth() + 1;
+      const currentDay = now.getDate();
       const active = {};
+      
+      // 获取当日 API 的 typeDes（工作日/春节/节假日等），用于与节日配置的 typeDes 一致时才弹窗
+      let todayTypeDes = null;
+      try {
+        const singleRes = await fetchHolidaySingle(env, today);
+        if (singleRes.ok && singleRes.data && singleRes.data.typeDes != null) {
+          todayTypeDes = String(singleRes.data.typeDes).trim();
+        }
+      } catch (_) {
+        // mxnzp 未配置或失败时 todayTypeDes 为 null，非「全部」的节日不弹窗
+      }
       
       for (const [key, holiday] of Object.entries(config)) {
         if (!holiday || holiday.enabled !== true) {
           continue;
         }
         
+        const typeDes = holiday.typeDes != null ? String(holiday.typeDes).trim() : '';
+        const isTypeAll = typeDes === '全部'; // 全部：不区分节假日/工作日，仅按日期范围
+        
         let isActive = false;
         
-        // 检查日期匹配
-        if (holiday.date) {
-          // 单日节日（如生日）
+        // 优先：dateStart / dateEnd（yyyyMMdd 字符串）
+        if (holiday.dateStart != null && holiday.dateEnd != null) {
+          const start = String(holiday.dateStart).slice(0, 8);
+          const end = String(holiday.dateEnd).slice(0, 8);
+          if (start.length === 8 && end.length === 8 && today >= start && today <= end) {
+            isActive = true;
+          }
+        } else if (holiday.dateStart != null) {
+          const start = String(holiday.dateStart).slice(0, 8);
+          if (start.length === 8 && today === start) {
+            isActive = true;
+          }
+        } else if (holiday.date) {
+          // 兼容：单日（月/日）
           if (holiday.date.month === currentMonth && holiday.date.day === currentDay) {
             isActive = true;
           }
         } else if (holiday.startDate && holiday.endDate) {
-          // 日期范围节日
           const start = new Date(holiday.startDate);
           const end = new Date(holiday.endDate);
           if (now >= start && now <= end) {
             isActive = true;
           }
         } else if (holiday.duration && holiday.date) {
-          // 持续多天的节日（如春节）
           const startMonth = holiday.date.month;
           const startDay = holiday.date.day;
           const endDate = new Date(now.getFullYear(), startMonth - 1, startDay);
           endDate.setDate(endDate.getDate() + holiday.duration - 1);
-          
           const startDate = new Date(now.getFullYear(), startMonth - 1, startDay);
           if (now >= startDate && now <= endDate) {
             isActive = true;
+          }
+        }
+        
+        // typeDes 为「全部」时仅按日期范围；非全部时需 API 当日 typeDes 与节日 typeDes 一致才弹窗
+        if (isTypeAll) {
+          // 已按日期范围算出的 isActive 即最终结果
+        } else if (isActive && typeDes) {
+          if (todayTypeDes == null || todayTypeDes !== typeDes) {
+            isActive = false;
           }
         }
         
@@ -1274,6 +1694,33 @@ const HolidaysHandler = {
     }
   }
 };
+
+/**
+ * 节假日/万年历 API 代理（mxnzp.com）
+ * GET /holiday/single/:date - 获取指定日期的节假日及万年历信息，date 格式 yyyyMMdd
+ * 需配置环境变量 MXNZP_APP_ID、MXNZP_APP_SECRET（wrangler secret put）
+ */
+const MXNZP_BASE = 'https://www.mxnzp.com/api/holiday/single';
+
+async function fetchHolidaySingle(env, dateYyyyMmDd) {
+  const appId = env.MXNZP_APP_ID;
+  const appSecret = env.MXNZP_APP_SECRET;
+  if (!appId || !appSecret) {
+    return { ok: false, error: '未配置 MXNZP_APP_ID / MXNZP_APP_SECRET，请使用 wrangler secret put 配置' };
+  }
+  const url = `${MXNZP_BASE}/${dateYyyyMmDd}?ignoreHoliday=false&app_id=${encodeURIComponent(appId)}&app_secret=${encodeURIComponent(appSecret)}`;
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const body = await res.json();
+    if (body.code === 1 && body.data) {
+      return { ok: true, code: 1, msg: body.msg, data: body.data };
+    }
+    return { ok: false, error: body.msg || body.message || 'mxnzp 接口返回异常', code: body.code };
+  } catch (e) {
+    console.error('[Mxnzp] 请求失败:', e);
+    return { ok: false, error: e.message || '网络请求失败' };
+  }
+}
 
 // ==================== 路由分发 ====================
 
@@ -1299,35 +1746,40 @@ async function handleRequest(request, env) {
         message: 'Metro-PIDS Cloudflare API',
         version: '2.0',
         endpoints: [
-          'GET    /preset',
-          'GET    /preset/:lineName',
-          'POST   /preset',
-          'PUT    /preset/:lineName',
-          'DELETE /preset/:lineName',
-          'GET    /runtime/lines',
-          'GET    /runtime/lines/:lineName',
-          'PUT    /runtime/lines/:lineName',
-          'DELETE /runtime/lines/:lineName',
-          'GET    /releases',
-          'GET    /releases/latest',
-          'GET    /releases/download/:tag/:file',
-          'GET    /update/changelog',
-          'POST   /update/changelog/sync/github',
-          'GET    /update/check',
-          'POST   /update/sync/github',
-          'PUT    /update/info',
-          'POST   /telemetry',
-          'GET    /stats',
-          'DELETE /stats/record/:id',
-          'DELETE /stats/records',
-          'GET    /easter-eggs',
-          'PUT    /easter-eggs',
-          'GET    /new-year-lantern',
-          'PUT    /new-year-lantern',
-          'GET    /holidays',
-          'PUT    /holidays',
-          'GET    /holidays/active',
-          'GET    /admin'
+          { method: 'GET', path: '/preset', description: '' },
+          { method: 'GET', path: '/preset/:lineName', description: '' },
+          { method: 'POST', path: '/preset', description: '' },
+          { method: 'PUT', path: '/preset/:lineName', description: '' },
+          { method: 'DELETE', path: '/preset/:lineName', description: '' },
+          { method: 'GET', path: '/runtime/lines', description: '' },
+          { method: 'GET', path: '/runtime/lines/:lineName', description: '' },
+          { method: 'PUT', path: '/runtime/lines/:lineName', description: '' },
+          { method: 'DELETE', path: '/runtime/lines/:lineName', description: '' },
+          { method: 'GET', path: '/releases', description: '' },
+          { method: 'GET', path: '/releases/latest', description: '' },
+          { method: 'GET', path: '/releases/download/:tag/:file', description: '' },
+          { method: 'GET', path: '/update/changelog', description: '' },
+          { method: 'POST', path: '/update/changelog/sync/github', description: '' },
+          { method: 'GET', path: '/update/check', description: '' },
+          { method: 'POST', path: '/update/sync/github', description: '' },
+          { method: 'PUT', path: '/update/info', description: '' },
+          { method: 'POST', path: '/telemetry', description: '' },
+          { method: 'GET', path: '/stats', description: '' },
+          { method: 'DELETE', path: '/stats/record/:id', description: '' },
+          { method: 'DELETE', path: '/stats/records', description: '' },
+          { method: 'GET', path: '/easter-eggs', description: '' },
+          { method: 'PUT', path: '/easter-eggs', description: '' },
+          { method: 'GET', path: '/startup-notice', description: '' },
+          { method: 'PUT', path: '/startup-notice', description: '' },
+          { method: 'GET', path: '/display-flags', description: '' },
+          { method: 'PUT', path: '/display-flags', description: '' },
+          { method: 'GET', path: '/new-year-lantern', description: '' },
+          { method: 'PUT', path: '/new-year-lantern', description: '' },
+          { method: 'GET', path: '/holidays', description: '' },
+          { method: 'PUT', path: '/holidays', description: '' },
+          { method: 'GET', path: '/holidays/active', description: '' },
+          { method: 'GET', path: '/holiday/single/:date', description: '' },
+          { method: 'GET', path: '/admin', description: '' }
         ]
       }, 200, corsHeaders);
     }
@@ -1635,6 +2087,31 @@ async function handleRequest(request, env) {
       return json(await EasterEggsHandler.update(env, body), 200, corsHeaders);
     }
 
+    // 启动公告 API（GET 禁止缓存，避免保存后再次加载拿到旧数据）
+    if (pathname === '/startup-notice' && method === 'GET') {
+      const result = await StartupNoticeHandler.get(env, request);
+      return json(result, 200, { ...corsHeaders, 'Cache-Control': 'no-store' });
+    }
+    if (pathname === '/startup-notice' && method === 'PUT') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      return json(await StartupNoticeHandler.update(env, body), 200, corsHeaders);
+    }
+
+    // 显示端功能开关 API
+    if (pathname === '/display-flags' && method === 'GET') {
+      return json(await DisplayFlagsHandler.get(env, request), 200, corsHeaders);
+    }
+    if (pathname === '/display-flags' && method === 'PUT') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      return json(await DisplayFlagsHandler.update(env, body), 200, corsHeaders);
+    }
+
     // 新年灯笼配置 API
     if (pathname === '/new-year-lantern' && method === 'GET') {
       return json(await NewYearLanternHandler.get(env), 200, corsHeaders);
@@ -1660,6 +2137,14 @@ async function handleRequest(request, env) {
     }
     if (pathname === '/holidays/active' && method === 'GET') {
       return json(await HolidaysHandler.getActive(env), 200, corsHeaders);
+    }
+    if (pathname.startsWith('/holiday/single/') && method === 'GET') {
+      const datePart = pathname.slice('/holiday/single/'.length).replace(/\/.*$/, '');
+      if (/^\d{8}$/.test(datePart)) {
+        const result = await fetchHolidaySingle(env, datePart);
+        return json(result, result.ok ? 200 : 502, corsHeaders);
+      }
+      return json({ ok: false, error: '日期格式应为 yyyyMMdd，例如 20181121' }, 400, corsHeaders);
     }
 
     // 404

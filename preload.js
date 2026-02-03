@@ -471,5 +471,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return { ok: false, error: String(e) };
       }
     }
+  },
+  // 获取设备地理位置（使用操作系统原生 API）
+  getGeolocation: async () => {
+    try {
+      return await ipcRenderer.invoke('system/get-geolocation');
+    } catch (e) {
+      console.warn('[preload] 获取原生地理位置失败:', e);
+      return { country: null, city: null, latitude: null, longitude: null };
+    }
   }
 });
