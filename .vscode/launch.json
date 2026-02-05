@@ -4,7 +4,6 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
             "type": "pwa-msedge",
             "name": "Launch Microsoft Edge",
@@ -16,6 +15,24 @@
             "presentation": {
                 "hidden": true
             }
+    },
+    {
+      "type": "pwa-node",
+      "request": "attach",
+      "name": "Attach: Electron Main (9229)",
+      "port": 9229,
+      "restart": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "type": "pwa-msedge",
+      "request": "attach",
+      "name": "Attach: Renderer (9222)",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}",
+      "timeout": 30000
         }
     ]
 }

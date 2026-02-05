@@ -57,7 +57,7 @@ export function useSettings() {
                             },
                             'display-2': {
                                 id: 'display-2',
-                                name: '高仿济南公交LCD屏幕',
+                                name: '副显示器',
                                 source: 'builtin',
                                 url: '',
                                 width: 1500,
@@ -88,7 +88,7 @@ export function useSettings() {
                 if (!settings.display.displays['display-2']) {
                     settings.display.displays['display-2'] = {
                         id: 'display-2',
-                        name: '高仿济南公交LCD屏幕',
+                        name: '副显示器',
                         source: 'builtin',
                         url: '',
                         width: 1500,
@@ -96,6 +96,20 @@ export function useSettings() {
                         enabled: true,
                         isSystem: true, // 系统显示器，不允许删除
                         description: '辅助显示端，用于补充信息展示'
+                    };
+                }
+                // 补齐显示器3（C型显示器），尺寸与显示器1一致
+                if (!settings.display.displays['display-3']) {
+                    settings.display.displays['display-3'] = {
+                        id: 'display-3',
+                        name: 'C型显示器',
+                        source: 'builtin',
+                        url: '',
+                        width: 1900,
+                        height: 600,
+                        enabled: true,
+                        isSystem: false,
+                        description: 'C 型显示端，尺寸与显示器1一致'
                     };
                 }
                 

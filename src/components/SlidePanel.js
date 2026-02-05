@@ -992,16 +992,35 @@ export default {
                         return;
                     }
                 }
-                // 验证索引有效性
-                const stationCount = pidsState.appData.stations?.length || 0;
-                if (preset.startIdx < 0 || preset.startIdx >= stationCount || preset.termIdx < 0 || preset.termIdx >= stationCount) {
-                    await showMsg('预设的站点索引超出当前线路范围，无法加载');
+                const stations = pidsState.appData.stations || [];
+                const stationCount = stations.length || 0;
+
+                // 优先按站名匹配当前线路中的索引，避免「增删站点」或「预设版本变化」导致索引错位
+                const resolveIndex = (name, fallbackIdx) => {
+                    if (name) {
+                        const found = stations.findIndex(st => st && st.name === name);
+                        if (found !== -1) return found;
+                    }
+                    if (typeof fallbackIdx === 'number' && fallbackIdx >= 0 && fallbackIdx < stationCount) {
+                        return fallbackIdx;
+                    }
+                    return -1;
+                };
+
+                const startIdxResolved = resolveIndex(preset.startStationName, preset.startIdx);
+                const termIdxResolved  = resolveIndex(preset.termStationName,  preset.termIdx);
+
+                if (startIdxResolved === -1 || termIdxResolved === -1) {
+                    await showMsg('预设的起点/终点与当前线路不匹配（可能线路站点已被增删或调整），请重新设置短交路并重新保存预设。');
                     return;
                 }
-                pidsState.appData.meta.startIdx = preset.startIdx;
-                pidsState.appData.meta.termIdx = preset.termIdx;
+
+                pidsState.appData.meta.startIdx = startIdxResolved;
+                pidsState.appData.meta.termIdx = termIdxResolved;
                 saveCfg();
-                await showMsg(`已加载预设: ${presetName}\n起点: ${preset.startStationName || pidsState.appData.stations[preset.startIdx]?.name}\n终点: ${preset.termStationName || pidsState.appData.stations[preset.termIdx]?.name}`);
+                const startName = stations[startIdxResolved]?.name || `站点${startIdxResolved + 1}`;
+                const termName  = stations[termIdxResolved]?.name  || `站点${termIdxResolved + 1}`;
+                await showMsg(`已加载预设: ${presetName}\n起点: ${startName}\n终点: ${termName}`);
             } else {
                 await showMsg('加载失败: ' + (res && res.error));
             }

@@ -593,6 +593,15 @@ const displayStyleSheet = `
   margin: 0;
   transition: 0.3s;
 }
+
+/* 显示器3：下一站页面（#d-map）圆点尺寸，统一为 30px 内径、5px 边框
+   这里单独把 box-sizing 改回 content-box，保证 30px 是白色内圆直径 */
+#display-app.display-3 #d-map .l-node .dot {
+  box-sizing: content-box;
+  width: 30px;
+  height: 30px;
+  border-width: 5px;
+}
 #display-app .l-node .info-top {
   position: absolute;
   bottom: 50%;
@@ -985,6 +994,124 @@ const displayStyleSheet = `
     z-index: 1;
     justify-content: space-around;
 }
+
+/* 显示器3（C型显示器）专用：只在下一站页面调整底部线路条为近似 C 型样式 */
+#display-app.display-3 #arrival-screen .as-panel-right {
+    flex: 1;
+    padding: 10px 40px 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+}
+#display-app.display-3 #arrival-screen .as-map-track {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 120px;
+    background: none;
+    border: 6px solid #00b463;
+    border-radius: 60px;
+    transform: translateY(-50%);
+    z-index: 0;
+}
+#display-app.display-3 #arrival-screen .as-map-nodes {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: space-around;
+    z-index: 1;
+}
+#display-app.display-3 #arrival-screen .as-m-dot {
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    border: 5px solid #00b463;
+    border-radius: 50%;
+    margin: 20px 0;
+    box-shadow: 0 0 0 2px #ffffff;
+    transition: 0.3s;
+}
+#display-app.display-3 #arrival-screen .as-m-node.past .as-m-dot {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+}
+#display-app.display-3 #arrival-screen .as-m-node.curr .as-m-dot {
+    width: 30px;
+    height: 30px;
+    border-color: #00b463;
+    background: #ffffff;
+    box-shadow: 0 0 18px rgba(0,180,99,0.9);
+}
+
+/* 显示器3 下一站页面 C 型线路图：站名排布与到达站类似，但整体倾斜 */
+#display-app.display-3 #d-map .c-type-node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+/* 圆点：保持统一尺寸 */
+#display-app.display-3 #d-map .c-type-node .dot {
+    width: 20px;
+    height: 20px;
+    border-width: 4px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin: 0;
+}
+
+/* 顶部换乘标签（不参与倾斜） */
+#display-app.display-3 #d-map .c-type-node .info-top {
+    margin-bottom: 4px;
+}
+
+/* 站名容器：简单规则——始终在圆点“正下方一点点”，然后整体倾斜（分层渲染，纯 CSS 控制） */
+#display-app.display-3 #d-map .c-type-node .info-btm {
+    order: 3;
+    margin: 0;                        /* 位置由 JavaScript 的 left/top 控制 */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;            /* 让最后一个字贴近圆点一侧 */
+    writing-mode: horizontal-tb;
+    text-align: right;
+    gap: 2px;
+    /* transform 和 transform-origin 由 JavaScript 设置 */
+}
+
+#display-app.display-3 #d-map .c-type-node .info-btm .name {
+    /* C 型线路图站名：比默认略大，更接近实车效果 */
+    font-size: 20px;
+    font-weight: bold;
+    color: #1a1a1a;
+    line-height: 1.4;
+    /* 不允许自动换行，保持整站名一条斜线展示 */
+    white-space: nowrap;
+    text-align: right;
+    margin-bottom: 0;
+    letter-spacing: 1px;
+}
+
+#display-app.display-3 #d-map .c-type-node .info-btm .en {
+    font-size: 10px;
+    color: #666;
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    text-align: right;
+    white-space: normal;
+    line-height: 1.1;
+}
+
+#display-app.display-3 #d-map .c-type-node .info-top .x-tag {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin: 1px 0;
+}
+
 #display-app #arrival-screen .l-node {
     width: 160px;
 }
@@ -1875,6 +2002,18 @@ function updateXferCheck(xferCheckElement, appData) {
 export function initDisplayWindow(rootElement) {
   const root = rootElement || document.getElementById('display-app');
   if (!root) return () => {};
+
+  // 如果当前是显示器3（C型显示器），给根元素打标记，后续样式只对下一站页面生效
+  try {
+    const pathname = window.location && window.location.pathname ? window.location.pathname : '';
+    if (typeof pathname === 'string' && pathname.includes('/display-3/')) {
+      root.classList.add('display-3');
+      console.log('[DisplayWindowLogic] detected display-3, apply C-type arrival map style');
+    }
+  } catch (e) {
+    // 忽略路径解析失败
+  }
+
   injectDisplayStyles();
   
   // 创建状态栏（窗口控制按钮）
@@ -3708,7 +3847,14 @@ export function initDisplayWindow(rootElement) {
     
     c.innerHTML = '';
     c.className = 'btm-map map-l';
-    c.style.paddingBottom = '200px';
+    // 检查是否是显示器3，如果是则增加 paddingBottom 以容纳下降800px的内容
+    const rootElement = document.getElementById('display-app');
+    const isDisplay3 = rootElement && rootElement.classList && rootElement.classList.contains('display-3');
+    c.style.paddingBottom = isDisplay3 ? '1000px' : '200px';
+    
+    // 显示器3 不再通过 padding/负 margin 做大幅位移，避免线路条被顶出可视区域
+    // 这里保持与其他线性模式一致的 paddingBottom，便于站名排版
+    
     const box = document.createElement('div');
     box.className = 'l-box';
     const sIdx = (m.startIdx !== undefined && m.startIdx !== -1) ? parseInt(m.startIdx) : 0;
@@ -3798,9 +3944,12 @@ export function initDisplayWindow(rootElement) {
     // 计算渐变位置：如果站点数量少于或等于MAX_POSITIONS，使用flexbox布局；否则使用原始计算
     let pStart, pEnd, pCurr;
     
-    // 计算当前高亮范围
+    // 计算当前高亮范围，以及当前站(prevIdx)/下一站(targetIdx)索引
     let targetIdx = rt.idx;
+    let prevIdx = -1;
     if (rt.state === 1) {
+      // 发车状态：当前站作为 prevIdx，高亮到下一站 targetIdx
+      prevIdx = rt.idx;
       targetIdx = (m.dirType === 'up' || m.dirType === 'outer') ? getNextValidSt(rt.idx, 1, appData) : getNextValidSt(rt.idx, -1, appData);
     }
     // 如果获取下一站失败（例如已到终点），使用当前站
@@ -3906,14 +4055,545 @@ export function initDisplayWindow(rootElement) {
       trackContainer.appendChild(segment);
     }
     
-    // 如果没有箭头（范围内站点数 <= 1），不显示线路条
-    const hasArrows = rangeEnd > rangeStart;
-    if (!hasArrows) {
-      trackContainer.style.display = 'none';
+    // 如果是显示器3（C型显示器），使用 C 型布局（左侧开口、上绿下灰双轨、站点上下两排）
+    // 注意：这个检查必须在创建普通布局之前，但为了代码结构，我们在这里检查并跳过普通布局
+    const root = rootElement; // 使用 rootElement 作为 root
+    if (root && root.classList && root.classList.contains('display-3')) {
+      // 清空已创建的普通布局元素，重新构建C型布局
+      trackContainer.innerHTML = '';
+      box.innerHTML = '';
+      const cTypeBoxHeight = 220; // C 型区域高度
+      box.style.position = 'relative';
+      box.style.width = '100%';
+      box.style.height = cTypeBoxHeight + 'px';
+      box.style.display = 'block';
+      box.style.marginTop = '0px';
+
+      const paddingX = 60; // 左侧留口略缩小，减少空白但保留「口」字形开口
+      const paddingRight = 40; // 右侧少量留白，减少空白
+      // 使用多种方式获取容器宽度，确保初始渲染时也能正确计算
+      const containerWidth = c.offsetWidth || c.clientWidth || c.getBoundingClientRect().width || 1900;
+      const width = containerWidth > (paddingX + paddingRight) ? containerWidth - paddingX - paddingRight : 1200;
+      const trackHeight = 200; // 增大上下两轨间距（160+40），让C型更明显，上下两排站点更分开
+      const trackTop = (cTypeBoxHeight - trackHeight) / 2 - 100; // 垂直居中后上移100px
+      // 右侧使用「小 R 角 + 垂直段」过渡，上下两排在右侧通过一段带圆角的轨道相连
+      const cornerR = Math.min(50, trackHeight / 2); // 右侧圆角半径（不要太大，接近实车小 R 效果）
+      const rightEdge = paddingX + width; // 右侧边缘位置（垂直段所在的 X）
+      const arcStartX = rightEdge - cornerR; // 上下水平段在进入圆角前的终点 X
+      const horizontalLength = arcStartX - paddingX; // 水平段长度
+      const topY = trackTop;
+      const bottomY = trackTop + trackHeight;
+      const topCount = Math.ceil(total / 2);
+      const bottomCount = total - topCount;
+
+      // 清空 trackContainer，重新构建 C 型路径
+      trackContainer.innerHTML = '';
+      trackContainer.style.position = 'absolute';
+      trackContainer.style.left = '0';
+      trackContainer.style.top = '370px'; // 与站点层对齐（站点位置为 pt.y + 150）
+      trackContainer.style.width = '100%';
+      trackContainer.style.height = cTypeBoxHeight + 'px';
+      trackContainer.style.border = 'none';
+      trackContainer.style.background = 'transparent';
+      trackContainer.style.pointerEvents = 'none';
+
+      // 创建 SVG 绘制 C 型路径（与环线模式一致：灰色背景轨 + 分段高亮）
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.style.position = 'absolute';
+      svg.style.left = '0';
+      svg.style.top = '0';
+      svg.style.width = '100%';
+      svg.style.height = cTypeBoxHeight + 'px';
+      svg.style.overflow = 'visible';
+      svg.style.zIndex = '0';
+
+      // C 型路径：左上 -> 右上（直线）-> 右侧小 R 角下折 -> 左下（直线）
+      // 右侧为「小圆角 + 垂直段 + 小圆角」，形成类似实车右侧半环的效果
+      const d = `
+        M ${paddingX} ${topY}
+        L ${arcStartX} ${topY}
+        A ${cornerR} ${cornerR} 0 0 1 ${rightEdge} ${topY + cornerR}
+        L ${rightEdge} ${bottomY - cornerR}
+        A ${cornerR} ${cornerR} 0 0 1 ${arcStartX} ${bottomY}
+        L ${paddingX} ${bottomY}
+      `.trim();
+
+      // 右侧过渡段长度：两段 1/4 圆弧 + 中间垂直直线
+      const verticalLen = Math.max(0, trackHeight - 2 * cornerR);
+      const arcLen = Math.PI * cornerR + verticalLen;
+      const perimeter = 2 * horizontalLength + arcLen;
+
+      // 站点沿路径的距离：上排从左到右，下排从右到左（与站点分布一致）
+      // 不在右侧半环上放站点：上排只沿上水平段分布，下排只沿下水平段分布
+      // 为了实现「圆点 → 箭头 → R 角」，在靠近右侧圆角的位置预留一小段轨道只给箭头使用，
+      // 站点圆点不会贴到圆角起点，视觉上更接近实车效果。
+      const topPathLen = horizontalLength; // 仅上边线（不占用右侧垂直段）
+      // 为圆角和箭头预留的长度：上排略小、下排略大，使上下两排在右侧看起来更自然
+      const nodeCornerReserveTop = Math.min(80, horizontalLength * 0.15);
+      const nodeCornerReserveBottom = Math.min(110, horizontalLength * 0.2);
+      const getStDist = (k) => {
+        if (k < topCount) {
+          // 上排：仅均匀分布在上水平段，末端预留 nodeCornerReserve 给箭头和圆角
+          if (topCount <= 1) return topPathLen / 2;
+          const usableLen = Math.max(0, topPathLen - nodeCornerReserveTop);
+          return (k / (topCount - 1)) * usableLen;
+        }
+        const bIdx = k - topCount;
+        // 下排：仅均匀分布在下水平段（从右到左），同样在靠右侧预留 nodeCornerReserve
+        const btmStart = horizontalLength + arcLen;
+        if (bottomCount <= 1) {
+          // 单个站点时放在下水平段中间
+          const mid = btmStart + nodeCornerReserveBottom / 2 + (horizontalLength - nodeCornerReserveBottom) / 2;
+          return mid;
+        }
+        // 让第一个下排站点从 btmStart + nodeCornerReserveBottom 开始，左侧均匀排布
+        const usableLenBtm = Math.max(0, horizontalLength - nodeCornerReserveBottom);
+        const btmFirst = btmStart + nodeCornerReserveBottom;
+        return btmFirst + (bIdx / (bottomCount - 1)) * usableLenBtm;
+      };
+
+      // 创建隐藏的测量路径，用于精确计算站点位置和法线方向
+      const measurePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      measurePath.setAttribute('d', d);
+      measurePath.style.display = 'none';
+      measurePath.style.visibility = 'hidden';
+      svg.appendChild(measurePath);
+      
+      // 计算实际路径长度（用于缩放理论距离）
+      const actualPerimeter = measurePath.getTotalLength();
+      const scale = actualPerimeter / perimeter;
+
+      // 先绘制灰色背景轨（与环线模式一致）
+      const trackBackground = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      trackBackground.setAttribute('d', d);
+      trackBackground.setAttribute('fill', 'none');
+      trackBackground.setAttribute('stroke', '#ccc');
+      trackBackground.setAttribute('stroke-width', '18');
+      svg.appendChild(trackBackground);
+
+      // 为每两个相邻站点创建独立高亮线段（与环线模式一致，支持贯通线路多颜色）
+      for (let i = 0; i < sts.length - 1; i++) {
+        const nextI = i + 1;
+        const st1 = sts[i];
+        const st2 = sts[nextI];
+        if (!st1 || !st2) continue;
+
+        const isInServiceRange = (i >= rangeStart && i < rangeEnd);
+        const isInHighlightRange = isInServiceRange && (i >= highlightStartIdx && i < highlightEndIdx);
+
+        // 检查是否命中自定义颜色区间（用于贯通线路两种主题色）
+        let customColor = null;
+        if (m.customColorRanges && Array.isArray(m.customColorRanges)) {
+          for (const range of m.customColorRanges) {
+            const colorRangeStart = range.startIdx !== undefined ? parseInt(range.startIdx) : -1;
+            const colorRangeEnd = range.endIdx !== undefined ? parseInt(range.endIdx) : -1;
+            const rangeColor = range.color || '#ff0000';
+            if (colorRangeStart >= 0 && colorRangeEnd >= 0 && i >= colorRangeStart && i < colorRangeEnd) {
+              customColor = rangeColor;
+              break;
+            }
+          }
+        }
+
+        let segmentColor = '#ccc';
+        if (isInHighlightRange) {
+          // 高亮范围内优先使用自定义颜色，否则回退到主题色
+          segmentColor = customColor || m.themeColor || 'var(--theme)';
+        }
+        if (segmentColor === '#ccc') continue;
+
+        let d1 = getStDist(i);
+        let d2 = getStDist(nextI);
+        const segLen = d2 - d1;
+        const dashOffset = -d1;
+
+        const segmentPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        segmentPath.setAttribute('d', d);
+        segmentPath.setAttribute('fill', 'none');
+        segmentPath.setAttribute('stroke', segmentColor);
+        segmentPath.setAttribute('stroke-width', '18');
+        segmentPath.setAttribute('stroke-dasharray', `${segLen} ${perimeter}`);
+        segmentPath.setAttribute('stroke-dashoffset', `${dashOffset}`);
+        segmentPath.dataset.segmentIndex = i;
+        segmentPath.dataset.station1Idx = i;
+        segmentPath.dataset.station2Idx = nextI;
+        svg.appendChild(segmentPath);
+      }
+      trackContainer.appendChild(svg);
+
+      // 左侧标签：起始线 / 机场联络线（可从贯通段或 m 取，无则用默认）
+      const labelBox = document.createElement('div');
+      labelBox.className = 'c-type-labels';
+      labelBox.style.position = 'absolute';
+      labelBox.style.left = '8px';
+      labelBox.style.top = `${trackTop - 20}px`;
+      labelBox.style.zIndex = '2';
+      labelBox.style.display = 'flex';
+      labelBox.style.flexDirection = 'column';
+      labelBox.style.gap = '4px';
+      labelBox.style.pointerEvents = 'none';
+      const segments = Array.isArray(m.throughLineSegments) ? m.throughLineSegments : [];
+      const firstSegment = segments[0];
+      const secondSegment = segments[1];
+      const lineALabel = (m.lineALineName && String(m.lineALineName).trim()) || (firstSegment && firstSegment.lineName) || '起始线';
+      const lineBLabel = (m.lineBLineName && String(m.lineBLineName).trim()) || (secondSegment && secondSegment.lineName) || '机场联络线';
+      const labelStyle = 'font-size:12px;color:#666;background:#f0f0f0;padding:2px 8px;border-radius:4px;white-space:nowrap;';
+      const s1 = document.createElement('span');
+      s1.className = 'c-type-label';
+      s1.style.cssText = labelStyle;
+      s1.textContent = lineALabel;
+      labelBox.appendChild(s1);
+      const s2 = document.createElement('span');
+      s2.className = 'c-type-label';
+      s2.style.cssText = labelStyle;
+      s2.textContent = lineBLabel;
+      labelBox.appendChild(s2);
+      box.appendChild(labelBox);
+
+      box.appendChild(trackContainer);
+
+      // 站点沿C型路径分布：上排沿上边线，下排沿下边线（topCount/bottomCount 已在上面定义）
+      const arcCenterX = rightEdge; // 圆弧大致中心X（右侧边缘）
+      const arcCenterY = trackTop + trackHeight / 2; // 圆弧大致中心Y
+      
+      console.log(`[Display-3 C型图] 总站点数: ${total}, 上排: ${topCount}, 下排: ${bottomCount}`);
+      console.log(`[Display-3 C型图] 轨道: top=${trackTop}, height=${trackHeight}, 水平段长度=${horizontalLength}, 圆角半径=${cornerR}, 圆弧中心=(${arcCenterX}, ${arcCenterY})`);
+
+      sts.forEach((st, idx) => {
+        const node = mkNode(st, idx, 'linear', appData, rt);
+        node.classList.add('c-type-node');
+        node.style.position = 'absolute';
+        node.style.transform = 'translateX(-50%)';
+        node.style.zIndex = '1';
+
+        // 使用 SVG 路径的 getPointAtLength 精确计算站点位置
+        const theoreticalDist = getStDist(idx);
+        const actualDist = theoreticalDist * scale;
+        const pt = measurePath.getPointAtLength(actualDist);
+        
+        const x = pt.x;
+        // 站点位置：pt.y 是相对于 SVG 的坐标，SVG 在 trackContainer 中
+        // 轨道层向下移动了1200px，站点层整体下移400px后再上移200px
+        // 所以站点位置 = pt.y + 200（相对于 box）
+        const y = pt.y + 150;
+        
+        // 计算切线方向（通过获取相邻两点的角度）
+        const delta = 1; // 小偏移量用于计算切线
+        const distBefore = Math.max(0, actualDist - delta);
+        const distAfter = Math.min(actualPerimeter, actualDist + delta);
+        const ptBefore = measurePath.getPointAtLength(distBefore);
+        const ptAfter = measurePath.getPointAtLength(distAfter);
+        
+        // 切线方向（路径方向）
+        const tangentAngle = Math.atan2(ptAfter.y - ptBefore.y, ptAfter.x - ptBefore.x);
+        
+        // 法线方向（垂直于切线）
+        // 上排站点：法线向下（+90度）；下排站点：法线向上（-90度）
+        const normalAngle = idx < topCount 
+          ? tangentAngle + Math.PI / 2  // 上排：法线向下
+          : tangentAngle - Math.PI / 2;  // 下排：法线向上
+        
+        // 站名标签距离圆点的距离（沿法线方向，视觉间距固定）
+        const labelOffset = 150; // 可调整的间距值（像素）
+        let labelX = x + Math.cos(normalAngle) * labelOffset;
+        let labelY = y + Math.sin(normalAngle) * labelOffset;
+
+        // 为了让长站名（>5 字）最后一个字更贴近圆点，
+        // 根据字数额外沿线路切线方向向圆点方向微调一段距离。
+        if (st.name && st.name.length > 5) {
+          const extraChars = st.name.length - 5;
+          const baseAdjust = 4; // 每超过一个字，额外收紧约 4px
+          const adjustDist = extraChars * baseAdjust;
+          // 切线方向与线路方向一致，向圆点方向的位移取反（让整体向圆点侧收紧）
+          labelX -= Math.cos(tangentAngle) * adjustDist;
+          labelY -= Math.sin(tangentAngle) * adjustDist;
+        }
+        
+        if (idx < topCount) {
+          node.classList.add('c-type-top-row');
+        } else {
+          node.classList.add('c-type-bottom-row');
+        }
+
+        node.style.left = `${x}px`;
+        node.style.top = `${y}px`;
+        
+        // 方案三最终版：使用 text-align: end + transform-origin: right center
+        // 核心：文本右对齐，旋转中心在右边缘，最后一个字符自动对齐圆点
+        const infoBtm = node.querySelector('.info-btm');
+        if (infoBtm) {
+          const nameEl = infoBtm.querySelector('.name');
+          
+          // 设置基本样式
+          infoBtm.style.position = 'absolute';
+          infoBtm.style.margin = '0';
+          infoBtm.style.padding = '0';
+          infoBtm.style.whiteSpace = 'nowrap';
+          infoBtm.style.textAlign = 'end'; // 右对齐
+          infoBtm.style.width = 'auto';
+          infoBtm.style.maxWidth = '300px';
+          
+          // 旋转角度：上下两排都向上倾斜45度（都在圆点下方，但文字向上倾斜）
+          const rotationAngle = -45;
+          
+          // 设置旋转中心和旋转角度
+          infoBtm.style.transformOrigin = 'right center'; // 关键：以右边缘为中心旋转
+          infoBtm.style.transform = `rotate(${rotationAngle}deg)`;
+          
+          // 位置：文本右边缘（最后一个字符）对齐到圆点中心
+          // 上下两排站名都在圆点下方
+          const dotRadius = 15;
+          const textGap = 100; // 增加间距，让站名更靠下
+          const baseY = dotRadius + textGap; // 统一在圆点下方
+          
+          // 先设置临时位置，让浏览器渲染文本以便测量
+          infoBtm.style.left = '0px';
+          infoBtm.style.top = `${baseY}px`;
+          
+          // 简化方法：统一使用站名文本长度估算宽度，确保一致性
+          setTimeout(() => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                if (!nameEl) return;
+                
+                // 获取站名纯文本（去除所有HTML标签和特殊字符）
+                let text = nameEl.textContent || nameEl.innerText || '';
+                text = text.trim();
+                if (!text) return;
+                
+                // 强制浏览器重新计算布局
+                void nameEl.offsetHeight;
+                void infoBtm.offsetHeight;
+                
+                // 先设置一个初始位置，让文本渲染
+                const initialLeft = 0;
+                infoBtm.style.left = `${initialLeft}px`;
+                
+                // 再次延迟，确保位置生效后再测量
+                requestAnimationFrame(() => {
+                  if (!nameEl || !dot) return;
+                  
+                  // 获取实际渲染后的位置
+                  const nodeRect = node.getBoundingClientRect();
+                  const nameRect = nameEl.getBoundingClientRect();
+                  const dotRect = dot.getBoundingClientRect();
+                  
+                  // 计算圆点中心位置（相对于节点）
+                  const dotCenterX = dotRect.left - nodeRect.left + dotRect.width / 2;
+                  
+                  // 计算文本右边缘位置（相对于节点）
+                  // 由于 text-align: end，文本右边缘在 nameRect.right
+                  const textRightX = nameRect.right - nodeRect.left;
+                  
+                  // 计算需要调整的偏移量
+                  // 由于 transform-origin: right center，旋转后右边缘中心位置不变
+                  // 所以我们需要让文本右边缘对齐到圆点中心
+                  const offsetX = dotCenterX - textRightX;
+                  
+                  // 应用调整（加上 rightOffset）
+                  const rightOffset = 50;
+                  const currentLeft = parseFloat(infoBtm.style.left) || 0;
+                  infoBtm.style.left = `${currentLeft + offsetX + rightOffset}px`;
+                  
+                  // 记录最终使用的宽度用于调试
+                  const textWidth = nameRect.width || nameEl.scrollWidth || nameEl.offsetWidth || 0;
+                  const finalLeft = parseFloat(infoBtm.style.left) || 0;
+                  const actualWidth = nameRect.width || 0;
+                  const scrollWidth = nameEl.scrollWidth || 0;
+                  const offsetWidth = nameEl.offsetWidth || 0;
+                  
+                  // 计算估算宽度用于对比
+                  let estimatedWidth = 0;
+                  for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    if (/[\u4e00-\u9fa5]/.test(char)) {
+                      estimatedWidth += 20;
+                    } else {
+                      estimatedWidth += 12;
+                    }
+                  }
+                  
+                  // 调试日志：输出所有站名的测量信息
+                  const isProblematic = ['济南西', '千佛山', '春博路', '超算中心','山大路南口','黄旗山'].some(name => text.includes(name));
+                  // 输出所有站名的调试信息
+                  console.log(`[站名对齐调试] 索引: ${idx}, 站名: "${text}"${isProblematic ? ' ⚠️有问题' : ''}`, {
+                      textLength: text.length,
+                      usedWidth: textWidth, // 实际使用的宽度
+                      estimatedWidth: estimatedWidth, // 估算宽度（用于对比）
+                      actualWidth: actualWidth,
+                      scrollWidth: scrollWidth,
+                      offsetWidth: offsetWidth,
+                      finalLeft: finalLeft,
+                      rightOffset: rightOffset,
+                      offsetX: offsetX,
+                      dotCenterX: dotCenterX,
+                      textRightX: textRightX,
+                      nameElStyle: {
+                        fontSize: window.getComputedStyle(nameEl).fontSize,
+                        fontFamily: window.getComputedStyle(nameEl).fontFamily,
+                        fontWeight: window.getComputedStyle(nameEl).fontWeight,
+                      },
+                      infoBtmStyle: {
+                        left: infoBtm.style.left,
+                        top: infoBtm.style.top,
+                        transform: infoBtm.style.transform,
+                        transformOrigin: infoBtm.style.transformOrigin,
+                      },
+                      hasXfer: !!(st.xfer && st.xfer.length > 0),
+                      xferCount: st.xfer ? st.xfer.length : 0,
+                    });
+                });
+              });
+            });
+          }, 50);
+        }
+
+        // C 型图站点圆点：逻辑与显示器1一致，支持贯通/下一站高亮
+        const dot = node.querySelector('.dot');
+        if (dot) {
+          // 暂缓停靠车站：缩小为灰色空心圆
+          if (st.skip) {
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+            dot.style.width = '24px';
+            dot.style.height = '24px';
+          } else if (idx === targetIdx) {
+            // 下一站：黄色实心、呼吸高亮（与显示器1一致）
+            dot.style.background = '#f1c40f';
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = '0 0 10px #f1c40f';
+          // 注意：pulse-yellow-centered 会自带 translate(-50%, -50%)，会把圆点整体抬高一块
+          // 对于 display-3 的 .l-node，我们本身没有 translate(-50%, -50%)，所以这里改用不带位移的 pulse-yellow
+          dot.style.animation = 'pulse-yellow 1.5s infinite';
+          // 适当放大下一站圆点尺寸，让视觉更突出
+          dot.style.width = '24px';
+          dot.style.height = '24px';
+          } else if (idx === prevIdx) {
+            // 发车状态下的当前站：退回为普通白底灰边，无光晕
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+            dot.style.boxShadow = 'none';
+          } else {
+            // 其它站点：保持 mkNode 生成的默认样式，不额外加光晕
+            dot.style.boxShadow = 'none';
+          }
+        }
+
+        box.appendChild(node);
+      });
+
+      // 在高亮线段上放置两个运营方向箭头（类似显示器1）
+      const trackContainerTop = parseInt(trackContainer.style.top, 10) || 370; // 轨道层相对 box 的 top
+      const arrowFontSize = 20;
+
+      // 小工具：在给定路径区间内按比例放置箭头
+      const placeArrowsInRange = (segStart, segEnd, ratios, segIndex) => {
+        const segLenLocal = segEnd - segStart;
+        if (segLenLocal <= 0) return;
+        ratios.forEach((ratio) => {
+          const aDist = segStart + segLenLocal * ratio;
+          const ptArr = measurePath.getPointAtLength(aDist);
+          const distBefore = Math.max(0, aDist - 2);
+          const distAfter = Math.min(actualPerimeter, aDist + 2);
+          const pA = measurePath.getPointAtLength(distBefore);
+          const pB = measurePath.getPointAtLength(distAfter);
+          let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
+          if (m.dirType === 'down' || m.dirType === 'inner') angle += 180;
+
+          const wrapper = document.createElement('div');
+          wrapper.style.position = 'absolute';
+          wrapper.style.left = ptArr.x + 'px';
+          wrapper.style.top = (trackContainerTop + ptArr.y - 110) + 'px'; // 箭头上移
+          wrapper.style.transform = 'translate(-50%, -50%)';
+          wrapper.style.zIndex = '10';
+          wrapper.style.pointerEvents = 'none';
+
+          const arrow = document.createElement('div');
+          arrow.innerHTML = '<i class="fas fa-chevron-right"></i>';
+          const arrowI = arrow.firstElementChild;
+          if (arrowI) {
+            // 仅“当前站 → 下一站”那一段闪烁，其它段常亮（与显示器1一致）
+            const isCurrSeg = (() => {
+              if (rt.state !== 1) return false; // 仅出站（去往下一站）时闪烁
+              if (m.dirType === 'up' || m.dirType === 'outer') {
+                return segIndex === rt.idx;
+              }
+              // down/inner：当前段通常是 rt.idx-1（防止 idx=0 时为 -1）
+              return segIndex === Math.max(rt.idx - 1, 0);
+            })();
+            arrowI.classList.add('segment-arrow');
+            if (isCurrSeg) arrowI.classList.add('segment-arrow-current');
+            else arrowI.classList.add('segment-arrow-default');
+          }
+          arrow.style.transform = `rotate(${angle}deg)`;
+          arrow.style.fontSize = arrowFontSize + 'px';
+          arrow.style.color = '#fff';
+          wrapper.appendChild(arrow);
+          box.appendChild(wrapper);
+        });
+      };
+      for (let i = 0; i < sts.length - 1; i++) {
+        const isInServiceRange = (i >= rangeStart && i < rangeEnd);
+        const isInHighlightRange = isInServiceRange && (i >= highlightStartIdx && i < highlightEndIdx);
+        if (!isInHighlightRange) continue;
+
+        const theoreticalD1 = getStDist(i);
+        const theoreticalD2 = getStDist(i + 1);
+        const actualD1 = theoreticalD1 * scale;
+        const actualD2 = theoreticalD2 * scale;
+
+        // 默认整段都可放箭头
+        let segStart = actualD1;
+        let segEnd = actualD2;
+
+        // 特殊处理「上排最后一站 → 下排第一站」这段：
+        // 这段在路径上会穿过右侧圆角和竖直段，为了实现
+        // 「上排最后一站：圆点 → 箭头 → R 角」以及
+        // 「下排最右一站：圆点 → 箭头 → R 角」，
+        // 需要在同一线段上分别在上、下两侧各放一组箭头。
+        const isBridgeSegment = (i === topCount - 1);
+        if (isBridgeSegment) {
+          const topActualEnd = topPathLen * scale; // 上水平段在路径上的末端距离
+
+          // 上侧：只在上水平段的最后一小段放箭头，预留出一小段给 R 角
+          const reserveForCornerTop = 10 * scale;
+          // 使用更长的窗口，让这两个箭头之间的距离接近普通线段上的实际像素间距
+          const arrowWindowTop = 120 * scale;
+          const topSegEnd = Math.max(0, topActualEnd - reserveForCornerTop);
+          let topSegStart = Math.max(actualD1, topSegEnd - arrowWindowTop);
+          if (topSegEnd > topSegStart) {
+            // 保持靠近 R 角的位置不变，但在该小区间内部使用与普通线段相同的比例（0.45 / 0.55），
+            // 这样这两个箭头之间的间隔就和其它普通双箭头一致。
+            placeArrowsInRange(topSegStart, topSegEnd, [0.45, 0.55], i);
+          }
+
+          // 下侧：只在「R 角之后 → 下排最右一站圆点之前」这一小段直线里放箭头，
+          // 与上排类似的位置，避免箭头落在圆角上。
+          const bottomActualStart = (horizontalLength + arcLen) * scale; // 下水平段在路径上的起点距离（刚过 R 角）
+          const firstBottomIdx = topCount; // 下排第一个站点（最右）
+          const bottomNodeDist = getStDist(firstBottomIdx) * scale;
+          const reserveFromCorner = 10 * scale;  // 紧挨 R 角留白
+          const reserveBeforeDot = 10 * scale;   // 圆点前再留一点距离
+
+          const bottomSegStart = Math.max(bottomActualStart + reserveFromCorner, actualD1);
+          const bottomSegEnd = Math.min(bottomNodeDist - reserveBeforeDot, actualD2);
+          if (bottomSegEnd > bottomSegStart) {
+            // 下排同样在这小段直线内用 0.45 / 0.55 的比例放置箭头，
+            // 保证与上排以及其它普通线段的箭头间距保持一致。
+            placeArrowsInRange(bottomSegStart, bottomSegEnd, [0.45, 0.55], i);
+          }
+
+          continue;
+        }
+
+        // 普通段：整段都可放箭头，位置在线段 45% / 55%
+        placeArrowsInRange(actualD1, actualD2, [0.45, 0.55], i);
+      }
+
+      c.appendChild(box);
+      return;
     }
-    
-    box.appendChild(trackContainer);
-    
+
     // 如果站点数量少于或等于MAX_POSITIONS，使用flexbox均匀分布
     if (total <= MAX_POSITIONS) {
       // 计算动态缩放比例（仅在启用 showAllStations 时）
@@ -4951,3 +5631,4 @@ export function initDisplayWindow(rootElement) {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 }
+

@@ -34,9 +34,9 @@
 
 ### 🪟 Windows 高斯模糊支持
 - 基于 **mica-electron** 实现 Windows 11 Mica/Acrylic 毛玻璃效果
-- 支持 Windows 11 的 Mica Acrylic 效果（更强的模糊）
-- 支持 Windows 10 的 Acrylic 效果
-- 自动检测 Windows 版本并应用相应的模糊效果
+- **已在 Windows 11 上完整验证**，默认启用 Mica/Acrylic 效果
+- **Windows 10 目前存在兼容性问题，Acrylic 效果不保证可用（多数环境下不会生效）**
+- 自动检测 Windows 版本并在受支持的平台应用相应的模糊效果
 - 支持主题切换（浅色/深色/自动）
 - 窗口背景透明，让原生模糊效果透出
 
@@ -190,12 +190,13 @@ npx electron-builder --publish=always --win
 
 ### Windows 高斯模糊（Mica）支持
 
-项目使用 **mica-electron** 库实现 Windows 原生高斯模糊效果。
+项目使用 **mica-electron** 库实现 Windows 原生高斯模糊效果。  
+目前仅在 **Windows 11** 环境下经过完整测试并保证可用，**Windows 10 上的 Acrylic 效果存在兼容性问题，可能无法生效**。
 
 #### 系统要求
 
-- **Windows 11**：支持 Mica Acrylic 效果（推荐）
-- **Windows 10**：支持 Acrylic 效果
+- **Windows 11**：支持 Mica Acrylic 效果（推荐，已验证可用）
+- **Windows 10**：理论上支持 Acrylic 效果，但当前版本兼容性较差，**不保证生效**
 - 需要安装 Visual Studio Build Tools（用于编译原生模块）
 
 #### 安装与配置

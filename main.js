@@ -237,7 +237,8 @@ function getPreloadPath() {
  * @param {string} htmlRelativePath 相对于渲染根目录的 html 路径，如 'index.html' 或 'displays/display-2/display_window.html'
  */
 function getRendererUrl(htmlRelativePath) {
-  const basePath = htmlRelativePath.replace(/^\//, '');
+  // 重要：URL 路径必须使用 /，不能使用 Windows 的 \\，否则 Vite import-analysis 会异常
+  const basePath = htmlRelativePath.replace(/^\//, '').replace(/\\/g, '/');
   
   // electron-vite 开发模式：使用 Vite 开发服务器（支持 HMR ⚡️）
   const devUrl = process.env.ELECTRON_RENDERER_URL || process.env.VITE_DEV_SERVER_URL;
@@ -319,10 +320,9 @@ function reapplyMicaEffect() {
           mainWin.setBackgroundColor('#00000000');
           mainWin.setMicaAcrylicEffect();
           console.log('[MainWindow] ✅ 重新应用 Mica Acrylic 效果');
-        } else if (WIN10 && typeof mainWin.setAcrylic === 'function') {
-          mainWin.setBackgroundColor('#00000000');
-          mainWin.setAcrylic();
-          console.log('[MainWindow] ✅ 重新应用 Acrylic 效果');
+        } else {
+          // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
+          console.log('[MainWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 重新应用');
         }
       } catch (e) {
         console.warn('[MainWindow] ⚠️ 重新应用效果失败:', e);
@@ -347,8 +347,9 @@ function forceReapplyMicaEffect() {
     mainWin.setBackgroundColor('#00000000');
     if (IS_WINDOWS_11 && typeof mainWin.setMicaAcrylicEffect === 'function') {
       mainWin.setMicaAcrylicEffect();
-    } else if (WIN10 && typeof mainWin.setAcrylic === 'function') {
-      mainWin.setAcrylic();
+    } else {
+      // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
+      console.log('[MainWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 强制重新应用');
     }
   } catch (e) {
     // 静默失败，不输出日志
@@ -1128,6 +1129,15 @@ function createWindow() {
     // 使用实际应该切换到的 displayId
     displayId = actualDisplayId;
     console.log(`[main] switch-display: 最终使用的 displayId: ${displayId}`);
+
+    // 切换显示端时，窗口尺寸应以显示端配置为准（而不是主窗口/屏幕尺寸）。
+    // 传入的 width/height 常常是 1920×1080 等屏幕尺寸，会覆盖 display-3 等内置显示端的默认 1900×600。
+    // 这里统一清空尺寸参数，让 createDisplayWindow() 自行从配置读取并应用正确分辨率。
+    if (typeof width === 'number' || typeof height === 'number') {
+      console.log(`[main] switch-display: 忽略传入尺寸参数，改用配置尺寸 (传入: ${width}x${height})`);
+    }
+    width = undefined;
+    height = undefined;
     
     // 检查是否已存在该显示端窗口
     const existingWin = displayWindows.get(displayId);
@@ -1756,17 +1766,16 @@ function createWindow() {
         return { ok: true };
       }
 
-      // 开启模糊：根据平台恢复 Mica/Acrylic
+      // 开启模糊：根据平台恢复 Mica（Windows 11），不再在 Windows 10 上主动调用 Acrylic
       if (process.platform === 'win32') {
         if (typeof win.setBackgroundColor === 'function') {
           win.setBackgroundColor('#00000000');
         }
         if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
           win.setMicaAcrylicEffect();
-        } else if (WIN10 && typeof win.setAcrylic === 'function') {
-          win.setAcrylic();
-        } else if (typeof win.setBackgroundMaterial === 'function') {
-          win.setBackgroundMaterial('acrylic');
+        } else {
+          // 2026-02: 由于 mica-electron 在 Windows 10 上兼容性较差，这里不再主动调用 setAcrylic 或背景材质
+          console.log('[effects/main-blur] ⚠️ 非 Windows 11 平台，跳过 Acrylic / backgroundMaterial');
         }
       } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
         win.setVibrancy('fullscreen-ui');
@@ -6127,7 +6136,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       if (displayId === 'display-1') {
         dispPath = getRendererUrl('display_window.html');
       } else {
-        const customRel = path.join('displays', displayId, 'display_window.html');
+        const customRel = `displays/${displayId}/display_window.html`;
         const customPath = app.isPackaged 
           ? path.join(app.getAppPath(), 'out/renderer', customRel)
           : path.join(__dirname, '../renderer', customRel);
@@ -6160,7 +6169,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       console.log(`[main] 使用默认主显示器路径: ${dispPath}`);
     } else {
       // 检查是否存在对应的显示端文件
-      const customRel = path.join('displays', displayId, 'display_window.html');
+      const customRel = `displays/${displayId}/display_window.html`;
       // 直接使用 getRendererUrl 的逻辑来构建路径进行检查
       let customPath;
       
@@ -6169,13 +6178,20 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         const appPath = app.getAppPath();
         customPath = path.join(appPath, 'out/renderer', customRel);
       } else {
-        // 开发环境：使用 __dirname/../renderer
-        customPath = path.join(__dirname, '../renderer', customRel);
+        // 开发环境：Vite dev server 会直接提供该路径，不依赖 out/renderer 的落盘文件
+        // 直接使用 URL，避免因未生成 out/renderer/displays 导致识别失败
+        dispPath = getRendererUrl(customRel);
+        console.log(`[main] (dev) 直接使用 display-${displayId} 路径: ${dispPath}`);
+        customPath = null;
       }
       
-      console.log(`[main] 检查 display-${displayId} 文件路径: ${customPath}, 存在: ${fs.existsSync(customPath)}`);
+      if (!app.isPackaged) {
+        // dev 分支已直接设置 dispPath
+      } else {
+        console.log(`[main] 检查 display-${displayId} 文件路径: ${customPath}, 存在: ${fs.existsSync(customPath)}`);
+      }
       
-      if (fs.existsSync(customPath)) {
+      if (!app.isPackaged || (customPath && fs.existsSync(customPath))) {
         dispPath = getRendererUrl(customRel);
         console.log(`[main] ✅ 使用 display-${displayId} 路径: ${dispPath}`);
       } else {
@@ -6550,7 +6566,7 @@ function createLineManagerWindow() {
     show: false // 先不显示，等 dom-ready 后再显示
   });
 
-  // 应用 Mica 模糊效果（与主窗口相同）
+  // 应用 Mica 模糊效果（与主窗口相同，仅在 Windows 11 上启用 Mica）
   if (isWindows && lineManagerWin && MicaBrowserWindow !== BrowserWindow) {
     try {
       // 设置主题
@@ -6563,15 +6579,14 @@ function createLineManagerWindow() {
           console.log('[LineManagerWindow] ✅ 已设置深色主题');
         }
         
-        // 应用 Mica Acrylic Effect（Acrylic for Windows 11）
+        // 应用 Mica Acrylic Effect（Windows 11）
         if (typeof lineManagerWin.setMicaAcrylicEffect === 'function') {
           lineManagerWin.setMicaAcrylicEffect();
           console.log('[LineManagerWindow] ✅ 已应用 Mica Acrylic 效果');
         }
-      } else if (WIN10 && typeof lineManagerWin.setAcrylic === 'function') {
-        // Windows 10: 使用 Acrylic 效果
-        lineManagerWin.setAcrylic();
-        console.log('[LineManagerWindow] ✅ 已应用 Acrylic 效果');
+      } else {
+        // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
+        console.log('[LineManagerWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 效果');
       }
     } catch (e) {
       console.warn('[LineManagerWindow] ⚠️ 应用 Mica 效果失败:', e);
@@ -6594,10 +6609,9 @@ function createLineManagerWindow() {
                 lineManagerWin.setBackgroundColor('#00000000');
                 lineManagerWin.setMicaAcrylicEffect();
                 console.log('[LineManagerWindow] ✅ 重新应用 Mica Acrylic 效果');
-              } else if (WIN10 && typeof lineManagerWin.setAcrylic === 'function') {
-                lineManagerWin.setBackgroundColor('#00000000');
-                lineManagerWin.setAcrylic();
-                console.log('[LineManagerWindow] ✅ 重新应用 Acrylic 效果');
+              } else {
+                // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
+                console.log('[LineManagerWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 重新应用');
               }
             } catch (e) {
               console.warn('[LineManagerWindow] ⚠️ 重新应用效果失败:', e);

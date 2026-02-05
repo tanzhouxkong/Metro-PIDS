@@ -215,6 +215,17 @@ export const DEFAULT_SETTINGS = {
                 enabled: true,
                 isSystem: true, // 系统显示器，不允许删除
                 description: '辅助显示端，用于补充信息展示'
+            },
+            'display-3': {
+                id: 'display-3',
+                name: 'C型显示器',
+                source: 'builtin',
+                url: '',
+                width: 1900,
+                height: 600,
+                enabled: true,
+                isSystem: false,
+                description: 'C 型显示端，尺寸与显示器1一致'
             }
         }
     }

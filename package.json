@@ -62,6 +62,7 @@
       "main.js",
       "preload.js",
       "package.json",
+      "displays/**/*",
       "preset-lines/**/*",
       "!src/**/*",
       "!scripts/**/*",
@@ -80,7 +81,8 @@
     ],
     "asar": true,
     "asarUnpack": [
-      "preset-lines/**/*"
+      "preset-lines/**/*",
+      "displays/**/*"
     ],
     "electronLanguages": [
       "zh-CN",

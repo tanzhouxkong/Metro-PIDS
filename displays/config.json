@@ -26,7 +26,7 @@
     },
     "display-2": {
       "id": "display-2",
-      "name": "高仿济南公交LCD屏幕",
+      "name": "副显示器",
       "description": "系统保护的辅助显示端，用于补充信息展示",
       "source": "builtin",
       "url": "",
@@ -50,12 +50,12 @@
   "defaultDisplays": {
     "display-3": {
       "id": "display-3",
-      "name": "显示端 3",
-      "description": "第三个显示端窗口，适用于标准显示器",
+      "name": "C型显示器",
+      "description": "C 型显示端，尺寸与显示器1一致",
       "source": "builtin",
       "url": "",
-      "width": 1366,
-      "height": 768,
+      "width": 1900,
+      "height": 600,
       "enabled": true,
       "isSystem": false,
       "color": "#2ED573",
