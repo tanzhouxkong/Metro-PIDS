@@ -66,6 +66,15 @@ function parseColorMarkup(text) {
   return result;
 }
 
+/** 换乘标签用线路简称：2号线→2，济阳线→济阳（参考实车小圆标只显示数字/名称） */
+function shortenLineNameForTag(name) {
+  if (!name || typeof name !== 'string') return name;
+  const s = String(name).trim();
+  if (s.endsWith('号线')) return s.slice(0, -2);
+  if (s.endsWith('线')) return s.slice(0, -1);
+  return s;
+}
+
 function isSkippedByService(st, idx, len, meta) {
   if (!st) return true;
   if (st.skip) return true;
@@ -85,6 +94,137 @@ function isSkippedByService(st, idx, len, meta) {
 const SCALER_W = 1900;
 const SCALER_H = 600;
 const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot';
+
+// =========================
+// Display-3 开发环境开关（仅 DEV 生效）
+// 用途：在开发环境快速确认是否展示「出站换乘 / 大站停靠 / 暂缓开通」相关标签与提示
+//
+// 使用方式（仅在 DEV 下生效，支持 URL 参数并持久化到 localStorage）：
+// - ?d3_tags=0|1                 一键控制全部（出站/大站/暂缓/提示）
+// - ?d3_showExitTransfer=0|1     是否显示“出站”子标签（关闭时退化为普通换乘标签）
+// - ?d3_showExpressStop=0|1      是否显示“大站停靠”标签
+// - ?d3_showSuspended=0|1        是否显示“暂缓/暂缓开通”相关（关闭时换乘暂缓退化为普通换乘标签、站点暂缓标签隐藏、检测提示不输出暂缓内容）
+// - ?d3_showXferCheck=0|1        是否显示右上角⚠换乘检测提示
+// =========================
+const DISPLAY3_DEV_FLAGS_KEY = 'metro-pids:display3:devFlags';
+
+function _parseBoolLike(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().toLowerCase();
+  if (s === '' || s === '1' || s === 'true' || s === 'yes' || s === 'on') return true;
+  if (s === '0' || s === 'false' || s === 'no' || s === 'off') return false;
+  return null;
+}
+
+function _isDevBuild() {
+  try {
+    // electron-vite/vite: import.meta.env.DEV
+    if (typeof import.meta !== 'undefined' && import.meta.env && typeof import.meta.env.DEV === 'boolean') {
+      return !!import.meta.env.DEV;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
+}
+
+const DISPLAY3_IS_DEV = _isDevBuild();
+let _display3DevFlagsCache = null;
+
+function getDisplay3DevFlags() {
+  // 非开发环境：保持原逻辑（全部视为开启）
+  if (!DISPLAY3_IS_DEV) {
+    return {
+      showExitTransfer: true,
+      showExpressStop: true,
+      showSuspended: true,
+      showXferCheck: true
+    };
+  }
+
+  if (_display3DevFlagsCache) return _display3DevFlagsCache;
+
+  const defaults = {
+    showExitTransfer: true,
+    showExpressStop: true,
+    showSuspended: true,
+    showXferCheck: true
+  };
+
+  let flags = { ...defaults };
+
+  // 读取 localStorage
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(DISPLAY3_DEV_FLAGS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          flags = { ...flags, ...parsed };
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // URL 参数覆盖（并持久化）
+  try {
+    const sp = new URLSearchParams((window.location && window.location.search) ? window.location.search : '');
+    let touched = false;
+
+    const all = _parseBoolLike(sp.get('d3_tags'));
+    if (all !== null) {
+      flags.showExitTransfer = all;
+      flags.showExpressStop = all;
+      flags.showSuspended = all;
+      flags.showXferCheck = all;
+      touched = true;
+    }
+
+    const map = [
+      ['d3_showExitTransfer', 'showExitTransfer'],
+      ['d3_showExpressStop', 'showExpressStop'],
+      ['d3_showSuspended', 'showSuspended'],
+      ['d3_showXferCheck', 'showXferCheck']
+    ];
+    for (const [q, k] of map) {
+      const v = _parseBoolLike(sp.get(q));
+      if (v !== null) {
+        flags[k] = v;
+        touched = true;
+      }
+    }
+
+    if (touched && typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(DISPLAY3_DEV_FLAGS_KEY, JSON.stringify(flags));
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  _display3DevFlagsCache = flags;
+  return flags;
+}
+
+// Display-3 标签/提示开关（仅用于开发调试）：不再读取线路/设置中的 display3Tags，
+// 只在 DEV 环境下通过 URL / localStorage 控制是否显示出站换乘 / 大站停靠 / 暂缓 / ⚠ 提示。
+function getDisplay3RuntimeFlags() {
+  const defaults = {
+    showExitTransfer: true,
+    showExpressStop: true,
+    showSuspended: true,
+    showXferCheck: true
+  };
+  // 生产环境：始终开启全部标签
+  if (!DISPLAY3_IS_DEV) return defaults;
+  try {
+    const dev = getDisplay3DevFlags();
+    return { ...defaults, ...dev };
+  } catch (e) {
+    return defaults;
+  }
+}
 
 const displayStyleSheet = `
 #display-titlebar.custom-titlebar {
@@ -692,8 +832,9 @@ const displayStyleSheet = `
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 #display-app .l-node.passed .dot { background: #fff; border-color: #ccc; }
-#display-app .l-node.passed .name { color: #999; }
-#display-app .l-node.passed .en { color: #ccc; }
+/* 已过站：站名/英文整体压暗，效果对齐暂缓车站 */
+#display-app .l-node.passed .name { color: #999; opacity: 0.7; }
+#display-app .l-node.passed .en { color: #ccc; opacity: 0.7; }
 #display-app .map-r {
     display: flex;
     justify-content: center;
@@ -1064,9 +1205,25 @@ const displayStyleSheet = `
     margin: 0;
 }
 
-/* 顶部换乘标签（不参与倾斜） */
+/* 顶部换乘标签：横向排列（不参与倾斜） */
 #display-app.display-3 #d-map .c-type-node .info-top {
     margin-bottom: 4px;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;  /* 居中，让整串标签与圆点竖直对齐 */
+    gap: 3px;
+    writing-mode: horizontal-tb;
+    overflow: hidden;
+    /* 左右加宽一些，减少标签被裁切的概率 */
+    width: 140px;
+    max-width: 140px;
+}
+/* 每个标签的包裹 div 改为宽度自适应，否则 width:100% 会竖着堆叠 */
+#display-app.display-3 #d-map .c-type-node .info-top > div {
+    width: auto;
+    max-width: none;
 }
 
 /* 站名容器：简单规则——始终在圆点“正下方一点点”，然后整体倾斜（分层渲染，纯 CSS 控制） */
@@ -1102,14 +1259,59 @@ const displayStyleSheet = `
     text-orientation: mixed;
     text-align: right;
     white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
     line-height: 1.1;
+    min-width: 0;
+    width: 100%;
+    max-width: 220px;
+    box-sizing: border-box;
+}
+/* C 型线路图：已过站/短交路等标记为 passed 时，站名压暗，效果对齐暂缓车站 */
+#display-app.display-3 #d-map .c-type-node.passed .info-btm .name {
+    color: #999;
+    opacity: 0.7;
+}
+
+#display-app.display-3 #d-map .c-type-node.passed .info-btm .en {
+    color: #ccc;
+    opacity: 0.7;
+}
+/* 英文换行内层：table 固定宽度，子元素强制换行 */
+#display-app.display-3 #d-map .c-type-node .c-type-en-inner {
+    display: table !important;
+    table-layout: fixed !important;
+    width: 220px !important;
+    max-width: 220px !important;
+}
+#display-app.display-3 #d-map .c-type-node .c-type-en-inner > * {
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: anywhere !important;
 }
 
 #display-app.display-3 #d-map .c-type-node .info-top .x-tag {
     font-size: 10px;
     padding: 1px 4px;
     border-radius: 3px;
-    margin: 1px 0;
+    margin: 0;
+    writing-mode: horizontal-tb;
+}
+#display-app.display-3 #d-map .c-type-node .info-top .defer {
+    writing-mode: horizontal-tb;
+}
+
+/* 换乘标签：取消溢出横向滚动（保持静止显示） */
+#display-app.display-3 #d-map .c-type-node .info-top .c-xfer-scroll {
+    display: flex;
+    gap: 3px;
+    animation: none !important;
+    will-change: auto;
+    transform: none !important;
+}
+@keyframes c-xfer-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(calc(-1 * var(--c-xfer-scroll-dist, 0px))); }
 }
 
 #display-app #arrival-screen .l-node {
@@ -1374,6 +1576,7 @@ function mkNode(st, i, mode, appData, rtState) {
   let isCurr = false;
   const state = rtState.state;
   const dir = appData.meta ? appData.meta.dirType : null;
+  const devFlags = getDisplay3RuntimeFlags();
   if (mode === 'loop') {
     if (i === rtState.idx) {
       if (state === 0) isCurr = true;
@@ -1395,16 +1598,25 @@ function mkNode(st, i, mode, appData, rtState) {
   let xferHTML = '';
   if (st.xfer) {
     st.xfer.forEach((x) => {
+      const label = shortenLineNameForTag(x.line);
       if (x.suspended) {
-          xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${x.line}<span class="sub">暂缓</span></span>`;
+        // 暂缓相关：开关关闭时完全不显示该标签
+        if (devFlags.showSuspended) {
+          xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${label}<span class="sub">暂缓</span></span>`;
+        }
       } else if (x.exitTransfer) {
-        // 出站换乘：显示线路名称和"出站"标记
-        xferHTML += `<span class="x-tag exit-transfer" style="background:${x.color}; display:inline-flex; align-items:center; gap:2px;">${x.line}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
+        // 出站换乘：到站页面(state === 0)显示“出站”子标签；下一站页面(state === 1)仅显示普通换乘标签
+        if (devFlags.showExitTransfer && state === 0) {
+          xferHTML += `<span class="x-tag exit-transfer" style="background:${x.color}; display:inline-flex; align-items:center; gap:2px;">${label}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
+        } else {
+          xferHTML += `<span class="x-tag" style="background:${x.color}">${label}</span>`;
+        }
       } else {
-        xferHTML += `<span class="x-tag" style="background:${x.color}">${x.line}</span>`;
+        xferHTML += `<span class="x-tag" style="background:${x.color}">${label}</span>`;
       }
     });
   }
+  // 以下站名压暗 / 暂缓标签 / 仅上行仅下行 / 大站停靠逻辑，与显示器1 保持一致
   let nameStyle = '';
   let deferTag = '';
   let dockTag = '';
@@ -1455,19 +1667,31 @@ function mkNode(st, i, mode, appData, rtState) {
       const maxLengthPerRow = 4; // 超过4个字单独一行
       const xferTags = [];
       st.xfer.forEach((x) => {
+        const label = shortenLineNameForTag(x.line);
         let tagHTML = '';
-        let textLength = x.line.length;
+        let textLength = label.length;
         if (x.suspended) {
-          tagHTML = `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:inline-flex; align-items:center; gap:2px; margin:1px;">${x.line}<span class="sub" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
-          textLength += 2; // 加上"暂缓"2个字
+          if (devFlags.showSuspended) {
+            tagHTML = `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:inline-flex; align-items:center; gap:2px; margin:1px;">${label}<span class="sub" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
+            textLength += 2;
+          } else {
+            // devFlags.showSuspended 为 false 时，不生成该标签
+            tagHTML = '';
+          }
         } else if (x.exitTransfer) {
-          // 出站换乘：显示线路名称和"出站"标记
-          tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff; display:inline-flex; align-items:center; gap:2px;">${x.line}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
-          textLength += 2; // 加上"出站"2个字
+          if (devFlags.showExitTransfer && state === 0) {
+            tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff; display:inline-flex; align-items:center; gap:2px;">${label}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
+            textLength += 2;
+          } else {
+            // 下一站页面：仅显示普通换乘标签
+            tagHTML = `<span class="x-tag" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff;">${label}</span>`;
+          }
         } else {
-          tagHTML = `<span class="x-tag" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff;">${x.line}</span>`;
+          tagHTML = `<span class="x-tag" style="background:${x.color}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; margin:1px; color:#fff;">${label}</span>`;
         }
-        xferTags.push({ html: tagHTML, length: textLength });
+        if (tagHTML) {
+          xferTags.push({ html: tagHTML, length: textLength });
+        }
       });
       
       // 按照每行2个标签分组，但如果标签字数过多则单独一行
@@ -1509,17 +1733,20 @@ function mkNode(st, i, mode, appData, rtState) {
     // 首先收集所有标签的文本信息，用于计算动态样式
     const tagInfos = [];
     
-    // 收集换乘标签信息
+    // 收集换乘标签信息（标签只显示简称：2号线→2，济阳线→济阳）
     if (st.xfer && st.xfer.length > 0) {
       st.xfer.forEach((x) => {
+        const label = shortenLineNameForTag(x.line);
         if (x.suspended) {
-          // 暂缓的换乘标签，只计算换乘线路名的长度，"暂缓"是子标签
-          tagInfos.push({ text: x.line, type: 'xfer-suspended', bgColor: '#ccc', textColor: '#666', hasSub: true });
+          if (devFlags.showSuspended) {
+            tagInfos.push({ text: label, type: 'xfer-suspended', bgColor: '#ccc', textColor: '#666', hasSub: true });
+          }
         } else if (x.exitTransfer) {
-          // 出站换乘：显示线路名称和"出站"标记
-          tagInfos.push({ text: x.line, type: 'xfer-exit', bgColor: x.color, textColor: '#fff', hasSub: true, subText: '出站' });
+          if (devFlags.showExitTransfer) {
+            tagInfos.push({ text: label, type: 'xfer-exit', bgColor: x.color, textColor: '#fff', hasSub: true, subText: '出站' });
+          }
         } else {
-          tagInfos.push({ text: x.line, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });
+          tagInfos.push({ text: label, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });
         }
       });
     }
@@ -1533,12 +1760,12 @@ function mkNode(st, i, mode, appData, rtState) {
     }
     
     // 收集大站停靠标签信息
-    if (st.expressStop !== false) {
+    if (st.expressStop !== false && devFlags.showExpressStop) {
       tagInfos.push({ text: '大站停靠', type: 'express', bgColor: '#ffa502', textColor: '#fff', hasSub: false });
     }
     
     // 收集暂缓标签信息
-    if (deferTag) {
+    if (deferTag && devFlags.showSuspended) {
       tagInfos.push({ text: '暂缓', type: 'defer', bgColor: '#95a5a6', textColor: '#fff', hasSub: false });
     }
     
@@ -1934,25 +2161,33 @@ function createXferCheck(watermarkElement) {
 }
 
 // 更新换乘检测显示
-function updateXferCheck(xferCheckElement, appData) {
+function updateXferCheck(xferCheckElement, appData, rtState) {
   if (!xferCheckElement) return;
+
+  const devFlags = getDisplay3RuntimeFlags();
+
+  // 开关：可关闭右上角⚠换乘检测提示
+  if (!devFlags.showXferCheck) {
+    xferCheckElement.classList.add('hidden');
+    return;
+  }
   
   const issues = checkExitTransferStatus(appData);
   
   const parts = [];
   
   // 暂缓开通的线路
-  if (issues.suspendedLines.length > 0) {
+  if (issues.suspendedLines.length > 0 && devFlags.showSuspended) {
     parts.push(`${issues.suspendedLines.join('、')}暂缓开通`);
   }
   
   // 出站换乘的线路
-  if (issues.exitTransferLines.length > 0) {
+  if (issues.exitTransferLines.length > 0 && devFlags.showExitTransfer) {
     parts.push(`${issues.exitTransferLines.join('、')}出站换乘`);
   }
   
   // 暂缓开通的站点
-  if (issues.suspendedStations.length > 0) {
+  if (issues.suspendedStations.length > 0 && devFlags.showSuspended) {
     // 按站序索引排序
     const sorted = [...issues.suspendedStations].sort((a, b) => a.stationIdx - b.stationIdx);
     const ranges = [];
@@ -4069,7 +4304,7 @@ export function initDisplayWindow(rootElement) {
       box.style.display = 'block';
       box.style.marginTop = '0px';
 
-      const paddingX = 60; // 左侧留口略缩小，减少空白但保留「口」字形开口
+      const paddingX = 140; // 左侧留口略缩小，减少空白但保留「口」字形开口
       const paddingRight = 40; // 右侧少量留白，减少空白
       // 使用多种方式获取容器宽度，确保初始渲染时也能正确计算
       const containerWidth = c.offsetWidth || c.clientWidth || c.getBoundingClientRect().width || 1900;
@@ -4085,6 +4320,22 @@ export function initDisplayWindow(rootElement) {
       const bottomY = trackTop + trackHeight;
       const topCount = Math.ceil(total / 2);
       const bottomCount = total - topCount;
+
+      // ---------- 微调：高亮线路条、圆点、箭头（仅改下面数值即可） ----------
+      const C3_TUNING = {
+        trackStrokeWidth: 18,           // 线路条粗细（背景轨 + 高亮轨）
+        dotSizeNormal: 30,              // 普通/过站圆点直径（px）
+        dotBorderNormal: 5,             // 普通圆点边框宽度（px）
+        dotSizeSkip: 24,                // 暂缓站圆点直径（px）
+        dotSizeTarget: 20,              // 下一站圆点直径（px），可与 dotSizeNormal 不同做突出
+        arrowFontSize: 20,              // 箭头图标字号（px）
+        arrowOffsetY: -110,             // 箭头相对轨道的垂直偏移（px），负值上移
+        arrowRatios: [0.45, 0.55],     // 箭头在线段上的位置比例（两个箭头）
+        bridgeReserveCorner: 10,        // 桥接段：距 R 角留白（px，会乘 scale）
+        bridgeArrowWindow: 120,         // 桥接段：放箭头的窗口长度（px，会乘 scale）
+        bridgeReserveBeforeDot: 10,    // 桥接段：下排圆点前留白（px，会乘 scale）
+      };
+      // ---------- 微调结束 ----------
 
       // 清空 trackContainer，重新构建 C 型路径
       trackContainer.innerHTML = '';
@@ -4168,7 +4419,7 @@ export function initDisplayWindow(rootElement) {
       trackBackground.setAttribute('d', d);
       trackBackground.setAttribute('fill', 'none');
       trackBackground.setAttribute('stroke', '#ccc');
-      trackBackground.setAttribute('stroke-width', '18');
+      trackBackground.setAttribute('stroke-width', String(C3_TUNING.trackStrokeWidth));
       svg.appendChild(trackBackground);
 
       // 为每两个相邻站点创建独立高亮线段（与环线模式一致，支持贯通线路多颜色）
@@ -4211,7 +4462,7 @@ export function initDisplayWindow(rootElement) {
         segmentPath.setAttribute('d', d);
         segmentPath.setAttribute('fill', 'none');
         segmentPath.setAttribute('stroke', segmentColor);
-        segmentPath.setAttribute('stroke-width', '18');
+        segmentPath.setAttribute('stroke-width', String(C3_TUNING.trackStrokeWidth));
         segmentPath.setAttribute('stroke-dasharray', `${segLen} ${perimeter}`);
         segmentPath.setAttribute('stroke-dashoffset', `${dashOffset}`);
         segmentPath.dataset.segmentIndex = i;
@@ -4259,12 +4510,30 @@ export function initDisplayWindow(rootElement) {
       console.log(`[Display-3 C型图] 总站点数: ${total}, 上排: ${topCount}, 下排: ${bottomCount}`);
       console.log(`[Display-3 C型图] 轨道: top=${trackTop}, height=${trackHeight}, 水平段长度=${horizontalLength}, 圆角半径=${cornerR}, 圆弧中心=(${arcCenterX}, ${arcCenterY})`);
 
+      // 换乘标签显示规则（更接近实车）：如“2号线”显示“2”，“济阳线”显示“济阳”
+      const normalizeXferLabel = (raw) => {
+        const s = String(raw || '').trim();
+        if (!s) return '';
+        // 优先取数字线路（包含数字就只显示数字）
+        const digits = s.match(/\d+/g);
+        if (digits && digits.length) return digits.join('');
+        // 非数字线路：去掉常见后缀
+        return s.replace(/(号线|线路|线)$/g, '');
+      };
+
       sts.forEach((st, idx) => {
         const node = mkNode(st, idx, 'linear', appData, rt);
         node.classList.add('c-type-node');
         node.style.position = 'absolute';
         node.style.transform = 'translateX(-50%)';
         node.style.zIndex = '1';
+
+        // 短交路/非运营区间适配（对齐显示器1）：
+        // 区间外站点强制视为“已过站”，统一灰色样式（不参与贯通段配色）
+        if (idx < rangeStart || idx > rangeEnd) {
+          node.classList.add('passed');
+          node.classList.remove('curr');
+        }
 
         // 使用 SVG 路径的 getPointAtLength 精确计算站点位置
         const theoreticalDist = getStDist(idx);
@@ -4318,20 +4587,119 @@ export function initDisplayWindow(rootElement) {
         node.style.left = `${x}px`;
         node.style.top = `${y}px`;
         
+        // C 型图换乘标签：统一横向、居中，并保证“整串标签”与圆点竖向对齐
+        // mkNode 的 info-top 里可能存在多个 wrapper div（会导致竖向堆叠），这里重组 DOM 为单一横向容器
+        const infoTop = node.querySelector('.info-top');
+        if (infoTop) {
+          const tags = Array.from(infoTop.querySelectorAll('.x-tag, .defer'));
+          tags.forEach((el) => {
+            if (el.classList && el.classList.contains('x-tag')) {
+              el.textContent = normalizeXferLabel(el.textContent);
+            }
+          });
+
+          // 重建为单一横向容器，避免每个 wrapper 100% 宽导致换行/竖排
+          const row = document.createElement('div');
+          row.className = 'c-xfer-row';
+          row.style.display = 'flex';
+          row.style.flexDirection = 'row';
+          row.style.flexWrap = 'nowrap';
+          row.style.alignItems = 'center';
+          row.style.justifyContent = 'center';
+          row.style.gap = '3px';
+          row.style.width = 'max-content';
+          row.style.margin = '0 auto';
+
+          // 清空并重新挂载（保留原 tag 节点本身）
+          infoTop.innerHTML = '';
+          tags.forEach((el) => row.appendChild(el));
+          infoTop.appendChild(row);
+
+          // 这里节点尚未 append 到 DOM，尺寸为 0；append 后用 rAF 计算是否需要滚动
+          const applyXferScroll = () => {
+            if (!node.isConnected) return;
+            const containerW = infoTop.clientWidth || 0;
+            const rowW = row.scrollWidth || 0;
+            const overflow = Math.max(0, rowW - containerW);
+            // 取消滚动效果：不再根据溢出启用 c-xfer-scroll 动画
+            row.classList.remove('c-xfer-scroll');
+            row.style.setProperty('--c-xfer-scroll-dist', `0px`);
+          };
+          requestAnimationFrame(applyXferScroll);
+        }
+        
         // 方案三最终版：使用 text-align: end + transform-origin: right center
         // 核心：文本右对齐，旋转中心在右边缘，最后一个字符自动对齐圆点
         const infoBtm = node.querySelector('.info-btm');
         if (infoBtm) {
           const nameEl = infoBtm.querySelector('.name');
-          
-          // 设置基本样式
+          const enEl = infoBtm.querySelector('.en');
+          // 中文站名达到「浦东1号2号航站楼」长度（9 字）及以上时缩小字号
+          if (nameEl && st.name && st.name.length >= 9) {
+            nameEl.style.fontSize = '16px';
+            nameEl.style.letterSpacing = '0.5px';
+          }
+          // 强制横排 + 换行：覆盖 .l-node 的 vertical-rl，否则“宽度”作用在竖排方向，英文不会换行
+          infoBtm.style.writingMode = 'horizontal-tb';
+          infoBtm.style.direction = 'ltr';
+          // 英文换行宽度：220px 内按单词断行；用内层 div 固定宽度，否则 flex 子项易被内容撑开不换行
+          const enWrapWidth = 220;
+          if (enEl) {
+            enEl.style.writingMode = 'horizontal-tb';
+            enEl.style.textOrientation = 'mixed';
+            enEl.style.display = 'block';
+            enEl.style.flex = 'none';
+            enEl.style.width = enWrapWidth + 'px';
+            enEl.style.maxWidth = enWrapWidth + 'px';
+            enEl.style.minWidth = '0';
+            enEl.style.boxSizing = 'border-box';
+            enEl.style.textAlign = 'right';
+            // 内层用 table 布局强制 220px 内换行（table-layout:fixed 在旋转父级下也生效）
+            const enInner = document.createElement('div');
+            enInner.className = 'c-type-en-inner';
+            enInner.style.display = 'table';
+            enInner.style.tableLayout = 'fixed';
+            enInner.style.width = enWrapWidth + 'px';
+            enInner.style.maxWidth = enWrapWidth + 'px';
+            enInner.style.boxSizing = 'border-box';
+            enInner.style.textAlign = 'right';
+            const enCell = document.createElement('div');
+            enCell.style.display = 'table-cell';
+            enCell.style.width = enWrapWidth + 'px';
+            enCell.style.whiteSpace = 'normal';
+            enCell.style.wordBreak = 'normal';
+            enCell.style.overflowWrap = 'anywhere';
+            enCell.style.textAlign = 'right';
+            enCell.style.verticalAlign = 'top';
+            const rawHtml = (enEl.innerHTML || '').replace(/\u00A0/g, ' ');
+            // 旋转父级下 CSS 换行常失效，改为 JS 按约 24 字符/行插入 <br> 强制换行（10px 约 220px 宽）
+            const plain = rawHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            const words = plain ? plain.split(' ') : [];
+            const maxCharsPerLine = 24;
+            const lines = [];
+            let line = '';
+            for (const w of words) {
+              const next = line ? line + ' ' + w : w;
+              if (next.length <= maxCharsPerLine) {
+                line = next;
+              } else {
+                if (line) lines.push(line);
+                line = w;
+              }
+            }
+            if (line) lines.push(line);
+            enCell.innerHTML = lines.length ? lines.join('<br>') : rawHtml;
+            enEl.innerHTML = '';
+            enInner.appendChild(enCell);
+            enEl.appendChild(enInner);
+          }
+          // 设置基本样式（与英文换行宽度一致，整块才能正确测量）
           infoBtm.style.position = 'absolute';
           infoBtm.style.margin = '0';
           infoBtm.style.padding = '0';
-          infoBtm.style.whiteSpace = 'nowrap';
-          infoBtm.style.textAlign = 'end'; // 右对齐
-          infoBtm.style.width = 'auto';
-          infoBtm.style.maxWidth = '300px';
+          infoBtm.style.textAlign = 'end';
+          infoBtm.style.width = enWrapWidth + 'px';
+          infoBtm.style.maxWidth = enWrapWidth + 'px';
           
           // 旋转角度：上下两排都向上倾斜45度（都在圆点下方，但文字向上倾斜）
           const rotationAngle = -45;
@@ -4350,113 +4718,85 @@ export function initDisplayWindow(rootElement) {
           infoBtm.style.left = '0px';
           infoBtm.style.top = `${baseY}px`;
           
-          // 简化方法：统一使用站名文本长度估算宽度，确保一致性
+          const alignTweak = idx < topCount ? -8 : 8; // 上排向左 8px，下排向右 8px
+          const applyInfoBtmLeft = () => {
+            if (!node.isConnected) return;
+            void infoBtm.offsetHeight; // 强制重排，拿到换行后的布局
+            const blockWidth = infoBtm.scrollWidth || infoBtm.offsetWidth || 0;
+            if (blockWidth <= 0) {
+              const fallback = nameEl ? (nameEl.scrollWidth || nameEl.offsetWidth || 0) : 0;
+              if (fallback <= 0) return;
+              const anchor = node.offsetWidth / 2; // 圆点在节点中心
+              infoBtm.style.left = `${-fallback + anchor + alignTweak}px`;
+              return;
+            }
+            // 换行时整块右边缘对齐圆点：left + blockWidth = anchor，故 left = anchor - blockWidth
+            const anchor = node.offsetWidth / 2;
+            infoBtm.style.left = `${-blockWidth + anchor + alignTweak}px`;
+          };
+          
+          // 换行且防错位：等换行布局完成后再测 blockWidth，并用 ResizeObserver 兜底
+          let rafScheduled = false;
+          const scheduleApply = () => {
+            if (rafScheduled) return;
+            rafScheduled = true;
+            requestAnimationFrame(() => {
+              rafScheduled = false;
+              applyInfoBtmLeft();
+            });
+          };
           setTimeout(() => {
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
-                if (!nameEl) return;
-                
-                // 获取站名纯文本（去除所有HTML标签和特殊字符）
-                let text = nameEl.textContent || nameEl.innerText || '';
-                text = text.trim();
-                if (!text) return;
-                
-                // 强制浏览器重新计算布局
-                void nameEl.offsetHeight;
-                void infoBtm.offsetHeight;
-                
-                // 先设置一个初始位置，让文本渲染
-                const initialLeft = 0;
-                infoBtm.style.left = `${initialLeft}px`;
-                
-                // 再次延迟，确保位置生效后再测量
-                requestAnimationFrame(() => {
-                  if (!nameEl || !dot) return;
-                  
-                  // 获取实际渲染后的位置
-                  const nodeRect = node.getBoundingClientRect();
-                  const nameRect = nameEl.getBoundingClientRect();
-                  const dotRect = dot.getBoundingClientRect();
-                  
-                  // 计算圆点中心位置（相对于节点）
-                  const dotCenterX = dotRect.left - nodeRect.left + dotRect.width / 2;
-                  
-                  // 计算文本右边缘位置（相对于节点）
-                  // 由于 text-align: end，文本右边缘在 nameRect.right
-                  const textRightX = nameRect.right - nodeRect.left;
-                  
-                  // 计算需要调整的偏移量
-                  // 由于 transform-origin: right center，旋转后右边缘中心位置不变
-                  // 所以我们需要让文本右边缘对齐到圆点中心
-                  const offsetX = dotCenterX - textRightX;
-                  
-                  // 应用调整（加上 rightOffset）
-                  const rightOffset = 50;
-                  const currentLeft = parseFloat(infoBtm.style.left) || 0;
-                  infoBtm.style.left = `${currentLeft + offsetX + rightOffset}px`;
-                  
-                  // 记录最终使用的宽度用于调试
-                  const textWidth = nameRect.width || nameEl.scrollWidth || nameEl.offsetWidth || 0;
-                  const finalLeft = parseFloat(infoBtm.style.left) || 0;
-                  const actualWidth = nameRect.width || 0;
-                  const scrollWidth = nameEl.scrollWidth || 0;
-                  const offsetWidth = nameEl.offsetWidth || 0;
-                  
-                  // 计算估算宽度用于对比
-                  let estimatedWidth = 0;
-                  for (let i = 0; i < text.length; i++) {
-                    const char = text[i];
-                    if (/[\u4e00-\u9fa5]/.test(char)) {
-                      estimatedWidth += 20;
-                    } else {
-                      estimatedWidth += 12;
-                    }
+                applyInfoBtmLeft();
+                const ro = new ResizeObserver(() => {
+                  if (!node.isConnected) {
+                    ro.disconnect();
+                    return;
                   }
-                  
-                  // 调试日志：输出所有站名的测量信息
-                  const isProblematic = ['济南西', '千佛山', '春博路', '超算中心','山大路南口','黄旗山'].some(name => text.includes(name));
-                  // 输出所有站名的调试信息
-                  console.log(`[站名对齐调试] 索引: ${idx}, 站名: "${text}"${isProblematic ? ' ⚠️有问题' : ''}`, {
-                      textLength: text.length,
-                      usedWidth: textWidth, // 实际使用的宽度
-                      estimatedWidth: estimatedWidth, // 估算宽度（用于对比）
-                      actualWidth: actualWidth,
-                      scrollWidth: scrollWidth,
-                      offsetWidth: offsetWidth,
-                      finalLeft: finalLeft,
-                      rightOffset: rightOffset,
-                      offsetX: offsetX,
-                      dotCenterX: dotCenterX,
-                      textRightX: textRightX,
-                      nameElStyle: {
-                        fontSize: window.getComputedStyle(nameEl).fontSize,
-                        fontFamily: window.getComputedStyle(nameEl).fontFamily,
-                        fontWeight: window.getComputedStyle(nameEl).fontWeight,
-                      },
-                      infoBtmStyle: {
-                        left: infoBtm.style.left,
-                        top: infoBtm.style.top,
-                        transform: infoBtm.style.transform,
-                        transformOrigin: infoBtm.style.transformOrigin,
-                      },
-                      hasXfer: !!(st.xfer && st.xfer.length > 0),
-                      xferCount: st.xfer ? st.xfer.length : 0,
-                    });
+                  scheduleApply(); // 防抖：同一帧内多次 resize 只算一次
                 });
+                ro.observe(infoBtm);
               });
             });
-          }, 50);
+          }, 80);
         }
 
-        // C 型图站点圆点：逻辑与显示器1一致，支持贯通/下一站高亮
+        // C 型图站点圆点：逻辑与显示器1一致，支持贯通/下一站高亮（尺寸用 C3_TUNING 微调）
         const dot = node.querySelector('.dot');
         if (dot) {
+          const isPassedNode = node.classList.contains('passed');
+
+          // 贯通模式圆点主题色：若命中自定义颜色区间（m.customColorRanges），则圆点边框使用该段颜色
+          // 规则：站点 idx 命中 [startIdx, endIdx) 则使用 range.color；否则回退 m.themeColor
+          const getDotThemeColor = () => {
+            try {
+              if (m.customColorRanges && Array.isArray(m.customColorRanges)) {
+                for (const range of m.customColorRanges) {
+                  const s = range.startIdx !== undefined ? parseInt(range.startIdx) : -1;
+                  const e = range.endIdx !== undefined ? parseInt(range.endIdx) : -1;
+                  const c = range.color || null;
+                  if (s >= 0 && e >= 0 && idx >= s && idx < e && c) return c;
+                }
+              }
+            } catch (e) {
+              // ignore
+            }
+            return m.themeColor || 'var(--theme)';
+          };
+          const dotThemeColor = getDotThemeColor();
+
           // 暂缓停靠车站：缩小为灰色空心圆
           if (st.skip) {
             dot.style.background = '#fff';
             dot.style.borderColor = '#ccc';
-            dot.style.width = '24px';
-            dot.style.height = '24px';
+            dot.style.width = C3_TUNING.dotSizeSkip + 'px';
+            dot.style.height = C3_TUNING.dotSizeSkip + 'px';
+          } else if (isPassedNode) {
+            // 已过站：显示灰色（对齐显示器1：保持 passed 类语义，并用 important 压过贯通段色）
+            dot.style.background = '#fff';
+            dot.style.setProperty('border-color', '#ccc', 'important');
+            dot.style.boxShadow = 'none';
           } else if (idx === targetIdx) {
             // 下一站：黄色实心、呼吸高亮（与显示器1一致）
             dot.style.background = '#f1c40f';
@@ -4465,32 +4805,38 @@ export function initDisplayWindow(rootElement) {
           // 注意：pulse-yellow-centered 会自带 translate(-50%, -50%)，会把圆点整体抬高一块
           // 对于 display-3 的 .l-node，我们本身没有 translate(-50%, -50%)，所以这里改用不带位移的 pulse-yellow
           dot.style.animation = 'pulse-yellow 1.5s infinite';
-          // 适当放大下一站圆点尺寸，让视觉更突出
-          dot.style.width = '24px';
-          dot.style.height = '24px';
-          } else if (idx === prevIdx) {
-            // 发车状态下的当前站：退回为普通白底灰边，无光晕
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#ccc';
-            dot.style.boxShadow = 'none';
+          dot.style.width = C3_TUNING.dotSizeTarget + 'px';
+          dot.style.height = C3_TUNING.dotSizeTarget + 'px';
           } else {
             // 其它站点：保持 mkNode 生成的默认样式，不额外加光晕
+            dot.style.borderColor = dotThemeColor;
             dot.style.boxShadow = 'none';
           }
         }
 
         box.appendChild(node);
+
+        // C 型图换乘标签：append 后再测宽度（已取消滚动效果，不再创建滚动容器）
+        requestAnimationFrame(() => {
+          const infoTop = node.querySelector('.info-top');
+          if (!infoTop || !node.isConnected) return;
+          // 兼容旧 DOM：如果存在 c-xfer-scroll，去掉 class，避免遗留动画
+          const scrollEl = infoTop.querySelector('.c-xfer-scroll');
+          if (scrollEl) {
+            scrollEl.classList.remove('c-xfer-scroll');
+            scrollEl.style.setProperty('--c-xfer-scroll-dist', '0px');
+          }
+        });
       });
 
-      // 在高亮线段上放置两个运营方向箭头（类似显示器1）
+      // 在高亮线段上放置两个运营方向箭头（类似显示器1，参数用 C3_TUNING 微调）
       const trackContainerTop = parseInt(trackContainer.style.top, 10) || 370; // 轨道层相对 box 的 top
-      const arrowFontSize = 20;
 
       // 小工具：在给定路径区间内按比例放置箭头
       const placeArrowsInRange = (segStart, segEnd, ratios, segIndex) => {
         const segLenLocal = segEnd - segStart;
         if (segLenLocal <= 0) return;
-        ratios.forEach((ratio) => {
+        (ratios || C3_TUNING.arrowRatios).forEach((ratio) => {
           const aDist = segStart + segLenLocal * ratio;
           const ptArr = measurePath.getPointAtLength(aDist);
           const distBefore = Math.max(0, aDist - 2);
@@ -4503,7 +4849,7 @@ export function initDisplayWindow(rootElement) {
           const wrapper = document.createElement('div');
           wrapper.style.position = 'absolute';
           wrapper.style.left = ptArr.x + 'px';
-          wrapper.style.top = (trackContainerTop + ptArr.y - 110) + 'px'; // 箭头上移
+          wrapper.style.top = (trackContainerTop + ptArr.y + C3_TUNING.arrowOffsetY) + 'px'; // 箭头垂直位置微调
           wrapper.style.transform = 'translate(-50%, -50%)';
           wrapper.style.zIndex = '10';
           wrapper.style.pointerEvents = 'none';
@@ -4526,25 +4872,22 @@ export function initDisplayWindow(rootElement) {
             else arrowI.classList.add('segment-arrow-default');
           }
           arrow.style.transform = `rotate(${angle}deg)`;
-          arrow.style.fontSize = arrowFontSize + 'px';
+          arrow.style.fontSize = C3_TUNING.arrowFontSize + 'px';
           arrow.style.color = '#fff';
           wrapper.appendChild(arrow);
           box.appendChild(wrapper);
         });
       };
+      // 箭头：整条“在服务范围内”的线路都显示白色箭头（含已过站/未到站）；
+      // 仅“当前站→下一站”那一段做闪烁强调（与显示器1一致）
       for (let i = 0; i < sts.length - 1; i++) {
         const isInServiceRange = (i >= rangeStart && i < rangeEnd);
-        const isInHighlightRange = isInServiceRange && (i >= highlightStartIdx && i < highlightEndIdx);
-        if (!isInHighlightRange) continue;
+        if (!isInServiceRange) continue;
 
         const theoreticalD1 = getStDist(i);
         const theoreticalD2 = getStDist(i + 1);
         const actualD1 = theoreticalD1 * scale;
         const actualD2 = theoreticalD2 * scale;
-
-        // 默认整段都可放箭头
-        let segStart = actualD1;
-        let segEnd = actualD2;
 
         // 特殊处理「上排最后一站 → 下排第一站」这段：
         // 这段在路径上会穿过右侧圆角和竖直段，为了实现
@@ -4556,38 +4899,32 @@ export function initDisplayWindow(rootElement) {
           const topActualEnd = topPathLen * scale; // 上水平段在路径上的末端距离
 
           // 上侧：只在上水平段的最后一小段放箭头，预留出一小段给 R 角
-          const reserveForCornerTop = 10 * scale;
-          // 使用更长的窗口，让这两个箭头之间的距离接近普通线段上的实际像素间距
-          const arrowWindowTop = 120 * scale;
+          const reserveForCornerTop = C3_TUNING.bridgeReserveCorner * scale;
+          const arrowWindowTop = C3_TUNING.bridgeArrowWindow * scale;
           const topSegEnd = Math.max(0, topActualEnd - reserveForCornerTop);
           let topSegStart = Math.max(actualD1, topSegEnd - arrowWindowTop);
           if (topSegEnd > topSegStart) {
-            // 保持靠近 R 角的位置不变，但在该小区间内部使用与普通线段相同的比例（0.45 / 0.55），
-            // 这样这两个箭头之间的间隔就和其它普通双箭头一致。
-            placeArrowsInRange(topSegStart, topSegEnd, [0.45, 0.55], i);
+            placeArrowsInRange(topSegStart, topSegEnd, C3_TUNING.arrowRatios, i);
           }
 
-          // 下侧：只在「R 角之后 → 下排最右一站圆点之前」这一小段直线里放箭头，
-          // 与上排类似的位置，避免箭头落在圆角上。
-          const bottomActualStart = (horizontalLength + arcLen) * scale; // 下水平段在路径上的起点距离（刚过 R 角）
-          const firstBottomIdx = topCount; // 下排第一个站点（最右）
+          // 下侧：只在「R 角之后 → 下排最右一站圆点之前」这一小段直线里放箭头
+          const bottomActualStart = (horizontalLength + arcLen) * scale;
+          const firstBottomIdx = topCount;
           const bottomNodeDist = getStDist(firstBottomIdx) * scale;
-          const reserveFromCorner = 10 * scale;  // 紧挨 R 角留白
-          const reserveBeforeDot = 10 * scale;   // 圆点前再留一点距离
+          const reserveFromCorner = C3_TUNING.bridgeReserveCorner * scale;
+          const reserveBeforeDot = C3_TUNING.bridgeReserveBeforeDot * scale;
 
           const bottomSegStart = Math.max(bottomActualStart + reserveFromCorner, actualD1);
           const bottomSegEnd = Math.min(bottomNodeDist - reserveBeforeDot, actualD2);
           if (bottomSegEnd > bottomSegStart) {
-            // 下排同样在这小段直线内用 0.45 / 0.55 的比例放置箭头，
-            // 保证与上排以及其它普通线段的箭头间距保持一致。
-            placeArrowsInRange(bottomSegStart, bottomSegEnd, [0.45, 0.55], i);
+            placeArrowsInRange(bottomSegStart, bottomSegEnd, C3_TUNING.arrowRatios, i);
           }
 
           continue;
         }
 
-        // 普通段：整段都可放箭头，位置在线段 45% / 55%
-        placeArrowsInRange(actualD1, actualD2, [0.45, 0.55], i);
+        // 普通段：整段都可放箭头，位置比例用 C3_TUNING.arrowRatios
+        placeArrowsInRange(actualD1, actualD2, C3_TUNING.arrowRatios, i);
       }
 
       c.appendChild(box);
@@ -5425,9 +5762,18 @@ export function initDisplayWindow(rootElement) {
       if (d2 < d1) d2 += perimeter;
       const segLen = d2 - d1;
       const isCurrentSeg = rt.state === 1 && ((prevIdx === i && targetIdx === nextI) || (prevIdx === nextI && targetIdx === i));
-      // 改为两个箭头，以线段中间为中心对称分布（45% 和 55%）
-      [0.45, 0.55].forEach((ratio, ridx) => {
-        let aDist = (d1 + segLen * ratio) % perimeter;
+      // 环线箭头：以线段中点为中心，两个箭头之间的间距与线性图 currentArrowSpacing 使用同一套缩放公式
+      // 线性图：currentArrowSpacing 基于 baseStationCount=21, baseSpacing=20 像素
+      const baseStationCount = 21;
+      const baseSpacingPx = 20;
+      const scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / sts.length));
+      const desiredGapPx = Math.max(8, Math.round(baseSpacingPx * scaleRatio)); // 与线性图一致
+      const maxGapPx = segLen * 0.6; // 不要超过当前线段长度的 60%
+      const gapPx = Math.min(desiredGapPx, maxGapPx);
+      const centerDist = d1 + segLen / 2;
+      const offsets = [-gapPx / 2, gapPx / 2];
+      offsets.forEach((off) => {
+        let aDist = (centerDist + off + perimeter) % perimeter;
         const ptArr = measurePath.getPointAtLength(aDist);
         const pA = measurePath.getPointAtLength((aDist - 2 + perimeter) % perimeter);
         const pB = measurePath.getPointAtLength((aDist + 2) % perimeter);
@@ -5529,9 +5875,9 @@ export function initDisplayWindow(rootElement) {
       if (appData) {
         autoApplyShortTurnIfNeeded(appData);
       }
-      // 更新换乘检测显示
-      updateXferCheck(xferCheckElement, appData);
       rt = data.r || rt;
+      // 更新换乘检测显示（需要当前 rt.state 以支持“下一站/到站”范围开关）
+      updateXferCheck(xferCheckElement, appData, rt);
       renderDisp();
     }
     if (data.t === 'REC_START') {
@@ -5550,9 +5896,9 @@ export function initDisplayWindow(rootElement) {
     if (appData) {
       autoApplyShortTurnIfNeeded(appData);
     }
-    // 更新换乘检测显示
-    updateXferCheck(xferCheckElement, appData);
     rt = data.r || rt;
+    // 更新换乘检测显示（需要当前 rt.state 以支持“下一站/到站”范围开关）
+    updateXferCheck(xferCheckElement, appData, rt);
     renderDisp();
   };
 
@@ -5568,9 +5914,9 @@ export function initDisplayWindow(rootElement) {
       if (appData) {
         autoApplyShortTurnIfNeeded(appData);
       }
-      // 更新换乘检测显示
-      updateXferCheck(xferCheckElement, appData);
       rt = data.r || rt;
+      // 更新换乘检测显示（需要当前 rt.state 以支持“下一站/到站”范围开关）
+      updateXferCheck(xferCheckElement, appData, rt);
       if (appData) renderDisp();
       return true;
     } catch (err) {

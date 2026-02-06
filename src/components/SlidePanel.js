@@ -2010,7 +2010,7 @@ export default {
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
             lineNameMerge: false, showAllStations: false, nextStationDurationSeconds: 10,
-            isSystem: false, isDisplay1: false, isDisplay2: false
+            isSystem: false, isDisplay1: false, isDisplay2: false, isDisplay3: false
         });
 
         function openDisplayEditDialog(displayId) {
@@ -2025,17 +2025,12 @@ export default {
             displayEdit.source = display.source === 'builtin' ? 'builtin' : (display.source === 'online' || display.source === 'custom' || display.source === 'gitee' ? 'online' : 'builtin');
             displayEdit.url = display.url || '';
             displayEdit.description = display.description || '';
-            // 显示器1 的开关：若当前就是该显示端，以 meta 为准（与显示端实际一致）；否则用 display 的存储值
-            const isCurrentDisplay1 = displayId === 'display-1' && settings.display.currentDisplayId === 'display-1';
+            // 显示器1/3 的开关：若当前就是该显示端，以 meta 为准（与显示端实际一致）；否则用 display 的存储值
+            const isCurrentTargetDisplay = displayId === settings.display.currentDisplayId;
             const meta = pidsState && pidsState.appData && pidsState.appData.meta;
-            if (displayId === 'display-1') {
-                if (isCurrentDisplay1 && meta) {
-                    displayEdit.lineNameMerge = meta.lineNameMerge === true || meta.lineNameMerge === 'true';
-                    displayEdit.showAllStations = meta.showAllStations === true || meta.showAllStations === 'true';
-                } else {
-                    displayEdit.lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
-                    displayEdit.showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
-                }
+            if ((displayId === 'display-1' || displayId === 'display-3') && isCurrentTargetDisplay && meta) {
+                displayEdit.lineNameMerge = meta.lineNameMerge === true || meta.lineNameMerge === 'true';
+                displayEdit.showAllStations = meta.showAllStations === true || meta.showAllStations === 'true';
             } else {
                 displayEdit.lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
                 displayEdit.showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
@@ -2044,6 +2039,9 @@ export default {
             displayEdit.isSystem = display.isSystem === true;
             displayEdit.isDisplay1 = displayId === 'display-1';
             displayEdit.isDisplay2 = displayId === 'display-2';
+            displayEdit.isDisplay3 = displayId === 'display-3';
+
+            // Display-3：不再在设置页暴露标签/提示级别选项，保持与显示器1一致的简单配置
             showDisplayEditDialog.value = true;
         }
 
@@ -2076,7 +2074,13 @@ export default {
             if (displayEdit.isSystem) {
                 const payload = displayEdit.isDisplay2
                     ? { nextStationDuration: displayEdit.nextStationDurationSeconds * 1000, isSystem: true, isDisplay2: true }
-                    : { lineNameMerge: displayEdit.lineNameMerge, showAllStations: displayEdit.showAllStations, isSystem: true, isDisplay1: true };
+                    : {
+                        lineNameMerge: displayEdit.lineNameMerge,
+                        showAllStations: displayEdit.showAllStations,
+                        isSystem: true,
+                        isDisplay1: displayEdit.isDisplay1 === true,
+                        isDisplay3: displayEdit.isDisplay3 === true
+                    };
                 const updateResult = await editDisplayInternal(id, payload);
                 if (updateResult && updateResult.ok) {
                     closeDisplayEditDialog();
@@ -2108,11 +2112,12 @@ export default {
             }
             const result = {
                 name, source, url, description,
-                lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
-                showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
+                lineNameMerge: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.lineNameMerge : undefined,
+                showAllStations: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.showAllStations : undefined,
                 isDisplay1: displayEdit.isDisplay1,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
-                isDisplay2: displayEdit.isDisplay2
+                isDisplay2: displayEdit.isDisplay2,
+                isDisplay3: displayEdit.isDisplay3
             };
             const updateResult = await editDisplayInternal(id, result);
             if (updateResult && updateResult.ok) {
@@ -2153,13 +2158,16 @@ export default {
                 displays: { ...settings.display.displays }
             });
             
-            // 只有切换到显示器1时才同步显示端设置到线路数据
-            if (displayId === 'display-1' && pidsState && pidsState.appData && pidsState.appData.meta && targetDisplay) {
+            // 切换到显示器1/3时：同步显示端设置到线路 meta（用于显示端读取）
+            if ((displayId === 'display-1' || displayId === 'display-3') && pidsState && pidsState.appData && pidsState.appData.meta && targetDisplay) {
                 if (targetDisplay.lineNameMerge !== undefined) {
                     pidsState.appData.meta.lineNameMerge = targetDisplay.lineNameMerge;
                 }
                 if (targetDisplay.showAllStations !== undefined) {
                     pidsState.appData.meta.showAllStations = targetDisplay.showAllStations;
+                }
+                if (displayId === 'display-3' && targetDisplay.display3Tags && typeof targetDisplay.display3Tags === 'object') {
+                    pidsState.appData.meta.display3Tags = { ...targetDisplay.display3Tags };
                 }
                 // 同步到显示端
                 sync();
@@ -2422,13 +2430,21 @@ export default {
                     if (displayData.source !== undefined) display.source = displayData.source;
                     if (displayData.url !== undefined) display.url = displayData.url;
                     if (displayData.description !== undefined) display.description = displayData.description;
-                    // 只有显示器1才保存开关值
-                    if (displayId === 'display-1') {
+                    // 显示器1/3：保存开关值
+                    if (displayId === 'display-1' || displayId === 'display-3') {
                         if (displayData.lineNameMerge !== undefined) {
                             display.lineNameMerge = displayData.lineNameMerge;
                         }
                         if (displayData.showAllStations !== undefined) {
                             display.showAllStations = displayData.showAllStations;
+                        }
+                    }
+                    // 显示器3：保存标签/提示开关
+                    if (displayId === 'display-3' && displayData.display3Tags !== undefined) {
+                        if (displayData.display3Tags && typeof displayData.display3Tags === 'object') {
+                            display.display3Tags = { ...displayData.display3Tags };
+                        } else {
+                            delete display.display3Tags;
                         }
                     }
                     // 显示器2：更新"下一站"页面显示时长
@@ -2437,6 +2453,21 @@ export default {
                     }
                 }
                 
+                // 如果这是当前活动的显示端，同步设置到线路数据（display-1/3）
+                if (displayId === settings.display.currentDisplayId) {
+                    if (pidsState && pidsState.appData && pidsState.appData.meta) {
+                        if (displayId === 'display-1' || displayId === 'display-3') {
+                            if (displayData.lineNameMerge !== undefined) pidsState.appData.meta.lineNameMerge = displayData.lineNameMerge;
+                            if (displayData.showAllStations !== undefined) pidsState.appData.meta.showAllStations = displayData.showAllStations;
+                        }
+                        if (displayId === 'display-3' && displayData.display3Tags && typeof displayData.display3Tags === 'object') {
+                            pidsState.appData.meta.display3Tags = { ...displayData.display3Tags };
+                        }
+                        // 同步到显示端
+                        try { sync(); } catch (e) {}
+                    }
+                }
+
                 // 强制更新显示端状态确保响应性
                 displayState.displays = { ...settings.display.displays };
                 saveSettings();
@@ -3056,7 +3087,7 @@ export default {
                                 <input v-model="displayEdit.description" type="text" class="se-input" placeholder="显示端描述">
                             </div>
                         </template>
-                        <template v-if="displayEdit.isDisplay1">
+                        <template v-if="displayEdit.isDisplay1 || displayEdit.isDisplay3">
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
                                     <div class="se-label" style="margin-bottom:4px;">线路名合并</div>

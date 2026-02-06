@@ -41,17 +41,22 @@ export default {
       }
     });
 
-    // 切换线路后保持 display-1 的「线路名合并」「显示全部站点」与设置一致，避免被线路文件覆盖
+    // 切换线路后保持 display-1 / display-3 的显示端开关与设置一致，避免被线路文件覆盖
     watch(
       () => pidState.appData,
       (appData) => {
         if (!appData || !appData.meta) return;
         const disp = settings.display;
-        if (!disp || disp.currentDisplayId !== 'display-1') return;
-        const d1 = disp.displays && disp.displays['display-1'];
-        if (!d1) return;
-        if (d1.lineNameMerge !== undefined) appData.meta.lineNameMerge = d1.lineNameMerge;
-        if (d1.showAllStations !== undefined) appData.meta.showAllStations = d1.showAllStations;
+        if (!disp) return;
+        const curId = disp.currentDisplayId;
+        if (curId !== 'display-1' && curId !== 'display-3') return;
+        const d = disp.displays && disp.displays[curId];
+        if (!d) return;
+        if (d.lineNameMerge !== undefined) appData.meta.lineNameMerge = d.lineNameMerge;
+        if (d.showAllStations !== undefined) appData.meta.showAllStations = d.showAllStations;
+        if (curId === 'display-3' && d.display3Tags && typeof d.display3Tags === 'object') {
+          appData.meta.display3Tags = { ...d.display3Tags };
+        }
       },
       { flush: 'post' }
     );
