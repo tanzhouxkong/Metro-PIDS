@@ -174,59 +174,35 @@ export const DEF_JINAN_YUNBA = {
   ]
 };
 
-export const DEFAULT_SETTINGS = { 
-    dark: false, 
-    themeMode: "system", 
-    darkVariant: "soft", 
+// 显示器默认配置统一从 displays/config.json 读取，方便后续修改
+import displayConfig from '../../displays/config.json';
+
+const cfgDisplays = displayConfig.displays && typeof displayConfig.displays === 'object'
+    ? Object.fromEntries(
+        Object.entries(displayConfig.displays).map(([k, v]) => [k, { ...v }])
+      )
+    : {};
+const cfgDisplayDefaults = displayConfig.displayDefaults || {};
+
+export const DEFAULT_SETTINGS = {
+    dark: false,
+    themeMode: "system",
+    darkVariant: "soft",
     blurEnabled: true,
-    lineNameMerge: false, // 线路名合并（控制显示端左侧是否拼接多段线路名）
-    enableApiServer: false, // 是否启用 HTTP API 服务器（用于 Python 等第三方客户端，默认使用 BroadcastChannel）
-    keys: { arrdep: "Enter", prev: "ArrowLeft", next: "ArrowRight" }, 
+    lineNameMerge: false,
+    enableApiServer: false,
+    keys: { arrdep: "Enter", prev: "ArrowLeft", next: "ArrowRight" },
     autoplay: { enabled: false, intervalSec: 8, key: "Space" },
-    display: { 
-        source: 'builtin', /* 'builtin' | 'custom' | 'gitee' */
-        url: '', /* custom display URL if source === 'custom' or Gitee pages raw URL */
+    display: {
+        source: 'builtin',
+        url: '',
         width: 1900,
         height: 600,
-        currentDisplayId: 'display-1', // 当前活动的显示端ID
-        display2Mode: 'enabled', // 'disabled' | 'dev-only' | 'enabled' - display-2 的显示模式
-        display2NextStationDuration: 10000, // 显示器2"下一站"页面显示时长（毫秒），默认10秒
-        display2FooterLED: '', // 显示器2底栏LED滚动文字
-        display2FooterWatermark: true, // 显示器2底栏是否显示水印
-        displays: {
-            'display-1': {
-                id: 'display-1',
-                name: '主显示器',
-                source: 'builtin',
-                url: '',
-                width: 1900,
-                height: 600,
-                enabled: true,
-                isSystem: true, // 系统显示器，不允许删除
-                description: '主要显示端，用于主要信息展示'
-            },
-            'display-2': {
-                id: 'display-2',
-                name: '副显示器',
-                source: 'builtin',
-                url: '',
-                width: 1500,
-                height: 400,
-                enabled: true,
-                isSystem: true, // 系统显示器，不允许删除
-                description: '辅助显示端，用于补充信息展示'
-            },
-            'display-3': {
-                id: 'display-3',
-                name: 'C型显示器',
-                source: 'builtin',
-                url: '',
-                width: 1900,
-                height: 600,
-                enabled: true,
-                isSystem: false,
-                description: 'C 型显示端，尺寸与显示器1一致'
-            }
-        }
+        currentDisplayId: cfgDisplayDefaults.currentDisplayId ?? 'display-1',
+        display2Mode: cfgDisplayDefaults.display2Mode ?? 'enabled',
+        display2NextStationDuration: cfgDisplayDefaults.display2NextStationDuration ?? 10000,
+        display2FooterLED: cfgDisplayDefaults.display2FooterLED ?? '',
+        display2FooterWatermark: cfgDisplayDefaults.display2FooterWatermark !== false,
+        displays: cfgDisplays
     }
 };

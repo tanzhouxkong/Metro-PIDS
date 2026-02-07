@@ -1216,7 +1216,7 @@ export default {
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
         const isDefault = contextMenu.value.folderId === 'default'
         return [
-          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: isCloud || isDefault },
+          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: isCloud },
           { type: 'sep' },
           {
             label: '重命名',
@@ -1240,7 +1240,7 @@ export default {
           label: '新建文件夹',
           icon: 'fas fa-folder-plus',
           action: 'addFolder',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
+          disabled: false
         }
       ]),
       linesNewMenuItems: computed(() => [
@@ -1302,7 +1302,7 @@ export default {
           await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
           return
         }
-        if (isDefault && ['addFolder', 'createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
+        if (isDefault && ['createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
           await dialogService.alert('默认文件夹为只读，无法在此新建或编辑。', '提示')
           return
         }
@@ -1314,14 +1314,6 @@ export default {
       },
       async onSidebarNewMenuSelect(it) {
         if (!it) return
-        if (isCloudFolderActive.value && it.action === 'addFolder') {
-          await dialogService.alert('云控线路下不支持新建文件夹。', '提示')
-          return
-        }
-        if (isDefaultFolderActive.value && it.action === 'addFolder') {
-          await dialogService.alert('默认文件夹为只读，无法在此新建文件夹。', '提示')
-          return
-        }
         if (it.action === 'addFolder') return await addFolder()
       },
       async onLinesNewMenuSelect(it) {

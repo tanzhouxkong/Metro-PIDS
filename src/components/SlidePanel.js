@@ -4,6 +4,7 @@ import { useFileIO } from '../composables/useFileIO.js'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useSettings } from '../composables/useSettings.js'
+import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 import dialogService from '../utils/dialogService.js'
 import { showNotification } from '../utils/notificationService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
@@ -1931,10 +1932,13 @@ export default {
             return settings.display.displays[settings.display.currentDisplayId] || settings.display.displays[Object.keys(settings.display.displays)[0]];
         });
 
-        // 创建本地响应式状态来确保UI更新
+        // 创建本地响应式状态来确保UI更新（新安装/升级时 displays 可能为空，用默认列表避免卡片不显示）
+        const initialDisplays = settings.display && settings.display.displays && Object.keys(settings.display.displays).length > 0
+            ? settings.display.displays
+            : { ...DEFAULT_SETTINGS.display.displays };
         const displayState = reactive({
-            currentDisplayId: settings.display.currentDisplayId,
-            displays: settings.display.displays || {}
+            currentDisplayId: settings.display.currentDisplayId || 'display-1',
+            displays: initialDisplays
         });
 
         // 监听设置变化，同步到本地状态
@@ -1945,7 +1949,13 @@ export default {
 
         watch(() => settings.display.displays, (newDisplays) => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 displays 变化');
-            displayState.displays = newDisplays && typeof newDisplays === 'object' ? { ...newDisplays } : {}; // 创建新对象确保响应性，确保始终是对象
+            const raw = newDisplays && typeof newDisplays === 'object' ? { ...newDisplays } : {};
+            // 新安装或升级后可能为空，避免显示器1/2卡片不显示：空时使用默认列表
+            if (Object.keys(raw).length === 0) {
+                displayState.displays = { ...DEFAULT_SETTINGS.display.displays };
+            } else {
+                displayState.displays = raw;
+            }
         }, { deep: true, immediate: true });
 
         // 当前显示端ID的响应式引用（用于确保模板更新）
@@ -1985,12 +1995,15 @@ export default {
         // 可见显示端列表：按云控过滤；若过滤后为空则显示全部；显式依赖 uiState.displayFlags
         const visibleDisplayEntries = computed(() => {
             void uiState.displayFlags; // 依赖：云控配置变化时重算
-            const fromState = displayState.displays;
-            const fromSettings = settings.display && settings.display.displays;
-            const displays = (fromState && typeof fromState === 'object' && Object.keys(fromState).length > 0)
+            let fromState = displayState.displays;
+            let fromSettings = settings.display && settings.display.displays;
+            let displays = (fromState && typeof fromState === 'object' && Object.keys(fromState).length > 0)
                 ? fromState
-                : (fromSettings && typeof fromSettings === 'object') ? fromSettings : {};
-            if (!displays || typeof displays !== 'object') return [];
+                : (fromSettings && typeof fromSettings === 'object' && Object.keys(fromSettings || {}).length > 0) ? fromSettings : null;
+            // 新安装或老设备升级后可能为空，强制使用默认显示器列表，确保显示器1和2的卡片始终可见
+            if (!displays || typeof displays !== 'object' || Object.keys(displays).length === 0) {
+                displays = { ...DEFAULT_SETTINGS.display.displays };
+            }
             const entries = Object.entries(displays).filter(([id, d]) => shouldShowDisplay(d, id));
             if (entries.length === 0) {
                 return Object.entries(displays).map(([id, d]) => [id, d]);
@@ -2558,8 +2571,8 @@ export default {
             if (!display) return;
             
             // 检查是否为系统显示器（双重保护：检查 isSystem 属性和 displayId）
-            // display-1 和 display-2 是系统显示器，不允许删除
-            if (displayId === 'display-1' || displayId === 'display-2' || display.isSystem === true) {
+            // display-1、display-2、display-3 是系统显示器，不允许删除
+            if (displayId === 'display-1' || displayId === 'display-2' || displayId === 'display-3' || display.isSystem === true) {
                 await showMsg('系统显示器不允许删除');
                 return;
             }
@@ -3298,9 +3311,9 @@ export default {
                 <i :class="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? 'fas fa-pause' : 'fas fa-play'" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 {{ displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? '禁用' : '启用' }}
             </div>
-            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
             <div 
-                v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && !displayState.displays[displayContextMenu.displayId].isSystem"
+                v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem"
                 @click="deleteDisplayFromMenu()"
                 style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
                 @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"

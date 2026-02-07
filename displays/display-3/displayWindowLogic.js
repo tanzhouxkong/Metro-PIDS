@@ -1742,8 +1742,10 @@ function mkNode(st, i, mode, appData, rtState) {
             tagInfos.push({ text: label, type: 'xfer-suspended', bgColor: '#ccc', textColor: '#666', hasSub: true });
           }
         } else if (x.exitTransfer) {
-          if (devFlags.showExitTransfer) {
+          if (devFlags.showExitTransfer && state === 0) {
             tagInfos.push({ text: label, type: 'xfer-exit', bgColor: x.color, textColor: '#fff', hasSub: true, subText: '出站' });
+          } else {
+            tagInfos.push({ text: label, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });
           }
         } else {
           tagInfos.push({ text: label, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });

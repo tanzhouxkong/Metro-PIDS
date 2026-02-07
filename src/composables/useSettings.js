@@ -27,6 +27,45 @@ export function useSettings() {
         }
     }
 
+    /** 无论新安装还是升级，都确保 display 结构存在且至少包含显示器1、2（及3），避免卡片不显示 */
+    function ensureDisplayStructure() {
+        if (!settings.display) settings.display = { ...DEFAULT_SETTINGS.display };
+        let displays = settings.display.displays;
+        // 兼容：displays 为 null/undefined 或非对象时，用默认完整列表
+        if (!displays || typeof displays !== 'object') {
+            settings.display.displays = { ...DEFAULT_SETTINGS.display.displays };
+        } else if (Array.isArray(displays)) {
+            // 旧版可能存成数组，转为以 id 为 key 的对象，并合并默认系统显示器
+            const byId = {};
+            for (const d of displays) {
+                if (d && d.id) byId[d.id] = d;
+            }
+            settings.display.displays = { ...DEFAULT_SETTINGS.display.displays, ...byId };
+        }
+        const defDisplays = DEFAULT_SETTINGS.display.displays;
+        if (!settings.display.displays['display-1']) {
+            settings.display.displays['display-1'] = { ...defDisplays['display-1'] };
+        }
+        if (!settings.display.displays['display-2']) {
+            settings.display.displays['display-2'] = { ...defDisplays['display-2'] };
+        }
+        if (!settings.display.displays['display-3']) {
+            settings.display.displays['display-3'] = { ...defDisplays['display-3'] };
+        }
+        if (!settings.display.currentDisplayId) {
+            settings.display.currentDisplayId = Object.keys(settings.display.displays)[0] || 'display-1';
+        }
+        settings.display.displays['display-1'].isSystem = true;
+        settings.display.displays['display-2'].isSystem = true;
+        settings.display.displays['display-3'].isSystem = true;
+        if (settings.display.display2Mode === undefined) {
+            settings.display.display2Mode = DEFAULT_SETTINGS.display.display2Mode ?? 'dev-only';
+        }
+        if (settings.display.display2NextStationDuration === undefined) {
+            settings.display.display2NextStationDuration = DEFAULT_SETTINGS.display.display2NextStationDuration ?? 10000;
+        }
+    }
+
     function loadSettings() {
         try {
             const s = JSON.parse(localStorage.getItem('pids_settings_v1') || 'null');
@@ -37,12 +76,15 @@ export function useSettings() {
                 if (!settings.autoplay) settings.autoplay = { ...DEFAULT_SETTINGS.autoplay };
                 if (!settings.display) settings.display = { ...DEFAULT_SETTINGS.display };
                 
-                // 兼容旧的显示端配置格式
+                // 兼容旧的显示端配置格式（无 displays 或旧单显示器格式）
                 if (settings.display && !settings.display.displays) {
-                    // 将旧格式转换为新格式，包含主显示器和副显示器
                     const oldDisplay = { ...settings.display };
                     settings.display = {
                         currentDisplayId: 'display-1',
+                        display2Mode: oldDisplay.display2Mode ?? DEFAULT_SETTINGS.display.display2Mode,
+                        display2NextStationDuration: oldDisplay.display2NextStationDuration ?? DEFAULT_SETTINGS.display.display2NextStationDuration,
+                        display2FooterLED: oldDisplay.display2FooterLED,
+                        display2FooterWatermark: oldDisplay.display2FooterWatermark,
                         displays: {
                             'display-1': {
                                 id: 'display-1',
@@ -52,7 +94,7 @@ export function useSettings() {
                                 width: oldDisplay.width || 1900,
                                 height: oldDisplay.height || 600,
                                 enabled: true,
-                                isSystem: true, // 系统显示器，不允许删除
+                                isSystem: true,
                                 description: '主要显示端，用于主要信息展示'
                             },
                             'display-2': {
@@ -63,93 +105,24 @@ export function useSettings() {
                                 width: 1500,
                                 height: 400,
                                 enabled: true,
-                                isSystem: true, // 系统显示器，不允许删除
+                                isSystem: true,
                                 description: '辅助显示端，用于补充信息展示'
                             }
                         }
                     };
                 }
                 
-                // 确保显示端存在且配置正确
-                if (!settings.display.displays['display-1']) {
-                    settings.display.displays['display-1'] = {
-                        id: 'display-1',
-                        name: '主显示器',
-                        source: 'builtin',
-                        url: '',
-                        width: 1900,
-                        height: 600,
-                        enabled: true,
-                        isSystem: true, // 系统显示器，不允许删除
-                        description: '主要显示端，用于主要信息展示'
-                    };
-                }
-                
-                if (!settings.display.displays['display-2']) {
-                    settings.display.displays['display-2'] = {
-                        id: 'display-2',
-                        name: '副显示器',
-                        source: 'builtin',
-                        url: '',
-                        width: 1500,
-                        height: 400,
-                        enabled: true,
-                        isSystem: true, // 系统显示器，不允许删除
-                        description: '辅助显示端，用于补充信息展示'
-                    };
-                }
-                // 补齐显示器3（C型显示器），尺寸与显示器1一致
-                if (!settings.display.displays['display-3']) {
-                    settings.display.displays['display-3'] = {
-                        id: 'display-3',
-                        name: 'C型显示器',
-                        source: 'builtin',
-                        url: '',
-                        width: 1900,
-                        height: 600,
-                        enabled: true,
-                        isSystem: false,
-                        description: 'C 型显示端，尺寸与显示器1一致'
-                    };
-                }
-                
-                // 确保显示端配置完整
-                if (!settings.display.currentDisplayId) {
-                    settings.display.currentDisplayId = Object.keys(settings.display.displays)[0] || 'display-1';
-                }
-                if (!settings.display.displays) {
-                    settings.display.displays = { ...DEFAULT_SETTINGS.display.displays };
-                }
-                
-                // 确保系统显示器的 isSystem 属性正确设置为 true
-                // display-1 和 display-2 是系统显示器，不允许删除
-                if (settings.display.displays['display-1']) {
-                    settings.display.displays['display-1'].isSystem = true;
-                }
-                if (settings.display.displays['display-2']) {
-                    settings.display.displays['display-2'].isSystem = true;
-                }
-                // 确保 display2Mode 存在
-                if (settings.display.display2Mode === undefined) {
-                    settings.display.display2Mode = DEFAULT_SETTINGS.display.display2Mode || 'dev-only';
-                }
-                // 确保 display2NextStationDuration 存在
-                if (settings.display.display2NextStationDuration === undefined) {
-                    settings.display.display2NextStationDuration = DEFAULT_SETTINGS.display.display2NextStationDuration || 10000;
-                }
-                
-                // 兼容旧数据，补 serviceMode
+                // 兼容旧数据，补 serviceMode 等
                 if (settings.meta && settings.meta.serviceMode === undefined) settings.meta.serviceMode = 'normal';
-                
-                // 兼容旧数据：补齐模糊开关
                 if (settings.blurEnabled === undefined) settings.blurEnabled = DEFAULT_SETTINGS.blurEnabled;
-                // 兼容旧数据：补齐线路名合并开关
                 if (settings.lineNameMerge === undefined) settings.lineNameMerge = DEFAULT_SETTINGS.lineNameMerge;
-                // 兼容旧数据：补齐 API 服务器开关
                 if (settings.enableApiServer === undefined) settings.enableApiServer = DEFAULT_SETTINGS.enableApiServer;
             }
+            // 新安装（无 s）或升级后都统一确保显示器1、2、3存在，避免卡片不显示
+            ensureDisplayStructure();
         } catch (e) { 
             console.warn('Failed to load settings', e);
+            ensureDisplayStructure();
         }
         applyThemeMode();
         applyBlurSetting();
@@ -157,13 +130,16 @@ export function useSettings() {
 
     function saveSettings() {
         // 在保存前，强制确保系统显示器的 isSystem 属性为 true（防止被覆盖）
-        // display-1 和 display-2 是系统显示器，不允许删除
+        // display-1、display-2、display-3 是系统显示器，不允许删除
         if (settings.display && settings.display.displays) {
             if (settings.display.displays['display-1']) {
                 settings.display.displays['display-1'].isSystem = true;
             }
             if (settings.display.displays['display-2']) {
                 settings.display.displays['display-2'].isSystem = true;
+            }
+            if (settings.display.displays['display-3']) {
+                settings.display.displays['display-3'].isSystem = true;
             }
         }
         
@@ -183,6 +159,9 @@ export function useSettings() {
                     }
                     if (serializableSettings.display.displays['display-2']) {
                         serializableSettings.display.displays['display-2'].isSystem = true;
+                    }
+                    if (serializableSettings.display.displays['display-3']) {
+                        serializableSettings.display.displays['display-3'].isSystem = true;
                     }
                 }
                 window.electronAPI.syncSettings(serializableSettings);

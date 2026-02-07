@@ -1,6 +1,6 @@
 {
   "name": "metro-pids",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -24,6 +24,8 @@
     "cf:admin": "node scripts/cloudflare-admin.js",
     "prebuild": "node scripts/download-fontawesome.js",
     "build": "electron-vite build && electron-builder",
+    "build:win": "electron-vite build && electron-builder --win",
+    "build:win:publish": "electron-vite build && electron-builder --win --publish=always",
     "build:sdk": "node ./scripts/build-display-sdk.js",
     "clean:vite:all": "node scripts/clean-vite-cache.js --clean-out"
   },

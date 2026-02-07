@@ -1,85 +1,47 @@
 {
   "version": "1.1.0",
-  "description": "Metro PIDS 多显示端配置文件 - 包含系统保护功能",
-  "systemDisplays": {
+  "description": "Metro PIDS 多显示端配置文件 - 应用仅读取 displays 与 displayDefaults，后续修改只需改此文件",
+  "displays": {
     "display-1": {
       "id": "display-1",
       "name": "主显示器",
-      "description": "系统保护的主要显示端，用于主要信息展示",
       "source": "builtin",
       "url": "",
       "width": 1900,
       "height": 600,
       "enabled": true,
       "isSystem": true,
-      "color": "#00b894",
-      "position": {
-        "x": 100,
-        "y": 100
-      },
-      "protection": {
-        "canEdit": false,
-        "canDelete": false,
-        "canDisable": true,
-        "reason": "系统核心显示器，确保基本功能正常运行"
-      }
+      "description": "主要显示端，用于主要信息展示"
     },
     "display-2": {
       "id": "display-2",
       "name": "副显示器",
-      "description": "系统保护的辅助显示端，用于补充信息展示",
       "source": "builtin",
       "url": "",
       "width": 1500,
-      "height": 800,
+      "height": 400,
       "enabled": true,
       "isSystem": true,
-      "color": "#4A90E2",
-      "position": {
-        "x": 200,
-        "y": 150
-      },
-      "protection": {
-        "canEdit": false,
-        "canDelete": false,
-        "canDisable": true,
-        "reason": "系统辅助显示器，提供额外的信息展示空间"
-      }
-    }
-  },
-  "defaultDisplays": {
+      "description": "辅助显示端，用于补充信息展示"
+    },
     "display-3": {
       "id": "display-3",
       "name": "C型显示器",
-      "description": "C 型显示端，尺寸与显示器1一致",
       "source": "builtin",
       "url": "",
       "width": 1900,
       "height": 600,
       "enabled": true,
-      "isSystem": false,
-      "color": "#2ED573",
-      "position": {
-        "x": 300,
-        "y": 200
-      }
-    },
-    "display-4": {
-      "id": "display-4",
-      "name": "显示端 4",
-      "description": "第四个显示端窗口，适用于小尺寸显示器",
-      "source": "builtin",
-      "url": "",
-      "width": 1280,
-      "height": 720,
-      "enabled": true,
-      "isSystem": false,
-      "color": "#74B9FF",
-      "position": {
-        "x": 400,
-        "y": 250
-      }
+      "isSystem": true,
+      "description": "C 型显示端，尺寸与显示器1一致"
     }
+  },
+  "displayDefaults": {
+    "currentDisplayId": "display-1",
+    "display2Mode": "enabled",
+    "display2NextStationDuration": 10000,
+    "display2FooterLED": "",
+    "display2FooterWatermark": true
   },
   "features": {
     "systemProtection": {
@@ -119,7 +81,12 @@
       "allowedOperations": ["enable", "disable", "view"]
     },
     "secondaryDisplay": {
-      "id": "display-2", 
+      "id": "display-2",
+      "protections": ["edit", "delete"],
+      "allowedOperations": ["enable", "disable", "view"]
+    },
+    "display3": {
+      "id": "display-3",
       "protections": ["edit", "delete"],
       "allowedOperations": ["enable", "disable", "view"]
     },

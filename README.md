@@ -130,7 +130,12 @@ npm run build
 
 1. **GitHub Token 已设置**（通过环境变量）：
    - `GH_TOKEN` 或 `GITHUB_TOKEN` 环境变量已配置
-   - Token 需要 `repo` 权限
+   - **推荐使用 Classic Token**：在 [GitHub → Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens) 选择 **Generate new token (classic)**，勾选 **repo** 权限，生成的 Token 形如 `ghp_xxxx`，可直接用于创建 Release 和上传附件。
+   - **若使用 Fine-grained Token**（形如 `github_pat_xxxx`）：创建/编辑 Token 时，在 **Repository permissions** 中除 **Contents: Read and write** 外，还需勾选 **Administration: Read and write**，否则会报 **403 Resource not accessible by personal access token**（创建 Release 需要该权限）。保存后若仍 403，可重新生成一次 Token 再试。
+   - PowerShell 设置示例（Token 需用双引号包住）：
+     ```powershell
+     $env:GH_TOKEN = "你的Token"
+     ```
 
 2. **发布命令**：
 ```powershell
