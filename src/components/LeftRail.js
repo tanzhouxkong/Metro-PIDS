@@ -202,7 +202,9 @@ export default {
                 r: cloneDisplayState(state.rt),
                 settings: {
                     display: {
-                        display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000
+                        display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000,
+                        display1LayoutMode: settings?.display?.displays?.['display-1']?.layoutMode ?? 'linear',
+                        display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type'
                     }
                 }
             }

@@ -253,6 +253,16 @@ export default {
         }
         sync();
     }
+
+    // 运营模式下线路/颜色等变更：自动静默保存到文件，不弹提示
+    async function saveCfgAndPersistSilent() {
+        saveCfg();
+        try {
+            await fileIO.saveCurrentLine({ silent: true });
+        } catch (e) {
+            console.warn('[ConsolePage] 运营模式变更静默保存失败', e);
+        }
+    }
     
     async function applyShortTurn() {
         saveCfg();
@@ -1194,6 +1204,7 @@ export default {
         togglePause,
         openLineManagerWindow,
         saveCfg,
+        saveCfgAndPersistSilent,
         changeServiceMode,
         hasElectronAPI,
         pickColor,
@@ -1285,7 +1296,7 @@ export default {
                         v-model="pidsState.appData.meta.themeColor" 
                         style="position:absolute; top:0; left:0; width:100%; height:100%; padding:0; margin:0; border:none; border-radius:6px; cursor:pointer; opacity:0; z-index:2;" 
                         title="主题色" 
-                        @input="saveCfg()"
+                        @input="saveCfgAndPersistSilent()"
                     >
                     <div 
                         :style="{position:'absolute', top:0, left:0, width:'100%', height:'100%', borderRadius:'6px', border:'2px solid var(--divider)', backgroundColor:pidsState.appData.meta.themeColor || '#00b894', pointerEvents:hasElectronAPI ? 'auto' : 'none', zIndex:1, cursor:'pointer'}"

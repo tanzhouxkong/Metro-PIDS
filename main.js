@@ -1252,7 +1252,7 @@ function createWindow() {
           } else {
             // 使用默认路径
             if (displayId === 'display-1') {
-              expectedUrl = getRendererUrl('display_window.html');
+              expectedUrl = getRendererUrl('displays/display-1/display_window.html');
             } else {
               const customRel = path.join('displays', displayId, 'display_window.html');
               const customPath = app.isPackaged 
@@ -1287,7 +1287,7 @@ function createWindow() {
           }
           
           if (displayId === 'display-1') {
-            expectedUrl = getRendererUrl('display_window.html');
+            expectedUrl = getRendererUrl('displays/display-1/display_window.html');
           } else {
             expectedUrl = getRendererUrl('display_window.html');
           }
@@ -6134,7 +6134,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       console.warn(`[main] ⚠️ 配置的本地文件不存在: ${resolvedPath}，使用默认路径`);
       // 回退到默认路径
       if (displayId === 'display-1') {
-        dispPath = getRendererUrl('display_window.html');
+        dispPath = getRendererUrl('displays/display-1/display_window.html');
       } else {
         const customRel = `displays/${displayId}/display_window.html`;
         const customPath = app.isPackaged 
@@ -6165,8 +6165,8 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     }
     
     if (displayId === 'display-1') {
-      dispPath = getRendererUrl('display_window.html');
-      console.log(`[main] 使用默认主显示器路径: ${dispPath}`);
+      dispPath = getRendererUrl('displays/display-1/display_window.html');
+      console.log(`[main] 使用显示器1 路径: ${dispPath}`);
     } else {
       // 检查是否存在对应的显示端文件
       const customRel = `displays/${displayId}/display_window.html`;
@@ -6181,22 +6181,22 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         // 开发环境：Vite dev server 会直接提供该路径，不依赖 out/renderer 的落盘文件
         // 直接使用 URL，避免因未生成 out/renderer/displays 导致识别失败
         dispPath = getRendererUrl(customRel);
-        console.log(`[main] (dev) 直接使用 display-${displayId} 路径: ${dispPath}`);
+        console.log(`[main] (dev) 直接使用 ${displayId} 路径: ${dispPath}`);
         customPath = null;
       }
       
       if (!app.isPackaged) {
         // dev 分支已直接设置 dispPath
       } else {
-        console.log(`[main] 检查 display-${displayId} 文件路径: ${customPath}, 存在: ${fs.existsSync(customPath)}`);
+        console.log(`[main] 检查 ${displayId} 文件路径: ${customPath}, 存在: ${fs.existsSync(customPath)}`);
       }
       
       if (!app.isPackaged || (customPath && fs.existsSync(customPath))) {
         dispPath = getRendererUrl(customRel);
-        console.log(`[main] ✅ 使用 display-${displayId} 路径: ${dispPath}`);
+        console.log(`[main] ✅ 使用 ${displayId} 路径: ${dispPath}`);
       } else {
         // 如果不存在，使用默认显示端
-        console.warn(`[main] ⚠️ display-${displayId} 文件不存在 (${customPath})，使用默认显示端`);
+        console.warn(`[main] ⚠️ ${displayId} 文件不存在 (${customPath})，使用默认显示端`);
         if (displayConfig) {
           console.log(`[main] 显示端配置信息: source=${displayConfig.source}, url=${displayConfig.url || '(空)'}, name=${displayConfig.name || '(空)'}`);
         } else {

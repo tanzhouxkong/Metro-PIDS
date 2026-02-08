@@ -24,7 +24,9 @@ export function useController() {
                 display: {
                     display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000,
                     display2FooterLED: settings?.display?.display2FooterLED || '',
-                    display2FooterWatermark: settings?.display?.display2FooterWatermark !== false
+                    display2FooterWatermark: settings?.display?.display2FooterWatermark !== false,
+                    display1LayoutMode: settings?.display?.displays?.['display-1']?.layoutMode ?? 'linear',
+                    display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type'
                 }
             }
         };
@@ -108,13 +110,21 @@ export function useController() {
         const eIdx = (state.appData.meta.termIdx !== undefined && state.appData.meta.termIdx !== -1) ? parseInt(state.appData.meta.termIdx) : len - 1;
         const minIdx = Math.min(sIdx, eIdx);
         const maxIdx = Math.max(sIdx, eIdx);
+        const hasShortTurn = (state.appData.meta.startIdx !== undefined && state.appData.meta.startIdx !== -1) ||
+            (state.appData.meta.termIdx !== undefined && state.appData.meta.termIdx !== -1);
 
         for (let i = 0; i < len; i++) {
             nextIdx += dir;
 
             if (state.appData.meta.mode === 'loop') {
-                if (nextIdx >= len) nextIdx = 0;
-                if (nextIdx < 0) nextIdx = len - 1;
+                // 环线 + 短交路：与直线一致，不绕环，限制在运营区内，避免到达站/左右键卡出运营区域
+                if (hasShortTurn) {
+                    if (nextIdx > maxIdx) nextIdx = maxIdx;
+                    if (nextIdx < minIdx) nextIdx = minIdx;
+                } else {
+                    if (nextIdx >= len) nextIdx = 0;
+                    if (nextIdx < 0) nextIdx = len - 1;
+                }
             } else {
                 if (nextIdx > maxIdx) return maxIdx;
                 if (nextIdx < minIdx) return minIdx;

@@ -231,34 +231,64 @@ const PresetLinesHandler = {
 };
 
 /**
+ * 规范化运控线路名称，用于 KV key，保证同一条线路始终对应同一 key，网页上传可覆盖老版本
+ * - 去除首尾空白
+ * - Unicode NFC 规范化（避免同一名称不同编码产生不同 key）
+ */
+function normalizeRuntimeLineName(name) {
+  if (name == null || typeof name !== 'string') return '';
+  const s = String(name).trim();
+  if (!s) return '';
+  try {
+    return s.normalize('NFC');
+  } catch {
+    return s;
+  }
+}
+
+/**
  * 运控线路 API
  */
 const RuntimeLinesHandler = {
   PREFIX: 'runtime:',
 
-  // GET /runtime/lines - 获取所有运控线路
+  // GET /runtime/lines - 获取所有运控线路（分页拉全量，按规范化 lineName 去重，规范 key 优先）
   async list(env) {
-    const list = await env.LINES.list({ prefix: this.PREFIX });
-    const lines = [];
-    for (const k of list.keys) {
-      const raw = await env.LINES.get(k.name);
-      if (raw) {
+    const linesByKey = new Map(); // normalized lineName -> line
+    const canonicalKey = (norm) => this.PREFIX + norm;
+    let cursor = null;
+    do {
+      const opts = { prefix: this.PREFIX, limit: 1000 };
+      if (cursor) opts.cursor = cursor;
+      const list = await env.LINES.list(opts);
+      for (const k of list.keys || []) {
+        const raw = await env.LINES.get(k.name);
+        if (!raw) continue;
         try {
-          lines.push(JSON.parse(raw));
+          const line = JSON.parse(raw);
+          const metaName = line?.meta?.lineName;
+          const norm = normalizeRuntimeLineName(metaName) || k.name.replace(this.PREFIX, '');
+          const isCanonical = k.name === canonicalKey(norm);
+          if (isCanonical || !linesByKey.has(norm)) {
+            linesByKey.set(norm, line);
+          }
         } catch {
           // 忽略损坏的数据
         }
       }
-    }
-    return { lines };
+      cursor = (list.list_complete === true || list.listComplete === true) ? null : (list.cursor || null);
+    } while (cursor);
+
+    return { lines: Array.from(linesByKey.values()) };
   },
 
   // GET /runtime/lines/:lineName - 获取单个运控线路
   async get(env, lineName) {
-    const key = this.PREFIX + lineName;
+    const norm = normalizeRuntimeLineName(lineName);
+    const key = this.PREFIX + norm;
     let raw = await env.LINES.get(key);
 
-    // 兼容老数据：如果按 key 直接获取不到，尝试根据 meta.lineName 搜索
+    // 兼容老数据：如果按规范化 key 获取不到，尝试根据 meta.lineName 搜索
     if (!raw) {
       const list = await env.LINES.list({ prefix: this.PREFIX });
       for (const k of list.keys) {
@@ -267,7 +297,7 @@ const RuntimeLinesHandler = {
         try {
           const json = JSON.parse(value);
           const metaName = json?.meta?.lineName;
-          if (metaName && String(metaName) === String(lineName)) {
+          if (normalizeRuntimeLineName(metaName) === norm) {
             raw = value;
             break;
           }
@@ -284,23 +314,47 @@ const RuntimeLinesHandler = {
     return JSON.parse(raw);
   },
 
-  // PUT /runtime/lines/:lineName - 更新/创建运控线路
+  // PUT /runtime/lines/:lineName - 更新/创建运控线路（始终用规范化名称作 key，新上传覆盖老版本）
   async update(env, lineName, body) {
     if (!body?.meta?.lineName) {
       throw { status: 400, error: '缺少 meta.lineName' };
     }
-    if (body.meta.lineName !== lineName) {
+    const bodyNorm = normalizeRuntimeLineName(body.meta.lineName);
+    const urlNorm = normalizeRuntimeLineName(lineName);
+    if (bodyNorm !== urlNorm) {
       throw { status: 400, error: 'URL 与 body 中的 lineName 不一致' };
     }
-    const key = this.PREFIX + lineName;
+    const key = this.PREFIX + bodyNorm;
     await env.LINES.put(key, JSON.stringify(body));
     return { ok: true, line: body };
   },
 
-  // DELETE /runtime/lines/:lineName - 删除运控线路
+  // DELETE /runtime/lines/:lineName - 删除运控线路（删除规范 key 及所有同一条线路的旧 key）
   async delete(env, lineName) {
-    const key = this.PREFIX + lineName;
-    await env.LINES.delete(key);
+    const norm = normalizeRuntimeLineName(lineName);
+    const canonicalKey = this.PREFIX + norm;
+    await env.LINES.delete(canonicalKey);
+    let cursor = null;
+    do {
+      const opts = { prefix: this.PREFIX, limit: 1000 };
+      if (cursor) opts.cursor = cursor;
+      const list = await env.LINES.list(opts);
+      for (const k of list.keys || []) {
+        if (k.name === canonicalKey) continue;
+        const raw = await env.LINES.get(k.name);
+        if (!raw) continue;
+        try {
+          const line = JSON.parse(raw);
+          const metaNorm = normalizeRuntimeLineName(line?.meta?.lineName);
+          if (metaNorm === norm) {
+            await env.LINES.delete(k.name);
+          }
+        } catch {
+          // 忽略损坏的数据
+        }
+      }
+      cursor = (list.list_complete === true || list.listComplete === true) ? null : (list.cursor || null);
+    } while (cursor);
     return { ok: true };
   }
 };
@@ -943,22 +997,21 @@ const UpdateInfoHandler = {
 };
 
 /**
- * 统计信息 API
+ * 统计信息 API（使用 D1 数据库，支持全量查询、按日期排序）
  */
-const TELEMETRY_PREFIX = 'telemetry:';
-
 const TelemetryHandler = {
   // POST /telemetry - 接收统计信息
   async record(env, request, body) {
+    if (!env.DB) {
+      throw { status: 503, error: 'D1 数据库未配置，请运行 wrangler d1 create metro-pids-db 并配置 wrangler.toml' };
+    }
     const { deviceId, version, platform, osVersion } = body;
     if (!deviceId) {
       throw { status: 400, error: '缺少 deviceId' };
     }
     
-    // 从请求头获取地理位置信息
     const country = request.cf?.country || request.headers.get('CF-IPCountry') || 'unknown';
     const city = request.cf?.city || 'unknown';
-    const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
     
     // 解析操作系统信息
     let os = 'unknown';
@@ -978,155 +1031,90 @@ const TelemetryHandler = {
     // 生成记录
     const ts = Date.now();
     const recordId = `${ts}_${deviceId.substring(0, 8)}_${Math.random().toString(36).substring(2, 9)}`;
-    const record = {
-      id: recordId,
-      deviceId: String(deviceId),
-      version: String(version || 'unknown'),
-      country: String(country),
-      city: String(city),
-      os: String(os),
-      ts
-    };
     
-    // 存储到 KV
-    const key = `${TELEMETRY_PREFIX}${recordId}`;
     try {
-      await env.LINES.put(key, JSON.stringify(record));
-      console.log('[Telemetry] ✅ 已保存记录到 KV:', key);
-      console.log('[Telemetry] 记录内容:', {
-        id: record.id,
-        deviceId: record.deviceId.substring(0, 8) + '...',
-        version: record.version,
-        country: record.country,
-        city: record.city,
-        os: record.os,
-        ts: new Date(record.ts).toISOString()
-      });
+      await env.DB.prepare(
+        'INSERT INTO telemetry (id, device_id, version, country, city, os, ts) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).bind(recordId, String(deviceId), String(version || 'unknown'), String(country), String(city), String(os), ts).run();
+      console.log('[Telemetry] ✅ 已保存记录到 D1:', recordId);
     } catch (saveError) {
-      console.error('[Telemetry] ❌ 保存到 KV 失败:', saveError);
+      console.error('[Telemetry] ❌ 保存到 D1 失败:', saveError);
       throw { status: 500, error: '保存统计记录失败: ' + (saveError?.message || String(saveError)) };
     }
     
     return { ok: true, id: recordId };
   },
 
-  // GET /stats - 获取统计信息
+  // GET /stats - 获取统计信息（从 D1 查询，支持全量、按日期排序）
   async stats(env) {
-    console.log('[Telemetry] 📊 开始获取统计信息，前缀:', TELEMETRY_PREFIX);
-    
+    if (!env.DB) {
+      console.warn('[Telemetry] D1 未配置');
+      return { total: 0, uniqueDevices: 0, byCountry: {}, byVersion: {}, byOS: {}, byDevice: {}, records: [], all: [], recent: [], truncated: false };
+    }
+    console.log('[Telemetry] 📊 从 D1 获取统计信息');
     try {
-      // 列出带前缀的键
-      const list = await env.LINES.list({ prefix: TELEMETRY_PREFIX });
-      console.log('[Telemetry] 找到', list.keys.length, '条带前缀的键');
-      
-      if (list.keys.length === 0) {
-        console.log('[Telemetry] ⚠️ 未找到统计记录，可能原因：');
-        console.log('[Telemetry]   1. 客户端尚未上报统计信息');
-        console.log('[Telemetry]   2. KV 存储配置问题');
-        console.log('[Telemetry]   3. 前缀不匹配');
-        
-        // 尝试列出所有键用于调试
-        try {
-          const allList = await env.LINES.list();
-          console.log('[Telemetry] KV 总键数:', allList.keys.length);
-          if (allList.keys.length > 0) {
-            const sampleKeys = allList.keys.slice(0, 20).map(k => k.name);
-            console.log('[Telemetry] KV 键示例（前20个）:', sampleKeys);
-            
-            // 检查是否有其他格式的统计键
-            const possibleKeys = sampleKeys.filter(k => 
-              k.includes('telemetry') || 
-              k.includes('stats') || 
-              k.includes('device') ||
-              k.includes('usage')
-            );
-            if (possibleKeys.length > 0) {
-              console.log('[Telemetry] 发现可能的统计键:', possibleKeys);
-            }
-          }
-        } catch (debugError) {
-          console.error('[Telemetry] 调试信息获取失败:', debugError);
-        }
-      } else {
-        console.log('[Telemetry] 键示例（前5个）:', list.keys.slice(0, 5).map(k => k.name));
+      const MAX_RECORDS_RETURN = 5000;
+
+      // 总数
+      const totalRes = await env.DB.prepare('SELECT COUNT(*) as cnt FROM telemetry').first();
+      const total = totalRes ? (totalRes.cnt || 0) : 0;
+
+      if (total === 0) {
+        return { total: 0, uniqueDevices: 0, byCountry: {}, byVersion: {}, byOS: {}, byDevice: {}, records: [], all: [], recent: [], truncated: false };
       }
-      
-      const records = [];
-      const deviceSet = new Set();
+
+      // 独立设备数
+      const uniqueRes = await env.DB.prepare('SELECT COUNT(DISTINCT device_id) as cnt FROM telemetry').first();
+      const uniqueDevices = uniqueRes ? (uniqueRes.cnt || 0) : 0;
+
+      // 按国家、版本、OS 聚合（访问次数）
       const byCountry = {};
       const byVersion = {};
       const byOS = {};
       const byDevice = {};
-      
-      // 读取所有记录
-      let successCount = 0;
-      let errorCount = 0;
-      
-      for (const k of list.keys) {
-        try {
-          const raw = await env.LINES.get(k.name);
-          if (!raw) {
-            console.warn('[Telemetry] ⚠️ 键存在但值为空:', k.name);
-            errorCount++;
-            continue;
-          }
-          try {
-            const record = JSON.parse(raw);
-            if (!record.deviceId) {
-              console.warn('[Telemetry] ⚠️ 记录缺少 deviceId:', k.name);
-              errorCount++;
-              continue;
-            }
-            records.push(record);
-            deviceSet.add(record.deviceId);
-            
-            // 统计
-            byCountry[record.country] = (byCountry[record.country] || 0) + 1;
-            byVersion[record.version] = (byVersion[record.version] || 0) + 1;
-            byOS[record.os] = (byOS[record.os] || 0) + 1;
-            byDevice[record.deviceId] = (byDevice[record.deviceId] || 0) + 1;
-            successCount++;
-          } catch (parseError) {
-            console.error('[Telemetry] ❌ 解析记录失败:', k.name, parseError);
-            errorCount++;
-          }
-        } catch (getError) {
-          console.error('[Telemetry] ❌ 读取记录失败:', k.name, getError);
-          errorCount++;
+      const aggRes = await env.DB.prepare(
+        'SELECT country, version, os, device_id FROM telemetry'
+      ).all();
+      if (aggRes.results) {
+        for (const row of aggRes.results) {
+          byCountry[row.country] = (byCountry[row.country] || 0) + 1;
+          byVersion[row.version] = (byVersion[row.version] || 0) + 1;
+          byOS[row.os] = (byOS[row.os] || 0) + 1;
+          byDevice[row.device_id] = (byDevice[row.device_id] || 0) + 1;
         }
       }
-      
-      console.log('[Telemetry] ✅ 成功读取', successCount, '条有效记录，失败', errorCount, '条');
-      
-      // 按时间倒序排序
-      records.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-      
-      // 确保返回格式正确，即使没有数据
+
+      // 最近记录（按 ts 倒序，取前 MAX_RECORDS_RETURN 条）
+      const recordsRes = await env.DB.prepare(
+        'SELECT id, device_id as deviceId, version, country, city, os, ts FROM telemetry ORDER BY ts DESC LIMIT ?'
+      ).bind(MAX_RECORDS_RETURN).all();
+      const records = (recordsRes.results || []).map(r => ({
+        id: r.id,
+        deviceId: r.deviceId,
+        version: r.version,
+        country: r.country,
+        city: r.city,
+        os: r.os,
+        ts: r.ts
+      }));
+
+      const truncated = total > MAX_RECORDS_RETURN;
       const result = {
-        total: records.length,
-        uniqueDevices: deviceSet.size,
+        total,
+        uniqueDevices,
         byCountry: Object.keys(byCountry).length > 0 ? byCountry : {},
         byVersion: Object.keys(byVersion).length > 0 ? byVersion : {},
         byOS: Object.keys(byOS).length > 0 ? byOS : {},
         byDevice: Object.keys(byDevice).length > 0 ? byDevice : {},
-        records: records.slice(0, 1000),
+        records,
         all: records,
-        recent: records
+        recent: records,
+        truncated
       };
-      
-      console.log('[Telemetry] 📊 返回统计结果:', {
-        total: result.total,
-        uniqueDevices: result.uniqueDevices,
-        countries: Object.keys(result.byCountry).length,
-        versions: Object.keys(result.byVersion).length,
-        os: Object.keys(result.byOS).length,
-        devices: Object.keys(result.byDevice).length
-      });
-      
+      console.log('[Telemetry] 📊 D1 统计结果:', { total, uniqueDevices });
       return result;
     } catch (error) {
       console.error('[Telemetry] ❌ 获取统计信息失败:', error);
-      // 即使出错也返回空数据结构，避免前端报错
       return {
         total: 0,
         uniqueDevices: 0,
@@ -1136,69 +1124,113 @@ const TelemetryHandler = {
         byDevice: {},
         records: [],
         all: [],
-        recent: []
+        recent: [],
+        truncated: false
       };
     }
   },
 
   // DELETE /stats/record/:id - 删除单条记录
   async deleteRecord(env, recordId) {
-    const key = `${TELEMETRY_PREFIX}${recordId}`;
-    await env.LINES.delete(key);
+    if (!env.DB) return { ok: true };
+    await env.DB.prepare('DELETE FROM telemetry WHERE id = ?').bind(recordId).run();
     return { ok: true };
   },
 
   // DELETE /stats/records - 批量删除
   async deleteRecords(env, body) {
+    if (!env.DB) return { ok: true, deleted: 0 };
     const { deviceId, before, all } = body;
     
     if (all) {
-      const list = await env.LINES.list({ prefix: TELEMETRY_PREFIX });
-      for (const k of list.keys) {
-        await env.LINES.delete(k.name);
-      }
-      return { ok: true, deleted: list.keys.length };
+      const r = await env.DB.prepare('DELETE FROM telemetry').run();
+      return { ok: true, deleted: r.meta?.changes ?? 0 };
     }
     
     if (deviceId) {
-      const list = await env.LINES.list({ prefix: TELEMETRY_PREFIX });
-      let deleted = 0;
-      for (const k of list.keys) {
-        const raw = await env.LINES.get(k.name);
-        if (raw) {
-          try {
-            const record = JSON.parse(raw);
-            if (record.deviceId === deviceId && (!before || record.ts < before)) {
-              await env.LINES.delete(k.name);
-              deleted++;
-            }
-          } catch {}
-        }
+      let r;
+      if (before) {
+        r = await env.DB.prepare('DELETE FROM telemetry WHERE device_id = ? AND ts < ?').bind(deviceId, before).run();
+      } else {
+        r = await env.DB.prepare('DELETE FROM telemetry WHERE device_id = ?').bind(deviceId).run();
       }
-      return { ok: true, deleted };
+      return { ok: true, deleted: r.meta?.changes ?? 0 };
     }
     
     if (before) {
-      const list = await env.LINES.list({ prefix: TELEMETRY_PREFIX });
-      let deleted = 0;
-      for (const k of list.keys) {
-        const raw = await env.LINES.get(k.name);
-        if (raw) {
-          try {
-            const record = JSON.parse(raw);
-            if (record.ts < before) {
-              await env.LINES.delete(k.name);
-              deleted++;
-            }
-          } catch {}
-        }
-      }
-      return { ok: true, deleted };
+      const r = await env.DB.prepare('DELETE FROM telemetry WHERE ts < ?').bind(before).run();
+      return { ok: true, deleted: r.meta?.changes ?? 0 };
     }
     
     throw { status: 400, error: '请指定删除条件（all、deviceId 或 before）' };
   }
 };
+
+const TELEMETRY_KV_PREFIX = 'telemetry:';
+
+const MIGRATE_BATCH_SIZE = 400;
+
+/**
+ * 将 KV 中的 telemetry 历史数据迁移到 D1（需认证）
+ * 支持分批：传入 cursor 可继续上次迁移，避免超时
+ */
+async function migrateTelemetryKvToD1(env, cursorFromQuery) {
+  if (!env.DB) {
+    return { ok: false, error: 'D1 未配置' };
+  }
+  let migrated = 0;
+  let skipped = 0;
+  let errors = 0;
+  let cursor = cursorFromQuery || null;
+  const opts = { prefix: TELEMETRY_KV_PREFIX, limit: MIGRATE_BATCH_SIZE };
+  if (cursor) opts.cursor = cursor;
+  const list = await env.LINES.list(opts);
+  const keys = list.keys || [];
+  const listDone = list.list_complete === true || list.listComplete === true;
+  const nextCursor = (list.cursor && String(list.cursor).trim()) || null;
+  const hasMore = (keys.length >= MIGRATE_BATCH_SIZE && nextCursor) || (!listDone && nextCursor);
+  for (const k of keys) {
+    try {
+      let record = null;
+      if (k.metadata && typeof k.metadata.deviceId !== 'undefined' && k.metadata.ts) {
+        record = k.metadata;
+      }
+      if (!record) {
+        const raw = await env.LINES.get(k.name);
+        if (!raw) { errors++; continue; }
+        try {
+          record = JSON.parse(raw);
+        } catch (e) { errors++; continue; }
+      }
+      if (!record.deviceId || !record.ts) { skipped++; continue; }
+      const recordId = record.id || k.name.replace(TELEMETRY_KV_PREFIX, '');
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO telemetry (id, device_id, version, country, city, os, ts) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).bind(
+        recordId,
+        String(record.deviceId),
+        String(record.version || 'unknown'),
+        String(record.country || 'unknown'),
+        String(record.city || 'unknown'),
+        String(record.os || 'unknown'),
+        record.ts
+      ).run();
+      migrated++;
+    } catch (e) {
+      console.error('[Migrate] 迁移失败:', k?.name, e);
+      errors++;
+    }
+  }
+  return {
+    ok: true,
+    batchProcessed: keys.length,
+    migrated,
+    skipped,
+    errors,
+    hasMore,
+    nextCursor: hasMore ? nextCursor : null
+  };
+}
 
 /**
  * 彩蛋配置 API
@@ -2147,6 +2179,25 @@ async function handleRequest(request, env) {
       return json({ ok: false, error: '日期格式应为 yyyyMMdd，例如 20181121' }, 400, corsHeaders);
     }
 
+    // 迁移 KV telemetry 到 D1（需 Bearer Token 认证，支持分批 cursor）
+    if (pathname === '/admin/migrate-telemetry-kv-to-d1' && method === 'POST') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      try {
+        let cursor = null;
+        try {
+          const body = await readJson(request);
+          cursor = body && body.cursor ? String(body.cursor) : null;
+        } catch {}
+        const result = await migrateTelemetryKvToD1(env, cursor);
+        return json(result, 200, corsHeaders);
+      } catch (e) {
+        console.error('[Worker] migrate-telemetry-kv-to-d1 失败:', e);
+        return json({ ok: false, error: e?.message || String(e) }, 500, corsHeaders);
+      }
+    }
+
     // 404
     return json({ ok: false, error: 'Not Found' }, 404, corsHeaders);
 
@@ -2287,6 +2338,13 @@ function getAdminHtml(origin) {
     </div>
 
     <div class="card">
+      <h2 style="font-size:18px;margin:0 0 10px">使用统计迁移</h2>
+      <p class="desc">将 KV 中的 telemetry 历史数据迁移到 D1，需先填写上方 Token。</p>
+      <button class="btn" id="btn-migrate-kv-d1">从 KV 迁移到 D1</button>
+      <span class="status" id="migrate-status"></span>
+    </div>
+
+    <div class="card">
       <h2 style="font-size:18px;margin:0 0 10px">单条线路操作</h2>
       <div class="field">
         <label for="line-name">线路名称 (meta.lineName)</label>
@@ -2424,6 +2482,32 @@ function getAdminHtml(origin) {
         showStatus('conf-status', '已保存到本地浏览器', true);
       });
       document.getElementById('btn-change-pwd').addEventListener('click', handleChangePassword);
+      document.getElementById('btn-migrate-kv-d1').addEventListener('click', async () => {
+        if (!getToken()) {
+          showStatus('migrate-status', '请先填写 Token（与 CLOUD_TOKEN 一致）', false);
+          return;
+        }
+        let totalMigrated = 0, totalSkipped = 0, totalErrors = 0, batchNum = 0, cursor = null;
+        try {
+          do {
+            batchNum++;
+            showStatus('migrate-status', '第 ' + batchNum + ' 批迁移中...', true);
+            const body = cursor ? { cursor } : {};
+            const data = await callApi('POST', '/admin/migrate-telemetry-kv-to-d1', body);
+            if (!data.ok) {
+              showStatus('migrate-status', '失败：' + (data.error || ''), false);
+              return;
+            }
+            totalMigrated += data.migrated || 0;
+            totalSkipped += data.skipped || 0;
+            totalErrors += data.errors || 0;
+            cursor = data.hasMore && data.nextCursor ? data.nextCursor : null;
+          } while (cursor);
+          showStatus('migrate-status', '完成：成功 ' + totalMigrated + '，跳过 ' + totalSkipped + '，失败 ' + totalErrors, true);
+        } catch (e) {
+          showStatus('migrate-status', '失败：' + e.message, false);
+        }
+      });
       document.getElementById('btn-list').addEventListener('click', async () => {
         const out = document.getElementById('list-output');
         out.textContent = '请求中...';

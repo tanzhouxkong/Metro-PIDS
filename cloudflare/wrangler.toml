@@ -12,6 +12,14 @@ compatibility_date = "2024-01-01"
 [[kv_namespaces]]
 binding = "LINES"
 
+# D1 数据库：用于使用统计（telemetry），支持全量查询、按日期排序
+# 创建：cd cloudflare && wrangler d1 create metro-pids-db
+# 将返回的 database_id 填到下面，然后运行：wrangler d1 migrations apply metro-pids-db --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "metro-pids-db"
+database_id = "a199a54b-78de-421d-8e2b-5d0930fd347c"
+
 
 # 以下敏感信息请用 wrangler secret 配置（勿写入此文件，避免泄露）:
 #   wrangler secret put CLOUD_TOKEN          # 云控后台写操作鉴权

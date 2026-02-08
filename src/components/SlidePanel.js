@@ -75,10 +75,15 @@ export default {
       showColorPicker.value = true;
     }
     
-    // 确认颜色选择
-    function onColorConfirm(color) {
+    // 确认颜色选择（运营模式下线路颜色变更：自动静默保存，不弹提示）
+    async function onColorConfirm(color) {
       pidsState.appData.meta.themeColor = color;
       saveCfg();
+      try {
+        await fileIO.saveCurrentLine({ silent: true });
+      } catch (e) {
+        console.warn('[SlidePanel] 颜色变更静默保存失败', e);
+      }
     }
     
     // 取色功能：打开颜色选择器弹窗
@@ -1564,17 +1569,22 @@ export default {
 
     async function openGitHubReleases() {
         const url = 'https://github.com/tanzhouxkong/Metro-PIDS-/releases';
+        await openExternalUrl(url);
+    }
+
+    /** 使用系统默认浏览器打开 URL */
+    async function openExternalUrl(url) {
         try {
             if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
                 const res = await window.electronAPI.openExternal(url);
                 if (!res || (res.ok === false)) {
-                    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
+                    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch (e) { console.warn('Failed to open external URL', e); }
                 }
             } else {
-                try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e) { console.warn('Failed to open external URL', e); }
+                try { window.open(url, '_blank', 'noopener,noreferrer'); } catch (e) { console.warn('Failed to open external URL', e); }
             }
         } catch (e) {
-            try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e2) { console.warn('Failed to open external URL', e2); }
+            try { window.open(url, '_blank', 'noopener,noreferrer'); } catch (e2) { console.warn('Failed to open external URL', e2); }
         }
     }
 
@@ -2004,9 +2014,12 @@ export default {
             if (!displays || typeof displays !== 'object' || Object.keys(displays).length === 0) {
                 displays = { ...DEFAULT_SETTINGS.display.displays };
             }
-            const entries = Object.entries(displays).filter(([id, d]) => shouldShowDisplay(d, id));
+            const entries = Object.entries(displays)
+                .filter(([id, d]) => id !== 'display-3' && shouldShowDisplay(d, id));
             if (entries.length === 0) {
-                return Object.entries(displays).map(([id, d]) => [id, d]);
+                return Object.entries(displays)
+                    .filter(([id]) => id !== 'display-3')
+                    .map(([id, d]) => [id, d]);
             }
             return entries;
         });
@@ -2048,6 +2061,9 @@ export default {
                 displayEdit.lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
                 displayEdit.showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
             }
+            displayEdit.layoutMode = display.layoutMode !== undefined && (display.layoutMode === 'linear' || display.layoutMode === 'c-type')
+                ? display.layoutMode
+                : (displayId === 'display-3' ? 'c-type' : 'linear');
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
             displayEdit.isSystem = display.isSystem === true;
             displayEdit.isDisplay1 = displayId === 'display-1';
@@ -2090,6 +2106,7 @@ export default {
                     : {
                         lineNameMerge: displayEdit.lineNameMerge,
                         showAllStations: displayEdit.showAllStations,
+                        layoutMode: displayEdit.layoutMode,
                         isSystem: true,
                         isDisplay1: displayEdit.isDisplay1 === true,
                         isDisplay3: displayEdit.isDisplay3 === true
@@ -2127,6 +2144,7 @@ export default {
                 name, source, url, description,
                 lineNameMerge: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.lineNameMerge : undefined,
                 showAllStations: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.showAllStations : undefined,
+                layoutMode: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.layoutMode : undefined,
                 isDisplay1: displayEdit.isDisplay1,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
                 isDisplay2: displayEdit.isDisplay2,
@@ -2411,14 +2429,16 @@ export default {
                 // 检查是否为系统显示器
                 if (display.isSystem) {
                     // 系统显示器只能更新开关值（仅显示器1）或显示器2的设置
-                    if (displayId === 'display-1') {
+                    if (displayId === 'display-1' || displayId === 'display-3') {
                         if (displayData.lineNameMerge !== undefined) {
                             display.lineNameMerge = displayData.lineNameMerge;
                         }
                         if (displayData.showAllStations !== undefined) {
                             display.showAllStations = displayData.showAllStations;
                         }
-                        
+                        if (displayData.layoutMode !== undefined && (displayData.layoutMode === 'linear' || displayData.layoutMode === 'c-type')) {
+                            display.layoutMode = displayData.layoutMode;
+                        }
                         // 如果这是当前活动的显示端，同步设置到线路数据
                         if (displayId === settings.display.currentDisplayId) {
                             if (pidsState && pidsState.appData && pidsState.appData.meta) {
@@ -2430,6 +2450,8 @@ export default {
                                 }
                                 sync();
                             }
+                        } else {
+                            sync();
                         }
                     } else if (displayId === 'display-2') {
                         // 显示器2：更新"下一站"页面显示时长
@@ -2450,6 +2472,9 @@ export default {
                         }
                         if (displayData.showAllStations !== undefined) {
                             display.showAllStations = displayData.showAllStations;
+                        }
+                        if (displayData.layoutMode !== undefined && (displayData.layoutMode === 'linear' || displayData.layoutMode === 'c-type')) {
+                            display.layoutMode = displayData.layoutMode;
                         }
                     }
                     // 显示器3：保存标签/提示开关
@@ -2707,7 +2732,7 @@ export default {
             throughLineSegments, addThroughLineSegment, removeThroughLineSegment,
             cleanStationName,
             settings, saveSettings, keyMapDisplay, recordKey, clearKey, resetKeys,
-            updateState, checkForUpdateClicked, downloadUpdateNow, clearCacheAndRedownload, installDownloadedUpdate, skipThisVersion, openGitHubReleases,
+            updateState, checkForUpdateClicked, downloadUpdateNow, clearCacheAndRedownload, installDownloadedUpdate, skipThisVersion, openGitHubReleases, openExternalUrl,
             version, hasElectronAPI, pickColor, openColorPicker,
             showColorPicker, colorPickerInitialColor, onColorConfirm,
             startWithLock, stopWithUnlock, startRecordingWithCheck,
@@ -3040,6 +3065,27 @@ export default {
             </div>
         </div>
 
+        <!-- 反馈与交流 -->
+        <div class="card" style="border-left: 6px solid #00b894; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+            <div style="color:#00b894; font-weight:bold; margin-bottom:16px; font-size:15px;"><i class="fas fa-comments" style="margin-right:8px;"></i>反馈与交流</div>
+            <div style="display:flex; flex-direction:column; gap:16px;">
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <span style="font-size:14px; color:var(--text);">QQ 交流群：</span>
+                    <a href="#" role="button" @click.prevent="openExternalUrl('https://qm.qq.com/cgi-bin/qm/qr?k=quYCch8XYudKFgBdJ3gLvq2lU4y6PHym&jump_from=webapi&authKey=O7TRvoSNVxt66yyv7U/3tFAvp1eeKTMpAwutOkKyPEJbD1jKVikjkeTcbZwVsBYi')" style="display:inline-flex; align-items:center; gap:6px; color:var(--accent); text-decoration:none; font-weight:600; cursor:pointer;">
+                        <img border="0" src="https://pub.idqqimg.com/wpa/images/group.png" alt="Metro-PIDS 交流群" title="Metro-PIDS 交流群" style="height:24px; width:auto; vertical-align:middle;">
+                        Metro-PIDS 交流群
+                    </a>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <span style="font-size:14px; color:var(--text);">GitHub Issue：</span>
+                    <a href="#" role="button" @click.prevent="openExternalUrl('https://github.com/tanzhouxkong/Metro-PIDS/issues')" style="display:inline-flex; align-items:center; gap:6px; color:var(--accent); text-decoration:none; font-weight:600; cursor:pointer;">
+                        <i class="fab fa-github" style="font-size:18px;"></i>
+                        提交问题或建议
+                    </a>
+                </div>
+            </div>
+        </div>
+
       </div>
 
     </div>
@@ -3121,6 +3167,17 @@ export default {
                                     <input v-model="displayEdit.showAllStations" type="checkbox" class="se-toggle-input">
                                     <span class="se-toggle-track" :class="{ on: displayEdit.showAllStations }"></span>
                                     <span class="se-toggle-thumb" :class="{ on: displayEdit.showAllStations }"></span>
+                                </label>
+                            </div>
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">C型开关</div>
+                                    <div class="se-display-option-desc">开启时底部线路图为 C 型，关闭时为直线</div>
+                                </div>
+                                <label class="se-toggle-wrap">
+                                    <input v-model="displayEdit.layoutMode" type="checkbox" class="se-toggle-input" true-value="c-type" false-value="linear">
+                                    <span class="se-toggle-track" :class="{ on: displayEdit.layoutMode === 'c-type' }"></span>
+                                    <span class="se-toggle-thumb" :class="{ on: displayEdit.layoutMode === 'c-type' }"></span>
                                 </label>
                             </div>
                         </template>

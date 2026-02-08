@@ -128,12 +128,29 @@ export default {
                 state.rt.idx++
             }
         }
+        // 同一线路内同名换乘线路颜色同步：更改某一站某条换乘线颜色后，本线路所有站点的同名换乘线同步该颜色
+        if (data.xfer && Array.isArray(data.xfer)) {
+            const stations = state.appData.stations
+            data.xfer.forEach((savedXfer) => {
+                const lineName = (savedXfer.line || '').trim()
+                const color = savedXfer.color
+                if (!lineName || !color) return
+                stations.forEach((st) => {
+                    if (!st.xfer || !Array.isArray(st.xfer)) return
+                    st.xfer.forEach((xf) => {
+                        if ((xf.line || '').trim() === lineName) {
+                            xf.color = color
+                        }
+                    })
+                })
+            })
+        }
         try {
             console.log('[AdminApp] saveStation - calling sync with', data);
             sync()
             // 若在 Electron 环境则尝试落盘
             try {
-                await fileIO.saveCurrentLine()
+                await fileIO.saveCurrentLine({ silent: true })
             } catch (e) {
                 console.warn('[AdminApp] fileIO.saveCurrentLine failed', e)
             }
@@ -153,9 +170,9 @@ export default {
             state.appData.stations.splice(index, 1)
             if (state.rt.idx >= state.appData.stations.length) state.rt.idx = 0
             sync()
-            // 保存到文件
+            // 保存到文件（站点编辑相关操作不弹系统通知）
             try {
-                await fileIO.saveCurrentLine()
+                await fileIO.saveCurrentLine({ silent: true })
             } catch (e) {
                 console.warn('[AdminApp] fileIO.saveCurrentLine failed', e)
             }
@@ -308,9 +325,9 @@ export default {
         
         sync()
         
-        // 保存到文件
+        // 保存到文件（站点编辑相关操作不弹系统通知）
         try {
-            await fileIO.saveCurrentLine()
+            await fileIO.saveCurrentLine({ silent: true })
         } catch (e) {
             console.warn('[AdminApp] fileIO.saveCurrentLine failed', e)
         }

@@ -1375,6 +1375,16 @@
               </td>
               <td>济南样式显示端（display-2）</td>
             </tr>
+            <tr>
+              <td>显示器 3</td>
+              <td>
+                <select id="display-3-enabled">
+                  <option value="on">启用</option>
+                  <option value="off">禁用</option>
+                </select>
+              </td>
+              <td>显示端 3（display-3）</td>
+            </tr>
           </tbody>
         </table>
 
@@ -1839,6 +1849,7 @@
           <label>
             最近记录（按日期分组，已合并5分钟内重复访问）
             <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">💡 同一设备短时间内的重复访问已自动合并</span>
+            <span id="stat-truncated-hint" style="font-size:12px; color:#fa8c16; font-weight:normal; margin-left:8px; display:none;"></span>
           </label>
           <div class="table-container" id="stat-recent-container">
             <table>
@@ -1861,6 +1872,9 @@
         <div class="btn-group btn-group-spaced">
           <button class="btn btn-primary" id="btn-refresh-usage">
             <i class="fas fa-sync"></i> 刷新使用统计
+          </button>
+          <button class="btn btn-secondary" id="btn-migrate-kv-to-d1">
+            <i class="fas fa-database"></i> 从 KV 迁移到 D1
           </button>
           <button class="btn btn-secondary" id="btn-download-records">
             <i class="fas fa-download"></i> 下载访问记录
@@ -2220,6 +2234,18 @@
       
       showStatus('runtime-status', `正在处理 ${runtimeFiles.length} 个文件...`, 'info');
       
+      // 与 Worker 一致的线路名规范化，保证同一条线路始终覆盖同一 key
+      function normalizeRuntimeLineName(name) {
+        if (name == null || typeof name !== 'string') return '';
+        const s = String(name).trim();
+        if (!s) return '';
+        try {
+          return s.normalize('NFC');
+        } catch {
+          return s;
+        }
+      }
+
       for (const file of runtimeFiles) {
         try {
           const text = await file.text();
@@ -2234,9 +2260,13 @@
             throw new Error(`文件 ${file.name} 缺少 stations 数组`);
           }
           
-          const lineName = json.meta.lineName;
+          const lineName = normalizeRuntimeLineName(json.meta.lineName);
+          if (!lineName) {
+            throw new Error(`文件 ${file.name} 的 meta.lineName 为空`);
+          }
+          json.meta.lineName = lineName;
           
-          // 上传到服务器
+          // 上传到服务器（规范化后的名称保证覆盖老版本）
           await callApi('PUT', `/runtime/lines/${encodeURIComponent(lineName)}`, json);
           successCount++;
           
@@ -3185,8 +3215,10 @@
         const displays = cfg.displays || {};
         const d1 = displays['display-1'] || {};
         const d2 = displays['display-2'] || {};
+        const d3 = displays['display-3'] || {};
         document.getElementById('display-1-enabled').value = d1.enabled === false ? 'off' : 'on';
         document.getElementById('display-2-enabled').value = d2.enabled === false ? 'off' : 'on';
+        document.getElementById('display-3-enabled').value = d3.enabled === false ? 'off' : 'on';
 
         // 时间范围
         document.getElementById('display-start-time').value = isoToLocalDateTime(cfg.startTime);
@@ -3209,6 +3241,7 @@
       const showSystem = document.getElementById('display-show-system').checked;
       const d1Enabled  = document.getElementById('display-1-enabled').value === 'on';
       const d2Enabled  = document.getElementById('display-2-enabled').value === 'on';
+      const d3Enabled  = document.getElementById('display-3-enabled').value === 'on';
       const startTime = localDateTimeToIso(document.getElementById('display-start-time').value);
       const endTime = localDateTimeToIso(document.getElementById('display-end-time').value);
 
@@ -3216,7 +3249,8 @@
         showSystemDisplayOption: !!showSystem,
         displays: {
           'display-1': { enabled: d1Enabled },
-          'display-2': { enabled: d2Enabled }
+          'display-2': { enabled: d2Enabled },
+          'display-3': { enabled: d3Enabled }
         },
         startTime,
         endTime,
@@ -3620,8 +3654,9 @@
       
       try {
         showStatus('update-info-status', '正在加载版本信息...', 'info');
-        // 从 Worker API 获取版本信息
-        const checkUrl = `${cfg.apiBase}/update/check?platform=${plat}&arch=${arch}`;
+        // 从 Worker API 获取版本信息（去除 apiBase 尾斜杠，避免 //update/check 导致 404）
+        const base = (cfg.apiBase || '').replace(/\/+$/, '');
+        const checkUrl = `${base}/update/check?platform=${plat}&arch=${arch}`;
         const res = await fetch(checkUrl, {
           headers: { 'Accept': 'application/json' }
         });
@@ -3686,7 +3721,8 @@
         // 延迟一下再刷新，确保 KV 已更新
         setTimeout(async () => {
           try {
-            const checkUrl = `${cfg.apiBase}/update/check?platform=${plat}&arch=${arch}&noCache=1`;
+            const base = (cfg.apiBase || '').replace(/\/+$/, '');
+            const checkUrl = `${base}/update/check?platform=${plat}&arch=${arch}&noCache=1`;
             const checkRes = await fetch(checkUrl, {
               headers: { 'Accept': 'application/json' }
             });
@@ -3734,8 +3770,9 @@
       try {
         showStatus('update-info-status', '正在应用强制更新设置...', 'info');
         
-        // 先获取当前版本信息
-        const checkUrl = `${cfg.apiBase}/update/check?platform=${plat}&arch=${arch}`;
+        // 先获取当前版本信息（去除 apiBase 尾斜杠，避免 //update/check 导致 404）
+        const base = (cfg.apiBase || '').replace(/\/+$/, '');
+        const checkUrl = `${base}/update/check?platform=${plat}&arch=${arch}`;
         const res = await fetch(checkUrl, {
           headers: { 'Accept': 'application/json' }
         });
@@ -4161,6 +4198,14 @@
         document.getElementById('stat-users').textContent = (data.total || 0);
         document.getElementById('stat-unique-devices').textContent = (data.uniqueDevices || 0);
         
+        const hintEl = document.getElementById('stat-truncated-hint');
+        if (data.truncated) {
+          hintEl.textContent = `（仅显示最近 5000 条，汇总已含全部 ${data.total} 条）`;
+          hintEl.style.display = 'inline';
+        } else {
+          hintEl.style.display = 'none';
+        }
+        
         // 从所有记录中按设备ID去重，统计设备数量（而不是访问次数）
         const allRecordsForStats = data.all || data.records || [];
         const deviceMap = new Map(); // deviceId -> { country, version, os, deviceId }
@@ -4288,12 +4333,17 @@
         if (allRecords.length === 0) {
           tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无</td></tr>';
         } else {
-          // 按日期分组
+          // 按日期分组（使用本地时区，避免 UTC 导致「2月6日凌晨」被记入 2月5日）
           const today = new Date();
-          const todayStr = today.toISOString().split('T')[0];
+          const toLocalDateStr = (ts) => {
+            if (!ts) return 'unknown';
+            const d = new Date(ts);
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          };
+          const todayStr = toLocalDateStr(today.getTime());
           const groups = {};
           allRecords.forEach(r => {
-            const date = r.ts ? new Date(r.ts).toISOString().split('T')[0] : 'unknown';
+            const date = toLocalDateStr(r.ts);
             if (!groups[date]) groups[date] = [];
             groups[date].push(r);
           });
@@ -4474,6 +4524,46 @@
         document.getElementById('stat-by-device').textContent = '-';
         document.getElementById('stat-recent-tbody').innerHTML = '<tr><td colspan="7" class="empty-state">加载失败：' + e.message + '</td></tr>';
         window.allRecords = [];
+      }
+    });
+
+    // 从 KV 迁移历史数据到 D1（分批自动继续，避免超时）
+    document.getElementById('btn-migrate-kv-to-d1').addEventListener('click', async () => {
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
+        return;
+      }
+      if (!cfg.token) {
+        showStatus('changelog-status', '迁移需要认证 Token，请在设置中配置', 'error');
+        return;
+      }
+      const base = (cfg.apiBase || '').replace(/\/+$/, '');
+      let totalMigrated = 0, totalSkipped = 0, totalErrors = 0, batchNum = 0;
+      let cursor = null;
+      try {
+        do {
+          batchNum++;
+          showStatus('changelog-status', `正在迁移第 ${batchNum} 批...`, 'info');
+          const res = await fetch(base + '/admin/migrate-telemetry-kv-to-d1', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + cfg.token, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify(cursor ? { cursor } : {})
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            showStatus('changelog-status', '迁移失败：' + (data.error || '未知错误'), 'error');
+            return;
+          }
+          totalMigrated += data.migrated || 0;
+          totalSkipped += data.skipped || 0;
+          totalErrors += data.errors || 0;
+          cursor = data.hasMore && data.nextCursor ? data.nextCursor : null;
+        } while (cursor);
+        showStatus('changelog-status', `✅ 迁移完成：成功 ${totalMigrated} 条，跳过 ${totalSkipped} 条，失败 ${totalErrors} 条`, 'success');
+        document.getElementById('btn-refresh-usage').click();
+      } catch (e) {
+        showStatus('changelog-status', '迁移失败：' + e.message, 'error');
       }
     });
 

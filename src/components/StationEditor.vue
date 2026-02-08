@@ -1,5 +1,5 @@
 <script>
-import { reactive, ref, watch, computed, Teleport, Transition } from 'vue'
+import { reactive, ref, watch, computed, nextTick, Teleport, Transition } from 'vue'
 import ColorPicker from './ColorPicker.vue'
 
 export default {
@@ -102,6 +102,98 @@ export default {
       openColorPicker(idx)
     }
 
+    // 换乘线路剪贴板与右键菜单（复制/粘贴 + 既有功能整合）
+    const xferClipboard = ref(null) // null | { type: 'one', data } | { type: 'all', data: [] }
+    const menuVisible = ref(false)
+    const menuX = ref(0)
+    const menuY = ref(0)
+    const menuContext = ref(null) // null | { type: 'row', idx } | { type: 'section' }
+
+    const copyXfer = (idx) => {
+      const item = form.xfer[idx]
+      if (!item) return
+      xferClipboard.value = { type: 'one', data: JSON.parse(JSON.stringify({ ...item, exitTransfer: item.exitTransfer || false })) }
+    }
+    const copyAllXfer = () => {
+      if (!form.xfer.length) return
+      xferClipboard.value = { type: 'all', data: JSON.parse(JSON.stringify(form.xfer.map((x) => ({ ...x, exitTransfer: x.exitTransfer || false })))) }
+    }
+    const pasteXfer = (afterIdx) => {
+      if (!xferClipboard.value) return
+      const clip = xferClipboard.value
+      const norm = (x) => ({ line: x.line || '', color: x.color || '#000000', suspended: !!x.suspended, exitTransfer: !!x.exitTransfer })
+      if (clip.type === 'one') {
+        const insertIdx = afterIdx < 0 ? form.xfer.length : afterIdx + 1
+        form.xfer.splice(insertIdx, 0, norm(clip.data))
+      } else if (clip.type === 'all' && Array.isArray(clip.data)) {
+        const insertIdx = afterIdx < 0 ? form.xfer.length : afterIdx + 1
+        clip.data.forEach((x, i) => form.xfer.splice(insertIdx + i, 0, norm(x)))
+      }
+    }
+    const hasClipboard = computed(() => !!xferClipboard.value)
+
+    // 在 nextTick 中调整菜单位置，防止被视口裁切
+    const adjustMenuPosition = (clientX, clientY) => {
+      nextTick(() => {
+        const menuEl = document.querySelector('[data-xfer-context-menu]')
+        if (!menuEl) return
+        const rect = menuEl.getBoundingClientRect()
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+        let x = clientX
+        let y = clientY
+        if (x + rect.width > vw) x = clientX - rect.width
+        if (y + rect.height > vh) y = clientY - rect.height
+        if (x < 0) x = 10
+        if (y < 0) y = 10
+        menuX.value = x
+        menuY.value = y
+      })
+    }
+    const openRowMenu = (e, idx) => {
+      menuX.value = e.clientX
+      menuY.value = e.clientY
+      menuContext.value = { type: 'row', idx }
+      menuVisible.value = true
+      adjustMenuPosition(e.clientX, e.clientY)
+    }
+    const openSectionMenu = (e) => {
+      menuX.value = e.clientX
+      menuY.value = e.clientY
+      menuContext.value = { type: 'section' }
+      menuVisible.value = true
+      adjustMenuPosition(e.clientX, e.clientY)
+    }
+    const closeMenu = () => {
+      menuVisible.value = false
+      menuContext.value = null
+    }
+    const runAndClose = (fn) => {
+      if (typeof fn === 'function') fn()
+      closeMenu()
+    }
+
+    // 换乘线路名称编辑弹窗（改）
+    const showXferNameEdit = ref(false)
+    const xferNameEditIdx = ref(-1)
+    const xferNameEditValue = ref('')
+    const openXferNameEdit = (idx) => {
+      if (idx < 0 || idx >= form.xfer.length) return
+      xferNameEditIdx.value = idx
+      xferNameEditValue.value = form.xfer[idx].line || ''
+      showXferNameEdit.value = true
+    }
+    const closeXferNameEdit = () => {
+      showXferNameEdit.value = false
+      xferNameEditIdx.value = -1
+    }
+    const confirmXferNameEdit = () => {
+      if (xferNameEditIdx.value >= 0 && form.xfer[xferNameEditIdx.value]) {
+        form.xfer[xferNameEditIdx.value].line = (xferNameEditValue.value || '').trim()
+      }
+      closeXferNameEdit()
+    }
+
     return {
       form,
       isDarkTheme,
@@ -115,7 +207,26 @@ export default {
       colorPickerInitialColor,
       openColorPicker,
       onColorConfirm,
-      pickColor
+      pickColor,
+      xferClipboard,
+      menuVisible,
+      menuX,
+      menuY,
+      menuContext,
+      hasClipboard,
+      copyXfer,
+      copyAllXfer,
+      pasteXfer,
+      openRowMenu,
+      openSectionMenu,
+      closeMenu,
+      runAndClose,
+      showXferNameEdit,
+      xferNameEditIdx,
+      xferNameEditValue,
+      openXferNameEdit,
+      closeXferNameEdit,
+      confirmXferNameEdit
     }
   }
 }
@@ -197,51 +308,130 @@ export default {
               </div>
             </div>
 
-            <div class="se-section">
+            <div class="se-section" @contextmenu.prevent="openSectionMenu($event)">
               <div class="se-section-head">
                 <div class="se-section-title">换乘线路</div>
-                <button class="se-mini se-mini-add" @click.prevent="addXfer">+ 添加换乘</button>
+                <span class="se-section-hint">右键操作</span>
               </div>
 
-              <div v-if="form.xfer.length === 0" class="se-empty">暂无换乘</div>
+              <div v-if="form.xfer.length === 0" class="se-empty">暂无换乘，右键可添加或粘贴</div>
               <div v-else class="se-xfer-list">
-                <div v-for="(xf, idx) in form.xfer" :key="idx" class="se-xfer-row">
-                  <input v-model="xf.line" class="se-input se-xfer-line" placeholder="线路名称/编号" />
-
-                  <div class="se-color">
-                    <div class="se-color-swatch" :style="{ backgroundColor: xf.color || '#808080' }" title="当前颜色"></div>
-                    <button
-                      class="se-mini se-mini-color"
-                      @click.prevent="openColorPicker(idx)"
-                      title="选择颜色"
-                    >取色</button>
+                <div
+                  v-for="(xf, idx) in form.xfer"
+                  :key="idx"
+                  class="se-xfer-row"
+                  @contextmenu.prevent.stop="openRowMenu($event, idx)"
+                >
+                  <span class="se-xfer-name">{{ xf.line || '未命名' }}</span>
+                  <div v-if="xf.exitTransfer || xf.suspended" class="se-xfer-badges">
+                    <span v-if="xf.exitTransfer" class="se-xfer-badge exit">出站换乘</span>
+                    <span v-if="xf.suspended" class="se-xfer-badge suspended">暂缓开通</span>
                   </div>
-
-                  <button
-                    class="se-tag se-tag-exit"
-                    :class="{ on: xf.exitTransfer }"
-                    :disabled="xf.suspended"
-                    :title="xf.suspended ? '暂缓时不能设置出站换乘' : '出站换乘'"
-                    @click="!xf.suspended && toggleExitTransfer(idx)"
-                  >
-                    出站
-                  </button>
-
-                  <button
-                    class="se-tag se-tag-instation warn"
-                    :class="{ on: xf.suspended }"
-                    :disabled="xf.exitTransfer"
-                    :title="xf.exitTransfer ? '出站换乘时不能暂缓' : xf.suspended ? '暂缓' : '正常'"
-                    @click="!xf.exitTransfer && toggleXferSuspended(idx)"
-                  >
-                    {{ xf.suspended ? '暂缓' : '正常' }}
-                  </button>
-
-                  <button class="se-tag se-tag-danger" @click="removeXfer(idx)" title="删除">删除</button>
+                  <div
+                    class="se-xfer-swatch"
+                    :style="{ backgroundColor: xf.color || '#808080' }"
+                    title="颜色（右键菜单可改）"
+                  ></div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- 换乘线路右键菜单（与站点列表右键菜单风格统一） -->
+          <Teleport to="body">
+            <div
+              v-if="menuVisible"
+              class="station-context-menu"
+              data-xfer-context-menu
+              :style="{ left: menuX + 'px', top: menuY + 'px', position: 'fixed', zIndex: 20002 }"
+              @click.stop
+              @contextmenu.prevent
+            >
+              <template v-if="menuContext?.type === 'row'">
+                <div class="station-context-menu-item" @click="runAndClose(() => openXferNameEdit(menuContext.idx))">
+                  <i class="fas fa-edit"></i> 编辑名称
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item" @click="runAndClose(() => copyXfer(menuContext.idx))">
+                  <i class="fas fa-copy"></i> 复制
+                </div>
+                <div
+                  class="station-context-menu-item"
+                  :class="{ disabled: !hasClipboard }"
+                  @click="hasClipboard && runAndClose(() => pasteXfer(menuContext.idx))"
+                >
+                  <i class="fas fa-paste"></i> 粘贴
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item" @click="runAndClose(() => openColorPicker(menuContext.idx))">
+                  <i class="fas fa-palette"></i> 选择颜色
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div
+                  class="station-context-menu-item"
+                  :class="{ 'xfer-on': form.xfer[menuContext.idx]?.exitTransfer }"
+                  :style="form.xfer[menuContext.idx]?.suspended ? { opacity: 0.5, pointerEvents: 'none' } : undefined"
+                  @click="!form.xfer[menuContext.idx]?.suspended && runAndClose(() => toggleExitTransfer(menuContext.idx))"
+                >
+                  <i class="fas fa-door-open"></i> 出站换乘
+                </div>
+                <div
+                  class="station-context-menu-item"
+                  :class="{ 'xfer-on': form.xfer[menuContext.idx]?.suspended }"
+                  :style="form.xfer[menuContext.idx]?.exitTransfer ? { opacity: 0.5, pointerEvents: 'none' } : undefined"
+                  @click="!form.xfer[menuContext.idx]?.exitTransfer && runAndClose(() => toggleXferSuspended(menuContext.idx))"
+                >
+                  <i class="fas fa-pause-circle"></i> {{ form.xfer[menuContext.idx]?.suspended ? '恢复正常' : '暂缓开通' }}
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item danger" @click="runAndClose(() => removeXfer(menuContext.idx))">
+                  <i class="fas fa-trash-alt"></i> 删除
+                </div>
+              </template>
+              <template v-else-if="menuContext?.type === 'section'">
+                <div
+                  v-if="form.xfer.length"
+                  class="station-context-menu-item"
+                  @click="runAndClose(copyAllXfer)"
+                >
+                  <i class="fas fa-copy"></i> 复制全部
+                </div>
+                <div
+                  class="station-context-menu-item"
+                  :class="{ disabled: !hasClipboard }"
+                  @click="hasClipboard && runAndClose(() => pasteXfer(-1))"
+                >
+                  <i class="fas fa-paste"></i> 粘贴
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item" @click="runAndClose(addXfer)">
+                  <i class="fas fa-plus"></i> 添加换乘
+                </div>
+              </template>
+            </div>
+          </Teleport>
+          <div v-if="menuVisible" class="se-menu-backdrop" style="z-index: 20001" @click="closeMenu" aria-hidden="true"></div>
+
+          <!-- 换乘线路名称编辑弹窗 -->
+          <Teleport to="body">
+            <Transition name="fade">
+              <div v-if="showXferNameEdit" class="se-name-edit-overlay" @click.self="closeXferNameEdit">
+                <div class="se-name-edit-dialog" role="dialog" aria-modal="true">
+                  <div class="se-name-edit-title">编辑线路名称</div>
+                  <input
+                    v-model="xferNameEditValue"
+                    class="se-input se-name-edit-input"
+                    placeholder="线路名称/编号"
+                    @keydown.enter="confirmXferNameEdit"
+                  />
+                  <div class="se-name-edit-actions">
+                    <button type="button" class="se-btn se-btn-gray" @click="closeXferNameEdit">取消</button>
+                    <button type="button" class="se-btn se-btn-green" @click="confirmXferNameEdit">确定</button>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </Teleport>
 
           <div class="se-footer">
             <button class="se-btn se-btn-gray" @click="close">取消</button>
@@ -440,163 +630,118 @@ export default {
   font-size: 14px;
   color: var(--text);
 }
-.se-mini {
-  height: 34px;
-  min-width: 52px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: none;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  color: var(--accent, #1677ff);
-  font-size: 12px;
-  padding: 0 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-.se-mini:hover {
-  background: rgba(255, 255, 255, 0.75);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
-}
-.se-mini-color {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  border-color: rgba(102, 126, 234, 0.5);
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
-}
-.se-mini-color:hover {
-  background: linear-gradient(135deg, #7b8ff0 0%, #8a5fb5 100%);
-  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.45);
-}
-.se-mini-add {
-  background: var(--accent, #1677ff);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
-}
-.se-mini-add:hover {
-  background: var(--accent, #1677ff);
-  filter: brightness(1.1);
-  box-shadow: 0 3px 10px rgba(22, 119, 255, 0.45);
+.se-section-hint {
+  font-size: 11px;
+  color: var(--muted, #999);
 }
 .se-empty {
   color: var(--muted);
   font-size: 12px;
-  padding: 8px 0;
+  padding: 10px 0;
 }
 .se-xfer-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .se-xfer-row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: background 0.15s, border-color 0.15s;
 }
-.se-xfer-line {
+.se-xfer-row:hover {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.14);
+}
+.se-xfer-name {
   flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text, #333);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.se-color {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.se-color-swatch {
-  width: 40px;
-  height: 34px;
+.se-xfer-swatch {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
-  border: 2px solid rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
-.se-color-swatch:hover {
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+.se-xfer-badges {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
-.se-tag {
-  height: 34px;
-  min-width: 52px;
-  display: inline-flex;
+.se-xfer-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.se-xfer-badge.exit {
+  background: rgba(255, 159, 67, 0.2);
+  color: #c76b1a;
+}
+.se-xfer-badge.suspended {
+  background: rgba(240, 173, 78, 0.25);
+  color: #b8860b;
+}
+
+/* 换乘线路右键菜单使用 .station-context-menu（与站点列表统一），此处仅补充分隔与选中态 */
+.station-context-menu-item.xfer-on {
+  background: rgba(22, 119, 255, 0.1);
+  color: var(--accent, #1677ff);
+}
+.station-context-menu-item.xfer-on i {
+  color: var(--accent, #1677ff);
+}
+.se-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+}
+
+/* 换乘线路名称编辑弹窗 */
+.se-name-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 21001;
+  display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 0.7);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.35);
 }
-.se-tag:not(.se-tag-exit):not(.se-tag-instation):not(.se-tag-danger):hover:not(:disabled):not(.on) {
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+.se-name-edit-dialog {
+  width: 320px;
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
 }
-.se-tag.on {
-  background: var(--btn-blue-bg, #1677ff);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
+.se-name-edit-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #333);
+  margin-bottom: 12px;
 }
-.se-tag.warn.on {
-  background: var(--btn-org-bg, #ff9f43);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(255, 159, 67, 0.4);
+.se-name-edit-input {
+  width: 100%;
+  margin-bottom: 16px;
+  box-sizing: border-box;
 }
-.se-tag:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.se-tag-exit {
-  background: #ff9f43;
-  color: #fff;
-  border-color: rgba(255, 159, 67, 0.6);
-  box-shadow: 0 2px 8px rgba(255, 159, 67, 0.35);
-}
-.se-tag-exit:hover:not(:disabled):not(.on) {
-  background: #ff9f43;
-  filter: brightness(1.1);
-  box-shadow: 0 3px 10px rgba(255, 159, 67, 0.45);
-}
-.se-tag-exit.on {
-  background: #e88c2e;
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 2px 8px rgba(232, 140, 46, 0.4);
-}
-.se-tag-instation {
-  background: #2ed573;
-  color: #fff;
-  border-color: rgba(46, 213, 115, 0.6);
-  box-shadow: 0 2px 8px rgba(46, 213, 115, 0.35);
-}
-.se-tag-instation:hover:not(:disabled):not(.on) {
-  background: #2ed573;
-  filter: brightness(1.1);
-  box-shadow: 0 3px 10px rgba(46, 213, 115, 0.45);
-}
-.se-tag-instation.on {
-  background: #f0ad4e;
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 2px 8px rgba(240, 173, 78, 0.4);
-}
-.se-tag-danger {
-  min-width: 52px;
-  background: var(--btn-red-bg, #ff4444);
-  color: #fff;
-  border-color: rgba(255, 68, 68, 0.5);
-  box-shadow: 0 2px 8px rgba(255, 68, 68, 0.35);
-}
-.se-tag-danger:hover {
-  background: #ff4444;
-  filter: brightness(1.1);
-  box-shadow: 0 3px 10px rgba(255, 68, 68, 0.45);
+.se-name-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .se-footer {
@@ -655,32 +800,40 @@ export default {
     border-top-color: rgba(255, 255, 255, 0.1);
   }
   .se-input,
-  .se-seg,
-  .se-mini:not(.se-mini-color):not(.se-mini-add),
-  .se-tag:not(.se-tag-exit):not(.se-tag-instation):not(.se-tag-danger) {
+  .se-seg {
     background: rgba(50, 50, 50, 0.6);
     border-color: rgba(255, 255, 255, 0.12);
   }
-  /* 取色、添加换乘在深色下保持原色，仅加强对比 */
-  .se-mini-color {
-    border-color: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 2px 10px rgba(102, 126, 234, 0.5);
-  }
-  .se-mini-color:hover {
-    box-shadow: 0 3px 12px rgba(102, 126, 234, 0.6);
-  }
-  .se-mini-add {
-    border-color: transparent;
-    box-shadow: 0 2px 10px rgba(22, 119, 255, 0.5);
-  }
-  .se-mini-add:hover {
-    box-shadow: 0 3px 12px rgba(22, 119, 255, 0.6);
-  }
-  .se-color-swatch {
+  .se-xfer-row {
     border-color: rgba(255, 255, 255, 0.12);
+  }
+  .se-xfer-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .se-xfer-swatch {
+    border-color: rgba(255, 255, 255, 0.2);
   }
   .se-close:hover {
     background: rgba(255, 255, 255, 0.06);
   }
+  .se-name-edit-dialog {
+    background: rgba(40, 40, 40, 0.96);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .se-name-edit-title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+}
+
+/* 深色模式（class 切换，与 prefers-color-scheme 同时生效） */
+:global(html.dark) .se-xfer-row,
+:global([data-theme="dark"]) .se-xfer-row {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+:global(html.dark) .se-xfer-row:hover,
+:global([data-theme="dark"]) .se-xfer-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 </style>

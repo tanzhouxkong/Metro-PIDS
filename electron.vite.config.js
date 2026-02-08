@@ -243,6 +243,7 @@ export default defineConfig({
           // debugDisplayRing: resolve(__dirname, 'debug_display_ring.html'), // 暂时移除，drawRing 未导出
           testMultiDisplay: resolve(__dirname, 'test_multi_display.html'),
           // 自定义显示端示例
+          display1: resolve(__dirname, 'displays/display-1/display_window.html'),
           display2: resolve(__dirname, 'displays/display-2/display_window.html'),
           display3: resolve(__dirname, 'displays/display-3/display_window.html')
         },

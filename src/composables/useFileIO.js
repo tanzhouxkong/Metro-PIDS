@@ -74,7 +74,11 @@ export function useFileIO(state) {
         return line;
     }
 
-    async function saveCurrentLine() {
+    /**
+     * @param {{ silent?: boolean }} [options] - silent: true 时不显示保存成功提示（如站点编辑保存时）
+     */
+    async function saveCurrentLine(options) {
+        const silent = options && options.silent === true;
         if (!state || !state.store || !state.store.list) return;
         const cur = state.store.list[state.store.cur];
         if (!cur || !cur.meta || !cur.meta.lineName) {
@@ -225,13 +229,14 @@ export function useFileIO(state) {
                 if (res && res.ok) {
                     // 更新当前文件路径为实际保存的路径
                     state.currentFilePath = res.path || filePath;
-                    // 清理线路名称（移除HTML标签）用于显示
-                    const cleanLineName = cur.meta.lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
-                    // 使用 Electron / 系统通知，在右侧悬浮显示保存成功
-                    showNotification(
-                        '保存成功',
-                        `线路 "${cleanLineName}" 已保存\n${res.path || filePath}`
-                    );
+                    // 静默保存（如站点编辑）时不显示保存成功提示
+                    if (!silent) {
+                        const cleanLineName = cur.meta.lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+                        showNotification(
+                            '保存成功',
+                            `线路 "${cleanLineName}" 已保存\n${res.path || filePath}`
+                        );
+                    }
                 } else {
                     await showMsg('保存失败: ' + (res && res.error), '保存失败');
                 }
@@ -240,6 +245,7 @@ export function useFileIO(state) {
             }
             return;
         }
+        if (silent) return;
         await showMsg('无法保存：未检测到宿主文件保存接口。请先使用"打开文件夹"选择一个线路文件夹，再保存。', '保存失败');
     }
 

@@ -65,7 +65,7 @@ export default {
     const lineContextMenu = ref({ visible: false, x: 0, y: 0, line: null })
     const sidebarNewMenu = ref({ visible: false, x: 0, y: 0 })
     const linesNewMenu = ref({ visible: false, x: 0, y: 0 })
-    const clipboard = ref({ type: null, line: null, sourceFolderId: null, sourceFolderPath: null })
+    const clipboard = ref({ type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null })
 
     const isSavingThroughLine = ref(false)
     const pendingThroughLineInfo = ref(null)
@@ -515,11 +515,11 @@ export default {
           runtimeLines.value = lines
           currentLines.value = lines
         } else {
-          await dialogService.alert('获取运控线路失败：' + (result.error || '未知错误'), '错误')
+          await dialogService.alert('获取云控线路失败：' + (result.error || '未知错误'), '错误')
         }
       } catch (e) {
-        console.error('加载运控线路失败:', e)
-        await dialogService.alert('加载运控线路失败：' + (e.message || e), '错误')
+        console.error('加载云控线路失败:', e)
+        await dialogService.alert('加载云控线路失败：' + (e.message || e), '错误')
       } finally {
         runtimeLoading.value = false
       }
@@ -899,19 +899,86 @@ export default {
       }
     }
 
+    /** 同目录下生成不重复的文件夹名：名称、名称 - 副本、名称 - 副本 (2) ... */
+    function getUniqueFolderName(existingNames, baseName) {
+      const names = new Set((existingNames || []).map((n) => n.trim()))
+      if (!names.has(baseName)) return baseName
+      if (!names.has(baseName + ' - 副本')) return baseName + ' - 副本'
+      let n = 2
+      while (names.has(baseName + ' - 副本 (' + n + ')')) n++
+      return baseName + ' - 副本 (' + n + ')'
+    }
+
+    /** 同目录下生成不重复的线路文件名：xxx、xxx - 副本、xxx - 副本 (2)（不含 .json，与 list 返回的 name 一致） */
+    function getUniqueLineFileName(existingFileNames, baseFileName) {
+      const base = baseFileName && baseFileName.endsWith('.json') ? baseFileName.slice(0, -5) : (baseFileName || '')
+      const toName = (b) => (b.endsWith('.json') ? b.slice(0, -5) : b)
+      const names = new Set((existingFileNames || []).map(toName))
+      if (!names.has(base)) return base + '.json'
+      if (!names.has(base + ' - 副本')) return base + ' - 副本.json'
+      let n = 2
+      while (names.has(base + ' - 副本 (' + n + ')')) n++
+      return base + ' - 副本 (' + n + ').json'
+    }
+
+    async function copyFolder(folder) {
+      closeContextMenu()
+      if (!folder || folder.id === 'default' || folder.id === CLOUD_FOLDER_ID) return
+      clipboard.value = {
+        type: 'copy',
+        line: null,
+        folder: { id: folder.id, name: folder.name, path: folder.path },
+        sourceFolderId: folder.id,
+        sourceFolderPath: folder.path
+      }
+    }
+
+    async function pasteFolder() {
+      closeContextMenu()
+      closeSidebarNewMenu()
+      if (!clipboard.value.folder || !window.electronAPI?.lines?.folders) return
+      const api = window.electronAPI.lines
+      const sourcePath = clipboard.value.sourceFolderPath
+      const folderName = clipboard.value.folder.name
+      const existingNames = folders.value.map((f) => f.name)
+      const newName = getUniqueFolderName(existingNames, folderName)
+      try {
+        const addRes = await api.folders.add(newName)
+        if (!addRes || !addRes.ok) {
+          if (window.__lineManagerDialog) await window.__lineManagerDialog.alert(addRes?.error || '创建文件夹失败', '错误')
+          return
+        }
+        const newPath = addRes.path
+        const rawList = await api.list(sourcePath)
+        const items = Array.isArray(rawList) ? rawList : []
+        for (const it of items) {
+          const fname = it.name || ''
+          if (!fname) continue
+          const readRes = await api.read(fname, sourcePath)
+          if (readRes && readRes.ok && readRes.content) {
+            await api.save(fname, readRes.content, newPath)
+          }
+        }
+        await loadFolders()
+        selectedFolderId.value = addRes.folderId
+        await loadLinesFromFolder(addRes.folderId)
+      } catch (e) {
+        console.error('粘贴文件夹失败:', e)
+        if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('粘贴文件夹失败：' + (e.message || e), '错误')
+      }
+    }
+
     async function copyLine(line) {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
-      clipboard.value = { type: 'copy', line, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
-      if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('线路已复制', '提示')
+      clipboard.value = { type: 'copy', line, folder: null, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
     }
     async function cutLine(line) {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
-      clipboard.value = { type: 'cut', line, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
-      if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('线路已剪切', '提示')
+      clipboard.value = { type: 'cut', line, folder: null, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
     }
 
     // 新建线路（从备份 FolderLineManagerWindow 迁移逻辑）
@@ -1007,33 +1074,36 @@ export default {
       const targetFolderId = selectedFolderId.value || currentFolderId.value
       const targetFolder = folders.value.find((f) => f.id === targetFolderId)
       const targetFolderPath = targetFolder ? targetFolder.path : null
+      const sourceFolderId = clipboard.value.sourceFolderId
+      const sourceFolderPath = clipboard.value.sourceFolderPath
       try {
         const sourceLine = clipboard.value.line
-        const sourceFolderId = clipboard.value.sourceFolderId
-        const sourceFolderPath = clipboard.value.sourceFolderPath
-        const readRes = await window.electronAPI.lines.read(sourceLine.filePath || sourceLine.name, sourceFolderPath)
+        const sourceFileName = sourceLine.filePath || sourceLine.name
+        const readRes = await window.electronAPI.lines.read(sourceFileName, sourceFolderPath)
         if (!(readRes && readRes.ok && readRes.content)) {
           if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('读取源线路失败', '错误')
           return
         }
-        const writeRes = await window.electronAPI.lines.write(
-          sourceLine.filePath || sourceLine.name,
-          readRes.content,
-          targetFolderPath
-        )
-        if (!(writeRes && writeRes.ok)) {
+        let targetFileName = sourceFileName
+        if (clipboard.value.type === 'copy' && targetFolderId === sourceFolderId) {
+          const listRes = await window.electronAPI.lines.list(targetFolderPath)
+          const existingNames = (listRes || []).map((it) => it.name)
+          targetFileName = getUniqueLineFileName(existingNames, sourceFileName)
+        }
+        const saveRes = await window.electronAPI.lines.save(targetFileName, readRes.content, targetFolderPath)
+        if (!(saveRes && saveRes.ok)) {
           if (window.__lineManagerDialog)
-            await window.__lineManagerDialog.alert(writeRes?.error || '写入目标失败', '错误')
+            await window.__lineManagerDialog.alert(saveRes?.error || '写入目标失败', '错误')
           return
         }
         if (clipboard.value.type === 'cut') {
-          await window.electronAPI.lines.delete(sourceLine.filePath || sourceLine.name, sourceFolderPath)
+          await window.electronAPI.lines.delete(sourceFileName, sourceFolderPath)
         }
         await loadLinesFromFolder(targetFolderId)
         if (clipboard.value.type === 'cut' && sourceFolderId !== targetFolderId) {
           await loadLinesFromFolder(sourceFolderId)
         }
-        clipboard.value = { type: null, line: null, sourceFolderId: null, sourceFolderPath: null }
+        clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null }
       } catch (e) {
         console.error('粘贴失败:', e)
         if (window.__lineManagerDialog)
@@ -1215,8 +1285,12 @@ export default {
         const canDelete = contextMenu.value.folderId && contextMenu.value.folderId !== 'default'
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
         const isDefault = contextMenu.value.folderId === 'default'
+        const canCopyFolder = contextMenu.value.folderId && !isCloud && !isDefault
         return [
-          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: isCloud },
+          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          { type: 'sep' },
+          { label: '复制', icon: 'fas fa-copy', action: 'copyFolder', disabled: !canCopyFolder },
+          { label: '粘贴', icon: 'fas fa-paste', action: 'pasteFolder', disabled: !clipboard.value.folder },
           { type: 'sep' },
           {
             label: '重命名',
@@ -1235,22 +1309,26 @@ export default {
             : [])
         ]
       }),
-      sidebarNewMenuItems: computed(() => [
-        {
-          label: '新建文件夹',
-          icon: 'fas fa-folder-plus',
-          action: 'addFolder',
-          disabled: false
-        }
-      ]),
-      linesNewMenuItems: computed(() => [
-        {
-          label: '新建线路',
-          icon: 'fas fa-plus',
-          action: 'createNewLine',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
-        }
-      ]),
+      sidebarNewMenuItems: computed(() => {
+        const canPaste = clipboard.value.folder || clipboard.value.type
+        return [
+          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          ...(canPaste ? [{ type: 'sep' }, { label: '粘贴', icon: 'fas fa-paste', action: 'paste', disabled: false }] : [])
+        ]
+      }),
+      linesNewMenuItems: computed(() => {
+        const canPaste = clipboard.value.type || clipboard.value.folder
+        const pasteDisabled = isCloudFolderActive.value || isDefaultFolderActive.value || !canPaste
+        return [
+          {
+            label: '新建线路',
+            icon: 'fas fa-plus',
+            action: 'createNewLine',
+            disabled: isCloudFolderActive.value || isDefaultFolderActive.value
+          },
+          ...(canPaste ? [{ type: 'sep' }, { label: '粘贴', icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
+        ]
+      }),
       lineMenuItems: computed(() => [
         {
           label: '新建线路',
@@ -1271,7 +1349,7 @@ export default {
           label: '复制',
           icon: 'fas fa-copy',
           action: 'copyLine',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
+          disabled: isCloudFolderActive.value
         },
         {
           label: '剪切',
@@ -1298,7 +1376,7 @@ export default {
         if (!it) return
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
         const isDefault = contextMenu.value.folderId === 'default'
-        if (isCloud && ['addFolder', 'createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
+        if (isCloud && ['createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
           await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
           return
         }
@@ -1307,6 +1385,12 @@ export default {
           return
         }
         if (it.action === 'addFolder') return await addFolder()
+        if (it.action === 'copyFolder') {
+          const folder = folders.value.find((f) => f.id === contextMenu.value.folderId)
+          if (folder) return await copyFolder(folder)
+          return
+        }
+        if (it.action === 'pasteFolder') return await pasteFolder()
         if (it.action === 'createNewLine') return await createNewLine()
         if (it.action === 'renameFolder') return await handleContextMenuRename(contextMenu.value.folderId)
         if (it.action === 'openFolder') return await openFolderInExplorer(contextMenu.value.folderId)
@@ -1315,19 +1399,27 @@ export default {
       async onSidebarNewMenuSelect(it) {
         if (!it) return
         if (it.action === 'addFolder') return await addFolder()
+        if (it.action === 'paste') {
+          if (clipboard.value.folder) return await pasteFolder()
+          if (clipboard.value.line) return await pasteLine()
+        }
       },
       async onLinesNewMenuSelect(it) {
         if (!it) return
-        if (isCloudFolderActive.value && ['addFolder', 'createNewLine'].includes(it.action)) {
+        if (isCloudFolderActive.value && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
           await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
           return
         }
-        if (isDefaultFolderActive.value && ['addFolder', 'createNewLine'].includes(it.action)) {
+        if (isDefaultFolderActive.value && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
           await dialogService.alert('默认文件夹为只读，无法在此新建或编辑。', '提示')
           return
         }
         if (it.action === 'addFolder') return await addFolder()
         if (it.action === 'createNewLine') return await createNewLine()
+        if (it.action === 'paste') {
+          if (clipboard.value.folder) return await pasteFolder()
+          if (clipboard.value.line) return await pasteLine()
+        }
       },
       async onLineMenuSelect(it) {
         if (!it) return
@@ -1337,9 +1429,9 @@ export default {
           await dialogService.alert('云控线路只支持应用，不支持在此新建、复制或删除。', '提示')
           return
         }
-        // 默认文件夹：只读，只允许“打开”
-        if (isDefaultFolderActive.value && it.action !== 'openLine') {
-          await dialogService.alert('默认文件夹为只读，只支持打开线路。', '提示')
+        // 默认文件夹：只读，只允许“打开”和“复制”
+        if (isDefaultFolderActive.value && it.action !== 'openLine' && it.action !== 'copyLine') {
+          await dialogService.alert('默认文件夹为只读，只支持打开、复制线路。', '提示')
           return
         }
         if (it.action === 'addFolder') return await addFolder()
@@ -1402,8 +1494,8 @@ export default {
 
     <div class="lmw-main">
       <div class="lmw-main-body">
-      <aside ref="sidebarRef" v-if="folders.length > 0" class="lmw-sidebar">
-        <div class="lmw-sidebar-inner" @contextmenu.prevent="showSidebarNewMenu($event)">
+      <aside ref="sidebarRef" v-if="folders.length > 0" class="lmw-sidebar" @contextmenu.prevent="showSidebarNewMenu($event)">
+        <div class="lmw-sidebar-inner">
           <button
             v-for="folder in folders"
             :key="folder.id"
