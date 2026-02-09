@@ -656,10 +656,10 @@ function createWindow() {
       console.log('[MainWindow] Linux 窗口已显示');
     }
   } else {
-    // Windows 和 MacOS 使用自定义标题栏，启用透明以支持毛玻璃效果（透到桌面）
-    // 使用 MicaBrowserWindow（如果可用）以获得更好的 Mica 效果支持
-    // 按照官方示例：先不显示窗口，等 dom-ready 后再显示
-    // 根据当前主显示器工作区域自动适配一个合适的初始大小，避免过大导致窗口被挤到左上角
+    // Windows 和 MacOS 使用自定义标题栏
+    // Windows 11：启用透明 + Mica
+    // Windows 10：关闭透明，使用纯色背景，避免拖拽时桌面合成开销过大导致卡顿
+    // Mac：保持原有透明行为
     let initialWidth = 1600;
     let initialHeight = 900;
     try {
@@ -673,13 +673,18 @@ function createWindow() {
       console.warn('[MainWindow] 获取屏幕信息失败，使用默认窗口大小', e);
     }
 
-    mainWin = new MicaBrowserWindow({
+    // 是否在当前环境实际启用 Mica（仅 Windows 11 且 mica-electron 加载成功时）
+    const useMica = isWindows && IS_WINDOWS_11 && MicaBrowserWindow !== BrowserWindow;
+
+    const mainWindowOptions = {
       width: initialWidth,
       height: initialHeight,
       frame: false, // 隐藏默认框架
-      transparent: true, // 启用透明以支持毛玻璃效果（透到桌面）
+      // Windows 11: 透明 + Mica；Windows 10: 关闭透明，减少拖拽卡顿；macOS 保持透明
+      transparent: (isMacOS || useMica),
       resizable: true,
-      backgroundColor: '#00000000', // 完全透明的背景色（使用黑色透明，确保 Mica 效果可见）
+      // 非 Mica 情况下使用不透明深色背景，避免桌面合成拖慢拖拽
+      backgroundColor: useMica ? '#00000000' : '#090d12',
       hasShadow: true, // 启用窗口阴影
       show: true, // 立即显示窗口，避免页面加载失败导致窗口不显示
       // 隐藏默认标题栏，但保留系统窗口控制按钮
@@ -695,7 +700,9 @@ function createWindow() {
         nodeIntegration: false,
         contextIsolation: true
       }
-    });
+    };
+
+    mainWin = new MicaBrowserWindow(mainWindowOptions);
     
     console.log('[MainWindow] 窗口对象已创建:', mainWin !== null);
     console.log('[MainWindow] 窗口是否可见:', mainWin && mainWin.isVisible());

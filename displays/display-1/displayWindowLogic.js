@@ -457,7 +457,7 @@ const displayStyleSheet = `
     font-size: 36px;
     font-weight: bold;
     line-height: 1.2;
-    text-align: left;
+    text-align: center;
     flex-shrink: 0;
     color: #000;
 }
@@ -659,6 +659,8 @@ const displayStyleSheet = `
     min-width: 140px;
     z-index: 1;
     font-size: 18px;
+    /* 环线/C 型站名默认不换行，避免倾斜文字在圆点两侧断行 */
+    white-space: nowrap;
 }
 #display-app .node .n-txt .en {
     font-size: 12px;
@@ -796,7 +798,8 @@ const displayStyleSheet = `
   gap: 3px;
   width: 90px;
   max-width: 90px;
-  overflow: hidden;
+  /* 允许标签阴影完整显示，不裁切 */
+  overflow: visible;
   z-index: 5;
 }
 #display-app .l-node .info-top .x-tag {
@@ -1181,7 +1184,8 @@ const displayStyleSheet = `
     padding: 10px 40px 0;
     display: flex;
     align-items: center;
-    overflow: hidden;
+    /* 允许到达站右侧 C 型线路图中的标签和圆点阴影完整显示 */
+    overflow: visible;
     position: relative;
 }
 #display-app.display-3 #arrival-screen .as-map-track {
@@ -1254,7 +1258,8 @@ const displayStyleSheet = `
     justify-content: center;  /* 居中，让整串标签与圆点竖直对齐 */
     gap: 3px;
     writing-mode: horizontal-tb;
-    overflow: hidden;
+    /* 允许标签阴影完整显示，不裁切 */
+    overflow: visible;
     /* 左右加宽一些，减少标签被裁切的概率 */
     width: 140px;
     max-width: 140px;
@@ -1764,12 +1769,30 @@ function mkNode(st, i, mode, appData, rtState) {
         } else if (x.exitTransfer) {
           if (devFlags.showExitTransfer && state === 0) {
             const subFontSize = Math.max(7, fontSize - 2);
+<<<<<<< Updated upstream
             tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
           } else {
             tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
           }
         } else {
           tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
+=======
+<<<<<<< HEAD
+            tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:2px 3px 6px rgba(0,0,0,0.35) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
+          } else {
+            tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:2px 3px 6px rgba(0,0,0,0.35);">${label}</span>`;
+          }
+        } else {
+          tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:2px 3px 6px rgba(0,0,0,0.35);">${label}</span>`;
+=======
+            tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
+          } else {
+            tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
+          }
+        } else {
+          tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
         }
         if (tagHTML) {
           xferTags.push(tagHTML);
@@ -1844,17 +1867,17 @@ function mkNode(st, i, mode, appData, rtState) {
       if (info.type === 'xfer-suspended' && info.hasSub) {
         // 暂缓的换乘标签
         const subFontSize = Math.max(7, fontSize - 2);
-        tagHTML = `<span class="x-tag suspended" style="background:${info.bgColor}; color:${info.textColor}; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
+        tagHTML = `<span class="x-tag suspended" style="background:${info.bgColor}; color:${info.textColor}; border:1px solid #999; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:2px 3px 6px rgba(0,0,0,0.35) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span></span>`;
       } else if (info.type === 'xfer-exit' && info.hasSub) {
         // 出站换乘标签
         const subFontSize = Math.max(7, fontSize - 2);
-        tagHTML = `<span class="x-tag exit-transfer" style="background:${info.bgColor}; color:${info.textColor}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">${info.subText || '出站'}</span></span>`;
+        tagHTML = `<span class="x-tag exit-transfer" style="background:${info.bgColor}; color:${info.textColor}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:2px 3px 6px rgba(0,0,0,0.35) !important;">${info.text}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">${info.subText || '出站'}</span></span>`;
       } else if (info.type === 'defer') {
         // 暂缓标签
-        tagHTML = `<span class="defer" style="font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; background:${info.bgColor}; color:${info.textColor}; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${info.text}</span>`;
+        tagHTML = `<span class="defer" style="font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; background:${info.bgColor}; color:${info.textColor}; font-weight:bold; white-space:nowrap; box-shadow:2px 3px 6px rgba(0,0,0,0.35);">${info.text}</span>`;
       } else {
         // 其他标签
-        tagHTML = `<span class="x-tag" style="background:${info.bgColor}; color:${info.textColor}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${info.text}</span>`;
+        tagHTML = `<span class="x-tag" style="background:${info.bgColor}; color:${info.textColor}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:2px 3px 6px rgba(0,0,0,0.35);">${info.text}</span>`;
       }
       
       tags.push({ html: tagHTML, length: textLength });
@@ -1865,7 +1888,8 @@ function mkNode(st, i, mode, appData, rtState) {
     if (tags.length > 0) {
       const rows = [];
       tags.forEach(tag => {
-        rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:90px; overflow:hidden;">${tag.html}</div>`);
+        // 允许标签的阴影完整显示，不再裁切
+        rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:90px; overflow:visible;">${tag.html}</div>`);
       });
       tagsContent = rows.join('');
     }
@@ -2547,6 +2571,10 @@ export function initDisplayWindow(rootElement) {
     }
   };
 
+<<<<<<< HEAD
+  // 根据主题色计算“反色”主色，用于箭头闪烁 & 当前站/下一站圆点
+  function computeArrowAccentColor(themeColor) {
+=======
   const renderDisp = () => {
     if (!appData || !appData.stations || !appData.stations.length) return;
     const meta = appData.meta || {};
@@ -2556,11 +2584,15 @@ export function initDisplayWindow(rootElement) {
     // 根据主题颜色决定箭头闪烁颜色的“反色”逻辑（以红色为主，与圆点白底红边一致）：
     // - 默认使用红色箭头（与到达站/下一站圆点一致）
     // - 如果背景颜色接近红色，则反色为黄色箭头
+<<<<<<< Updated upstream
+=======
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
     const yellowColor = '#f1c40f';
     const redColor = '#c00';
     let arrowBlinkColor = redColor;
     try {
-      const m = /^#?([0-9a-f]{6})$/i.exec(themeColor);
+      const m = /^#?([0-9a-f]{6})$/i.exec(themeColor || '');
       if (m) {
         const intVal = parseInt(m[1], 16);
         const r = (intVal >> 16) & 0xff;
@@ -2575,7 +2607,15 @@ export function initDisplayWindow(rootElement) {
         };
         const distToRed = dist({ r, g, b }, redRef);
         if (distToRed < 100) {
+<<<<<<< Updated upstream
           // 背景接近红色 → 反色用黄色箭头
+=======
+<<<<<<< HEAD
+          // 背景接近红色 → 反色用黄色
+=======
+          // 背景接近红色 → 反色用黄色箭头
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
           arrowBlinkColor = yellowColor;
         }
         // 其他情况保持红色
@@ -2583,6 +2623,17 @@ export function initDisplayWindow(rootElement) {
     } catch (e) {
       arrowBlinkColor = redColor;
     }
+    return arrowBlinkColor;
+  }
+
+  const renderDisp = () => {
+    if (!appData || !appData.stations || !appData.stations.length) return;
+    const meta = appData.meta || {};
+    const themeColor = meta.themeColor || '#00b894';
+    root.style.setProperty('--theme', themeColor);
+    root.style.setProperty('--contrast-color', getContrastColor(themeColor));
+    // 箭头闪烁 & 当前站/下一站圆点使用统一的“反色”主色
+    const arrowBlinkColor = computeArrowAccentColor(themeColor);
     root.style.setProperty('--arrow-blink-accent-color', arrowBlinkColor);
     
     // 设置 header 背景渐变
@@ -3856,9 +3907,23 @@ export function initDisplayWindow(rootElement) {
         
         if (realIdx === rt.idx) {
           if (dot) {
+<<<<<<< Updated upstream
             dot.style.background = '#fff';
             dot.style.borderColor = '#c00';
             dot.style.boxShadow = 'none';
+=======
+<<<<<<< HEAD
+            // 当前站圆点：反色，高亮实体圆点（颜色逻辑与箭头一致）
+            const accent = computeArrowAccentColor(meta.themeColor || '#00b894');
+            dot.style.background = accent;
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = `0 0 14px ${accent}`;
+=======
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#c00';
+            dot.style.boxShadow = 'none';
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
             dot.style.animation = 'none';
           }
           const name = node.querySelector('.name');
@@ -4095,9 +4160,23 @@ export function initDisplayWindow(rootElement) {
       
       if (realIdx === rt.idx) {
         if (dot) {
+<<<<<<< Updated upstream
           dot.style.background = '#fff';
           dot.style.borderColor = '#c00';
           dot.style.boxShadow = 'none';
+=======
+<<<<<<< HEAD
+          // 当前站圆点：反色，高亮实体圆点（颜色逻辑与箭头一致）
+          const accent = computeArrowAccentColor(meta.themeColor || '#00b894');
+          dot.style.background = accent;
+          dot.style.borderColor = '#fff';
+          dot.style.boxShadow = `0 0 14px ${accent}`;
+=======
+          dot.style.background = '#fff';
+          dot.style.borderColor = '#c00';
+          dot.style.boxShadow = 'none';
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
           dot.style.animation = 'none';
         }
         const name = node.querySelector('.name');
@@ -4909,6 +4988,8 @@ export function initDisplayWindow(rootElement) {
           const baseY = dotRadius + textGap; // 统一在圆点下方
           
           // 先设置临时位置，让浏览器渲染文本以便测量
+          // 初始隐藏站名，避免显示在错误位置
+          infoBtm.style.opacity = '0';
           infoBtm.style.left = '0px';
           infoBtm.style.top = `${baseY}px`;
           
@@ -4922,11 +5003,13 @@ export function initDisplayWindow(rootElement) {
               if (fallback <= 0) return;
               const anchor = node.offsetWidth / 2; // 圆点在节点中心
               infoBtm.style.left = `${-fallback + anchor + alignTweak}px`;
+              infoBtm.style.opacity = '1'; // 位置设置好后显示
               return;
             }
             // 换行时整块右边缘对齐圆点：left + blockWidth = anchor，故 left = anchor - blockWidth
             const anchor = node.offsetWidth / 2;
             infoBtm.style.left = `${-blockWidth + anchor + alignTweak}px`;
+            infoBtm.style.opacity = '1'; // 位置设置好后显示
           };
           
           // 换行且防错位：等换行布局完成后再测 blockWidth，并用 ResizeObserver 兜底
@@ -4992,10 +5075,24 @@ export function initDisplayWindow(rootElement) {
             dot.style.setProperty('border-color', '#ccc', 'important');
             dot.style.boxShadow = 'none';
           } else if (idx === targetIdx) {
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+            // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
+            const accent = computeArrowAccentColor(m.themeColor || '#00b894');
+            dot.style.background = accent;
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = `0 0 14px ${accent}`;
+=======
+>>>>>>> Stashed changes
             // 下一站：与到达站一致（白底、红边、无光晕、无动画）
             dot.style.background = '#fff';
             dot.style.borderColor = '#c00';
             dot.style.boxShadow = 'none';
+<<<<<<< Updated upstream
+=======
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
             dot.style.animation = 'none';
             dot.style.width = C3_TUNING.dotSizeTarget + 'px';
             dot.style.height = C3_TUNING.dotSizeTarget + 'px';
@@ -5035,12 +5132,27 @@ export function initDisplayWindow(rootElement) {
       // 在高亮线段上放置两个运营方向箭头（类似显示器1，参数用 C3_TUNING 微调）
       const trackContainerTop = parseInt(trackContainer.style.top, 10) || 370; // 轨道层相对 box 的 top
 
-      // 小工具：在给定路径区间内按比例放置箭头
+      // 小工具：在给定路径区间内按固定间距放置两个箭头（与直线布局一致）
       const placeArrowsInRange = (segStart, segEnd, ratios, segIndex) => {
         const segLenLocal = segEnd - segStart;
         if (segLenLocal <= 0) return;
-        (ratios || C3_TUNING.arrowRatios).forEach((ratio) => {
-          const aDist = segStart + segLenLocal * ratio;
+        
+        // 统一使用固定像素间距（20px），与直线布局保持一致
+        const arrowSpacing = 20; // 两个箭头之间的间距（像素）
+        const spacingInPath = arrowSpacing / scale; // 转换为路径上的距离
+        
+        // 计算线段中点
+        const midDist = segStart + segLenLocal / 2;
+        
+        // 两个箭头：中点左右各偏移 spacingInPath/2
+        const arrowDists = [
+          midDist - spacingInPath / 2,
+          midDist + spacingInPath / 2
+        ];
+        
+        arrowDists.forEach((aDist) => {
+          // 确保箭头在区间内
+          if (aDist < segStart || aDist > segEnd) return;
           const ptArr = measurePath.getPointAtLength(aDist);
           const distBefore = Math.max(0, aDist - 2);
           const distAfter = Math.min(actualPerimeter, aDist + 2);
@@ -5102,12 +5214,13 @@ export function initDisplayWindow(rootElement) {
           const topActualEnd = topPathLen * scale; // 上水平段在路径上的末端距离
 
           // 上侧：只在上水平段的最后一小段放箭头，预留出一小段给 R 角
+          // 使用实际站点距离（actualD1）作为起点，而不是固定窗口，使箭头间隔能动态跟随
           const reserveForCornerTop = C3_TUNING.bridgeReserveCorner * scale;
-          const arrowWindowTop = C3_TUNING.bridgeArrowWindow * scale;
           const topSegEnd = Math.max(0, topActualEnd - reserveForCornerTop);
-          let topSegStart = Math.max(actualD1, topSegEnd - arrowWindowTop);
+          const topSegStart = actualD1; // 直接使用实际站点距离，与普通箭头一致
           if (topSegEnd > topSegStart) {
-            placeArrowsInRange(topSegStart, topSegEnd, C3_TUNING.arrowRatios, i);
+            // 右上侧桥接段：使用固定间距（与普通箭头一致）
+            placeArrowsInRange(topSegStart, topSegEnd, null, i);
           }
 
           // 下侧：只在「R 角之后 → 下排最右一站圆点之前」这一小段直线里放箭头
@@ -5120,14 +5233,15 @@ export function initDisplayWindow(rootElement) {
           const bottomSegStart = Math.max(bottomActualStart + reserveFromCorner, actualD1);
           const bottomSegEnd = Math.min(bottomNodeDist - reserveBeforeDot, actualD2);
           if (bottomSegEnd > bottomSegStart) {
-            placeArrowsInRange(bottomSegStart, bottomSegEnd, C3_TUNING.arrowRatios, i);
+            // 右下侧桥接段：使用固定间距（与普通箭头一致）
+            placeArrowsInRange(bottomSegStart, bottomSegEnd, null, i);
           }
 
           continue;
         }
 
-        // 普通段：整段都可放箭头，位置比例用 C3_TUNING.arrowRatios
-        placeArrowsInRange(actualD1, actualD2, C3_TUNING.arrowRatios, i);
+        // 普通段：整段都可放箭头，使用固定间距（与直线布局一致）
+        placeArrowsInRange(actualD1, actualD2, null, i);
       }
 
       c.appendChild(box);
@@ -5310,10 +5424,24 @@ export function initDisplayWindow(rootElement) {
             dot.style.width = '30px';
             dot.style.height = '30px';
           } else if (i === targetIdx && dot) {
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+            // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
+            const accent = computeArrowAccentColor(m.themeColor || '#00b894');
+            dot.style.background = accent;
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = `0 0 14px ${accent}`;
+=======
+>>>>>>> Stashed changes
             // 下一站：与到达站一致（白底、红边、无光晕、无动画）
             dot.style.background = '#fff';
             dot.style.borderColor = '#c00';
             dot.style.boxShadow = 'none';
+<<<<<<< Updated upstream
+=======
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
             dot.style.animation = 'none';
             if (name) name.style.color = '#c00';
             if (en) en.style.color = '#c00';
@@ -5479,10 +5607,24 @@ export function initDisplayWindow(rootElement) {
             dot.style.width = '30px';
             dot.style.height = '30px';
           } else if (i === targetIdx && dot) {
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+            // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
+            const accent = computeArrowAccentColor(m.themeColor || '#00b894');
+            dot.style.background = accent;
+            dot.style.borderColor = '#fff';
+            dot.style.boxShadow = `0 0 14px ${accent}`;
+=======
+>>>>>>> Stashed changes
             // 下一站：与到达站一致（白底、红边、无光晕、无动画）
             dot.style.background = '#fff';
             dot.style.borderColor = '#c00';
             dot.style.boxShadow = 'none';
+<<<<<<< Updated upstream
+=======
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
             dot.style.animation = 'none';
             if (name) name.style.color = '#c00';
             if (en) en.style.color = '#c00';
@@ -5976,7 +6118,16 @@ export function initDisplayWindow(rootElement) {
         xBox.style.gap = '3px';
         xBox.style.width = 'max-content';
         xBox.style.minWidth = 'max-content';
+<<<<<<< Updated upstream
         xBox.style.overflow = 'hidden';
+=======
+<<<<<<< HEAD
+        // 允许环线换乘标签的阴影完整显示，不裁切
+        xBox.style.overflow = 'visible';
+=======
+        xBox.style.overflow = 'hidden';
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
         // 子元素为 span 标签，设为不收缩以便横排稳定
         Array.from(xBox.children).forEach((child) => {
           if (child && child.style) {
@@ -6018,10 +6169,24 @@ export function initDisplayWindow(rootElement) {
         dot.style.height = '24px';
         if (label) label.style.opacity = '0.6';
       } else if (i === targetIdx && dot) {
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+        // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
+        const accent = computeArrowAccentColor(m.themeColor || '#00b894');
+        dot.style.background = accent;
+        dot.style.borderColor = '#fff';
+        dot.style.boxShadow = `0 0 14px ${accent}`;
+=======
+>>>>>>> Stashed changes
         // 下一站：与到达站一致（白底、红边、无光晕、无动画）
         dot.style.background = '#fff';
         dot.style.borderColor = '#c00';
         dot.style.boxShadow = 'none';
+<<<<<<< Updated upstream
+=======
+>>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
+>>>>>>> Stashed changes
         dot.style.animation = 'none';
         if (label) {
           label.style.color = '#c00';
