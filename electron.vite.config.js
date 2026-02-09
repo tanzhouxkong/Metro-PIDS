@@ -244,15 +244,8 @@ export default defineConfig({
           testMultiDisplay: resolve(__dirname, 'test_multi_display.html'),
           // 自定义显示端示例
           display1: resolve(__dirname, 'displays/display-1/display_window.html'),
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-          display2: resolve(__dirname, 'displays/display-2/display_window.html')
-=======
->>>>>>> Stashed changes
           display2: resolve(__dirname, 'displays/display-2/display_window.html'),
           display3: resolve(__dirname, 'displays/display-3/display_window.html')
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
         },
         output: {
           // 代码分割：将大型依赖分离到单独的 chunk

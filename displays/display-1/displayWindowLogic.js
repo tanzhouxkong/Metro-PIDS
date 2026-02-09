@@ -1769,30 +1769,12 @@ function mkNode(st, i, mode, appData, rtState) {
         } else if (x.exitTransfer) {
           if (devFlags.showExitTransfer && state === 0) {
             const subFontSize = Math.max(7, fontSize - 2);
-<<<<<<< Updated upstream
-            tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
-          } else {
-            tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
-          }
-        } else {
-          tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
-=======
-<<<<<<< HEAD
             tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:2px 3px 6px rgba(0,0,0,0.35) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
           } else {
             tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:2px 3px 6px rgba(0,0,0,0.35);">${label}</span>`;
           }
         } else {
           tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:2px 3px 6px rgba(0,0,0,0.35);">${label}</span>`;
-=======
-            tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
-          } else {
-            tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
-          }
-        } else {
-          tagHTML = `<span class="x-tag" style="background:${x.color}; color:#fff; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; font-weight:bold; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${label}</span>`;
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
         }
         if (tagHTML) {
           xferTags.push(tagHTML);
@@ -2571,23 +2553,8 @@ export function initDisplayWindow(rootElement) {
     }
   };
 
-<<<<<<< HEAD
   // 根据主题色计算“反色”主色，用于箭头闪烁 & 当前站/下一站圆点
   function computeArrowAccentColor(themeColor) {
-=======
-  const renderDisp = () => {
-    if (!appData || !appData.stations || !appData.stations.length) return;
-    const meta = appData.meta || {};
-    const themeColor = meta.themeColor || '#00b894';
-    root.style.setProperty('--theme', themeColor);
-    root.style.setProperty('--contrast-color', getContrastColor(themeColor));
-    // 根据主题颜色决定箭头闪烁颜色的“反色”逻辑（以红色为主，与圆点白底红边一致）：
-    // - 默认使用红色箭头（与到达站/下一站圆点一致）
-    // - 如果背景颜色接近红色，则反色为黄色箭头
-<<<<<<< Updated upstream
-=======
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
     const yellowColor = '#f1c40f';
     const redColor = '#c00';
     let arrowBlinkColor = redColor;
@@ -2607,15 +2574,7 @@ export function initDisplayWindow(rootElement) {
         };
         const distToRed = dist({ r, g, b }, redRef);
         if (distToRed < 100) {
-<<<<<<< Updated upstream
-          // 背景接近红色 → 反色用黄色箭头
-=======
-<<<<<<< HEAD
           // 背景接近红色 → 反色用黄色
-=======
-          // 背景接近红色 → 反色用黄色箭头
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
           arrowBlinkColor = yellowColor;
         }
         // 其他情况保持红色
@@ -3907,23 +3866,11 @@ export function initDisplayWindow(rootElement) {
         
         if (realIdx === rt.idx) {
           if (dot) {
-<<<<<<< Updated upstream
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#c00';
-            dot.style.boxShadow = 'none';
-=======
-<<<<<<< HEAD
             // 当前站圆点：反色，高亮实体圆点（颜色逻辑与箭头一致）
             const accent = computeArrowAccentColor(meta.themeColor || '#00b894');
             dot.style.background = accent;
             dot.style.borderColor = '#fff';
             dot.style.boxShadow = `0 0 14px ${accent}`;
-=======
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#c00';
-            dot.style.boxShadow = 'none';
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
             dot.style.animation = 'none';
           }
           const name = node.querySelector('.name');
@@ -4160,23 +4107,11 @@ export function initDisplayWindow(rootElement) {
       
       if (realIdx === rt.idx) {
         if (dot) {
-<<<<<<< Updated upstream
-          dot.style.background = '#fff';
-          dot.style.borderColor = '#c00';
-          dot.style.boxShadow = 'none';
-=======
-<<<<<<< HEAD
           // 当前站圆点：反色，高亮实体圆点（颜色逻辑与箭头一致）
           const accent = computeArrowAccentColor(meta.themeColor || '#00b894');
           dot.style.background = accent;
           dot.style.borderColor = '#fff';
           dot.style.boxShadow = `0 0 14px ${accent}`;
-=======
-          dot.style.background = '#fff';
-          dot.style.borderColor = '#c00';
-          dot.style.boxShadow = 'none';
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
           dot.style.animation = 'none';
         }
         const name = node.querySelector('.name');
@@ -5075,24 +5010,11 @@ export function initDisplayWindow(rootElement) {
             dot.style.setProperty('border-color', '#ccc', 'important');
             dot.style.boxShadow = 'none';
           } else if (idx === targetIdx) {
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
             // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
             const accent = computeArrowAccentColor(m.themeColor || '#00b894');
             dot.style.background = accent;
             dot.style.borderColor = '#fff';
             dot.style.boxShadow = `0 0 14px ${accent}`;
-=======
->>>>>>> Stashed changes
-            // 下一站：与到达站一致（白底、红边、无光晕、无动画）
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#c00';
-            dot.style.boxShadow = 'none';
-<<<<<<< Updated upstream
-=======
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
             dot.style.animation = 'none';
             dot.style.width = C3_TUNING.dotSizeTarget + 'px';
             dot.style.height = C3_TUNING.dotSizeTarget + 'px';
@@ -5424,24 +5346,11 @@ export function initDisplayWindow(rootElement) {
             dot.style.width = '30px';
             dot.style.height = '30px';
           } else if (i === targetIdx && dot) {
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
             // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
             const accent = computeArrowAccentColor(m.themeColor || '#00b894');
             dot.style.background = accent;
             dot.style.borderColor = '#fff';
             dot.style.boxShadow = `0 0 14px ${accent}`;
-=======
->>>>>>> Stashed changes
-            // 下一站：与到达站一致（白底、红边、无光晕、无动画）
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#c00';
-            dot.style.boxShadow = 'none';
-<<<<<<< Updated upstream
-=======
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
             dot.style.animation = 'none';
             if (name) name.style.color = '#c00';
             if (en) en.style.color = '#c00';
@@ -5607,24 +5516,11 @@ export function initDisplayWindow(rootElement) {
             dot.style.width = '30px';
             dot.style.height = '30px';
           } else if (i === targetIdx && dot) {
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
             // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
             const accent = computeArrowAccentColor(m.themeColor || '#00b894');
             dot.style.background = accent;
             dot.style.borderColor = '#fff';
             dot.style.boxShadow = `0 0 14px ${accent}`;
-=======
->>>>>>> Stashed changes
-            // 下一站：与到达站一致（白底、红边、无光晕、无动画）
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#c00';
-            dot.style.boxShadow = 'none';
-<<<<<<< Updated upstream
-=======
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
             dot.style.animation = 'none';
             if (name) name.style.color = '#c00';
             if (en) en.style.color = '#c00';
@@ -6118,16 +6014,8 @@ export function initDisplayWindow(rootElement) {
         xBox.style.gap = '3px';
         xBox.style.width = 'max-content';
         xBox.style.minWidth = 'max-content';
-<<<<<<< Updated upstream
-        xBox.style.overflow = 'hidden';
-=======
-<<<<<<< HEAD
         // 允许环线换乘标签的阴影完整显示，不裁切
         xBox.style.overflow = 'visible';
-=======
-        xBox.style.overflow = 'hidden';
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
         // 子元素为 span 标签，设为不收缩以便横排稳定
         Array.from(xBox.children).forEach((child) => {
           if (child && child.style) {
@@ -6169,24 +6057,11 @@ export function initDisplayWindow(rootElement) {
         dot.style.height = '24px';
         if (label) label.style.opacity = '0.6';
       } else if (i === targetIdx && dot) {
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
         // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
         const accent = computeArrowAccentColor(m.themeColor || '#00b894');
         dot.style.background = accent;
         dot.style.borderColor = '#fff';
         dot.style.boxShadow = `0 0 14px ${accent}`;
-=======
->>>>>>> Stashed changes
-        // 下一站：与到达站一致（白底、红边、无光晕、无动画）
-        dot.style.background = '#fff';
-        dot.style.borderColor = '#c00';
-        dot.style.boxShadow = 'none';
-<<<<<<< Updated upstream
-=======
->>>>>>> 7c2b1ebc316462fabb0543c973e3358e2e8c457c
->>>>>>> Stashed changes
         dot.style.animation = 'none';
         if (label) {
           label.style.color = '#c00';
