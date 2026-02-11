@@ -2015,10 +2015,9 @@ export default {
                 displays = { ...DEFAULT_SETTINGS.display.displays };
             }
             const entries = Object.entries(displays)
-                .filter(([id, d]) => id !== 'display-3' && shouldShowDisplay(d, id));
+                .filter(([id, d]) => shouldShowDisplay(d, id));
             if (entries.length === 0) {
                 return Object.entries(displays)
-                    .filter(([id]) => id !== 'display-3')
                     .map(([id, d]) => [id, d]);
             }
             return entries;

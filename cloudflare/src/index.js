@@ -912,6 +912,8 @@ const UpdateInfoHandler = {
     console.log('[UpdateInfo] 🔄 从 GitHub 同步版本信息，平台:', platform, '架构:', arch);
     
     try {
+      // 同步时清除 Releases 缓存，确保从 GitHub /releases/latest 拉取真正的最新版本（避免仍返回旧缓存导致显示 1.5.9 而非 1.6.0）
+      await env.LINES.delete(ReleasesHandler.CACHE_KEY);
       // 从 GitHub 获取最新版本
       const latest = await ReleasesHandler.latest(env, origin);
       if (!latest || !latest.ok) {

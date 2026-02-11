@@ -5813,6 +5813,31 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     }
     
     // 跳过后续的配置读取逻辑
+  } else if (displayId === 'display-3') {
+    // 香港地铁 LCD：强制使用 1600x500，和显示器3的设计尺寸一致
+    logicalWidth = 1600;
+    logicalHeight = 500;
+    console.log(`[main] display-3 强制使用固定尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, '和配置值)');
+
+    // 同步更新 store 中的配置，避免旧配置残留 1900x600
+    try {
+      if (store) {
+        const settings = store.get('settings', {});
+        if (!settings.display) settings.display = {};
+        if (!settings.display.displays) settings.display.displays = {};
+        if (!settings.display.displays['display-3']) {
+          settings.display.displays['display-3'] = {};
+        }
+        settings.display.displays['display-3'].width = 1600;
+        settings.display.displays['display-3'].height = 600;
+        store.set('settings', settings);
+        console.log('[main] display-3 配置已更新为: 1600x500');
+      }
+    } catch (e) {
+      console.warn('[main] display-3 更新配置失败:', e);
+    }
+
+    // 跳过后续的配置读取逻辑
   } else if (false) { // 原来的 display-2 逻辑已移到上面，这里永远不会执行
     // 尝试从配置读取 display-2 的尺寸
     try {
@@ -6029,9 +6054,10 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       // 显示系统自带窗口控制按钮
       // 注意：height 设置为 0 或很小，让自定义状态栏完全控制拖动区域
       titleBarOverlay: {
-        color: isWindows ? 'rgba(0, 0, 0, 0)' : undefined, // Windows 设置为透明，MacOS 不需要
-        symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色（与控制面板一致，使用黑色）
-        height: 36 // 控制按钮高度，与自定义状态栏高度一致（36px）
+      // 使用与自定义状态栏相同的白色背景，确保系统最小化/关闭按钮在悬停时有清晰的高亮遮罩
+      color: isWindows ? '#ffffff' : undefined,
+      symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色（与控制面板一致，使用黑色）
+      height: 32 // 控制按钮高度，与自定义状态栏高度一致（32px）
       },
       // 顶级窗口（无父级），以独立原生窗口呈现
       webPreferences: {

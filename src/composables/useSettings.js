@@ -52,6 +52,19 @@ export function useSettings() {
         if (!settings.display.displays['display-3']) {
             settings.display.displays['display-3'] = { ...defDisplays['display-3'] };
         }
+        // 同步系统显示器的关键字段到最新配置（名称、尺寸、描述等），避免老版本遗留值
+        ['display-1', 'display-2', 'display-3'].forEach((id) => {
+            const def = defDisplays[id];
+            const cur = settings.display.displays[id];
+            if (!def || !cur) return;
+            cur.id = id;
+            cur.name = def.name;
+            cur.source = def.source;
+            if (!cur.url) cur.url = def.url;
+            cur.width = def.width;
+            cur.height = def.height;
+            cur.description = def.description;
+        });
         if (!settings.display.currentDisplayId) {
             settings.display.currentDisplayId = Object.keys(settings.display.displays)[0] || 'display-1';
         }

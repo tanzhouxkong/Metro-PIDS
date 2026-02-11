@@ -297,32 +297,69 @@ requestDataSync();
 }
 ```
 
-## 站点计算 API
+## 站点计算 API（`src/utils/displayStationCalculator.js`）
 
-Metro-PIDS 提供了站点计算 API，用于处理复杂的站点逻辑（如短交路、暂缓停靠、大战车、直达车等）。
+Metro-PIDS 提供了一组**纯计算**的站点/线路图辅助函数，供显示器 1、显示器 2 以及第三方显示端复用。
 
-### JavaScript 使用
+它覆盖了主显示器的完整逻辑，包括：
+- 短交路（`meta.startIdx` / `meta.termIdx`）
+- 暂缓站（`station.skip`）
+- 运营模式（`meta.serviceMode`: `normal` / `express` / `direct`）
+- 直达/大站车停靠（`station.expressStop`）
+- 方向过滤（`station.dock` 与 `meta.dirType`）
+- 下行反转（显示端配置 `reverseOnDown`）
 
-如果您的第三方显示器与 Metro-PIDS 主程序在同一项目中，可以使用 ES6 模块导入：
+### 数据字段（与站点计算相关）
+
+- **`appData.meta.dirType`**：`'up' | 'down' | 'outer' | 'inner'`
+- **`appData.meta.mode`**：例如 `'loop'`（环线）
+- **`appData.meta.startIdx` / `appData.meta.termIdx`**：短交路起终点索引（`-1` 表示不启用）
+- **`appData.meta.serviceMode`**：`'normal' | 'express' | 'direct'`
+- **`station.dock`**：`'up' | 'down' | 'both'`（不填或 `both` 表示不限制）
+- **`station.skip`**：`true` 表示该站不显示/不停车（暂缓）
+- **`station.expressStop`**：大站车模式下是否停靠（`true` 停靠，缺省视为不停靠）
+- **`station.en`**：站名英文（用于显示）
+
+### JavaScript 使用（导入 + 示例）
+
+> 路径请按你的文件所在位置调整：示例用法中是 `../src/...`，如果在 `displays/display-x/` 下，通常是 `../../src/...`。
 
 ```javascript
 import {
+  // 核心：站点过滤 + 当前/下一站计算
   getFilteredStations,
   calculateDisplayStationInfo,
-  isSkippedByService,
+  calculateNextStationIndex,
   getNextValidSt,
-  calculateNextStationIndex
+  isSkippedByService,
+
+  // 站名/布局辅助（从显示器1抽象）
+  getStationNameFontStyle,
+  getTiltLayoutParams,
+  splitEnglishNameIntoLines,
+
+  // C 型/环线线路段箭头辅助（纯计算）
+  isCurrentArrowSegment,
+  computeCTypeArrowPlacements,
+  computeCTypeArrowRangesForSegment
 } from '../src/utils/displayStationCalculator.js';
 
-// 显示器配置
 const displayConfig = {
-  filterByDirection: true,  // 是否根据方向过滤站点（dock限制）
-  reverseOnDown: true       // 下行方向时是否反转站点顺序
+  // 是否根据 dock 限制过滤站点
+  filterByDirection: true,
+  // 下行/inner 时是否反转显示顺序（香港 LCD 常用 false）
+  reverseOnDown: false
 };
 
-// 使用示例
+// rtState.state: 0 到达 / 1 出站（去往下一站）
 const stationInfo = calculateDisplayStationInfo(appData, rtState, displayConfig);
+// stationInfo: { currentIdx, nextIdx, nextStationName }
+
 const filteredStations = getFilteredStations(appData, appData.meta?.dirType, displayConfig);
+// filteredStations 每个站点会携带 originalIndex（对应 appData.stations 的原始索引）
+
+// 如果你需要“原始 stations 数组中的下一站索引”
+const nextOriginalIdx = calculateNextStationIndex(rtState.idx, appData);
 ```
 
 ### Python 使用

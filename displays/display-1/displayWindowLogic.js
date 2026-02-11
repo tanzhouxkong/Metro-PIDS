@@ -2661,13 +2661,16 @@ export function initDisplayWindow(rootElement) {
         lastArrivalIdx = rt.idx;
         asViewMode = 0;
         cleanupArrivalTimer();
-        // 5 秒切换已关闭：不再启动 arrivalTimer
-        // arrivalTimer = setInterval(() => {
-        //   asViewMode = (asViewMode + 1) % 2;
-        //   renderArrivalScreen(sts, meta);
-        // }, 5000);
+        arrivalTimer = setInterval(() => {
+          asViewMode = (asViewMode + 1) % 2;
+          renderArrivalScreen(sts, meta);
+        }, 5000);
+      } else if (!arrivalTimer) {
+        arrivalTimer = setInterval(() => {
+          asViewMode = (asViewMode + 1) % 2;
+          renderArrivalScreen(sts, meta);
+        }, 5000);
       }
-      // else if (!arrivalTimer) { ... } 已关闭
       if (mapDiv) mapDiv.style.display = 'none';
       if (header) header.style.display = 'flex';
       if (arrivalScreen) {
