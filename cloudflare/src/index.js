@@ -1168,6 +1168,57 @@ const TelemetryHandler = {
   }
 };
 
+/**
+ * 统计配置 API（例如：要在管理端全局排除的设备ID列表）
+ */
+const StatsConfigHandler = {
+  KEY: 'config:stats',
+
+  // GET /stats/config - 获取统计配置
+  async get(env) {
+    const raw = await env.LINES.get(this.KEY);
+    if (!raw) {
+      return {
+        ok: true,
+        config: {
+          excludedDevices: []
+        }
+      };
+    }
+    try {
+      const cfg = JSON.parse(raw);
+      const list = Array.isArray(cfg.excludedDevices) ? cfg.excludedDevices : [];
+      const normalized = list.map((id) => String(id).trim()).filter(Boolean);
+      return {
+        ok: true,
+        config: {
+          excludedDevices: normalized
+        }
+      };
+    } catch (e) {
+      console.error('[StatsConfig] 解析配置失败:', e);
+      return {
+        ok: true,
+        config: {
+          excludedDevices: []
+        }
+      };
+    }
+  },
+
+  // PUT /stats/config - 更新统计配置
+  async update(env, body) {
+    if (!body || typeof body !== 'object') {
+      throw { status: 400, error: '缺少配置数据' };
+    }
+    const list = Array.isArray(body.excludedDevices) ? body.excludedDevices : [];
+    const normalized = list.map((id) => String(id).trim()).filter(Boolean);
+    const config = { excludedDevices: normalized };
+    await env.LINES.put(this.KEY, JSON.stringify(config));
+    return { ok: true, config };
+  }
+};
+
 const TELEMETRY_KV_PREFIX = 'telemetry:';
 
 const MIGRATE_BATCH_SIZE = 400;
@@ -1799,6 +1850,8 @@ async function handleRequest(request, env) {
           { method: 'PUT', path: '/update/info', description: '' },
           { method: 'POST', path: '/telemetry', description: '' },
           { method: 'GET', path: '/stats', description: '' },
+          { method: 'GET', path: '/stats/config', description: '统计配置（排除的设备ID列表）' },
+          { method: 'PUT', path: '/stats/config', description: '更新统计配置（排除的设备ID列表）' },
           { method: 'DELETE', path: '/stats/record/:id', description: '' },
           { method: 'DELETE', path: '/stats/records', description: '' },
           { method: 'GET', path: '/easter-eggs', description: '' },
@@ -2094,6 +2147,12 @@ async function handleRequest(request, env) {
         }, 200, corsHeaders);
       }
     }
+    if (pathname === '/stats/config' && method === 'GET') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      return json(await StatsConfigHandler.get(env), 200, corsHeaders);
+    }
     if (pathname.startsWith('/stats/record/') && method === 'DELETE') {
       const recordId = pathname.slice('/stats/record/'.length);
       if (!recordId) {
@@ -2107,6 +2166,13 @@ async function handleRequest(request, env) {
       }
       const body = await readJson(request);
       return json(await TelemetryHandler.deleteRecords(env, body), 200, corsHeaders);
+    }
+    if (pathname === '/stats/config' && method === 'PUT') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      return json(await StatsConfigHandler.update(env, body), 200, corsHeaders);
     }
 
     // 彩蛋配置 API

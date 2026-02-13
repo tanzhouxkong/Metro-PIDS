@@ -640,3 +640,105 @@ export function computeCTypeArrowRangesForSegment(segIndex, opts) {
 
   return result;
 }
+
+/**
+ * ================================
+ * 换乘站通用数据 API（源自显示器1）
+ * ================================
+ * 站点数据中通常包含形如：
+ *   st.xfer = [
+ *     { line: '2号线', color: '#0097e6', exitTransfer: true },
+ *     { line: '济阳线', color: '#e74c3c', suspended: true },
+ *     ...
+ *   ]
+ *
+ * 本函数不会做任何 DOM 操作，只负责把这些换乘配置「规范化」为统一结构，
+ * 方便在显示器1、显示器3 或其他前端中复用：
+ * - 输出每条换乘线的：名称、简称（与显示器1标签逻辑一致）、颜色
+ * - 标记是否为出站换乘 / 是否暂缓开通
+ */
+
+/**
+ * 换乘标签用线路简称：2号线→2，济阳线→济阳
+ * 与显示器1 的 `shortenLineNameForTag` 保持一致。
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function _shortenLineNameForTag(name) {
+  if (!name || typeof name !== 'string') return name;
+  const s = String(name).trim();
+  if (s.endsWith('号线')) return s.slice(0, -2);
+  if (s.endsWith('线')) return s.slice(0, -1);
+  return s;
+}
+
+/**
+ * 规范化单个站点的换乘信息。
+ *
+ * @param {Object} station - 站点对象（来自 appData.stations[i]）
+ * @param {Object} [options]
+ * @param {boolean} [options.onlyWithName=true]  仅返回有名称的换乘项（无名称的不返回）
+ * @returns {Array<{
+ *   lineName: string,        // 完整线路名，如「2号线」
+ *   shortName: string,       // 简称，如「2」
+ *   color: string|null,      // 颜色（若无则为 null，调用方可自行兜底）
+ *   exitTransfer: boolean,   // 是否为出站换乘
+ *   suspended: boolean,      // 是否为暂缓开通（线路暂缓）
+ *   status: 'normal'|'exit'|'suspended', // 综合状态
+ *   raw: any                 // 原始配置对象，供调试/扩展使用
+ * }>}
+ */
+export function getStationTransferInfo(station, options = {}) {
+  const { onlyWithName = true } = options;
+
+  if (!station) return [];
+
+  // 兼容：xfer 既可能是数组，也可能是单个对象
+  let rawXfer = [];
+  if (Array.isArray(station.xfer)) {
+    rawXfer = station.xfer.filter(Boolean);
+  } else if (station.xfer && typeof station.xfer === 'object') {
+    rawXfer = [station.xfer];
+  }
+
+  if (!rawXfer.length) return [];
+
+  const result = [];
+
+  rawXfer.forEach((x) => {
+    if (!x) return;
+
+    // 线路名优先级：line > text > en
+    const lineName = (typeof x.line === 'string' && x.line.trim()) ||
+      (typeof x.text === 'string' && x.text.trim()) ||
+      (typeof x.en === 'string' && x.en.trim()) ||
+      '';
+
+    if (onlyWithName && !lineName) return;
+
+    const shortName = _shortenLineNameForTag(lineName);
+    const color = (typeof x.color === 'string' && x.color.trim()) || null;
+    const suspended = !!x.suspended;
+    const exitTransfer = !!x.exitTransfer;
+
+    let status = 'normal';
+    if (suspended) {
+      status = 'suspended';
+    } else if (exitTransfer) {
+      status = 'exit';
+    }
+
+    result.push({
+      lineName,
+      shortName,
+      color,
+      exitTransfer,
+      suspended,
+      status,
+      raw: x
+    });
+  });
+
+  return result;
+}

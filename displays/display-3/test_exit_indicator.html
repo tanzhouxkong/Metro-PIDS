@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Display-3 出站指示屏 - 预览</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #000;
+      font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 1900px;
+      height: 600px;
+      display: flex;
+      background-color: #000;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+      border: 2px solid #333;
+    }
+
+    #display-app.exit-indicator {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      background-color: #000;
+      font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    /* 左侧面板 40% */
+    .panel-left {
+      width: 40%;
+      height: 100%;
+      background-color: #1a1a1a;
+      padding: 20px 25px;
+      display: flex;
+      flex-direction: column;
+      border-right: 2px solid #444;
+      color: #fff;
+      position: relative;
+    }
+
+    /* 顶部线路信息 */
+    .top-section {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #444;
+    }
+
+    .metro-logo {
+      font-size: 12px;
+      color: #0088ff;
+      font-weight: bold;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      margin-right: 5px;
+    }
+
+    .line-display {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .line-number {
+      font-size: 48px;
+      font-weight: bold;
+      color: #0088ff;
+      line-height: 1;
+      background: linear-gradient(135deg, #0088ff 0%, #00ccff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .line-name {
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .time-info {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .time {
+      font-size: 32px;
+      font-weight: bold;
+      color: #fff;
+      line-height: 1;
+    }
+
+    .date {
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* 循环标签 */
+    .loop-tag {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%);
+      padding: 8px 12px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 30px;
+      width: fit-content;
+      box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+    }
+
+    .loop-label {
+      font-size: 16px;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .loop-name {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    /* 下一站信息 */
+    .next-station-section {
+      margin-bottom: 40px;
+    }
+
+    .station-label {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #00bfff;
+    }
+
+    .cn-text {
+      font-weight: bold;
+    }
+
+    .en-text {
+      font-size: 11px;
+      color: #0099dd;
+    }
+
+    .station-name {
+      font-size: 36px;
+      font-weight: bold;
+      color: #fff;
+      line-height: 1;
+    }
+
+    .station-name-en {
+      font-size: 14px;
+      color: #00bfff;
+      margin-top: 4px;
+    }
+
+    /* 换乘信息 */
+    .transfer-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .transfer-label {
+      font-size: 14px;
+      color: #888;
+    }
+
+    .transfer-text {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .transfer-lines {
+      display: flex;
+      gap: 8px;
+    }
+
+    .transfer-line {
+      background: linear-gradient(135deg, #ff3333 0%, #ff5555 100%);
+      padding: 6px 12px;
+      border-radius: 3px;
+      font-size: 14px;
+      font-weight: bold;
+      color: #fff;
+      min-width: 50px;
+      text-align: center;
+    }
+
+    /* 右侧面板 60% */
+    .panel-right {
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(135deg, #0099ff 0%, #00ccff 100%);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* 地图背景SVG */
+    .map-background {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+    }
+
+    /* 站点列表 */
+    .stations-list {
+      position: absolute;
+      left: 50px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+    }
+
+    .station-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      opacity: 0.7;
+      transition: all 0.3s ease;
+    }
+
+    .station-item.highlight {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .station-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background-color: rgba(255, 255, 255, 0.4);
+      border: 2px solid rgba(255, 255, 255, 0.6);
+    }
+
+    .station-dot.current {
+      background-color: #fff;
+      border-color: #fff;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+    }
+
+    .station-text {
+      display: flex;
+      flex-direction: column;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+    }
+
+    .station-text.highlight-station {
+      color: #fff;
+      font-weight: bold;
+      font-size: 14px;
+      text-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .station-cn {
+      font-size: inherit;
+      font-weight: 600;
+    }
+
+    .station-en {
+      font-size: 10px;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
+    /* 出门指引区 */
+    .exit-guide {
+      position: absolute;
+      right: 40px;
+      bottom: 40px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .guide-arrows {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 15px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .arrow-btn {
+      width: 40px;
+      height: 40px;
+      background-color: #0099ff;
+      color: #fff;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .arrow-btn:hover {
+      background-color: #0077ff;
+      transform: scale(1.1);
+    }
+
+    .guide-text {
+      background-color: rgba(255, 255, 255, 0.95);
+      padding: 12px 16px;
+      border-radius: 6px;
+      text-align: center;
+      min-width: 140px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .guide-cn {
+      font-size: 16px;
+      font-weight: bold;
+      color: #0099ff;
+    }
+
+    .guide-en {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    /* 测试控制面板 */
+    .control-panel {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      background-color: rgba(0, 0, 0, 0.9);
+      padding: 20px;
+      border: 2px solid #0099ff;
+      border-radius: 8px;
+      color: #fff;
+      z-index: 1000;
+      max-height: 90vh;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+
+    .control-panel h3 {
+      margin-bottom: 10px;
+      color: #0099ff;
+    }
+
+    .control-panel button {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      background-color: #0099ff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .control-panel button:hover {
+      background-color: #0077ff;
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="display-app" class="exit-indicator">
+      <!-- 左侧信息面板 40% -->
+      <div class="panel-left">
+        <!-- 顶部 线路信息 -->
+        <div class="top-section">
+          <div class="metro-logo">北京地铁</div>
+          <div class="line-display">
+            <span class="line-number" id="line-num">10</span>
+            <span class="line-name">Line 10</span>
+          </div>
+          <div class="time-info">
+            <div class="time" id="current-time">10:21</div>
+            <div class="date" id="current-date">2025-05-21</div>
+          </div>
+        </div>
+
+        <!-- 循环/方向标签 -->
+        <div class="loop-tag" id="loop-tag">
+          <span class="loop-label">内环</span>
+          <span class="loop-name">Circulation Loop</span>
+        </div>
+
+        <!-- 下一站信息 -->
+        <div class="next-station-section">
+          <div class="station-label">
+            <span class="cn-text">下一站</span>
+            <span class="en-text">Next Station</span>
+          </div>
+          <div class="station-name" id="next-station">公主坡</div>
+          <div class="station-name-en" id="next-station-en">Gongzhufen</div>
+        </div>
+
+        <!-- 换乘信息 -->
+        <div class="transfer-section">
+          <div class="transfer-label">可换乘</div>
+          <span class="transfer-text">Transfer to</span>
+          <div class="transfer-lines">
+            <div class="transfer-line" id="transfer-line-1">1号线</div>
+            <div class="transfer-line" id="transfer-line-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧地图面板 60% -->
+      <div class="panel-right">
+        <!-- 蓝色渐变背景 -->
+        <svg class="map-background" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <linearGradient id="arcGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#4DB8E8;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#2196F3;stop-opacity:1" />
+            </linearGradient>
+          </defs>
+          <path d="M 100 0 Q 600 -200 1100 0 L 1100 600 Q 600 700 100 600 Z" fill="url(#arcGradient)" />
+        </svg>
+
+        <!-- 站点列表层 -->
+        <div class="stations-list" id="stations-list">
+          <div class="station-item" id="station-item-0">
+            <div class="station-dot"></div>
+            <div class="station-text">
+              <div class="station-cn">莲花桥</div>
+              <div class="station-en">Lianhuaqiao</div>
+            </div>
+          </div>
+          <div class="station-item highlight" id="station-item-1">
+            <div class="station-dot current"></div>
+            <div class="station-text highlight-station">
+              <div class="station-cn">公主坡</div>
+              <div class="station-en">Gongzhufen</div>
+            </div>
+          </div>
+          <div class="station-item" id="station-item-2">
+            <div class="station-dot"></div>
+            <div class="station-text">
+              <div class="station-cn">西钓鱼台</div>
+              <div class="station-en">Xidiayoutai</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 出门指引区 -->
+        <div class="exit-guide">
+          <div class="guide-arrows">
+            <div class="arrow-btn left-arrow">←</div>
+            <div class="arrow-btn right-arrow">→</div>
+          </div>
+          <div class="guide-text">
+            <div class="guide-cn" id="guide-cn">本侧开门</div>
+            <div class="guide-en" id="guide-en">Please exit from this door</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 测试控制面板 -->
+  <div class="control-panel">
+    <h3>📋 测试数据</h3>
+    <button onclick="loadExample1()">北京地铁10号线</button>
+    <button onclick="loadExample2()">北京地铁2号线</button>
+    <button onclick="loadExample3()">北京地铁1号线</button>
+    <hr style="margin: 10px 0; border-color: #444;">
+    <h3>🔧 功能测试</h3>
+    <button onclick="toggleDirection()">切换循环方向</button>
+    <button onclick="nextStation()">下一站</button>
+    <button onclick="previousStation()">上一站</button>
+  </div>
+
+  <script>
+    let currentDirection = 'inner';
+    let currentStationIndex = 1;
+    let currentStations = [
+      { name: '莲花桥', nameEn: 'Lianhuaqiao' },
+      { name: '公主坡', nameEn: 'Gongzhufen' },
+      { name: '西钓鱼台', nameEn: 'Xidiayoutai' }
+    ];
+
+    // 更新时间
+    function updateTime() {
+      const now = new Date();
+      const timeEl = document.getElementById('current-time');
+      const dateEl = document.getElementById('current-date');
+      
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      timeEl.textContent = `${hours}:${minutes}`;
+      
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      dateEl.textContent = `${year}-${month}-${day}`;
+    }
+
+    // 更新显示
+    function updateDisplay(data) {
+      if (data.line) {
+        document.getElementById('line-num').textContent = data.line;
+      }
+      if (data.nextStation) {
+        document.getElementById('next-station').textContent = data.nextStation.name || '--';
+        document.getElementById('next-station-en').textContent = data.nextStation.nameEn || '--';
+      }
+      if (data.direction) {
+        currentDirection = data.direction;
+        updateLoopTag();
+      }
+      if (data.transfers) {
+        const transferLinesEl = document.querySelector('.transfer-lines');
+        transferLinesEl.innerHTML = '';
+        data.transfers.forEach((transfer, idx) => {
+          const el = document.createElement('div');
+          el.className = 'transfer-line';
+          el.textContent = transfer;
+          transferLinesEl.appendChild(el);
+        });
+      }
+      if (data.stations) {
+        currentStations = data.stations;
+        currentStationIndex = data.currentStationIndex || 0;
+        updateStationsList();
+      }
+      if (data.exitGuide) {
+        document.getElementById('guide-cn').textContent = data.exitGuide.cn;
+        document.getElementById('guide-en').textContent = data.exitGuide.en;
+      }
+    }
+
+    function updateLoopTag() {
+      const loopLabel = document.querySelector('.loop-label');
+      loopLabel.textContent = currentDirection === 'inner' ? '内环' : '外环';
+    }
+
+    function updateStationsList() {
+      const stationsListEl = document.getElementById('stations-list');
+      stationsListEl.innerHTML = '';
+      
+      currentStations.forEach((station, idx) => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'station-item';
+        if (idx === currentStationIndex) itemEl.classList.add('highlight');
+        itemEl.id = `station-item-${idx}`;
+        
+        const dotEl = document.createElement('div');
+        dotEl.className = 'station-dot';
+        if (idx === currentStationIndex) dotEl.classList.add('current');
+        
+        const textEl = document.createElement('div');
+        textEl.className = 'station-text';
+        if (idx === currentStationIndex) textEl.classList.add('highlight-station');
+        
+        const cnEl = document.createElement('div');
+        cnEl.className = 'station-cn';
+        cnEl.textContent = station.name;
+        
+        const enEl = document.createElement('div');
+        enEl.className = 'station-en';
+        enEl.textContent = station.nameEn;
+        
+        textEl.appendChild(cnEl);
+        textEl.appendChild(enEl);
+        itemEl.appendChild(dotEl);
+        itemEl.appendChild(textEl);
+        stationsListEl.appendChild(itemEl);
+      });
+    }
+
+    // 示例数据1: 北京地铁10号线
+    function loadExample1() {
+      updateDisplay({
+        line: '10',
+        direction: 'inner',
+        nextStation: { name: '公主坡', nameEn: 'Gongzhufen' },
+        transfers: ['1号线'],
+        stations: [
+          { name: '莲花桥', nameEn: 'Lianhuaqiao' },
+          { name: '公主坡', nameEn: 'Gongzhufen' },
+          { name: '西钓鱼台', nameEn: 'Xidiayoutai' }
+        ],
+        currentStationIndex: 1,
+        exitGuide: { cn: '本侧开门', en: 'Please exit from this door' }
+      });
+    }
+
+    // 示例数据2: 北京地铁2号线
+    function loadExample2() {
+      updateDisplay({
+        line: '2',
+        direction: 'inner',
+        nextStation: { name: '和平门', nameEn: 'Hepingmen' },
+        transfers: ['4号线', '6号线'],
+        stations: [
+          { name: '长椅', nameEn: 'Changing Street' },
+          { name: '复兴门', nameEn: 'Fuxingmen' },
+          { name: '和平门', nameEn: 'Hepingmen' }
+        ],
+        currentStationIndex: 1,
+        exitGuide: { cn: '右侧开门', en: 'Right side doors open' }
+      });
+    }
+
+    // 示例数据3: 北京地铁1号线
+    function loadExample3() {
+      updateDisplay({
+        line: '1',
+        direction: 'outer',
+        nextStation: { name: '天安门东', nameEn: 'Tiananmen East' },
+        transfers: ['2号线'],
+        stations: [
+          { name: '天安门西', nameEn: 'Tiananmen West' },
+          { name: '天安门东', nameEn: 'Tiananmen East' },
+          { name: '王府井', nameEn: 'Wangfujing' }
+        ],
+        currentStationIndex: 0,
+        exitGuide: { cn: '左侧开门', en: 'Left side doors open' }
+      });
+    }
+
+    // 功能测试函数
+    function toggleDirection() {
+      currentDirection = currentDirection === 'inner' ? 'outer' : 'inner';
+      updateLoopTag();
+    }
+
+    function nextStation() {
+      if (currentStationIndex < currentStations.length - 1) {
+        currentStationIndex++;
+        const station = currentStations[currentStationIndex];
+        document.getElementById('next-station').textContent = station.name;
+        document.getElementById('next-station-en').textContent = station.nameEn;
+        updateStationsList();
+      }
+    }
+
+    function previousStation() {
+      if (currentStationIndex > 0) {
+        currentStationIndex--;
+        const station = currentStations[currentStationIndex];
+        document.getElementById('next-station').textContent = station.name;
+        document.getElementById('next-station-en').textContent = station.nameEn;
+        updateStationsList();
+      }
+    }
+
+    // 初始化
+    setInterval(updateTime, 1000);
+    loadExample1();
+  </script>
+</body>
+</html>

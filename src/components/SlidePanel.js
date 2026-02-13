@@ -10,6 +10,7 @@ import { showNotification } from '../utils/notificationService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount, nextTick, reactive, toRefs, Teleport, Transition } from 'vue'
 import ColorPicker from './ColorPicker.vue'
+import { langs, setLocale, i18n } from '../locales/index.js'
 
 const ENABLE_SLIDE_LOG = false;
 const ENABLE_MAIN_LOG_BRIDGE = false; // 关闭主进程日志转发到渲染层
@@ -55,6 +56,34 @@ export default {
         const { isPlaying, isPaused, nextIn, start, stop, togglePause } = autoplay
     const fileIO = useFileIO(pidsState)
     const { settings, saveSettings } = useSettings()
+
+    // 国际化：当前语言（简体 / 繁体 / 英文）
+    const currentLocale = ref(i18n.global.locale.value || 'zh-CN')
+
+    const languageOptions = langs
+
+    // 语言切换：同时更新全局 i18n + 应用自身的简/繁配置（供显示端 3 使用）
+    const changeLanguage = () => {
+      const lang = currentLocale.value || 'zh-CN'
+      // 1) vue-i18n 全局语言
+      setLocale(lang)
+
+      // 2) Metro-PIDS 自身设置：映射为 hkLang (sc / tc)，供 HKDisplay.vue 使用
+      try {
+        if (lang === 'zh-CN') {
+          settings.hkLang = 'sc'
+        } else if (lang === 'zh-TW') {
+          settings.hkLang = 'tc'
+        } else {
+          // 英文暂时保持简体为基础
+          settings.hkLang = 'sc'
+        }
+        // 持久化到 pids_settings_v1，并同步到主进程 / 显示端
+        saveSettings()
+      } catch (e) {
+        console.warn('[SlidePanel] 切换语言时更新 settings.hkLang 失败:', e)
+      }
+    }
 
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
@@ -924,6 +953,28 @@ export default {
 
     // 短交路预设管理
     const shortTurnPresets = ref([]);
+    const presetContextMenu = ref({ visible: false, x: 0, y: 0, preset: null }); // 预设右键菜单
+    
+    // 生成分享ID（针对每次分享）
+    function generateShareId() {
+      try {
+        const timestamp = Date.now().toString(36);
+        const randomPart = Math.random().toString(36).substring(2, 10);
+        const hash = (str) => {
+          let h = 0;
+          for (let i = 0; i < str.length; i++) {
+            h = ((h << 5) - h) + str.charCodeAt(i);
+            h = h & h;
+          }
+          return Math.abs(h).toString(16).toUpperCase();
+        };
+        const shareId = `SHARE-${timestamp}-${randomPart}-${hash(new Date().toISOString())}`;
+        return shareId;
+      } catch (e) {
+        console.error('生成分享ID失败:', e);
+        return 'SHARE-' + Date.now().toString(36);
+      }
+    }
     
     async function loadShortTurnPresets() {
         if (!window.electronAPI || !window.electronAPI.shortturns) {
@@ -1053,6 +1104,217 @@ export default {
             }
         } catch (e) {
             await showMsg('删除失败: ' + e.message);
+        }
+    }
+
+    // 显示预设右键菜单
+    function showPresetContextMenu(event, preset) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        presetContextMenu.value = {
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            preset: preset
+        };
+        
+        // 使用 nextTick 在菜单渲染后调整位置
+        nextTick(() => {
+            const menuElement = document.querySelector('[data-preset-context-menu]');
+            if (menuElement) {
+                const rect = menuElement.getBoundingClientRect();
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                let x = event.clientX;
+                let y = event.clientY;
+                
+                // 如果菜单会在右侧被截断，调整到左侧
+                if (x + rect.width > viewportWidth) {
+                    x = event.clientX - rect.width;
+                }
+                
+                // 如果菜单会在底部被截断，调整到上方
+                if (y + rect.height > viewportHeight) {
+                    y = event.clientY - rect.height;
+                }
+                
+                // 确保不会超出左边界
+                if (x < 0) x = 10;
+                
+                // 确保不会超出上边界
+                if (y < 0) y = 10;
+                
+                // 更新位置
+                presetContextMenu.value.x = x;
+                presetContextMenu.value.y = y;
+            }
+        });
+    }
+    
+    // 关闭预设右键菜单
+    function closePresetContextMenu() {
+        presetContextMenu.value.visible = false;
+    }
+    
+    // 从菜单加载预设
+    async function applyPresetFromMenu() {
+        if (!presetContextMenu.value.preset) return;
+        const presetName = presetContextMenu.value.preset.name;
+        closePresetContextMenu(); // 先关闭右键菜单，再弹出对话框
+        if (!presetName) return;
+        await loadShortTurnPreset(presetName);
+    }
+    
+    // 从菜单删除预设
+    async function deletePresetFromMenu() {
+        if (!presetContextMenu.value.preset) return;
+        const presetName = presetContextMenu.value.preset.name;
+        closePresetContextMenu(); // 先关闭右键菜单，再弹出对话框
+        if (!presetName) return;
+        await deleteShortTurnPreset(presetName);
+    }
+    
+    // 辅助函数：将字符串转换为 Base64（支持 UTF-8）
+    function stringToBase64(str) {
+        try {
+            return btoa(unescape(encodeURIComponent(str)));
+        } catch (e) {
+            console.error('Base64编码失败:', e);
+            return btoa(str);
+        }
+    }
+
+    // 辅助函数：从 Base64 解码为字符串（支持 UTF-8）
+    function base64ToString(b64) {
+        try {
+            return decodeURIComponent(escape(atob(b64)));
+        } catch (e) {
+            console.error('Base64解码失败:', e);
+            try {
+                return atob(b64);
+            } catch {
+                return '';
+            }
+        }
+    }
+
+    // 生成预设分享码（离线分享）
+    async function sharePresetOffline() {
+        if (!presetContextMenu.value.preset) return;
+        const preset = presetContextMenu.value.preset;
+        // 先关闭右键菜单，避免与弹窗叠加
+        closePresetContextMenu();
+        try {
+            // 生成唯一分享ID
+            const shareId = generateShareId();
+            
+            // 创建分享数据包
+            const shareData = {
+                type: 'preset-share',
+                version: '1.0',
+                shareId: shareId,
+                timestamp: new Date().toISOString(),
+                lineName: preset.lineName,
+                presetName: preset.name,
+                data: {
+                    startIdx: preset.startIdx,
+                    termIdx: preset.termIdx,
+                    startStationName: preset.startStationName,
+                    termStationName: preset.termStationName,
+                    createdAt: preset.createdAt
+                }
+            };
+            
+            const shareCode = stringToBase64(JSON.stringify(shareData));
+            
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(shareCode);
+                await showMsg(`${$t('console.presetShareCode')}已复制到剪贴板！\n\n${$t('console.presetShareId')}: ${shareId}\n长度: ${shareCode.length} 字符`, '离线分享');
+            } else {
+                const msg = `${$t('console.presetShareCode')}（请手动复制）:\n\n${shareCode}\n\n${$t('console.presetShareId')}: ${shareId}`;
+                await showMsg(msg, '离线分享');
+            }
+        } catch (e) {
+            console.error('生成分享码错误:', e);
+            await showMsg('生成分享码失败: ' + e.message, '错误');
+        }
+    }
+
+    // 从分享码导入预设（离线导入）
+    async function importPresetFromShareCode() {
+        // 打开弹窗前先关闭右键菜单
+        closePresetContextMenu();
+
+        if (!window.electronAPI || !window.electronAPI.shortturns) {
+            await showMsg('仅 Electron 环境支持导入分享码', '提示');
+            return;
+        }
+
+        try {
+            const inputCode = await promptUser('请输入短交路预设分享码：', '', $t('console.presetShareCode'));
+            if (!inputCode || !inputCode.trim()) {
+                return;
+            }
+            const shareCode = inputCode.trim();
+
+            const jsonText = base64ToString(shareCode);
+            if (!jsonText) {
+                await showMsg('分享码格式不正确或已损坏', '错误');
+                return;
+            }
+
+            let shareData;
+            try {
+                shareData = JSON.parse(jsonText);
+            } catch (e) {
+                console.error('解析分享码 JSON 失败:', e);
+                await showMsg('分享码内容不是有效的 JSON 数据', '错误');
+                return;
+            }
+
+            if (!shareData || shareData.type !== 'preset-share' || !shareData.data) {
+                await showMsg('分享码类型不匹配或缺少必要字段', '错误');
+                return;
+            }
+
+            const presetDataFromShare = shareData.data || {};
+            const defaultName =
+                shareData.presetName ||
+                `${presetDataFromShare.startStationName || '起点'}→${presetDataFromShare.termStationName || '终点'}`;
+
+            const nameInput = await promptUser(
+                '请输入导入后的预设名称（留空使用分享中的名称）',
+                defaultName,
+                '导入分享码'
+            );
+            const finalName = (nameInput && nameInput.trim()) || defaultName;
+            if (!finalName) return;
+
+            const presetToSave = {
+                lineName: shareData.lineName || (pidsState.appData?.meta?.lineName || ''),
+                startIdx: typeof presetDataFromShare.startIdx === 'number' ? presetDataFromShare.startIdx : -1,
+                termIdx: typeof presetDataFromShare.termIdx === 'number' ? presetDataFromShare.termIdx : -1,
+                startStationName: presetDataFromShare.startStationName || '',
+                termStationName: presetDataFromShare.termStationName || '',
+                createdAt: presetDataFromShare.createdAt || new Date().toISOString(),
+                shareId: shareData.shareId || '',
+                importedAt: new Date().toISOString()
+            };
+
+            const res = await window.electronAPI.shortturns.save(finalName, presetToSave);
+            if (res && res.ok) {
+                await showMsg('预设已从分享码导入并保存', '成功');
+                await loadShortTurnPresets();
+            } else {
+                await showMsg('导入失败: ' + (res && res.error), '错误');
+            }
+        } catch (e) {
+            console.error('导入分享码失败:', e);
+            await showMsg('导入分享码失败: ' + (e.message || e), '错误');
+        } finally {
+            closePresetContextMenu();
         }
     }
 
@@ -1290,11 +1552,11 @@ export default {
         }
     }
 
-    const keyMapDisplay = {
-        arrdep: { label: '进站/离站 (Next State)' },
-        prev: { label: '上一站 (Prev Station)' },
-        next: { label: '下一站 (Next Station)' }
-    };
+    const keyMapDisplay = computed(() => ({
+        arrdep: { label: i18n.global.t('keys.nextState') },
+        prev: { label: i18n.global.t('keys.prevStation') },
+        next: { label: i18n.global.t('keys.nextStation') }
+    }));
 
     function recordKey(keyName, event) {
         event.preventDefault();
@@ -2034,7 +2296,12 @@ export default {
         const showDisplayEditDialog = ref(false);
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
-            lineNameMerge: false, showAllStations: false, nextStationDurationSeconds: 10,
+            // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
+            lineNameMerge: false, showAllStations: false,
+            // 显示器2：下一站/到站白屏时长
+            nextStationDurationSeconds: 10,
+            // 显示器3：出站页面显示时长
+            departDurationSeconds: 8,
             isSystem: false, isDisplay1: false, isDisplay2: false, isDisplay3: false
         });
 
@@ -2042,8 +2309,12 @@ export default {
             const display = settings.display.displays[displayId];
             if (!display) return;
             let nextStationDurationSeconds = 10;
+            let departDurationSeconds = 8;
             if (settings.display && settings.display.display2NextStationDuration != null) {
                 nextStationDurationSeconds = Math.round(settings.display.display2NextStationDuration / 1000);
+            }
+            if (settings.display && settings.display.display3DepartDuration != null) {
+                departDurationSeconds = Math.round(settings.display.display3DepartDuration / 1000);
             }
             displayEdit.displayId = displayId;
             displayEdit.name = display.name || '';
@@ -2062,8 +2333,9 @@ export default {
             }
             displayEdit.layoutMode = display.layoutMode !== undefined && (display.layoutMode === 'linear' || display.layoutMode === 'c-type')
                 ? display.layoutMode
-                : (displayId === 'display-3' ? 'c-type' : 'linear');
+                : 'linear';
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
+            displayEdit.departDurationSeconds = departDurationSeconds;
             displayEdit.isSystem = display.isSystem === true;
             displayEdit.isDisplay1 = displayId === 'display-1';
             displayEdit.isDisplay2 = displayId === 'display-2';
@@ -2101,11 +2373,20 @@ export default {
             const id = displayEdit.displayId;
             if (displayEdit.isSystem) {
                 const payload = displayEdit.isDisplay2
-                    ? { nextStationDuration: displayEdit.nextStationDurationSeconds * 1000, isSystem: true, isDisplay2: true }
+                    ? {
+                        nextStationDuration: displayEdit.nextStationDurationSeconds * 1000,
+                        isSystem: true,
+                        isDisplay2: true
+                    }
                     : {
-                        lineNameMerge: displayEdit.lineNameMerge,
-                        showAllStations: displayEdit.showAllStations,
-                        layoutMode: displayEdit.layoutMode,
+                        // 仅显示器1支持这些开关
+                        lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
+                        showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
+                        layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+                        // 显示器3：出站页面显示时长（毫秒）
+                        departDuration: displayEdit.isDisplay3
+                            ? displayEdit.departDurationSeconds * 1000
+                            : undefined,
                         isSystem: true,
                         isDisplay1: displayEdit.isDisplay1 === true,
                         isDisplay3: displayEdit.isDisplay3 === true
@@ -2141,11 +2422,14 @@ export default {
             }
             const result = {
                 name, source, url, description,
-                lineNameMerge: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.lineNameMerge : undefined,
-                showAllStations: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.showAllStations : undefined,
-                layoutMode: (displayEdit.isDisplay1 || displayEdit.isDisplay3) ? displayEdit.layoutMode : undefined,
+                // 仅显示器1支持这些开关
+                lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
+                showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
+                layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
                 isDisplay1: displayEdit.isDisplay1,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
+                // 非系统显示端的 display-3 也可以单独配置出站页面时长
+                departDuration: displayEdit.isDisplay3 ? displayEdit.departDurationSeconds * 1000 : undefined,
                 isDisplay2: displayEdit.isDisplay2,
                 isDisplay3: displayEdit.isDisplay3
             };
@@ -2438,6 +2722,10 @@ export default {
                         if (displayData.layoutMode !== undefined && (displayData.layoutMode === 'linear' || displayData.layoutMode === 'c-type')) {
                             display.layoutMode = displayData.layoutMode;
                         }
+                        // 显示器3：更新“出站页面显示时长”
+                        if (displayId === 'display-3' && displayData.departDuration !== undefined) {
+                            settings.display.display3DepartDuration = displayData.departDuration;
+                        }
                         // 如果这是当前活动的显示端，同步设置到线路数据
                         if (displayId === settings.display.currentDisplayId) {
                             if (pidsState && pidsState.appData && pidsState.appData.meta) {
@@ -2487,6 +2775,10 @@ export default {
                     // 显示器2：更新"下一站"页面显示时长
                     if (displayId === 'display-2' && displayData.nextStationDuration !== undefined) {
                         settings.display.display2NextStationDuration = displayData.nextStationDuration;
+                    }
+                    // 显示器3：更新“出站页面显示时长”
+                    if (displayId === 'display-3' && displayData.departDuration !== undefined) {
+                        settings.display.display3DepartDuration = displayData.departDuration;
                     }
                 }
                 
@@ -2678,9 +2970,9 @@ export default {
                 }
             }
 
-            let message = `已尝试打开 ${openedCount} 个显示端`;
+            let message = i18n.global.t('display.openAttempted', { count: openedCount });
             if (skippedCount > 0) {
-                message += `，已跳过 ${skippedCount} 个显示端（不符合显示条件）`;
+                message += i18n.global.t('display.openSkipped', { count: skippedCount });
             }
             await showMsg(message);
         }
@@ -2698,10 +2990,10 @@ export default {
                     window.postMessage({ t: 'CMD_UI', cmd: 'winClose' }, '*');
                 }
 
-                await showMsg('已发送关闭命令到所有显示端');
+                await showMsg(i18n.global.t('display.closeCommandSent'));
             } catch (e) {
                 console.error('关闭显示端失败:', e);
-                await showMsg('关闭显示端时发生错误');
+                await showMsg(i18n.global.t('display.closeError'));
             }
         }
 
@@ -2738,6 +3030,7 @@ export default {
             changeServiceMode, serviceModeLabel,
             showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
+            presetContextMenu, showPresetContextMenu, closePresetContextMenu, applyPresetFromMenu, deletePresetFromMenu, sharePresetOffline, importPresetFromShareCode, generateShareId,
             openLineManagerWindow,
             // 显示端管理方法
             currentDisplay, currentDisplayId, displayState, selectDisplay, 
@@ -2749,7 +3042,9 @@ export default {
             showDisplayEditDialog, displayEdit, closeDisplayEditDialog, saveDisplayEdit, pickDisplayEditFile,
             // 显示端右键菜单
             displayContextMenu, showDisplayContextMenu, closeDisplayContextMenu,
-            editDisplayFromMenu, toggleDisplayEnabledFromMenu, deleteDisplayFromMenu, addNewDisplayFromMenu
+            editDisplayFromMenu, toggleDisplayEnabledFromMenu, deleteDisplayFromMenu, addNewDisplayFromMenu,
+            // 语言设置
+            currentLocale, languageOptions, changeLanguage
         };
     },
   template: `
@@ -2828,27 +3123,34 @@ export default {
         <!-- Header（与控制台一致左对齐） -->
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
             <div style="text-align:left;">
-                <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">设置</div>
-                <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">Preferences</div>
+                <!-- 使用 i18n 多语言 -->
+                <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">
+                    {{ $t('header.settings') }}
+                </div>
+                <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">
+                    {{ $t('preferences.title') }}
+                </div>
             </div>
         </div>
         
         
         <!-- Theme Settings -->
         <div class="card" style="border-left: 6px solid #2ED573; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#2ED573; font-weight:bold; margin-bottom:16px; font-size:15px;">外观 (Appearance)</div>
+            <div style="color:#2ED573; font-weight:bold; margin-bottom:16px; font-size:15px;">
+              {{ $t('settings.appearance') }}
+            </div>
             
             <div style="margin-bottom:16px;">
-                <label style="display:block; font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">主题模式</label>
+                <label style="display:block; font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ $t('settings.themeMode') }}</label>
                 <select v-model="settings.themeMode" @change="saveSettings()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <option value="system">跟随系统 (System)</option>
-                    <option value="light">浅色 (Light)</option>
-                    <option value="dark">深色 (Dark)</option>
+                    <option value="system">{{ $t('settings.themeSystem') }}</option>
+                    <option value="light">{{ $t('settings.themeLight') }}</option>
+                    <option value="dark">{{ $t('settings.themeDark') }}</option>
                 </select>
             </div>
 
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                <span style="color:var(--text); font-size:14px;">高斯模糊</span>
+                <span style="color:var(--text); font-size:14px;">{{ $t('settings.blur') }}</span>
                 <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
                     <input type="checkbox" v-model="settings.blurEnabled" @change="saveSettings()" style="opacity:0; width:0; height:0;">
                     <span :style="{
@@ -2867,18 +3169,38 @@ export default {
             <!-- 深色模式变体 已移除 -->
         </div>
 
+        <!-- Language Settings -->
+        <div class="card" style="border-left: 6px solid #4A90E2; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+            <div style="color:#4A90E2; font-weight:bold; margin-bottom:16px; font-size:15px;">
+              {{ $t('preferences.language') }} (Language)
+            </div>
+
+            <div style="margin-bottom:8px; font-size:12px; color:var(--muted);">
+                {{ $t('preferences.languageHint') }}
+            </div>
+
+            <div>
+                <label style="display:block; font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ $t('preferences.languageLabel') }}</label>
+                <select v-model="currentLocale" @change="changeLanguage" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                    <option v-for="opt in languageOptions" :key="opt.key" :value="opt.key">
+                        {{ opt.title }}
+                    </option>
+                </select>
+            </div>
+        </div>
+
         <!-- Display Management -->
         <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">显示端管理 (Display Management)</div>
+            <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('display.title') }}</div>
             
             <!-- 显示端列表标题 -->
             <div style="margin-bottom:12px;">
-                <div style="font-size:14px; font-weight:bold; color:var(--text);">显示端列表</div>
+                <div style="font-size:14px; font-weight:bold; color:var(--text);">{{ $t('display.listTitle') }}</div>
             </div>
             
             <!-- 拖拽提示（与控制台内框一致） -->
             <div style="font-size:12px; color:var(--muted); margin-bottom:12px; padding:12px; background:rgba(255, 255, 255, 0.15); border-radius:12px; border:2px solid var(--divider);">
-                <i class="fas fa-info-circle"></i> 点击卡片切换当前选中的显示端，右键卡片或空白处可进行新建、编辑、启用/禁用、删除操作，拖拽卡片可调整顺序
+                <i class="fas fa-info-circle"></i> {{ $t('display.hint') }}
             </div>
             
             <!-- 显示端卡片列表 -->
@@ -2934,24 +3256,24 @@ export default {
             <!-- 批量操作 -->
             <div style="display:flex; gap:10px;">
                 <button @click="openAllDisplays()" class="btn" style="flex:1; background:#2ED573; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;">
-                    <i class="fas fa-window-restore"></i> 打开所有显示端
+                    <i class="fas fa-window-restore"></i> {{ $t('display.openAll') }}
                 </button>
                 <button @click="closeAllDisplays()" class="btn" style="flex:1; background:#FF6B6B; color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;">
-                    <i class="fas fa-times-circle"></i> 关闭所有显示端
+                    <i class="fas fa-times-circle"></i> {{ $t('display.closeAll') }}
                 </button>
             </div>
         </div>
 
         <!-- API Server Settings -->
         <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#9B59B6; font-weight:bold; margin-bottom:16px; font-size:15px;">API 服务器 (API Server)</div>
+            <div style="color:#9B59B6; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('api.title') }}</div>
             
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
                 <div style="flex:1;">
-                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">启用 HTTP API 服务器</div>
+                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">{{ $t('api.enable') }}</div>
                     <div style="font-size:12px; color:var(--muted); line-height:1.5;">
-                        启用后可通过 HTTP API 控制显示器（用于 Python 等第三方客户端）。<br>
-                        默认使用 BroadcastChannel 通信，无需 HTTP 服务器。
+                        {{ $t('api.tip1') }}<br>
+                        {{ $t('api.tip2') }}
                     </div>
                 </div>
                 <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; margin-left:16px; flex-shrink:0;">
@@ -2971,13 +3293,13 @@ export default {
             
             <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.12); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.25); line-height:1.6;">
                 <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
-                <strong>提示：</strong>如果第三方显示器（特别是 Python 客户端）显示异常或无法连接，请尝试更改此开关状态并<strong>重启应用</strong>重试。
+                {{ $t('api.tip3') }}
             </div>
         </div>
 
         <!-- Keybindings -->
         <div class="card" style="border-left: 6px solid #1E90FF; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#1E90FF; font-weight:bold; margin-bottom:16px; font-size:15px;">快捷键 (Keybindings)</div>
+            <div style="color:#1E90FF; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('keys.title') }}</div>
             
             <div style="display:flex; flex-direction:column; gap:12px;">
                 <div v-for="(val, key) in keyMapDisplay" :key="key" style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px dashed var(--divider);">
@@ -2987,7 +3309,7 @@ export default {
                             :value="settings.keys[key]" 
                             @keydown="recordKey(key, $event)"
                             readonly
-                            placeholder="按下按键..."
+                            :placeholder="$t('keys.placeholder')"
                             style="width:100px; text-align:center; cursor:pointer; font-family:monospace; font-weight:bold; padding:6px 10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--accent);"
                         >
                         <button @click="clearKey(key)" class="btn" style="padding:6px 10px; background:var(--btn-gray-bg); color:var(--text);" title="清除快捷键"><i class="fas fa-times"></i></button>
@@ -2996,61 +3318,63 @@ export default {
             </div>
             
             <div class="settings-hint-box" style="margin-top:16px; font-size:12px; color:var(--muted); padding:12px; border-radius:8px; margin-bottom:12px; border:2px solid var(--divider);">
-                <i class="fas fa-info-circle"></i> 点击输入框并按下键盘按键以修改快捷键。
+                <i class="fas fa-info-circle"></i> {{ $t('keys.editHint') }}
             </div>
 
             <button class="btn" style="width:100%; background:var(--btn-red-bg); color:white; padding:10px; border-radius:6px; border:none; font-weight:bold;" @click="resetKeys()">
-                <i class="fas fa-undo"></i> 重置所有快捷键
+                <i class="fas fa-undo"></i> {{ $t('keys.resetAll') }}
             </button>
         </div>
 
         <!-- Version & Update -->
         <div class="card" style="border-left: 6px solid #4b7bec; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#4b7bec; font-weight:bold; margin-bottom:12px; font-size:15px;">版本与更新</div>
+            <div style="color:#4b7bec; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ $t('about.versionTitle') }}</div>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <div style="font-size:14px; color:var(--text);">当前版本</div>
+                <div style="font-size:14px; color:var(--text);">{{ $t('about.currentVersion') }}</div>
                 <div style="font-weight:bold; color:var(--muted);">{{ version }}</div>
             </div>
             <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
-                <button class="btn" style="flex:0 0 auto; background:#2d98da; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="checkForUpdateClicked()">检查更新</button>
+                <button class="btn" style="flex:0 0 auto; background:#2d98da; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="checkForUpdateClicked()">{{ $t('about.checkUpdate') }}</button>
                 <button class="btn" style="flex:0 0 auto; background:#95a5a6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="openReleaseNotes()">
-                    <i class="fas fa-list-alt"></i> 查看日志
+                    <i class="fas fa-list-alt"></i> {{ $t('about.viewLog') }}
                 </button>
-                <div v-if="updateState.checking" style="font-size:12px; color:var(--muted);">检查中...</div>
-                <div v-else-if="updateState.error" style="font-size:12px; color:#e74c3c;">错误：{{ updateState.error }}</div>
-                <div v-else-if="updateState.isLatest" style="font-size:12px; color:#2ed573;">✓ 当前已是最新版本</div>
-                <div v-else-if="updateState.available && !updateState.downloading && !updateState.downloaded" style="font-size:12px; color:#4b7bec;">发现新版本 {{ (updateState.info && updateState.info.version) ? updateState.info.version : '' }}</div>
-                <div v-else-if="updateState.downloaded" style="font-size:12px; color:#2ed573;">更新已准备就绪，重启即可完成</div>
+                <div v-if="updateState.checking" style="font-size:12px; color:var(--muted);">{{ $t('about.update.checking') }}</div>
+                <div v-else-if="updateState.error" style="font-size:12px; color:#e74c3c;">{{ $t('about.update.error', { error: updateState.error }) }}</div>
+                <div v-else-if="updateState.isLatest" style="font-size:12px; color:#2ed573;">{{ $t('about.update.isLatest') }}</div>
+                <div v-else-if="updateState.available && !updateState.downloading && !updateState.downloaded" style="font-size:12px; color:#4b7bec;">
+                    {{ $t('about.update.foundNew', { version: (updateState.info && updateState.info.version) ? updateState.info.version : '' }) }}
+                </div>
+                <div v-else-if="updateState.downloaded" style="font-size:12px; color:#2ed573;">{{ $t('about.update.downloadReady') }}</div>
                 <div v-else-if="updateState.downloading" style="font-size:12px; color:var(--muted);">
-                    下载中 {{ updateState.progress }}%
+                    {{ $t('about.update.downloading', { progress: updateState.progress }) }}
                     <span v-if="updateState.error && (updateState.error.includes('checksum') || updateState.error.includes('sha512'))" style="color:#ffa502; margin-left:8px;">
-                        <i class="fas fa-sync-alt" style="animation:spin 1s linear infinite;"></i> 自动重试中...
+                        <i class="fas fa-sync-alt" style="animation:spin 1s linear infinite;"></i> {{ $t('about.update.downloadingRetrying') }}
                     </span>
                 </div>
             </div>
             <div v-if="updateState.available && !updateState.downloaded" style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
                 <button class="btn" style="background:#3867d6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="downloadUpdateNow()" :disabled="updateState.downloading">
-                    <i class="fas fa-download"></i> 下载更新
+                    <i class="fas fa-download"></i> {{ $t('about.update.downloadButton') }}
                 </button>
                 <button v-if="updateState.error && (updateState.error.includes('checksum') || updateState.error.includes('sha512'))" class="btn" style="background:#ffa502; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="clearCacheAndRedownload()" :disabled="updateState.downloading">
-                    <i class="fas fa-redo"></i> 清除缓存并重新下载
+                    <i class="fas fa-redo"></i> {{ $t('about.update.clearCacheAndRedownload') }}
                 </button>
                 <button class="btn" style="background:#2ecc71; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="openGitHubReleases()" title="如果自动下载失败，可以从GitHub手动下载">
-                    <i class="fab fa-github"></i> 从GitHub手动下载
+                    <i class="fab fa-github"></i> {{ $t('about.update.githubManualDownload') }}
                 </button>
                 <button class="btn" style="background:#95a5a6; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="skipThisVersion()" :disabled="updateState.downloading">
-                    <i class="fas fa-times"></i> 跳过此版本
+                    <i class="fas fa-times"></i> {{ $t('about.update.skipThisVersion') }}
                 </button>
             </div>
             <div v-if="updateState.downloaded" style="margin-bottom:10px;">
                 <div style="display:flex; gap:10px; align-items:center; margin-bottom:8px;">
                 <button class="btn" style="background:#20bf6b; color:white; padding:8px 12px; border-radius:6px; border:none; font-weight:bold;" @click="installDownloadedUpdate()">
-                        <i class="fas fa-redo"></i> 重启应用完成更新
+                        <i class="fas fa-redo"></i> {{ $t('about.update.restartNow') }}
                 </button>
                 </div>
                 <div style="font-size:11px; color:var(--muted); line-height:1.4; padding:6px 8px; background:rgba(32,191,107,0.1); border-radius:4px;">
                     <i class="fas fa-info-circle" style="margin-right:4px;"></i>
-                    更新已准备就绪，点击按钮重启应用即可自动完成更新，无需走安装流程。
+                    {{ $t('about.update.updateReadyHint') }}
                 </div>
             </div>
             <div v-if="updateState.downloading" style="margin-top:10px;">
@@ -3058,28 +3382,30 @@ export default {
                     <div :style="{ width: updateState.progress + '%', height:'100%', background:'linear-gradient(90deg, #4b7bec 0%, #2d98da 100%)', transition:'width .3s ease', boxShadow:'0 0 10px rgba(75,123,236,0.3)' }"></div>
                 </div>
                 <div style="text-align:center; font-size:12px; color:var(--muted);">
-                    下载进度: {{ updateState.progress }}% 
-                    <span v-if="updateState.info && updateState.info.version">(版本 {{ updateState.info.version }})</span>
+                    {{ $t('about.update.downloadProgress', { 
+                        progress: updateState.progress, 
+                        version: (updateState.info && updateState.info.version) ? updateState.info.version : '' 
+                    }) }}
                 </div>
             </div>
         </div>
 
         <!-- 反馈与交流 -->
         <div class="card" style="border-left: 6px solid #00b894; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-            <div style="color:#00b894; font-weight:bold; margin-bottom:16px; font-size:15px;"><i class="fas fa-comments" style="margin-right:8px;"></i>反馈与交流</div>
+            <div style="color:#00b894; font-weight:bold; margin-bottom:16px; font-size:15px;"><i class="fas fa-comments" style="margin-right:8px;"></i>{{ $t('about.feedbackTitle') }}</div>
             <div style="display:flex; flex-direction:column; gap:16px;">
                 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                    <span style="font-size:14px; color:var(--text);">QQ 交流群：</span>
+                    <span style="font-size:14px; color:var(--text);">{{ $t('about.qqGroup') }}</span>
                     <a href="#" role="button" @click.prevent="openExternalUrl('https://qm.qq.com/cgi-bin/qm/qr?k=quYCch8XYudKFgBdJ3gLvq2lU4y6PHym&jump_from=webapi&authKey=O7TRvoSNVxt66yyv7U/3tFAvp1eeKTMpAwutOkKyPEJbD1jKVikjkeTcbZwVsBYi')" style="display:inline-flex; align-items:center; gap:6px; color:var(--accent); text-decoration:none; font-weight:600; cursor:pointer;">
-                        <img border="0" src="https://pub.idqqimg.com/wpa/images/group.png" alt="Metro-PIDS 交流群" title="Metro-PIDS 交流群" style="height:24px; width:auto; vertical-align:middle;">
-                        Metro-PIDS 交流群
+                        <img border="0" src="https://pub.idqqimg.com/wpa/images/group.png" :alt="$t('about.qqGroupName')" :title="$t('about.qqGroupName')" style="height:24px; width:auto; vertical-align:middle;">
+                        {{ $t('about.qqGroupName') }}
                     </a>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                    <span style="font-size:14px; color:var(--text);">GitHub Issue：</span>
+                    <span style="font-size:14px; color:var(--text);">{{ $t('about.githubIssue') }}</span>
                     <a href="#" role="button" @click.prevent="openExternalUrl('https://github.com/tanzhouxkong/Metro-PIDS/issues')" style="display:inline-flex; align-items:center; gap:6px; color:var(--accent); text-decoration:none; font-weight:600; cursor:pointer;">
                         <i class="fab fa-github" style="font-size:18px;"></i>
-                        提交问题或建议
+                        {{ $t('about.githubIssueDesc') }}
                     </a>
                 </div>
             </div>
@@ -3145,7 +3471,8 @@ export default {
                                 <input v-model="displayEdit.description" type="text" class="se-input" placeholder="显示端描述">
                             </div>
                         </template>
-                        <template v-if="displayEdit.isDisplay1 || displayEdit.isDisplay3">
+                        <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
+                        <template v-if="displayEdit.isDisplay1">
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
                                     <div class="se-label" style="margin-bottom:4px;">线路名合并</div>
@@ -3188,6 +3515,18 @@ export default {
                                 </div>
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <input v-model.number="displayEdit.nextStationDurationSeconds" type="number" min="1" max="60" step="1" class="se-input" style="width:100px; text-align:right;">
+                                    <span style="font-size:14px; color:var(--text); font-weight:500;">秒</span>
+                                </div>
+                            </div>
+                        </template>
+                        <template v-if="displayEdit.isDisplay3">
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">出站页面显示时长</div>
+                                    <div class="se-display-option-desc">列车出站时的“出站页面”持续显示时长（秒，0 表示一直显示）</div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <input v-model.number="displayEdit.departDurationSeconds" type="number" min="0" max="60" step="1" class="se-input" style="width:100px; text-align:right;">
                                     <span style="font-size:14px; color:var(--text); font-weight:500;">秒</span>
                                 </div>
                             </div>
@@ -3314,6 +3653,52 @@ export default {
         </Transition>
     </Teleport>
 
+    <!-- 预设右键菜单 - 使用 Teleport 传送到 body，参照站点菜单的风格 -->
+    <Teleport to="body">
+        <div 
+            v-if="presetContextMenu.visible"
+            class="preset-context-menu"
+            data-preset-context-menu
+            @click.stop
+            @contextmenu.prevent
+            :style="{
+                position: 'fixed',
+                left: presetContextMenu.x + 'px',
+                top: presetContextMenu.y + 'px',
+                zIndex: 9999
+            }"
+        >
+            <div class="preset-context-menu-item" @click="applyPresetFromMenu()">
+                <i class="fas fa-download"></i>
+                {{ $t('console.presetLoad') }}
+            </div>
+            <div class="preset-context-menu-divider"></div>
+            <div class="preset-context-menu-item" @click="sharePresetOffline()">
+                <i class="fas fa-share-alt"></i>
+                {{ $t('console.presetShare') }}
+            </div>
+            <div class="preset-context-menu-divider"></div>
+            <div class="preset-context-menu-item" @click="importPresetFromShareCode()">
+                <i class="fas fa-file-import"></i>
+                {{ $t('console.presetImport') }}
+            </div>
+            <div class="preset-context-menu-divider"></div>
+            <div class="preset-context-menu-item danger" @click="deletePresetFromMenu()">
+                <i class="fas fa-trash"></i>
+                {{ $t('console.presetDelete') }}
+            </div>
+        </div>
+    </Teleport>
+    
+    <!-- 点击外部关闭预设右键菜单的遮罩 - 使用 Teleport 传送到 body -->
+    <Teleport to="body">
+        <div 
+            v-if="presetContextMenu.visible"
+            @click="closePresetContextMenu"
+            style="position: fixed; inset: 0; z-index: 9998; background: transparent;"
+        ></div>
+    </Teleport>
+
     <!-- 显示端右键菜单 - 使用 Teleport 传送到 body -->
     <Teleport to="body">
         <div 
@@ -3400,6 +3785,86 @@ export default {
         .fade-enter-from, .fade-leave-to {
             opacity: 0;
         }
+        
+        /* 预设右键菜单样式 - 参照站点菜单风格 */
+        .preset-context-menu {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(224, 224, 224, 0.8);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            min-width: 140px;
+            padding: 6px 0;
+            z-index: 9999;
+        }
+        
+        .preset-context-menu-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text, #333);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+        }
+        
+        .preset-context-menu-item:hover {
+            background: rgba(0,0,0,0.05);
+        }
+        
+        .preset-context-menu-item.danger {
+            color: var(--btn-red-bg, #ff4444);
+        }
+        
+        .preset-context-menu-item.danger:hover {
+            background: rgba(255, 68, 68, 0.1);
+        }
+        
+        .preset-context-menu-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .preset-context-menu-divider {
+            height: 1px;
+            background: rgba(224, 224, 224, 0.5);
+            margin: 4px 0;
+        }
+        
+        /* 暗色模式支持 */
+        @media (prefers-color-scheme: dark) {
+            .preset-context-menu {
+                background: rgba(30, 30, 30, 0.95);
+                border-color: rgba(255, 255, 255, 0.1);
+            }
+            
+            .preset-context-menu-item {
+                color: var(--text, #fff);
+            }
+            
+            .preset-context-menu-divider {
+                background: rgba(255, 255, 255, 0.1);
+            }
+        }
+        
+        :global(.dark) .preset-context-menu,
+        :global([data-theme="dark"]) .preset-context-menu {
+            background: rgba(30, 30, 30, 0.95);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        :global(.dark) .preset-context-menu-item,
+        :global([data-theme="dark"]) .preset-context-menu-item {
+            color: var(--text, #fff);
+        }
+        
+        :global(.dark) .preset-context-menu-divider,
+        :global([data-theme="dark"]) .preset-context-menu-divider {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
         /* iOS 风格毛玻璃效果 - 亮色模式 */
         .release-notes-dialog {
             background: rgba(255, 255, 255, 0.85) !important;

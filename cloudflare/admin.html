@@ -3,1920 +3,966 @@
 <head>
   <meta charset="UTF-8" />
   <title>Metro-PIDS 云控管理后台</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 20px;
-      color: #333;
-    }
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-    .header {
-      background: rgba(255, 255, 255, 0.95);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .header h1 {
-      font-size: 28px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .header .api-info {
-      font-size: 13px;
-      color: #666;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .header .api-info code {
-      background: #f0f0f0;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-    }
-    .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 20px;
-      background: rgba(255, 255, 255, 0.95);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      padding: 8px;
-      border-radius: 12px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-    }
-    .tab {
-      padding: 10px 20px;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      color: #666;
-      border-radius: 8px;
-      transition: all 0.2s;
-    }
-    .tab:hover {
-      background: rgba(102, 126, 234, 0.1);
-    }
-    .tab.active {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-    }
-    .tab-content {
-      display: none;
-    }
-    .tab-content.active {
-      display: block;
-    }
-    .sidebar-nav {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .sidebar-item {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      border: none;
-      background: transparent;
-      padding: 8px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      color: #555;
-      text-align: left;
-      transition: background 0.15s ease, color 0.15s ease;
-    }
-    .sidebar-item i {
-      width: 16px;
-      text-align: center;
-      color: #888;
-    }
-    .sidebar-item.active {
-      background: #1677ff;
-      color: #fff;
-    }
-    .sidebar-item.active i {
-      color: #fff;
-    }
-    .sidebar-item:hover:not(.active) {
-      background: #f3f6ff;
-      color: #1677ff;
-    }
-    .section-content {
-      width: 100%;
+    /* =========================================
+       1. 主题系统 (CSS Variables)
+       ========================================= */
+    :root {
+      /* 浅色模式 */
+      --bg-body: #f3f4f6;
+      --bg-card: #ffffff;
+      --bg-sidebar: #ffffff;
+      --bg-header: rgba(255, 255, 255, 0.85);
+      --bg-input: #ffffff;
+      --bg-hover: #f9fafb;
+      --bg-active: #eef2ff;
+      
+      --text-main: #1f2937;
+      --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
+      
+      --border-color: #e5e7eb;
+      
+      --primary: #667eea;
+      --primary-hover: #5a67d8;
+      --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      
+      --danger: #ef4444;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --info: #3b82f6;
+
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      
+      --radius: 12px;
+      --header-height: 64px;
+      --sidebar-width: 260px;
     }
 
-    .inline-input {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .tag-list {
-      margin-top: 6px;
-    }
-    .tag-chip {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 8px;
-      margin: 2px;
-      border-radius: 999px;
-      background: #e3f2fd;
-      font-size: 12px;
-    }
-    .tag-chip-del {
-      border: none;
-      background: transparent;
-      color: #1976d2;
-      cursor: pointer;
-      margin-left: 4px;
-      padding: 0 2px;
-    }
-    .card {
-      background: rgba(255, 255, 255, 0.95);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 20px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
-    .card h2 {
-      font-size: 20px;
-      margin-bottom: 16px;
-      color: #333;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .station-list {
-      border: 1px solid #e5e5e5;
-      border-radius: 8px;
-      max-height: 320px;
-      overflow-y: auto;
-      background: #fafafa;
-    }
-    .station-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 10px;
-      border-bottom: 1px solid #eee;
-      font-size: 13px;
-      background: #fff;
-    }
-    .station-item:last-child {
-      border-bottom: none;
-    }
-    .station-main {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .station-index {
-      width: 32px;
-      color: #999;
-      font-weight: 600;
-    }
-    .station-names {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .station-name-cn {
-      font-weight: 600;
-      color: #333;
-    }
-    .station-name-en {
-      font-size: 11px;
-      color: #888;
-    }
-    .station-tags {
-      display: flex;
-      gap: 4px;
-      flex-wrap: wrap;
-      font-size: 10px;
-    }
-    .station-tag {
-      padding: 2px 4px;
-      border-radius: 3px;
-      background: #f0f0f0;
-      color: #666;
-    }
-    .station-actions {
-      display: flex;
-      gap: 4px;
-    }
-    .station-actions button {
-      padding: 4px 6px;
-      font-size: 11px;
-    }
-    .runtime-xfer-list {
-      border: 1px solid #e5e5e5;
-      border-radius: 8px;
-      padding: 8px;
-      background: #fafafa;
-      max-height: 260px;
-      overflow-y: auto;
-    }
-    .runtime-xfer-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 4px;
-      border-bottom: 1px dashed #eee;
-      font-size: 12px;
-    }
-    .runtime-xfer-row:last-child {
-      border-bottom: none;
-    }
-    .runtime-xfer-line {
-      flex: 1 1 auto;
-    }
-    .runtime-xfer-color {
-      width: 80px;
-    }
-    .runtime-xfer-flags {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 120px;
-    }
-    .runtime-xfer-actions {
-      display: flex;
-      gap: 4px;
-    }
-    .card h2 i {
-      color: #667eea;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-    .field {
-      margin-bottom: 16px;
-    }
-    .field label {
-      display: block;
-      font-size: 13px;
-      color: #666;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-    .field input,
-    .field textarea,
-    .field select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      font-size: 14px;
-      transition: all 0.2s;
-    }
-    .field input:focus,
-    .field textarea:focus,
-    .field select:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    .field textarea {
-      min-height: 200px;
-      font-family: 'Consolas', 'Menlo', monospace;
-      resize: vertical;
-    }
-    .field-row-inline {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-    .field-row-inline input {
-      flex: 1;
-      min-width: 0;
-    }
-    .field-row-inline .btn {
-      flex-shrink: 0;
-      white-space: nowrap;
-    }
-    .btn-group {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-    .btn {
-      padding: 10px 18px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      line-height: 1.4;
-      vertical-align: middle;
-      box-sizing: border-box;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-    }
-    .btn-secondary {
-      background: #f0f0f0;
-      color: #333;
-    }
-    .btn-secondary:hover {
-      background: #e0e0e0;
-    }
-    .btn-danger {
-      background: #ff4757;
-      color: white;
-    }
-    .btn-danger:hover {
-      background: #ff3838;
-    }
-    .btn-success {
-      background: #2ed573;
-      color: white;
-    }
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none !important;
-    }
-    /* 与应用程序一致的开关样式（se-toggle） */
-    .field-toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-    .field-toggle-row .field-toggle-label {
-      display: block;
-      font-size: 13px;
-      color: #666;
-      font-weight: 500;
-      margin-bottom: 0;
-      cursor: pointer;
-    }
-    .field-toggle-row .field-toggle-desc {
-      font-size: 12px;
-      color: #999;
-      margin-top: 4px;
-    }
-    .se-toggle-wrap {
-      position: relative;
-      display: inline-block;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-      cursor: pointer;
-    }
-    .se-toggle-input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-      position: absolute;
-    }
-    .se-toggle-track {
-      position: absolute;
-      inset: 0;
-      background-color: #ccc;
-      border-radius: 24px;
-      transition: background-color 0.3s, box-shadow 0.2s;
-    }
-    .se-toggle-input:checked ~ .se-toggle-track {
-      background-color: var(--admin-accent, #667eea);
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
-    }
-    .se-toggle-thumb {
-      position: absolute;
-      height: 18px;
-      width: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.3s;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-    .se-toggle-input:checked ~ .se-toggle-thumb {
-      transform: translateX(20px);
-    }
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      padding: 6px 12px;
-      border-radius: 6px;
-      margin-left: 8px;
-    }
-    .status.success {
-      background: #d4edda;
-      color: #155724;
-    }
-    .status.error {
-      background: #f8d7da;
-      color: #721c24;
-    }
-    .status.info {
-      background: #d1ecf1;
-      color: #0c5460;
-    }
-    .table-container {
-      overflow-x: auto;
-      margin-top: 16px;
-      width: 100%;
-    }
-    #stat-recent-container {
-      width: 100%;
-    }
-    #stat-recent-container table {
-      width: 100%;
-      min-width: 100%;
-    }
-    .two-column-layout {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-top: 16px;
-    }
-    .two-column-layout .table-container {
-      margin-top: 0;
-    }
-    @media (max-width: 1200px) {
-      .two-column-layout {
-        grid-template-columns: 1fr;
+    @media (prefers-color-scheme: dark) {
+      :root {
+        /* 深色模式 */
+        --bg-body: #111827;
+        --bg-card: #1f2937;
+        --bg-sidebar: #1f2937;
+        --bg-header: rgba(31, 41, 55, 0.85);
+        --bg-input: #374151;
+        --bg-hover: #374151;
+        --bg-active: #2d3748;
+        
+        --text-main: #f9fafb;
+        --text-secondary: #d1d5db;
+        --text-muted: #9ca3af;
+        
+        --border-color: #374151;
+        
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
       }
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      table-layout: auto;
-    }
-    th, td {
-      padding: 12px;
-      text-align: left;
-      border-bottom: 1px solid #e0e0e0;
-      vertical-align: middle;
+
+    /* =========================================
+       2. 基础重置
+       ========================================= */
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
       line-height: 1.5;
+      font-size: 14px;
+      transition: background-color 0.3s, color 0.3s;
     }
+
+    a { color: var(--primary); text-decoration: none; }
+    ul { list-style: none; }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; opacity: 0.3; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); opacity: 0.8; }
+
+    /* =========================================
+       3. 布局 (Header & Sidebar)
+       ========================================= */
+    .app-layout { display: flex; flex-direction: column; min-height: 100vh; }
+
+    .header {
+      position: sticky; top: 0; z-index: 50;
+      height: var(--header-height);
+      background: var(--bg-header);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px;
+    }
+
+    .header-brand { display: flex; align-items: center; gap: 12px; }
+    .header-brand h1 {
+      font-size: 18px; font-weight: 700;
+      background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin: 0; white-space: nowrap;
+    }
+
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+    .api-info { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+    .api-info code {
+      background: var(--bg-hover); padding: 2px 6px; border-radius: 4px;
+      font-family: monospace; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      border: 1px solid var(--border-color);
+    }
+
+    .menu-toggle { display: none; background: none; border: none; font-size: 20px; color: var(--text-main); cursor: pointer; padding: 8px; }
+
+    .main-wrapper {
+      display: flex; flex: 1; max-width: 1600px; margin: 0 auto; width: 100%;
+      padding: 20px; gap: 20px;
+    }
+
+    /* 侧边栏 */
+    .sidebar {
+      width: var(--sidebar-width); flex-shrink: 0;
+      background: var(--bg-sidebar); border-radius: var(--radius);
+      box-shadow: var(--shadow-sm); padding: 16px;
+      height: fit-content; max-height: calc(100vh - 100px); overflow-y: auto;
+      position: sticky; top: 84px; border: 1px solid var(--border-color);
+    }
+
+    .sidebar h2 { font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; padding-left: 10px; }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
+    .sidebar-item {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+      border-radius: 8px; color: var(--text-secondary); font-weight: 500;
+      cursor: pointer; transition: all 0.2s; border: none; background: transparent;
+      width: 100%; text-align: left; font-size: 14px;
+    }
+    .sidebar-item:hover { background: var(--bg-hover); color: var(--primary); }
+    .sidebar-item.active { background: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
+
+    /* 内容区 */
+    .content-area { flex: 1; min-width: 0; }
+    .section-content { display: none; animation: fadeIn 0.3s ease; }
+    .section-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* =========================================
+       4. 组件 (Card, Form, Buttons)
+       ========================================= */
+    .card {
+      background: var(--bg-card); border-radius: var(--radius);
+      padding: 24px; margin-bottom: 20px;
+      border: 1px solid var(--border-color); box-shadow: var(--shadow-sm);
+    }
+    .card h2 { font-size: 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; color: var(--text-main); }
+    .card h2 i { color: var(--primary); }
+
+    .field { margin-bottom: 20px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+    
+    input[type="text"], input[type="password"], input[type="date"], input[type="datetime-local"], 
+    textarea, select, input[type="file"] {
+      width: 100%; padding: 10px 14px;
+      border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--bg-input); color: var(--text-main);
+      font-size: 14px; transition: all 0.2s; font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+
+    .field-row-inline { display: flex; gap: 10px; align-items: center; }
+    .inline-input { display: flex; gap: 8px; align-items: center; width: 100%; }
+    .inline-input input { flex: 1; }
+
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500;
+      border: none; cursor: pointer; transition: all 0.2s; white-space: nowrap; user-select: none;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 6px rgba(102, 126, 234, 0.25); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background: var(--border-color); }
+    .btn-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-info { background: var(--info); color: #fff; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; height: 32px; }
+
+    .table-container { width: 100%; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; min-width: 600px; }
     th {
-      background: #f8f9fa;
-      font-weight: 600;
-      color: #333;
-      font-size: 13px;
-      vertical-align: middle;
-      height: 48px;
-      text-align: left;
+      background: var(--bg-hover); padding: 12px 16px; text-align: left;
+      font-weight: 600; color: var(--text-secondary); font-size: 13px;
+      border-bottom: 1px solid var(--border-color); white-space: nowrap;
     }
     td {
-      vertical-align: middle;
-      min-height: 48px;
-      height: auto;
-      text-align: left;
+      padding: 12px 16px; border-bottom: 1px solid var(--border-color);
+      color: var(--text-main); vertical-align: middle;
     }
-    tr {
-      height: auto;
-      min-height: 48px;
-    }
-    #stat-recent-container table {
-      width: 100%;
-      table-layout: auto;
-    }
-    #stat-recent-container table td {
-      vertical-align: middle !important;
-      text-align: left !important;
-    }
-    table td button {
-      vertical-align: middle;
-      margin: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    table td:empty::before {
-      content: '-';
-      color: #999;
-    }
-    tr:hover {
-      background: #f8f9fa;
-    }
-    .badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-    .badge-success {
-      background: #d4edda;
-      color: #155724;
-    }
-    .badge-danger {
-      background: #f8d7da;
-      color: #721c24;
-    }
-    .badge-info {
-      background: #d1ecf1;
-      color: #0c5460;
-    }
-    .badge-secondary {
-      background: #e2e3e5;
-      color: #383d41;
-    }
-    pre {
-      background: #1e1e1e;
-      color: #d4d4d4;
-      padding: 16px;
-      border-radius: 8px;
-      font-family: 'Consolas', 'Menlo', monospace;
-      font-size: 13px;
-      max-height: 400px;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-    .loading {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid #f3f3f3;
-      border-top: 2px solid #667eea;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    .empty-state {
-      text-align: center;
-      padding: 40px;
-      color: #999;
-    }
-    .empty-state i {
-      font-size: 48px;
-      margin-bottom: 16px;
-      opacity: 0.5;
-    }
-    .modal {
-      display: none;
-      position: fixed;
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background-color: var(--bg-hover); }
+
+    /* 统计页 - 最近访问记录表头固定 & 折叠样式 */
+    #stat-recent-container thead th {
+      position: sticky;
       top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      -webkit-backdrop-filter: blur(4px);
-      backdrop-filter: blur(4px);
-      z-index: 1000;
-      align-items: center;
-      justify-content: center;
+      background: var(--bg-card);
+      z-index: 1;
     }
-    .modal.active {
-      display: flex;
+    #stat-recent-container tr.date-group-rows.collapsed {
+      display: none;
     }
-    .modal-content {
-      background: white;
-      border-radius: 16px;
-      padding: 24px;
-      max-width: 500px;
-      width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .modal-header h3 {
-      font-size: 20px;
-      color: #333;
-    }
-    .close-btn {
-      background: none;
-      border: none;
-      font-size: 24px;
+    #stat-recent-container tr.date-group-header {
       cursor: pointer;
-      color: #999;
-      padding: 0;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      transition: all 0.2s;
+      background: var(--bg-hover);
     }
-    .close-btn:hover {
-      background: #f0f0f0;
-      color: #333;
-    }
-    .api-info {
-      margin-top: 8px;
-    }
-    .stat-card {
-      color: white;
-      padding: 24px;
-    }
-    .stat-card-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .stat-card-secondary {
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    }
-    .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-    }
-    .stat-label {
-      font-size: 14px;
-      opacity: 0.9;
-      margin-top: 4px;
-    }
-    .btn-group-spaced {
-      margin-top: 16px;
-    }
-    .btn-sm {
-      padding: 6px 12px;
-      font-size: 12px;
-      line-height: 1.4;
-      vertical-align: middle;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .btn-small {
-      padding: 6px 12px;
-      font-size: 12px;
-    }
-    .stat-meta {
-      font-size: 13px;
-      color: #666;
-    }
-    .stat-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .stat-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      transition: all 0.2s;
-      cursor: default;
-      white-space: nowrap;
-    }
-    .stat-tag:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    }
-    .stat-tag strong {
-      font-weight: 600;
-    }
-    .stat-tag .stat-value {
-      font-weight: 700;
-      margin-left: 4px;
-    }
-    .stat-tag-country {
-      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-      color: #1976d2;
-      border: 1px solid rgba(25, 118, 210, 0.2);
-    }
-    .stat-tag-version {
-      background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
-      color: #7b1fa2;
-      border: 1px solid rgba(123, 31, 162, 0.2);
-    }
-    .stat-tag-admin {
-      background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-      color: #e65100;
-      border: 1px solid rgba(230, 81, 0, 0.2);
-    }
-    .stat-tag-os {
-      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-      color: #2e7d32;
-      border: 1px solid rgba(46, 125, 50, 0.2);
-    }
-    .stat-tag-device {
-      background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%);
-      color: #c2185b;
-      border: 1px solid rgba(194, 24, 91, 0.2);
-    }
-    .stat-tag-device-unknown {
-      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
-      color: #616161;
-      border: 1px solid rgba(97, 97, 97, 0.2);
-    }
-    .stat-tag code {
-      font-family: 'Consolas', 'Menlo', 'Monaco', monospace;
-      font-size: 11px;
-      background: rgba(0,0,0,0.05);
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-weight: 600;
-    }
-    .pie-chart-container {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      margin-top: 12px;
-    }
-    .pie-chart-wrapper {
-      position: relative;
-      flex-shrink: 0;
-    }
-    .pie-chart-canvas {
-      display: block;
-    }
-    .pie-chart-legend {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .pie-legend-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      padding: 4px 0;
-    }
-    .pie-legend-color {
-      width: 16px;
-      height: 16px;
-      border-radius: 3px;
-      flex-shrink: 0;
-    }
-    .pie-legend-label {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .pie-legend-value {
-      font-weight: 600;
-      color: #333;
-      margin-left: auto;
-    }
-    .settings-check-status {
-      margin-top: 4px;
-      min-height: 24px;
-    }
-    .btn-small-spaced {
-      margin-left: 4px;
-    }
-    .date-info-card {
-      background: #f0f7ff;
-      border-left: 4px solid #667eea;
-      padding: 12px;
-      margin-bottom: 16px;
-    }
-    .date-info-label {
-      font-size: 13px;
-      color: #666;
-      margin-bottom: 4px;
-    }
-    .date-info-value {
-      font-size: 16px;
-      font-weight: 600;
-      color: #333;
-    }
-    .device-id-display {
-      font-family: monospace;
-      word-break: break-all;
-    }
-    .device-id-hint {
-      font-size: 12px;
-      color: #999;
-      margin-top: 4px;
-    }
-    .date-group-header {
-      background: #f8f9fa;
-      font-weight: 600;
-      cursor: pointer;
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    .date-group-header:hover {
-      background: #e9ecef;
-    }
-    .date-group-header .toggle-icon {
+    #stat-recent-container .toggle-icon {
       display: inline-block;
-      width: 16px;
-      margin-right: 8px;
-      transition: transform 0.2s;
+      margin-right: 6px;
+      transition: transform 0.2s ease;
     }
-    .date-group-header.collapsed .toggle-icon {
+    #stat-recent-container tr.date-group-header.collapsed .toggle-icon {
       transform: rotate(-90deg);
     }
-    .date-group-rows {
-      /* 使用表格默认行布局，避免占不满整行 */
+
+    /* 开关 Toggle */
+    .field-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+    .se-toggle-wrap { position: relative; width: 44px; height: 24px; cursor: pointer; flex-shrink: 0; display: inline-block; vertical-align: middle; }
+    .se-toggle-input { opacity: 0; width: 0; height: 0; }
+    .se-toggle-track {
+      position: absolute; inset: 0; background-color: var(--border-color);
+      border-radius: 24px; transition: 0.3s;
     }
-    .date-group-rows.collapsed {
+    .se-toggle-thumb {
+      position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: 0.3s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .se-toggle-input:checked ~ .se-toggle-track { background-color: var(--success); }
+    .se-toggle-input:checked ~ .se-toggle-thumb { transform: translateX(20px); }
+
+    .badge { padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-block; }
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .badge-secondary { background: var(--bg-hover); color: var(--text-secondary); border: 1px solid var(--border-color); }
+    .badge-info { background: rgba(59, 130, 246, 0.15); color: var(--info); }
+
+    /* 模态框 */
+    .modal {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+      z-index: 1000; padding: 20px; align-items: center; justify-content: center;
+    }
+    .modal.active { display: flex; }
+    .modal-content {
+      background: var(--bg-card); width: 100%; max-width: 500px;
+      border-radius: 16px; box-shadow: var(--shadow-md);
+      display: flex; flex-direction: column; max-height: 90vh;
+      border: 1px solid var(--border-color); animation: modalFadeIn 0.2s ease-out;
+    }
+    @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    .modal-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+    .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px; }
+    .close-btn { font-size: 24px; color: var(--text-muted); background: none; border: none; cursor: pointer; }
+
+    /* 杂项 */
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+    .status { font-size: 13px; margin-top: 12px; display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 6px; width: 100%; }
+    .status.success { color: var(--success); background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); }
+    .status.error { color: var(--danger); background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); }
+    
+    .stat-card { color: white; padding: 24px; border-radius: var(--radius); position: relative; overflow: hidden; }
+    .stat-card-primary { background: var(--primary-gradient); }
+    .stat-card-secondary { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .stat-value { font-size: 32px; font-weight: 700; position: relative; z-index: 2; }
+    
+    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; background: var(--bg-hover); border: 1px solid var(--border-color); font-size: 12px; }
+    .tag-chip-del { margin-left: 6px; cursor: pointer; color: var(--text-muted); border: none; background: none; }
+    
+    /* 全局加载悬浮通知 */
+    .loading-toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 2000;
+      background: var(--bg-card);
+      border-radius: 10px;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border-color);
+      min-width: 220px;
+      max-width: 320px;
+      padding: 12px 14px 10px;
       display: none;
+    }
+    .loading-toast-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .loading-toast-title {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .loading-toast-progress {
+      position: relative;
+      width: 100%;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--bg-hover);
+      overflow: hidden;
+    }
+    .loading-toast-bar {
+      position: absolute;
+      inset: 0;
+      width: 40%;
+      background: var(--primary-gradient);
+      animation: loadingBar 1.1s infinite ease-in-out;
+    }
+    @keyframes loadingBar {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(30%); }
+      100% { transform: translateX(120%); }
+    }
+    
+    /* 工具样式: 站点选择器 */
+    .station-select-box { margin-top: 8px; padding: 10px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 8px; display: none; }
+    .station-select-box.active { display: block; }
+    .station-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; margin-top: 8px; }
+    .station-checkbox-label { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; font-size: 12px; cursor: pointer; }
+    .station-checkbox-label:hover { border-color: var(--primary); }
+    .station-checkbox-label input:checked + span { color: var(--primary); font-weight: bold; }
+
+    /* 图表容器 */
+    .pie-chart-container { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; margin-top: 12px; }
+    .pie-chart-wrapper { position: relative; flex-shrink: 0; }
+    .pie-chart-legend { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    .pie-legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .pie-legend-color { width: 12px; height: 12px; border-radius: 2px; }
+    .pie-legend-value { margin-left: auto; font-weight: 600; }
+
+    @media (min-width: 600px) {
+      .pie-chart-container { flex-direction: row; align-items: center; }
+    }
+
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+      :root { --header-height: 56px; }
+      .header { padding: 0 16px; }
+      .menu-toggle { display: block; }
+      .api-info, .hide-mobile { display: none; }
+      .main-wrapper { flex-direction: column; padding: 12px; gap: 12px; display: block; }
+      
+      .sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-height: none;
+        border-radius: 0; border-right: 1px solid var(--border-color); z-index: 100;
+        transform: translateX(-100%); opacity: 0; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+        box-shadow: 10px 0 20px rgba(0,0,0,0.1); padding-top: var(--header-height); background: var(--bg-card);
+      }
+      .sidebar.active { transform: translateX(0); opacity: 1; }
+      .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; backdrop-filter: blur(2px); }
+      .sidebar-overlay.active { display: block; }
+
+      .card { padding: 16px; margin-bottom: 16px; }
+      .btn { padding: 8px 16px; font-size: 13px; width: 100%; }
+      .btn-group { flex-direction: column; gap: 8px; }
+      .grid { grid-template-columns: 1fr; }
+      .field-row-inline { flex-direction: column; align-items: stretch; }
+      .inline-input button { width: auto; flex-shrink: 0; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div>
-        <h1>🚇 Metro-PIDS 云控管理后台</h1>
+
+  <div class="app-layout">
+    <header class="header">
+      <div class="header-brand">
+        <button class="menu-toggle" id="menu-toggle"><i class="fas fa-bars"></i></button>
+        <h1><i class="fas fa-subway" style="margin-right:8px; color:var(--primary);"></i>Metro-PIDS 云控</h1>
+      </div>
+      <div class="header-actions">
         <div class="api-info">
-          <span>API 地址：</span>
+          <span>API:</span>
           <code id="api-base-display">未设置</code>
         </div>
+        <button class="btn btn-secondary btn-sm" id="btn-settings"><i class="fas fa-cog"></i> <span class="hide-mobile">设置</span></button>
       </div>
-      <div>
-        <button class="btn btn-secondary" id="btn-settings">
-          <i class="fas fa-cog"></i> 设置
-        </button>
-      </div>
-    </div>
+    </header>
 
-    <!-- 主布局：左侧导航 + 右侧内容 -->
-    <div style="display:flex; gap:16px; align-items:flex-start;">
-      <!-- 左侧导航 -->
-      <div style="width:220px; flex-shrink:0;">
-        <div class="card" style="padding:12px;">
-          <h2 style="font-size:16px; margin:0 0 10px;">配置导航</h2>
-          <div class="sidebar-nav">
-            <button class="sidebar-item active" data-section="runtime">
-              <i class="fas fa-train"></i>
-              <span>运控线路</span>
-            </button>
-            <button class="sidebar-item" data-section="easter-eggs">
-              <i class="fas fa-egg"></i>
-              <span>彩蛋配置</span>
-            </button>
-            <button class="sidebar-item" data-section="startup">
-              <i class="fas fa-bullhorn"></i>
-              <span>启动公告</span>
-            </button>
-            <button class="sidebar-item" data-section="display-flags">
-              <i class="fas fa-desktop"></i>
-              <span>显示端功能</span>
-            </button>
-            <button class="sidebar-item" data-section="holidays">
-              <i class="fas fa-calendar-alt"></i>
-              <span>节日配置</span>
-            </button>
-            <button class="sidebar-item" data-section="updates">
-              <i class="fas fa-sync-alt"></i>
-              <span>版本更新</span>
-            </button>
-            <button class="sidebar-item" data-section="stats">
-              <i class="fas fa-chart-bar"></i>
-              <span>统计信息</span>
-            </button>
-          </div>
-        </div>
-      </div>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-      <!-- 右侧内容 -->
-      <div style="flex:1; min-width:0;">
+    <div class="main-wrapper">
+      <aside class="sidebar" id="sidebar">
+        <h2>配置导航</h2>
+        <nav class="sidebar-nav">
+          <button class="sidebar-item active" data-section="runtime"><i class="fas fa-train"></i> <span>云控线路</span></button>
+          <button class="sidebar-item" data-section="easter-eggs"><i class="fas fa-egg"></i> <span>彩蛋配置</span></button>
+          <button class="sidebar-item" data-section="startup"><i class="fas fa-bullhorn"></i> <span>启动公告</span></button>
+          <button class="sidebar-item" data-section="display-flags"><i class="fas fa-desktop"></i> <span>显示端功能</span></button>
+          <button class="sidebar-item" data-section="holidays"><i class="fas fa-calendar-alt"></i> <span>节日配置</span></button>
+          <button class="sidebar-item" data-section="updates"><i class="fas fa-sync-alt"></i> <span>版本更新</span></button>
+          <button class="sidebar-item" data-section="stats"><i class="fas fa-chart-bar"></i> <span>统计信息</span></button>
+        </nav>
+      </aside>
 
-        <!-- 运控线路 -->
+      <main class="content-area">
+        
         <div class="section-content active" id="section-runtime">
           <div class="card">
-        <h2><i class="fas fa-sync-alt"></i> 运控线路列表</h2>
-        <div class="btn-group">
-          <button class="btn btn-primary" id="btn-list-runtime">
-            <i class="fas fa-sync"></i> 刷新列表
-          </button>
-        </div>
-        <div class="table-container">
-          <table id="runtime-table">
-            <thead>
-              <tr>
-                <th>线路名称</th>
-                <th>站点数量</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="runtime-tbody">
-              <tr>
-                <td colspan="3" class="empty-state">
-                  <i class="fas fa-inbox"></i>
-                  <div>点击"刷新列表"加载数据</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><i class="fas fa-edit"></i> 运控线路编辑</h2>
-        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
-          <strong>💡 使用说明：</strong><br>
-          • 选择 JSON 文件上传，系统会自动读取线路数据<br>
-          • 支持一次选择多个文件，批量上传多条线路<br>
-          • 文件格式：标准的运控线路 JSON 文件（包含 meta、stations 等字段）
-        </div>
-        
-        <div class="field">
-          <label for="runtime-line-file-input">
-            <i class="fas fa-file-upload"></i> 选择运控线路 JSON 文件（支持多选）
-          </label>
-          <input type="file" id="runtime-line-file-input" accept=".json" multiple />
-          <div style="font-size:12px; color:#666; margin-top:4px;">
-            可以一次选择多个 JSON 文件，每个文件对应一条运控线路
-          </div>
-          <div id="runtime-files-list" style="margin-top:8px; padding:8px; background:#f9f9f9; border-radius:4px; display:none;">
-            <strong>已选择的文件：</strong>
-            <ul id="runtime-files-items" style="margin:4px 0 0 0; padding-left:20px; font-size:12px;"></ul>
-          </div>
-        </div>
-        
-        <div class="btn-group">
-          <button class="btn btn-info" id="btn-parse-runtime-files">
-            <i class="fas fa-magic"></i> 解析并上传文件
-          </button>
-          <button class="btn btn-secondary" id="btn-get-runtime">
-            <i class="fas fa-download"></i> 下载指定线路
-          </button>
-          <button class="btn btn-danger" id="btn-del-runtime">
-            <i class="fas fa-trash"></i> 删除指定线路
-          </button>
-        </div>
-        
-        <div class="grid" style="margin-top:16px;">
-          <div class="field">
-            <label for="runtime-line-name">线路名称（用于下载/删除）</label>
-            <input type="text" id="runtime-line-name" placeholder="例如：济南地铁1号线" />
-          </div>
-        </div>
-        
-        <!-- 隐藏的 JSON 文本框（供内部逻辑使用） -->
-        <textarea id="runtime-line-json" style="display:none;"></textarea>
-
-        <!-- 可视化站点编辑器（与主程序类似的站点列表） -->
-        <div class="field" id="runtime-station-editor" style="margin-top:20px; display:none;">
-          <label>站点列表（点击可编辑）</label>
-          <div id="runtime-station-list" class="station-list"></div>
-          <div class="btn-group" style="margin-top:12px;">
-            <button class="btn btn-secondary" id="btn-runtime-add-station">
-              <i class="fas fa-plus"></i> 新增站点
-            </button>
-            <button class="btn btn-primary" id="btn-runtime-sync-json">
-              <i class="fas fa-save"></i> 保存到 JSON 文本框
-            </button>
-          </div>
-          <div style="font-size:12px; color:#666; margin-top:4px;">
-            说明：此处提供简化版站点编辑（名称、英文名、是否跳站）。保存后会自动同步到上方 JSON 中，最终通过"解析并上传文件"或"手动上传"推送到云端。
-          </div>
-        </div>
-
-        <!-- 运控线路站点编辑模态框 -->
-        <div class="modal" id="runtime-station-modal">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h3 id="runtime-station-modal-title">编辑站点</h3>
-              <button class="close-btn" id="runtime-station-modal-close">&times;</button>
+            <h2><i class="fas fa-sync-alt"></i> 云控线路列表</h2>
+            <div class="btn-group">
+              <button class="btn btn-primary" id="btn-list-runtime"><i class="fas fa-sync"></i> 刷新列表</button>
             </div>
-            <div class="modal-body">
+            <div class="table-container">
+              <table id="runtime-table">
+                <thead><tr><th>线路名称</th><th>站点数量</th><th>操作</th></tr></thead>
+                <tbody id="runtime-tbody"><tr><td colspan="3" class="empty-state">点击"刷新列表"加载数据</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h2><i class="fas fa-edit"></i> 云控线路编辑</h2>
+            <div style="background:var(--bg-active); padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; border:1px solid var(--border-color); color:var(--text-secondary);">
+              <strong>💡 使用说明：</strong> 选择 JSON 文件上传，系统会自动读取线路数据。支持一次选择多个文件批量上传。
+            </div>
+            <div class="field">
+              <label>选择 JSON 文件</label>
+              <input type="file" id="runtime-line-file-input" accept=".json" multiple />
+              <div id="runtime-files-list" style="margin-top:8px; display:none;"><ul id="runtime-files-items" style="font-size:12px; color:var(--text-secondary); padding-left:20px;"></ul></div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-info" id="btn-parse-runtime-files">解析并上传</button>
+              <button class="btn btn-secondary" id="btn-get-runtime">下载线路</button>
+              <button class="btn btn-danger" id="btn-del-runtime">删除线路</button>
+            </div>
+            <div class="field" style="margin-top:16px;">
+              <label>线路名称</label><input type="text" id="runtime-line-name" placeholder="例如：济南地铁1号线" />
+            </div>
+            <textarea id="runtime-line-json" style="display:none;"></textarea>
+            <div class="field" id="runtime-station-editor" style="margin-top:20px; display:none;">
+              <label>站点列表</label>
+              <div id="runtime-station-list" class="station-list" style="max-height:300px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; margin-bottom:10px; background:var(--bg-hover);"></div>
+              <div class="btn-group">
+                <button class="btn btn-secondary" id="btn-runtime-add-station"><i class="fas fa-plus"></i> 新增站点</button>
+                <button class="btn btn-primary" id="btn-runtime-sync-json"><i class="fas fa-save"></i> 保存到 JSON</button>
+              </div>
+            </div>
+            <div id="runtime-status"></div>
+          </div>
+        </div>
+
+        <div class="section-content" id="section-easter-eggs">
+          <div class="card">
+            <h2><i class="fas fa-egg"></i> 彩蛋列表</h2>
+            <div class="btn-group">
+              <button class="btn btn-primary" id="btn-list-easter-eggs"><i class="fas fa-sync"></i> 刷新</button>
+              <button class="btn btn-info" id="btn-add-easter-egg"><i class="fas fa-plus"></i> 添加</button>
+            </div>
+            <div class="table-container">
+              <table id="easter-eggs-table">
+                <thead>
+                  <tr>
+                    <th style="width:60px;">序号</th>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th style="width:80px;">站点数</th>
+                    <th style="width:80px;">消息数</th>
+                    <th style="width:140px;">操作</th>
+                    <th style="width:90px; text-align:right;">启用</th>
+                  </tr>
+                </thead>
+                <tbody id="easter-eggs-list-tbody">
+                  <tr><td colspan="7" class="empty-state">暂无数据</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h2><i class="fas fa-edit"></i> 彩蛋高级配置</h2>
+            <div class="field-toggle-row">
+              <div><span style="font-weight:600;">启用全局彩蛋</span><div style="font-size:12px; color:var(--text-secondary);">总开关</div></div>
+              <label class="se-toggle-wrap"><input type="checkbox" id="easter-eggs-enabled" class="se-toggle-input" /><span class="se-toggle-track"></span><span class="se-toggle-thumb"></span></label>
+            </div>
+            <div class="field" style="margin-top:16px;"><label>导入 JSON 文件</label><input type="file" id="easter-eggs-file-input" accept=".json" multiple /></div>
+            <div class="field"><label>完整配置 JSON</label><textarea id="easter-eggs-json" style="min-height:150px; font-family:monospace; font-size:12px;"></textarea></div>
+            <div class="btn-group">
+              <button class="btn btn-secondary" id="easter-eggs-sync-from-json">从 JSON 同步</button>
+              <button class="btn btn-secondary" id="btn-get-easter-eggs">从服务器加载</button>
+              <button class="btn btn-primary" id="btn-put-easter-eggs">保存到服务器</button>
+            </div>
+            <div id="easter-eggs-status"></div>
+          </div>
+        </div>
+
+        <div class="section-content" id="section-startup">
+          <div class="card">
+            <h2><i class="fas fa-bullhorn"></i> 启动公告</h2>
+            <div class="field-toggle-row">
+              <div><span style="font-weight:600;">启用启动公告</span></div>
+              <label class="se-toggle-wrap"><input type="checkbox" id="startup-enabled" class="se-toggle-input" /><span class="se-toggle-track"></span><span class="se-toggle-thumb"></span></label>
+            </div>
+            <div class="table-container" style="margin-top:16px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:60px;">序号</th>
+                    <th>标题</th>
+                    <th>模式</th>
+                    <th style="width:140px;">操作</th>
+                    <th style="width:100px; text-align:right;">启用</th>
+                  </tr>
+                </thead>
+                <tbody id="startup-notices-tbody"></tbody>
+              </table>
+            </div>
+            <div class="btn-group" style="margin-top:12px;"><button class="btn btn-secondary" id="startup-add-notice"><i class="fas fa-plus"></i> 添加公告</button></div>
+            <div class="btn-group" style="margin-top:20px;">
+              <button class="btn btn-secondary" id="btn-get-startup">加载配置</button>
+              <button class="btn btn-primary" id="btn-save-startup">保存配置</button>
+            </div>
+            <div id="startup-status"></div>
+          </div>
+        </div>
+
+        <div class="section-content" id="section-display-flags">
+          <div class="card">
+            <h2><i class="fas fa-desktop"></i> 显示端功能开关</h2>
+            <div class="field-toggle-row">
+              <div>
+                <span style="font-weight:600;">在客户端显示「系统显示器」入口</span>
+                <div style="font-size:12px; color:var(--text-secondary);">若关闭，主程序将隐藏该卡片，但本地保护机制仍然生效</div>
+              </div>
+              <label class="se-toggle-wrap">
+                <input type="checkbox" id="display-show-system" class="se-toggle-input" />
+                <span class="se-toggle-track"></span><span class="se-toggle-thumb"></span>
+              </label>
+            </div>
+            <hr style="margin:20px 0; border:none; border-top:1px solid var(--border-color);">
+            <h3>显示器配置</h3>
+            <div class="table-container">
+              <table>
+                <thead><tr><th>显示器名称</th><th>功能说明</th><th style="text-align: right; width: 100px;">启用状态</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><strong>显示器 1</strong></td><td style="color:var(--text-secondary);">主显示端 (Standard)</td>
+                    <td style="text-align: right;">
+                      <label class="se-toggle-wrap"><input type="checkbox" id="display-1-enabled" class="se-toggle-input" /><span class="se-toggle-track"></span><span class="se-toggle-thumb"></span></label>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><strong>显示器 2</strong></td><td style="color:var(--text-secondary);">济南样式 (Jinan)</td>
+                    <td style="text-align: right;">
+                      <label class="se-toggle-wrap"><input type="checkbox" id="display-2-enabled" class="se-toggle-input" /><span class="se-toggle-track"></span><span class="se-toggle-thumb"></span></label>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><strong>显示器 3</strong></td><td style="color:var(--text-secondary);">备用显示端 (Display 3)</td>
+                    <td style="text-align: right;">
+                      <label class="se-toggle-wrap"><input type="checkbox" id="display-3-enabled" class="se-toggle-input" /><span class="se-toggle-track"></span><span class="se-toggle-thumb"></span></label>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="grid" style="margin-top:24px;">
               <div class="field">
-                <label for="runtime-station-name">站名（中文）*</label>
-                <input type="text" id="runtime-station-name" placeholder="例如：济南站" />
+                <label>允许的国家 (ISO)</label>
+                <div class="inline-input"><input id="display-allowed-country-input" placeholder="如 CN" /><button class="btn btn-secondary" id="btn-add-display-allowed-country">添加</button></div>
+                <div id="display-allowed-countries-list" class="tag-list" style="margin-top:8px;"></div>
               </div>
               <div class="field">
-                <label for="runtime-station-en">站名（英文，可选）</label>
-                <input type="text" id="runtime-station-en" placeholder="Jinan Railway Station" />
+                <label>禁止的国家</label>
+                <div class="inline-input"><input id="display-blocked-country-input" placeholder="如 XX" /><button class="btn btn-secondary" id="btn-add-display-blocked-country">添加</button></div>
+                <div id="display-blocked-countries-list" class="tag-list" style="margin-top:8px;"></div>
               </div>
+            </div>
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);" />
+            <h3 style="margin-top: 0;">时间范围控制（可选）</h3>
+            <div class="grid">
               <div class="field">
-                <label>
-                  <input type="checkbox" id="runtime-station-skip" />
-                  <span style="margin-left:6px;">跳站（不停靠该站）</span>
-                </label>
-              </div>
-              <div class="field">
-                <label for="runtime-station-dock">上下行停靠</label>
-                <select id="runtime-station-dock">
-                  <option value="both">双向停靠</option>
-                  <option value="up">仅上行</option>
-                  <option value="down">仅下行</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>
-                  <input type="checkbox" id="runtime-station-express" />
-                  <span style="margin-left:6px;">大站停靠（用于大站车/直达筛选）</span>
-                </label>
-              </div>
-              <div class="field">
-                <label>换乘线路</label>
-                <div id="runtime-station-xfer-list" class="runtime-xfer-list"></div>
-                <div class="btn-group" style="margin-top:8px;">
-                  <button class="btn btn-secondary btn-small" id="runtime-station-add-xfer">
-                    <i class="fas fa-plus"></i> 添加换乘
-                  </button>
+                <label for="display-start-time">开始时间（ISO 8601，如：2025-01-01T00:00:00Z）</label>
+                <input type="datetime-local" id="display-start-time" />
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
+                  留空表示不限制开始时间
                 </div>
-                <div style="font-size:12px; color:#666; margin-top:4px;">
-                  每条换乘包含线路名称、颜色，以及是否为出站换乘 / 暂缓。与主程序站点编辑中的换乘设置保持兼容。
+              </div>
+              <div class="field">
+                <label for="display-end-time">结束时间（ISO 8601）</label>
+                <input type="datetime-local" id="display-end-time" />
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
+                  留空表示不限制结束时间
                 </div>
               </div>
-            </div>
-            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid #eee;">
-              <button class="btn btn-secondary" id="runtime-station-modal-cancel">取消</button>
-              <button class="btn btn-primary" id="runtime-station-modal-save">保存</button>
-            </div>
-          </div>
-        </div>
-        <div id="runtime-status"></div>
-      </div>
-    </div>
-
-    <!-- 彩蛋配置（与节日配置同构：列表 + 编辑） -->
-    <div class="section-content" id="section-easter-eggs" style="display:none;">
-      <!-- 彩蛋列表 -->
-      <div class="card">
-        <h2><i class="fas fa-egg"></i> 彩蛋列表</h2>
-        <div class="btn-group">
-          <button class="btn btn-primary" id="btn-list-easter-eggs">
-            <i class="fas fa-sync"></i> 刷新列表
-          </button>
-          <button class="btn btn-info" id="btn-add-easter-egg">
-            <i class="fas fa-plus"></i> 添加一条
-          </button>
-        </div>
-        <div class="table-container">
-          <table id="easter-eggs-table">
-            <thead>
-              <tr>
-                <th style="width:50px;">序号</th>
-                <th style="width:100px;">ID</th>
-                <th>名称</th>
-                <th style="width:70px;">启用</th>
-                <th style="width:80px;">站点数</th>
-                <th style="width:80px;">消息数</th>
-                <th style="width:140px;">操作</th>
-              </tr>
-            </thead>
-            <tbody id="easter-eggs-list-tbody">
-              <tr>
-                <td colspan="7" class="empty-state">
-                  <i class="fas fa-inbox"></i>
-                  <div>点击「刷新列表」加载数据</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><i class="fas fa-edit"></i> 彩蛋配置编辑</h2>
-        <div class="field">
-          <div class="field-toggle-row">
-            <div>
-              <span class="field-toggle-label">启用彩蛋</span>
-              <div class="field-toggle-desc">总开关关闭后所有彩蛋不弹。每条彩蛋可配置多个触发站点和多条消息，并可单独开关；切换线路时若包含某条的站点之一，将随机弹出一条消息。公告在「启动公告」中配置。</div>
-            </div>
-            <label class="se-toggle-wrap">
-              <input type="checkbox" id="easter-eggs-enabled" class="se-toggle-input" />
-              <span class="se-toggle-track"></span>
-              <span class="se-toggle-thumb"></span>
-            </label>
-          </div>
-        </div>
-        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
-          <strong>💡 编辑 JSON：</strong>格式为 <code>{ "enabled": true, "items": [ { "id": "egg-1", "name": "名称", "enabled": true, "stations": ["站点1", "站点2"], "messages": ["消息1", "消息2"] } ] }</code>，每条可设 <code>enabled</code> 单独开关。<br>
-          <strong>导入 JSON 文件：</strong>一个文件对应一条彩蛋（可含 id、name、stations、messages），会追加到列表。
-        </div>
-        <div class="field">
-          <label for="easter-eggs-file-input">选择 JSON 文件（一个文件 = 一条彩蛋）</label>
-          <input type="file" id="easter-eggs-file-input" accept=".json" multiple />
-        </div>
-        <div class="field">
-          <label for="easter-eggs-json">彩蛋配置 JSON（与列表同步）</label>
-          <textarea id="easter-eggs-json" placeholder='{"enabled": true, "items": [{"id": "egg-1", "name": "白鹭文案", "enabled": true, "stations": ["经十路", "千佛山"], "messages": ["人生路漫漫 白鹭常相伴。"]}]}' style="min-height:220px; font-family:Consolas, monospace;"></textarea>
-        </div>
-        <div class="btn-group">
-          <button type="button" class="btn btn-secondary" id="easter-eggs-sync-from-json">
-            <i class="fas fa-sync-alt"></i> 从 JSON 同步到列表
-          </button>
-          <button class="btn btn-secondary" id="btn-get-easter-eggs">
-            <i class="fas fa-download"></i> 从服务器加载
-          </button>
-          <button class="btn btn-primary" id="btn-put-easter-eggs">
-            <i class="fas fa-save"></i> 保存到服务器
-          </button>
-        </div>
-        <div id="easter-eggs-status"></div>
-      </div>
-
-      <!-- 彩蛋编辑模态框（一条 = id + name + stations[] + messages[]） -->
-      <div class="modal" id="easter-egg-edit-modal">
-        <div class="modal-content" style="max-width:560px;">
-          <div class="modal-header">
-            <h3 id="easter-egg-edit-modal-title">编辑彩蛋</h3>
-            <button class="close-btn" id="easter-egg-edit-modal-close">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div class="field">
-              <label for="easter-egg-edit-id">ID（唯一标识）</label>
-              <input type="text" id="easter-egg-edit-id" placeholder="例如：egg-1" />
-            </div>
-            <div class="field">
-              <label for="easter-egg-edit-name">名称</label>
-              <input type="text" id="easter-egg-edit-name" placeholder="例如：白鹭文案" />
-            </div>
-            <div class="field">
-              <div class="field-toggle-row">
-                <div>
-                  <span class="field-toggle-label">启用本条彩蛋</span>
-                  <div class="field-toggle-desc">关闭后该条不参与站点匹配，不会弹窗。</div>
-                </div>
-                <label class="se-toggle-wrap">
-                  <input type="checkbox" id="easter-egg-edit-enabled" class="se-toggle-input" />
-                  <span class="se-toggle-track"></span>
-                  <span class="se-toggle-thumb"></span>
-                </label>
-              </div>
-            </div>
-            <div class="field">
-              <label for="easter-egg-edit-stations">触发站点（每行一个）</label>
-              <textarea id="easter-egg-edit-stations" rows="4" placeholder="经十路&#10;经十东路&#10;千佛山" style="font-family:Consolas, monospace;"></textarea>
-            </div>
-            <div class="field">
-              <label for="easter-egg-edit-messages">消息内容（每行一条）</label>
-              <textarea id="easter-egg-edit-messages" rows="4" placeholder="人生路漫漫 白鹭常相伴。&#10;今人不见古时月 今月曾经照古人。" style="font-family:Consolas, monospace;"></textarea>
-            </div>
-            <div class="field">
-              <label for="easter-egg-edit-date">选择日期（格式 yyyyMMdd 用于接口）</label>
-              <input type="date" id="easter-egg-edit-date" style="max-width:180px;" />
-              <div style="font-size:12px; color:#666; margin-top:4px;">选填，保存时会转为 yyyyMMdd 存储</div>
-            </div>
-            <div class="btn-group" style="margin-top:12px;">
-              <button class="btn btn-primary" id="easter-egg-edit-save">
-                <i class="fas fa-save"></i> 保存
-              </button>
-              <button class="btn btn-secondary" id="easter-egg-edit-cancel">取消</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 启动公告配置 -->
-    <div class="section-content" id="section-startup" style="display:none;">
-      <div class="card">
-        <h2><i class="fas fa-bullhorn"></i> 启动公告</h2>
-        <div class="field">
-          <div class="field-toggle-row">
-            <div>
-              <span class="field-toggle-label">启用启动公告</span>
-              <div class="field-toggle-desc">总开关关闭后所有公告不弹。每条公告可单独开关；客户端启动时按顺序取第一条启用的公告弹出，可配置为每次运行或每天一次。</div>
-            </div>
-            <label class="se-toggle-wrap">
-              <input type="checkbox" id="startup-enabled" class="se-toggle-input" />
-              <span class="se-toggle-track"></span>
-              <span class="se-toggle-thumb"></span>
-            </label>
-          </div>
-        </div>
-        <h3 style="margin-top: 16px; font-size: 16px; color: #333;">公告列表</h3>
-        <div class="table-container">
-          <table class="simple-table">
-            <thead>
-              <tr>
-                <th style="width:50px;">序号</th>
-                <th>标题</th>
-                <th style="width:70px;">启用</th>
-                <th style="width:120px;">模式</th>
-                <th style="width:140px;">操作</th>
-              </tr>
-            </thead>
-            <tbody id="startup-notices-tbody"></tbody>
-          </table>
-        </div>
-        <div class="btn-group" style="margin-top:8px;">
-          <button type="button" class="btn btn-secondary" id="startup-add-notice">
-            <i class="fas fa-plus"></i> 添加公告
-          </button>
-        </div>
-        <div class="btn-group" style="margin-top:16px;">
-          <button class="btn btn-secondary" id="btn-get-startup">
-            <i class="fas fa-download"></i> 从服务器加载
-          </button>
-          <button class="btn btn-primary" id="btn-save-startup">
-            <i class="fas fa-save"></i> 保存到服务器
-          </button>
-        </div>
-        <div id="startup-status"></div>
-      </div>
-      <!-- 启动公告编辑弹窗 -->
-      <div class="modal" id="startup-notice-modal">
-        <div class="modal-content" style="max-width:560px;">
-          <div class="modal-header">
-            <h3 id="startup-notice-modal-title">编辑公告</h3>
-            <button type="button" class="close-btn" id="startup-notice-modal-close">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div class="field">
-              <label>公告编号（ID）</label>
-              <div class="field-row-inline">
-                <input type="text" id="startup-modal-id" placeholder="留空则自动生成" />
-                <button type="button" class="btn btn-secondary" id="startup-modal-generate-id"><i class="fas fa-fingerprint"></i> 生成</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="startup-modal-mode">弹出模式</label>
-              <select id="startup-modal-mode">
-                <option value="everyRun">每次运行都弹出</option>
-                <option value="oncePerDay">每天只弹一次</option>
-              </select>
-            </div>
-            <div class="field">
-              <div class="field-toggle-row">
-                <div>
-                  <span class="field-toggle-label">启用本条公告</span>
-                  <div class="field-toggle-desc">关闭后该条不参与弹出，客户端会跳过。</div>
-                </div>
-                <label class="se-toggle-wrap">
-                  <input type="checkbox" id="startup-modal-enabled" class="se-toggle-input" />
-                  <span class="se-toggle-track"></span>
-                  <span class="se-toggle-thumb"></span>
-                </label>
-              </div>
-            </div>
-            <div class="field">
-              <label for="startup-modal-title">公告标题</label>
-              <input type="text" id="startup-modal-title" placeholder="例如：系统维护公告" />
-            </div>
-            <div class="field">
-              <label for="startup-modal-message">公告内容</label>
-              <textarea id="startup-modal-message" rows="4" placeholder="公告正文"></textarea>
             </div>
             <div class="grid">
               <div class="field">
-                <label for="startup-modal-start-time">开始时间</label>
-                <input type="datetime-local" id="startup-modal-start-time" />
+                <label>允许的城市</label>
+                <div class="inline-input"><input id="display-allowed-city-input" placeholder="如 Shanghai" /><button class="btn btn-secondary" id="btn-add-display-allowed-city">添加</button></div>
+                <div id="display-allowed-cities-list" class="tag-list" style="margin-top:8px;"></div>
               </div>
               <div class="field">
-                <label for="startup-modal-end-time">结束时间</label>
-                <input type="datetime-local" id="startup-modal-end-time" />
+                <label>禁止的城市</label>
+                <div class="inline-input"><input id="display-blocked-city-input" placeholder="如 Tokyo" /><button class="btn btn-secondary" id="btn-add-display-blocked-city">添加</button></div>
+                <div id="display-blocked-cities-list" class="tag-list" style="margin-top:8px;"></div>
               </div>
             </div>
-            <div class="field">
-              <label for="startup-modal-allowed-countries">允许的国家代码（每行一个或逗号分隔）</label>
-              <textarea id="startup-modal-allowed-countries" rows="2" placeholder="CN, US"></textarea>
+            <div class="btn-group" style="margin-top:20px;">
+              <button class="btn btn-secondary" id="btn-get-display-flags">从服务器加载</button>
+              <button class="btn btn-primary" id="btn-save-display-flags">保存到服务器</button>
             </div>
-            <div class="field">
-              <label for="startup-modal-blocked-countries">禁止的国家代码</label>
-              <textarea id="startup-modal-blocked-countries" rows="2"></textarea>
-            </div>
-            <div class="field">
-              <label for="startup-modal-allowed-cities">允许的城市</label>
-              <textarea id="startup-modal-allowed-cities" rows="2" placeholder="北京, 上海"></textarea>
-            </div>
-            <div class="field">
-              <label for="startup-modal-blocked-cities">禁止的城市</label>
-              <textarea id="startup-modal-blocked-cities" rows="2"></textarea>
-            </div>
-          </div>
-          <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid #eee;">
-            <button type="button" class="btn btn-secondary" id="startup-notice-modal-cancel">取消</button>
-            <button type="button" class="btn btn-primary" id="startup-notice-modal-save">保存</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 显示端功能开关 -->
-    <div class="section-content" id="section-display-flags" style="display:none;">
-      <div class="card">
-        <h2><i class="fas fa-desktop"></i> 显示端功能开关</h2>
-        <div class="field">
-          <div class="field-toggle-row">
-            <div>
-              <span class="field-toggle-label">在客户端 UI 中显示「系统显示器」选项</span>
-              <div class="field-toggle-desc">关闭后，主程序中的系统显示器卡片入口将被隐藏，但本地保护机制仍然生效。</div>
-            </div>
-            <label class="se-toggle-wrap">
-              <input type="checkbox" id="display-show-system" class="se-toggle-input" />
-              <span class="se-toggle-track"></span>
-              <span class="se-toggle-thumb"></span>
-            </label>
+            <div id="display-flags-status"></div>
           </div>
         </div>
 
-        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
+        <div class="section-content" id="section-holidays">
+          <div class="card">
+            <h2><i class="fas fa-calendar-alt"></i> 节日列表</h2>
+            <div class="btn-group">
+              <button class="btn btn-primary" id="btn-list-holidays"><i class="fas fa-sync"></i> 刷新</button>
+              <button class="btn btn-info" id="btn-add-holiday"><i class="fas fa-plus"></i> 添加</button>
+            </div>
+            <div class="table-container">
+              <table id="holidays-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>日期</th>
+                    <th style="width:140px;">操作</th>
+                    <th style="width:100px; text-align:right;">启用</th>
+                  </tr>
+                </thead>
+                <tbody id="holidays-tbody">
+                  <tr><td colspan="6" class="empty-state">暂无数据</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h2><i class="fas fa-search"></i> 查询与导入</h2>
+            <div class="field">
+              <label>查询指定日期节假日 (mxnzp)</label>
+              <div class="field-row-inline"><input type="date" id="holiday-query-date" /><button class="btn btn-secondary" id="btn-query-holiday-single">查询</button></div>
+            </div>
+            <div class="field" id="holiday-query-result-wrap" style="display:none;"><textarea id="holiday-query-result" readonly style="height:100px; font-family:monospace;"></textarea></div>
+            <div class="field"><label>导入 JSON 文件</label><input type="file" id="holidays-file-input" accept=".json" multiple /></div>
+            <textarea id="holidays-json" style="display:none;"></textarea>
+            <div class="btn-group">
+              <button class="btn btn-secondary" id="btn-get-active-holidays">查看激活节日</button>
+              <button class="btn btn-secondary" id="btn-get-holidays">加载配置</button>
+              <button class="btn btn-primary" id="btn-put-holidays">保存配置</button>
+            </div>
+            <div id="holidays-status"></div>
+          </div>
+        </div>
 
-        <h3 style="margin-top: 0; font-size: 16px; color: #333;">显示器列表</h3>
-        <table class="simple-table">
-          <thead>
-            <tr>
-              <th style="width: 140px;">显示器</th>
-              <th style="width: 140px;">启用状态</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>显示器 1</td>
-              <td>
-                <select id="display-1-enabled">
-                  <option value="on">启用</option>
-                  <option value="off">禁用</option>
+        <div class="section-content" id="section-updates">
+          <div class="card">
+            <h2><i class="fas fa-shield-alt"></i> 强制更新设置</h2>
+            <div class="grid">
+              <div class="field">
+                <label>平台/架构</label>
+                <select id="update-platform-select">
+                  <option value="win32:x64">Windows x64</option><option value="win32:arm64">Windows ARM64</option>
+                  <option value="darwin:x64">macOS Intel</option><option value="darwin:arm64">macOS Apple Silicon</option>
                 </select>
-              </td>
-              <td>主显示端（display-1）</td>
-            </tr>
-            <tr>
-              <td>显示器 2</td>
-              <td>
-                <select id="display-2-enabled">
-                  <option value="on">启用</option>
-                  <option value="off">禁用</option>
+              </div>
+              <div class="field">
+                <label>最低版本要求</label>
+                <select id="update-minimum-version">
+                  <option value="">不设置</option>
                 </select>
-              </td>
-              <td>济南样式显示端（display-2）</td>
-            </tr>
-            <tr>
-              <td>显示器 3</td>
-              <td>
-                <select id="display-3-enabled">
-                  <option value="on">启用</option>
-                  <option value="off">禁用</option>
-                </select>
-              </td>
-              <td>显示端 3（display-3）</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
-
-        <h3 style="margin-top: 0; font-size: 16px; color: #333;">时间范围控制（可选）</h3>
-        <div class="grid">
-          <div class="field">
-            <label for="display-start-time">开始时间（ISO 8601 格式，如：2025-01-01T00:00:00Z）</label>
-            <input type="datetime-local" id="display-start-time" />
-            <div style="font-size:12px; color:#666; margin-top:4px;">
-              留空表示不限制开始时间
-            </div>
-          </div>
-          <div class="field">
-            <label for="display-end-time">结束时间（ISO 8601 格式）</label>
-            <input type="datetime-local" id="display-end-time" />
-            <div style="font-size:12px; color:#666; margin-top:4px;">
-              留空表示不限制结束时间
-            </div>
-          </div>
-        </div>
-
-        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
-
-        <h3 style="margin-top: 0; font-size: 16px; color: #333;">地理位置控制（可选）</h3>
-        <div class="grid">
-          <div class="field">
-            <label>允许的国家代码（ISO 3166-1 alpha-2）</label>
-            <div class="inline-input">
-              <input id="display-allowed-country-input" list="country-code-options" placeholder="例如：CN" />
-              <button type="button" class="btn btn-secondary" id="btn-add-display-allowed-country">添加</button>
-            </div>
-            <datalist id="country-code-options">
-              <option value="CN"></option>
-              <option value="US"></option>
-              <option value="JP"></option>
-              <option value="GB"></option>
-              <option value="DE"></option>
-            </datalist>
-            <div id="display-allowed-countries-list" class="tag-list"></div>
-            <div style="font-size:12px; color:#666; margin-top:4px;">
-              留空表示不限制国家
-            </div>
-          </div>
-          <div class="field">
-            <label>禁止的国家代码</label>
-            <div class="inline-input">
-              <input id="display-blocked-country-input" list="country-code-options" placeholder="例如：XX" />
-              <button type="button" class="btn btn-secondary" id="btn-add-display-blocked-country">添加</button>
-            </div>
-            <div id="display-blocked-countries-list" class="tag-list"></div>
-            <div style="font-size:12px; color:#666; margin-top:4px;">
-              留空表示不禁止任何国家
-            </div>
-          </div>
-        </div>
-        <div class="grid">
-          <div class="field">
-            <label>允许的城市名称</label>
-            <div class="inline-input">
-              <input id="display-allowed-city-input" placeholder="例如：北京" />
-              <button type="button" class="btn btn-secondary" id="btn-add-display-allowed-city">添加</button>
-            </div>
-            <div id="display-allowed-cities-list" class="tag-list"></div>
-            <div style="font-size:12px; color:#666; margin-top:4px;">
-              留空表示不限制城市
-            </div>
-          </div>
-          <div class="field">
-            <label>禁止的城市名称</label>
-            <div class="inline-input">
-              <input id="display-blocked-city-input" placeholder="例如：城市1" />
-              <button type="button" class="btn btn-secondary" id="btn-add-display-blocked-city">添加</button>
-            </div>
-            <div id="display-blocked-cities-list" class="tag-list"></div>
-            <div style="font-size:12px; color:#666; margin-top:4px;">
-              留空表示不禁止任何城市
-            </div>
-          </div>
-        </div>
-
-        <div class="btn-group">
-          <button class="btn btn-secondary" id="btn-get-display-flags">
-            <i class="fas fa-download"></i> 从服务器加载
-          </button>
-          <button class="btn btn-primary" id="btn-save-display-flags">
-            <i class="fas fa-save"></i> 保存到服务器
-          </button>
-        </div>
-        <div id="display-flags-status"></div>
-      </div>
-    </div>
-
-    <!-- 节日配置 -->
-    <div class="section-content" id="section-holidays" style="display:none;">
-      <!-- 节日列表（与运控线路列表同构） -->
-      <div class="card">
-        <h2><i class="fas fa-calendar-alt"></i> 节日列表</h2>
-        <div class="btn-group">
-          <button class="btn btn-primary" id="btn-list-holidays">
-            <i class="fas fa-sync"></i> 刷新列表
-          </button>
-          <button class="btn btn-info" id="btn-add-holiday">
-            <i class="fas fa-plus"></i> 添加节日
-          </button>
-        </div>
-        <div class="table-container">
-          <table id="holidays-table">
-            <thead>
-              <tr>
-                <th style="width:100px;">ID</th>
-                <th>名称</th>
-                <th style="width:100px;">类型</th>
-                <th style="width:70px;">启用</th>
-                <th style="width:120px;">开始～结束（yyyyMMdd）</th>
-                <th style="width:140px;">操作</th>
-              </tr>
-            </thead>
-            <tbody id="holidays-tbody">
-              <tr>
-                <td colspan="6" class="empty-state">
-                  <i class="fas fa-inbox"></i>
-                  <div>点击「刷新列表」加载数据</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><i class="fas fa-edit"></i> 节日配置编辑</h2>
-        <div class="card date-info-card">
-          <div class="date-info-label">当前日期（用于确认节日配置）</div>
-          <div class="date-info-value" id="current-date-display">加载中...</div>
-        </div>
-        <h3 style="margin-top: 16px; font-size: 16px; color: #333;">查询指定日期节假日（mxnzp 接口）</h3>
-        <div style="background:#e8f5e9; padding:12px; border-radius:8px; margin-bottom:12px; font-size:13px; line-height:1.6;">
-          通过 <strong>mxnzp.com</strong> 接口获取指定日期的节假日及万年历信息（需在 Worker 配置 MXNZP_APP_ID、MXNZP_APP_SECRET）。
-        </div>
-        <div class="field">
-          <label for="holiday-query-date">选择日期（格式 yyyyMMdd 用于接口）</label>
-          <div class="field-row-inline">
-            <input type="date" id="holiday-query-date" style="max-width:180px;" />
-            <button type="button" class="btn btn-secondary" id="btn-query-holiday-single">
-              <i class="fas fa-search"></i> 查询节假日
-            </button>
-          </div>
-        </div>
-        <div class="field" id="holiday-query-result-wrap" style="display:none;">
-          <label for="holiday-query-result">查询结果</label>
-          <textarea id="holiday-query-result" readonly placeholder="查询后将显示 JSON 结果" style="min-height:220px; font-family:Consolas, monospace; resize:vertical;"></textarea>
-        </div>
-        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
-        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
-          <strong>💡 编辑 JSON：</strong>每条节日含 <code>name</code>、<code>typeDes</code>、<code>enabled</code>、<code>dateStart</code>/<code>dateEnd</code>（yyyyMMdd 格式，如 20250101）。<br>
-          <strong>导入 JSON 文件：</strong>选择多个 .json 文件时，<strong>每个文件识别为一条节日信息</strong>（文件名不含 .json 作为键名，文件内容作为该节日配置）。
-        </div>
-        <div class="field">
-          <label for="holidays-file-input">选择 JSON 文件（每个文件识别为一条节日，键名=文件名）</label>
-          <input type="file" id="holidays-file-input" accept=".json" multiple />
-        </div>
-        <div class="field">
-          <label for="holidays-json">节日配置 JSON</label>
-          <textarea id="holidays-json" placeholder='{"new-year": {"name":"元旦","typeDes":"元旦","enabled":true,"dateStart":"20250101","dateEnd":"20250101"}, "spring-festival": {"name":"春节","typeDes":"春节","enabled":true,"dateStart":"20250128","dateEnd":"20250204"}}' style="min-height:220px; font-family:Consolas, monospace;"></textarea>
-        </div>
-        <div class="btn-group">
-          <button class="btn btn-secondary" id="btn-get-active-holidays">
-            <i class="fas fa-check-circle"></i> 查看激活节日
-          </button>
-          <button class="btn btn-secondary" id="btn-get-holidays">
-            <i class="fas fa-download"></i> 从服务器加载
-          </button>
-          <button class="btn btn-primary" id="btn-put-holidays">
-            <i class="fas fa-save"></i> 保存到服务器
-          </button>
-        </div>
-        <div id="holidays-status"></div>
-      </div>
-
-      <!-- 节日编辑模态框 -->
-      <div class="modal" id="holiday-edit-modal">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3 id="holiday-edit-modal-title">编辑节日</h3>
-            <button class="close-btn" id="holiday-edit-modal-close">&times;</button>
-          </div>
-          <div class="modal-body">
-            <input type="hidden" id="holiday-edit-key" />
-            <div class="field">
-              <label for="holiday-edit-name">名称</label>
-              <input type="text" id="holiday-edit-name" placeholder="例如：元旦" />
-            </div>
-            <div class="field">
-              <label for="holiday-edit-typeDes">类型（typeDes）</label>
-              <select id="holiday-edit-typeDes">
-                <option value="">— 请选择 —</option>
-                <option value="全部">全部</option>
-                <option value="工作日">工作日</option>
-                <option value="周末">周末</option>
-                <option value="元旦">元旦</option>
-                <option value="春节">春节</option>
-                <option value="清明节">清明节</option>
-                <option value="劳动节">劳动节</option>
-                <option value="端午节">端午节</option>
-                <option value="中秋节">中秋节</option>
-                <option value="国庆节">国庆节</option>
-                <option value="调休">调休</option>
-                <option value="其他">其他</option>
-              </select>
-              <div style="font-size:12px; color:#666; margin-top:4px;">选「全部」表示不区分节假日/工作日，仅按日期范围生效</div>
-            </div>
-            <div class="field">
-              <label for="holiday-edit-content">内容</label>
-              <textarea id="holiday-edit-content" rows="3" placeholder="节日说明或公告内容"></textarea>
-            </div>
-            <div class="field field-toggle-row">
-              <label>启用</label>
-              <label class="se-toggle-wrap">
-                <input type="checkbox" id="holiday-edit-enabled" class="se-toggle-input" checked />
-                <span class="se-toggle-track"></span>
-                <span class="se-toggle-thumb"></span>
-              </label>
-            </div>
-            <div class="field">
-              <label for="holiday-edit-dateStart">开始日期</label>
-              <input type="date" id="holiday-edit-dateStart" style="max-width:180px;" />
-            </div>
-            <div class="field">
-              <label for="holiday-edit-dateEnd">结束日期</label>
-              <input type="date" id="holiday-edit-dateEnd" style="max-width:180px;" />
-              <div style="font-size:12px; color:#666; margin-top:4px;">单日节日可选相同日期或只选开始日期，保存时转为 yyyyMMdd</div>
-            </div>
-            <div class="btn-group" style="margin-top:12px;">
-              <button class="btn btn-primary" id="holiday-edit-save">
-                <i class="fas fa-save"></i> 保存
-              </button>
-              <button class="btn btn-secondary" id="holiday-edit-cancel">取消</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 版本更新 -->
-    <div class="section-content" id="section-updates" style="display:none;">
-      <div class="card">
-        <h2><i class="fas fa-shield-alt"></i> 强制更新设置</h2>
-        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
-          <strong>💡 使用说明：</strong><br>
-          • 版本信息会自动从 GitHub Releases 同步（无需手动上传）<br>
-          • 可以设置最低版本要求，低于此版本的客户端将被强制更新<br>
-          • 可以启用"强制所有版本更新"，所有客户端都必须更新到最新版本<br>
-          • 修改后点击"应用强制更新设置"保存
-        </div>
-        
-        <div class="field">
-          <label>平台/架构</label>
-          <select id="update-platform-select">
-            <option value="win32:x64">Windows x64</option>
-            <option value="win32:arm64">Windows ARM64</option>
-            <option value="darwin:x64">macOS Intel</option>
-            <option value="darwin:arm64">macOS Apple Silicon</option>
-            <option value="linux:x64">Linux x64</option>
-            <option value="linux:arm64">Linux ARM64</option>
-          </select>
-          <div style="font-size:12px; color:#666; margin-top:4px;">
-            选择要设置强制更新的平台/架构
-          </div>
-        </div>
-        
-        <div class="field">
-          <label for="update-minimum-version">最低要求版本（可选）</label>
-          <select id="update-minimum-version">
-            <option value="">不设置最低版本要求</option>
-          </select>
-          <div style="font-size:12px; color:#666; margin-top:4px;">
-            低于此版本的客户端将被强制更新（从已发布的版本中选择）
-          </div>
-        </div>
-        
-        <div class="field">
-          <div class="field-toggle-row">
-            <div>
-              <span class="field-toggle-label">强制所有版本更新</span>
-              <div class="field-toggle-desc">启用后，所有版本的客户端都必须更新到最新版本</div>
-            </div>
-            <label class="se-toggle-wrap">
-              <input type="checkbox" id="update-force-update" class="se-toggle-input" />
-              <span class="se-toggle-track"></span>
-              <span class="se-toggle-thumb"></span>
-            </label>
-          </div>
-        </div>
-        
-        <div class="btn-group">
-          <button class="btn btn-secondary" id="btn-get-update-info">
-            <i class="fas fa-download"></i> 查看当前版本信息
-          </button>
-          <button class="btn btn-primary" id="btn-sync-from-github">
-            <i class="fas fa-sync-alt"></i> 从 GitHub 同步
-          </button>
-          <button class="btn btn-success" id="btn-apply-force-update">
-            <i class="fas fa-save"></i> 应用强制更新设置
-          </button>
-        </div>
-        <div id="update-info-status"></div>
-      </div>
-      
-      <div class="card">
-        <h2><i class="fas fa-info-circle"></i> 当前版本信息（只读）</h2>
-        <div class="field">
-          <label for="update-info-json">版本信息 JSON</label>
-          <textarea id="update-info-json" placeholder='点击"查看当前版本信息"按钮加载数据' style="min-height:200px;" readonly></textarea>
-        </div>
-        <div style="font-size:12px; color:#666; margin-top:8px;">
-          💡 提示：版本信息会自动从 GitHub Releases 同步，无需手动上传
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><i class="fas fa-book"></i> 更新日志管理</h2>
-        <div style="background:#e3f2fd; padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;">
-          <strong>💡 使用说明：</strong><br>
-          • 点击"添加版本"按钮添加新版本的更新日志<br>
-          • 支持上传 .md 文件自动填充内容，或手动输入<br>
-          • 可以编辑、删除已有版本的日志<br>
-          • 修改后点击"保存所有更改"上传到服务器
-        </div>
-        
-        <div class="btn-group">
-          <button class="btn btn-success" id="btn-add-changelog-version">
-            <i class="fas fa-plus"></i> 添加版本
-          </button>
-          <button class="btn btn-secondary" id="btn-get-changelog">
-            <i class="fas fa-download"></i> 从服务器加载
-          </button>
-          <button class="btn btn-primary" id="btn-sync-changelog-from-github">
-            <i class="fas fa-sync-alt"></i> 从 GitHub 同步
-          </button>
-          <button class="btn btn-primary" id="btn-put-changelog">
-            <i class="fas fa-save"></i> 保存所有更改
-          </button>
-        </div>
-        
-        <div id="changelog-list-container" style="margin-top:20px;">
-          <div id="changelog-list-empty" style="text-align:center; padding:40px; color:#999;">
-            <i class="fas fa-inbox" style="font-size:48px; margin-bottom:12px; opacity:0.3;"></i>
-            <div>暂无更新日志，点击"添加版本"开始添加</div>
-          </div>
-          <div id="changelog-list" style="display:none;"></div>
-        </div>
-        
-        <div id="changelog-status" style="margin-top:16px;"></div>
-      </div>
-      
-      <!-- 版本日志编辑模态框 -->
-      <div class="modal" id="changelog-edit-modal">
-        <div class="modal-content" style="max-width:800px;">
-          <div class="modal-header">
-            <h3 id="changelog-modal-title">添加更新日志</h3>
-            <button class="close-btn" id="changelog-modal-close">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div class="field">
-              <label for="changelog-edit-version">版本号 *</label>
-              <input type="text" id="changelog-edit-version" placeholder="1.5.5" />
-            </div>
-            
-            <div class="field">
-              <label for="changelog-edit-title">版本标题</label>
-              <input type="text" id="changelog-edit-title" placeholder="版本 1.5.5" />
-              <div style="font-size:12px; color:#666; margin-top:4px;">
-                如果不填写，将自动使用"版本 {版本号}"
               </div>
             </div>
-            
-            <div class="field">
-              <label for="changelog-edit-md-file">
-                <i class="fas fa-file-alt"></i> 上传 Markdown 文件（可选）
-              </label>
-              <input type="file" id="changelog-edit-md-file" accept=".md,.markdown" />
-              <div style="font-size:12px; color:#666; margin-top:4px;">
-                上传 .md 文件后会自动填充版本号和内容
-              </div>
+            <div class="field-toggle-row">
+              <div><span style="font-weight:600;">强制所有版本更新</span></div>
+              <label class="se-toggle-wrap"><input type="checkbox" id="update-force-update" class="se-toggle-input" /><span class="se-toggle-track"></span><span class="se-toggle-thumb"></span></label>
             </div>
-            
-            <div class="field">
-              <label for="changelog-edit-content">更新内容（支持 Markdown）*</label>
-              <textarea id="changelog-edit-content" placeholder="### 新功能&#10;- 功能1&#10;- 功能2&#10;&#10;### 修复&#10;- 修复1" style="min-height:300px; font-family:monospace;"></textarea>
+            <div class="btn-group">
+              <button class="btn btn-secondary" id="btn-get-update-info">查看当前版本信息</button>
+              <button class="btn btn-primary" id="btn-sync-from-github">从 GitHub 同步</button>
+              <button class="btn btn-success" id="btn-apply-force-update">应用强制更新设置</button>
             </div>
-            
+            <div id="update-info-status"></div>
+          </div>
+
+          <div class="card">
+            <h2><i class="fas fa-info-circle"></i> 当前版本信息（只读）</h2>
             <div class="field">
-              <label for="changelog-edit-releasedate">发布日期</label>
-              <input type="datetime-local" id="changelog-edit-releasedate" />
-              <div style="font-size:12px; color:#666; margin-top:4px;">
-                如果不填写，将使用当前时间
-              </div>
+              <label>版本信息 JSON</label>
+              <textarea id="update-info-json" readonly style="height:180px; font-family:monospace; font-size:12px;"></textarea>
             </div>
-            
-            <div class="field">
-              <label>
-                <input type="checkbox" id="changelog-edit-prerelease" />
-                <span style="margin-left:6px;">预发布版本（beta、alpha、rc 等）</span>
-              </label>
+            <div style="font-size:12px; color:var(--text-secondary);">
+              提示：版本信息会自动从 GitHub Releases 同步，无需手动上传。
             </div>
           </div>
-          <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; padding-top:16px; border-top:1px solid #eee;">
-            <button class="btn btn-secondary" id="changelog-modal-cancel">取消</button>
-            <button class="btn btn-primary" id="changelog-modal-save">保存</button>
+
+          <div class="card">
+            <h2><i class="fas fa-book"></i> 更新日志</h2>
+            <div class="btn-group">
+              <button class="btn btn-success" id="btn-add-changelog-version"><i class="fas fa-plus"></i> 添加版本</button>
+              <button class="btn btn-secondary" id="btn-get-changelog"><i class="fas fa-download"></i> 加载</button>
+              <button class="btn btn-primary" id="btn-sync-changelog-from-github">GitHub 同步</button>
+              <button class="btn btn-primary" id="btn-put-changelog"><i class="fas fa-save"></i> 保存更改</button>
+            </div>
+            <div id="changelog-list-container" style="margin-top:20px;">
+              <div id="changelog-list-empty" style="text-align:center; padding:20px; color:var(--text-muted);">暂无日志</div>
+              <div id="changelog-list"></div>
+            </div>
+            <div id="changelog-status"></div>
           </div>
         </div>
+
+        <div class="section-content" id="section-stats">
+          <div class="grid">
+            <div class="card stat-card stat-card-secondary"><div class="stat-value" id="stat-runtime-count">-</div><div class="stat-label">云控线路</div></div>
+            <div class="card stat-card stat-card-primary"><div class="stat-value" id="stat-users">-</div><div class="stat-label">独立设备</div></div>
+          </div>
+          <div class="card">
+            <h2><i class="fas fa-globe"></i> 详细统计</h2>
+            <div class="field"><label>全球分布</label><div id="stat-by-country" style="font-size:13px;">-</div></div>
+            <div class="field"><label>使用版本</label><div id="stat-by-version" style="font-size:13px;">-</div></div>
+            <div class="field"><label>操作系统</label><div id="stat-by-os" style="font-size:13px;">-</div></div>
+            <div class="field"><label>设备统计</label><div id="stat-by-device" style="font-size:13px;">-</div></div>
+            <div class="field">
+              <label>排除的设备ID（每行一个，不参与统计和列表）</label>
+              <textarea id="stat-excluded-devices" rows="2" style="font-family:monospace;font-size:12px;" placeholder="device-id-1&#10;device-id-2"></textarea>
+            </div>
+            <div class="field">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <label style="font-weight:600;">
+                  最近访问记录 <span id="stat-truncated-hint" style="font-size:12px;color:var(--warning);display:none;"></span>
+                </label>
+                <div class="btn-group" style="margin:0;">
+                  <button class="btn btn-primary" id="btn-refresh-stats">刷新数据</button>
+                  <button class="btn btn-primary" id="btn-refresh-usage">刷新使用统计</button>
+                </div>
+              </div>
+              <div class="table-container" id="stat-recent-container" style="max-height: 400px; overflow-y: auto;">
+                <table style="font-size:12px;">
+                  <thead><tr><th>地区</th><th>城市</th><th>系统</th><th>版本</th><th>设备ID</th><th>时长</th></tr></thead>
+                  <tbody id="stat-recent-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary" id="btn-download-records">下载 CSV</button>
+              <button class="btn btn-secondary" id="btn-migrate-kv-to-d1" style="display:none;">KV迁移</button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- 全局加载悬浮通知 -->
+  <div class="loading-toast" id="global-loading-toast">
+    <div class="loading-toast-header">
+      <i class="fas fa-circle-notch fa-spin" style="color:var(--primary);"></i>
+      <div>
+        <div class="loading-toast-title" id="global-loading-title">正在加载</div>
+        <div id="global-loading-desc" style="font-size:12px; color:var(--text-secondary);">请稍候...</div>
       </div>
     </div>
+    <div class="loading-toast-progress">
+      <div class="loading-toast-bar"></div>
+    </div>
+  </div>
 
-    <!-- 统计信息 -->
-    <div class="section-content" id="section-stats" style="display:none;">
-      <div class="card">
-        <h2><i class="fas fa-chart-bar"></i> 数据统计</h2>
+  <div class="modal" id="runtime-station-modal">
+    <div class="modal-content">
+      <div class="modal-header"><h3 id="runtime-station-modal-title">编辑站点</h3><button class="close-btn" id="runtime-station-modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="field"><label>站名 (中文)</label><input type="text" id="runtime-station-name" /></div>
+        <div class="field"><label>站名 (英文)</label><input type="text" id="runtime-station-en" /></div>
         <div class="grid">
-          <div class="card stat-card stat-card-secondary">
-            <div class="stat-value" id="stat-runtime-count">-</div>
-            <div class="stat-label">运控线路</div>
+          <div class="field"><label>停靠方向</label><select id="runtime-station-dock"><option value="both">双向</option><option value="up">仅上行</option><option value="down">仅下行</option></select></div>
+          <div class="field" style="display:flex; flex-direction:column; justify-content:center;">
+             <label><input type="checkbox" id="runtime-station-skip" /> 跳站</label>
+             <label><input type="checkbox" id="runtime-station-express" /> 大站停靠</label>
           </div>
         </div>
-        <div class="btn-group btn-group-spaced">
-          <button class="btn btn-primary" id="btn-refresh-stats">
-            <i class="fas fa-sync"></i> 刷新统计
-          </button>
+        <div class="field">
+          <label>换乘</label><div id="runtime-station-xfer-list"></div>
+          <button class="btn btn-sm btn-secondary" id="runtime-station-add-xfer" style="margin-top:8px;">添加换乘</button>
         </div>
       </div>
-      <div class="card">
-        <h2><i class="fas fa-globe"></i> 使用统计</h2>
-        <div class="grid">
-          <div class="card stat-card stat-card-primary">
-            <div class="stat-value" id="stat-users">-</div>
-            <div class="stat-label">访问次数</div>
-          </div>
-          <div class="card stat-card stat-card-secondary">
-            <div class="stat-value" id="stat-unique-devices">-</div>
-            <div class="stat-label">独立设备</div>
-          </div>
-        </div>
-        <div class="field">
-          <label><i class="fas fa-globe"></i> 全球分布</label>
-          <div id="stat-by-country" class="stat-meta stat-tags">-</div>
-        </div>
-        <div class="field">
-          <label><i class="fas fa-code-branch"></i> 使用版本</label>
-          <div id="stat-by-version" class="stat-meta stat-tags">-</div>
-        </div>
-        <div class="field">
-          <label><i class="fas fa-desktop"></i> 操作系统分布</label>
-          <div id="stat-by-os" class="stat-meta stat-tags">-</div>
-        </div>
-        <div class="field">
-          <label><i class="fas fa-mobile-alt"></i> 设备统计（前10个）</label>
-          <div id="stat-by-device" class="stat-meta stat-tags">-</div>
-        </div>
-        <div class="field">
-          <label>
-            最近记录（按日期分组，已合并5分钟内重复访问）
-            <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">💡 同一设备短时间内的重复访问已自动合并</span>
-            <span id="stat-truncated-hint" style="font-size:12px; color:#fa8c16; font-weight:normal; margin-left:8px; display:none;"></span>
-          </label>
-          <div class="table-container" id="stat-recent-container">
-            <table>
-              <thead>
-                <tr>
-                  <th style="vertical-align:middle; text-align:left;">国家/地区</th>
-                  <th style="vertical-align:middle; text-align:left;">城市</th>
-                  <th style="vertical-align:middle; text-align:left;">操作系统</th>
-                  <th style="vertical-align:middle; text-align:left;">版本</th>
-                  <th style="vertical-align:middle; text-align:left;">设备ID</th>
-                  <th style="vertical-align:middle; text-align:left;">在线时长</th>
-                </tr>
-              </thead>
-              <tbody id="stat-recent-tbody">
-                <tr><td colspan="6" class="empty-state">暂无</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="btn-group btn-group-spaced">
-          <button class="btn btn-primary" id="btn-refresh-usage">
-            <i class="fas fa-sync"></i> 刷新使用统计
-          </button>
-          <button class="btn btn-secondary" id="btn-migrate-kv-to-d1">
-            <i class="fas fa-database"></i> 从 KV 迁移到 D1
-          </button>
-          <button class="btn btn-secondary" id="btn-download-records">
-            <i class="fas fa-download"></i> 下载访问记录
-          </button>
-        </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="runtime-station-modal-cancel">取消</button>
+        <button class="btn btn-primary" id="runtime-station-modal-save">保存</button>
       </div>
     </div>
   </div>
 
-  <!-- 设置模态框 -->
+  <div class="modal" id="easter-egg-edit-modal">
+    <div class="modal-content">
+      <div class="modal-header"><h3 id="easter-egg-edit-modal-title">彩蛋</h3><button class="close-btn" id="easter-egg-edit-modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="field"><label>ID</label><input type="text" id="easter-egg-edit-id" readonly style="background:var(--bg-hover);" /></div>
+        <div class="field"><label>名称</label><input type="text" id="easter-egg-edit-name" /></div>
+        <div class="field"><label><input type="checkbox" id="easter-egg-edit-enabled" /> 启用</label></div>
+        
+        <div class="field">
+          <label style="display:flex; justify-content:space-between; align-items:center;">
+            触发站点 (每行一个)
+            <button class="btn btn-sm btn-info" id="btn-egg-load-lines" type="button"><i class="fas fa-bolt"></i> 从线路添加</button>
+          </label>
+          <div id="egg-line-selector" class="station-select-box">
+             <div style="display:flex; gap:8px;">
+               <select id="egg-line-select" style="flex:1;"><option value="">-- 选择线路 --</option></select>
+               <button class="btn btn-sm btn-secondary" id="btn-egg-load-stations" type="button">加载</button>
+             </div>
+             <div id="egg-station-checkboxes" class="station-checkbox-group"></div>
+          </div>
+          <textarea id="easter-egg-edit-stations" rows="3" placeholder="手动输入或上方选择..."></textarea>
+        </div>
+        
+        <div class="field"><label>消息内容 (每行一条)</label><textarea id="easter-egg-edit-messages" rows="3"></textarea></div>
+        <div class="field"><label>日期 (可选 yyyyMMdd)</label><input type="date" id="easter-egg-edit-date" /></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="easter-egg-edit-cancel">取消</button>
+        <button class="btn btn-primary" id="easter-egg-edit-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="startup-notice-modal">
+    <div class="modal-content">
+      <div class="modal-header"><h3 id="startup-notice-modal-title">公告</h3><button class="close-btn" id="startup-notice-modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="field">
+           <label>ID</label>
+           <div class="inline-input"><input type="text" id="startup-modal-id" /><button class="btn btn-secondary" id="startup-modal-generate-id">生成</button></div>
+        </div>
+        <div class="field"><label>模式</label><select id="startup-modal-mode"><option value="everyRun">每次运行</option><option value="oncePerDay">每天一次</option></select></div>
+        <div class="field"><label><input type="checkbox" id="startup-modal-enabled" /> 启用</label></div>
+        <div class="field"><label>标题</label><input type="text" id="startup-modal-title" /></div>
+        <div class="field"><label>内容</label><textarea id="startup-modal-message" rows="3"></textarea></div>
+        <div class="grid">
+          <div class="field"><label>开始时间</label><input type="datetime-local" id="startup-modal-start-time" /></div>
+          <div class="field"><label>结束时间</label><input type="datetime-local" id="startup-modal-end-time" /></div>
+        </div>
+        <div class="field"><label>允许/禁止国家</label><textarea id="startup-modal-allowed-countries" placeholder="允许..."></textarea><textarea id="startup-modal-blocked-countries" placeholder="禁止..." style="margin-top:5px;"></textarea></div>
+        <div class="field"><label>允许/禁止城市</label><textarea id="startup-modal-allowed-cities" placeholder="允许..."></textarea><textarea id="startup-modal-blocked-cities" placeholder="禁止..." style="margin-top:5px;"></textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="startup-notice-modal-cancel">取消</button>
+        <button class="btn btn-primary" id="startup-notice-modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="holiday-edit-modal">
+    <div class="modal-content">
+      <div class="modal-header"><h3 id="holiday-edit-modal-title">节日</h3><button class="close-btn" id="holiday-edit-modal-close">&times;</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="holiday-edit-key" />
+        <div class="field"><label>名称</label><input type="text" id="holiday-edit-name" /></div>
+        <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
+        <div class="field"><label>内容</label><textarea id="holiday-edit-content" rows="2"></textarea></div>
+        <div class="field"><label><input type="checkbox" id="holiday-edit-enabled" checked /> 启用</label></div>
+        <div class="grid">
+          <div class="field"><label>开始日期</label><input type="date" id="holiday-edit-dateStart" /></div>
+          <div class="field"><label>结束日期</label><input type="date" id="holiday-edit-dateEnd" /></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="holiday-edit-cancel">取消</button>
+        <button class="btn btn-primary" id="holiday-edit-save">保存</button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal" id="changelog-edit-modal">
+    <div class="modal-content" style="max-width:800px;">
+      <div class="modal-header"><h3 id="changelog-modal-title">更新日志</h3><button class="close-btn" id="changelog-modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="field"><label>版本号</label><input type="text" id="changelog-edit-version" placeholder="1.0.0" /></div>
+        <div class="field"><label>标题</label><input type="text" id="changelog-edit-title" /></div>
+        <div class="field"><label>上传MD文件</label><input type="file" id="changelog-edit-md-file" accept=".md" /></div>
+        <div class="field"><label>内容</label><textarea id="changelog-edit-content" rows="10" style="font-family:monospace;"></textarea></div>
+        <div class="field"><label>发布日期</label><input type="datetime-local" id="changelog-edit-releasedate" /></div>
+        <div class="field"><label><input type="checkbox" id="changelog-edit-prerelease" /> 预发布</label></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="changelog-modal-cancel">取消</button>
+        <button class="btn btn-primary" id="changelog-modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="settings-modal">
     <div class="modal-content">
-      <div class="modal-header">
-        <h3>设置</h3>
-        <button class="close-btn" id="close-settings">&times;</button>
+      <div class="modal-header"><h3>系统设置</h3><button class="close-btn" id="close-settings">&times;</button></div>
+      <div class="modal-body">
+        <div class="field"><label>API 地址</label><input type="text" id="api-base" /></div>
+        <div class="field"><label>Token (可选)</label><input type="password" id="api-token" /></div>
+        <div id="settings-check-status"></div>
       </div>
-      <div class="field">
-        <label for="api-base">Cloudflare Worker API 地址</label>
-        <input type="text" id="api-base" placeholder="https://metro.tanzhouxiang.dpdns.org" />
-      </div>
-      <div class="field">
-        <label for="api-token">认证 Token（可选）</label>
-        <input type="password" id="api-token" placeholder="与 CLOUD_TOKEN 一致" />
-      </div>
-      <div id="settings-check-status" class="field settings-check-status"></div>
-      <div class="btn-group">
-        <button class="btn btn-secondary" id="btn-check-api">
-          <i class="fas fa-link"></i> 校验连接
-        </button>
-        <button class="btn btn-primary" id="btn-save-settings">
-          <i class="fas fa-save"></i> 保存
-        </button>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-check-api">校验</button>
+        <button class="btn btn-primary" id="btn-save-settings">保存</button>
         <button class="btn btn-secondary" id="btn-cancel-settings">取消</button>
       </div>
     </div>
   </div>
 
+  <!-- 启动自动加载进度弹窗 -->
+  <div class="modal" id="auto-load-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>正在初始化云控数据</h3>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">
+          正在从服务器加载配置信息，请稍候……
+        </p>
+        <div style="width:100%; height:10px; background:var(--bg-muted); border-radius:999px; overflow:hidden;">
+          <div id="auto-load-progress-bar" style="width:0%; height:100%; background:linear-gradient(90deg,#667eea,#764ba2); transition:width 0.3s ease;"></div>
+        </div>
+        <div id="auto-load-progress-text" style="margin-top:8px; font-size:12px; color:var(--text-secondary); text-align:right;">
+          0%
+        </div>
+      </div>
+    </div>
+  </div>
   <script>
-    // 侧边栏切换
+    // 侧边栏切换（含移动端抽屉）
     function initSidebarNavigation() {
       const items = document.querySelectorAll('.sidebar-item');
       const sections = document.querySelectorAll('.section-content');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebar-overlay');
+      const menuToggle = document.getElementById('menu-toggle');
+
+      function openSidebar() {
+        if (sidebar) sidebar.classList.add('active');
+        if (sidebarOverlay) sidebarOverlay.classList.add('active');
+      }
+
+      function closeSidebar() {
+        if (sidebar) sidebar.classList.remove('active');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+      }
       
       function activateSection(sectionId) {
         items.forEach(btn => {
@@ -1932,8 +978,14 @@
             sec.classList.remove('active');
           }
         });
+
+        // 在移动端点击菜单后自动收起侧边栏
+        if (window.innerWidth <= 768) {
+          closeSidebar();
+        }
       }
-      
+
+      // 侧边栏菜单点击
       items.forEach(btn => {
         btn.addEventListener('click', () => {
           const section = btn.getAttribute('data-section');
@@ -1942,6 +994,24 @@
           }
         });
       });
+
+      // 顶部汉堡按钮（移动端）
+      if (menuToggle) {
+        menuToggle.addEventListener('click', () => {
+          if (sidebar && sidebar.classList.contains('active')) {
+            closeSidebar();
+          } else {
+            openSidebar();
+          }
+        });
+      }
+
+      // 点击遮罩关闭侧边栏
+      if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', () => {
+          closeSidebar();
+        });
+      }
       
       // 默认激活运控线路
       activateSection('runtime');
@@ -1962,11 +1032,35 @@
     function saveConfig(config) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     }
+
+    // 启动自动加载进度弹窗
+    function showAutoLoadModal() {
+      const modal = document.getElementById('auto-load-modal');
+      if (modal) modal.classList.add('active');
+      updateAutoLoadProgress(0, '准备加载…');
+    }
+
+    function hideAutoLoadModal() {
+      const modal = document.getElementById('auto-load-modal');
+      if (modal) modal.classList.remove('active');
+    }
+
+    function updateAutoLoadProgress(percent, label) {
+      const bar = document.getElementById('auto-load-progress-bar');
+      const text = document.getElementById('auto-load-progress-text');
+      const p = Math.max(0, Math.min(100, Math.round(percent)));
+      if (bar) bar.style.width = p + '%';
+      if (text) text.textContent = (label || '') + ' ' + p + '%';
+    }
     
     function getConfig() {
+      const base = document.getElementById('api-base')?.value?.trim() || '';
+      const token = document.getElementById('api-token')?.value?.trim() || '';
+      const excludedDevices = document.getElementById('stat-excluded-devices')?.value || '';
       return {
-        apiBase: document.getElementById('api-base').value.trim(),
-        token: document.getElementById('api-token').value.trim()
+        apiBase: base,
+        token,
+        excludedDevices
       };
     }
 
@@ -2781,7 +1875,6 @@
             <td>${i + 1}</td>
             <td><code>${idEsc}</code></td>
             <td><strong>${nameEsc}</strong></td>
-            <td><span class="badge ${enabled ? 'badge-success' : 'badge-secondary'}">${enabled ? '启用' : '关闭'}</span></td>
             <td><span class="badge badge-info">${stationsCount}</span></td>
             <td><span class="badge badge-info">${messagesCount}</span></td>
             <td>
@@ -2791,6 +1884,13 @@
               <button type="button" class="btn btn-danger btn-small btn-small-spaced" data-action="delete-easter" data-index="${i}">
                 <i class="fas fa-trash"></i> 删除
               </button>
+            </td>
+            <td style="text-align:right;">
+              <label class="se-toggle-wrap">
+                <input type="checkbox" class="se-toggle-input" data-role="toggle-easter-enabled" data-index="${i}" ${enabled ? 'checked' : ''} />
+                <span class="se-toggle-track"></span>
+                <span class="se-toggle-thumb"></span>
+              </label>
             </td>
           </tr>
         `;
@@ -2831,7 +1931,9 @@
       openEasterEggEditModal(null);
     });
 
-    document.getElementById('easter-eggs-list-tbody').addEventListener('click', (e) => {
+    const easterTbodyEl = document.getElementById('easter-eggs-list-tbody');
+
+    easterTbodyEl.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action="edit-easter"], [data-action="delete-easter"]');
       if (!btn) return;
       const index = parseInt(btn.getAttribute('data-index'), 10);
@@ -2845,6 +1947,15 @@
       } else {
         openEasterEggEditModal(index);
       }
+    });
+
+    easterTbodyEl.addEventListener('change', (e) => {
+      const input = e.target.closest('[data-role="toggle-easter-enabled"]');
+      if (!input) return;
+      const index = parseInt(input.getAttribute('data-index'), 10);
+      if (Number.isNaN(index) || !easterItems[index]) return;
+      easterItems[index].enabled = input.checked;
+      showStatus('easter-eggs-status', '已更新启用状态，记得点击「保存到服务器」', 'info');
     });
 
     let easterEggEditIndex = null;
@@ -3045,7 +2156,20 @@
       startupNotices.forEach((n, i) => {
         const enabled = n.enabled !== false;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${i + 1}</td><td>${escapeHtml(n.title || '')}</td><td><span class="badge ${enabled ? 'badge-success' : 'badge-secondary'}">${enabled ? '启用' : '关闭'}</span></td><td>${n.mode === 'oncePerDay' ? '每天一次' : '每次运行'}</td><td><button type="button" class="btn btn-secondary btn-sm startup-edit-notice" data-i="${i}"><i class="fas fa-edit"></i> 编辑</button> <button type="button" class="btn btn-danger btn-sm startup-del-notice" data-i="${i}"><i class="fas fa-trash"></i> 删除</button></td>`;
+        tr.innerHTML = `<td>${i + 1}</td>
+          <td>${escapeHtml(n.title || '')}</td>
+          <td>${n.mode === 'oncePerDay' ? '每天一次' : '每次运行'}</td>
+          <td>
+            <button type="button" class="btn btn-secondary btn-sm startup-edit-notice" data-i="${i}"><i class="fas fa-edit"></i> 编辑</button>
+            <button type="button" class="btn btn-danger btn-sm startup-del-notice" data-i="${i}"><i class="fas fa-trash"></i> 删除</button>
+          </td>
+          <td style="text-align:right;">
+            <label class="se-toggle-wrap">
+              <input type="checkbox" class="se-toggle-input" data-role="toggle-startup-enabled" data-index="${i}" ${enabled ? 'checked' : ''} />
+              <span class="se-toggle-track"></span>
+              <span class="se-toggle-thumb"></span>
+            </label>
+          </td>`;
         tbody.appendChild(tr);
       });
       tbody.querySelectorAll('.startup-edit-notice').forEach((btn) => {
@@ -3110,6 +2234,15 @@
       }
       renderStartupNotices();
       closeStartupNoticeModal();
+    });
+
+    document.getElementById('startup-notices-tbody').addEventListener('change', (e) => {
+      const input = e.target.closest('[data-role="toggle-startup-enabled"]');
+      if (!input) return;
+      const index = parseInt(input.getAttribute('data-index'), 10);
+      if (Number.isNaN(index) || !startupNotices[index]) return;
+      startupNotices[index].enabled = input.checked;
+      showStatus('startup-status', '已更新启用状态，记得点击「保存配置」', 'info');
     });
 
     document.getElementById('btn-get-startup').addEventListener('click', async () => {
@@ -3267,21 +2400,6 @@
       }
     });
     
-    // 更新当前日期显示
-    function updateCurrentDate() {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-      const weekday = weekdays[now.getDay()];
-      const time = now.toLocaleTimeString('zh-CN', { hour12: false });
-      document.getElementById('current-date-display').textContent = 
-        `${year}年${month}月${day}日（星期${weekday}） ${time} | 月份：${month}，日期：${day}`;
-    }
-    updateCurrentDate();
-    setInterval(updateCurrentDate, 1000);
-
     // 查询指定日期节假日（mxnzp 接口）
     document.getElementById('btn-query-holiday-single').addEventListener('click', async () => {
       const dateInput = document.getElementById('holiday-query-date').value;
@@ -3339,7 +2457,6 @@
             <td><code>${keyEsc}</code></td>
             <td><strong>${(name + '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</strong></td>
             <td><span class="badge badge-info">${typeEsc || '-'}</span></td>
-            <td><span class="badge ${enabled ? 'badge-success' : 'badge-secondary'}">${enabled ? '启用' : '关闭'}</span></td>
             <td>${dateStr}</td>
             <td>
               <button type="button" class="btn btn-secondary btn-small" data-action="edit-holiday" data-key="${keyEsc}">
@@ -3348,6 +2465,13 @@
               <button type="button" class="btn btn-danger btn-small btn-small-spaced" data-action="delete-holiday" data-key="${keyEsc}">
                 <i class="fas fa-trash"></i> 删除
               </button>
+            </td>
+            <td style="text-align:right;">
+              <label class="se-toggle-wrap">
+                <input type="checkbox" class="se-toggle-input" data-role="toggle-holiday-enabled" data-key="${keyEsc}" ${enabled ? 'checked' : ''} />
+                <span class="se-toggle-track"></span>
+                <span class="se-toggle-thumb"></span>
+              </label>
             </td>
           </tr>
         `;
@@ -3376,7 +2500,9 @@
       openHolidayEditModal(null);
     });
 
-    document.getElementById('holidays-tbody').addEventListener('click', (e) => {
+    const holidaysTbodyEl = document.getElementById('holidays-tbody');
+
+    holidaysTbodyEl.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action="edit-holiday"], [data-action="delete-holiday"]');
       if (!btn) return;
       const key = btn.getAttribute('data-key');
@@ -3390,6 +2516,16 @@
       } else {
         openHolidayEditModal(key);
       }
+    });
+
+    holidaysTbodyEl.addEventListener('change', (e) => {
+      const input = e.target.closest('[data-role="toggle-holiday-enabled"]');
+      if (!input) return;
+      const key = input.getAttribute('data-key');
+      if (!key || !holidaysConfig[key]) return;
+      holidaysConfig[key].enabled = input.checked;
+      syncHolidaysJsonFromConfig();
+      showStatus('holidays-status', '已更新启用状态，记得点击「保存配置」', 'info');
     });
 
     let holidayEditCurrentKey = null;
@@ -3770,11 +2906,19 @@
       try {
         showStatus('update-info-status', '正在应用强制更新设置...', 'info');
         
+        // 如果没有管理 Token，则无法调用受保护的更新接口
+        if (!cfg.token) {
+          showStatus('update-info-status', '请先在右上角「设置」中填写管理 Token（需与云控 Worker 的 CLOUD_TOKEN 一致）', 'error');
+          return;
+        }
+        
         // 先获取当前版本信息（去除 apiBase 尾斜杠，避免 //update/check 导致 404）
         const base = (cfg.apiBase || '').replace(/\/+$/, '');
         const checkUrl = `${base}/update/check?platform=${plat}&arch=${arch}`;
+        const checkHeaders = { 'Accept': 'application/json' };
+        if (cfg.token) checkHeaders['Authorization'] = `Bearer ${cfg.token}`;
         const res = await fetch(checkUrl, {
-          headers: { 'Accept': 'application/json' }
+          headers: checkHeaders
         });
         const data = await res.json();
         
@@ -3806,7 +2950,12 @@
         document.getElementById('update-info-json').value = JSON.stringify(updateInfo, null, 2);
         showStatus('update-info-status', '✅ 强制更新设置已应用成功！', 'success');
       } catch (e) {
-        showStatus('update-info-status', `应用失败：${e.message}`, 'error');
+        const msg = String(e && e.message ? e.message : e);
+        if (msg.includes('Unauthorized') || msg.includes('401')) {
+          showStatus('update-info-status', '应用失败：未授权，请检查设置中的 Token 是否正确（需与后台 CLOUD_TOKEN 一致）', 'error');
+        } else {
+          showStatus('update-info-status', `应用失败：${msg}`, 'error');
+        }
         console.error('应用强制更新设置失败:', e);
       }
     });
@@ -4181,22 +3330,29 @@
     // 使用统计：访问次数、全球分布、使用版本、设备统计、最近记录
     document.getElementById('btn-refresh-usage').addEventListener('click', async () => {
       const cfg = getConfig();
+      const statUsersEl = document.getElementById('stat-users');
+      const statUniqueEl = document.getElementById('stat-unique-devices');
+      const statByCountryEl = document.getElementById('stat-by-country');
+      const statByVersionEl = document.getElementById('stat-by-version');
+      const statByOsEl = document.getElementById('stat-by-os');
+      const statByDeviceEl = document.getElementById('stat-by-device');
+      const statRecentTbodyEl = document.getElementById('stat-recent-tbody');
+
       if (!cfg.apiBase) {
         showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
-        document.getElementById('stat-users').textContent = '-';
-        document.getElementById('stat-unique-devices').textContent = '-';
-        document.getElementById('stat-by-country').textContent = '请配置 API 地址';
-        document.getElementById('stat-by-version').textContent = '-';
-        document.getElementById('stat-by-os').textContent = '-';
-        document.getElementById('stat-by-device').textContent = '-';
-        document.getElementById('stat-recent-tbody').innerHTML = '<tr><td colspan="7" class="empty-state">请先配置 API 地址</td></tr>';
+        if (statUsersEl) statUsersEl.textContent = '-';
+        if (statUniqueEl) statUniqueEl.textContent = '-';
+        if (statByCountryEl) statByCountryEl.textContent = '请配置 API 地址';
+        if (statByVersionEl) statByVersionEl.textContent = '-';
+        if (statByOsEl) statByOsEl.textContent = '-';
+        if (statByDeviceEl) statByDeviceEl.textContent = '-';
+        if (statRecentTbodyEl) statRecentTbodyEl.innerHTML = '<tr><td colspan="7" class="empty-state">请先配置 API 地址</td></tr>';
         return;
       }
       try {
         showStatus('changelog-status', '正在加载使用统计...', 'info');
         const data = await callApi('GET', '/stats');
-        document.getElementById('stat-users').textContent = (data.total || 0);
-        document.getElementById('stat-unique-devices').textContent = (data.uniqueDevices || 0);
+        if (statUniqueEl) statUniqueEl.textContent = (data.uniqueDevices || 0);
         
         const hintEl = document.getElementById('stat-truncated-hint');
         if (data.truncated) {
@@ -4206,9 +3362,40 @@
           hintEl.style.display = 'none';
         }
         
+        // 解析要排除的设备ID列表
+        const excludeText = (document.getElementById('stat-excluded-devices')?.value || '').trim();
+        const excludedIds = new Set(
+          excludeText
+            .split(/\s+/)
+            .map(s => s.trim())
+            .filter(Boolean)
+        );
+
+        // 把排除列表保存到本地配置，便于下次启动恢复
+        const cfgToSave = loadConfig();
+        cfgToSave.excludedDevices = excludeText;
+        saveConfig(cfgToSave);
+
+        // 同步排除列表到服务器，支持跨设备共享（需要 Token）
+        if (cfg.token) {
+          try {
+            await callApi('PUT', '/stats/config', {
+              excludedDevices: Array.from(excludedIds)
+            });
+          } catch (e) {
+            console.warn('同步统计排除列表到服务器失败:', e);
+          }
+        } else {
+          console.warn('未配置 Token，跳过同步统计排除列表到服务器');
+        }
+
         // 从所有记录中按设备ID去重，统计设备数量（而不是访问次数）
-        const allRecordsForStats = data.all || data.records || [];
+        const rawAllRecordsForStats = data.all || data.records || [];
+        const allRecordsForStats = excludedIds.size
+          ? rawAllRecordsForStats.filter(r => !r.deviceId || !excludedIds.has(r.deviceId))
+          : rawAllRecordsForStats;
         const deviceMap = new Map(); // deviceId -> { country, version, os, deviceId }
+        const deviceOnlineSeconds = {}; // 设备累计在线总时长（秒），用于设备统计饼图
         
         // 遍历所有记录，为每个设备保留最新的记录信息
         allRecordsForStats.forEach(record => {
@@ -4225,11 +3412,17 @@
           }
         });
         
+        // 独立设备卡片：显示过滤后的独立设备数量
+        if (statUsersEl) {
+          statUsersEl.textContent = deviceMap.size.toString();
+        }
+        
         // 按分类统计设备数量
         const byCountryDevices = {};
         const byVersionDevices = {};
         const byOSDevices = {};
         
+        const byDeviceDevices = {};
         deviceMap.forEach(device => {
           // 按国家统计设备数量
           if (device.country) {
@@ -4242,6 +3435,10 @@
           // 按操作系统统计设备数量
           if (device.os) {
             byOSDevices[device.os] = (byOSDevices[device.os] || 0) + 1;
+          }
+          // 按设备统计访问数量
+          if (device.deviceId) {
+            byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
           }
         });
         
@@ -4304,34 +3501,17 @@
           osElement.textContent = '-';
         }
         
-        // 美化设备统计显示 - 饼图（显示访问次数，因为这是按设备ID统计的）
-        const byD = data.byDevice || {};
-        const deviceElement = document.getElementById('stat-by-device');
-        const deviceEntries = Object.entries(byD)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10);
-        if (deviceEntries.length) {
-          const pieData = deviceEntries.map(([k, v], idx) => ({
-            label: k,
-            value: v
-          }));
-          deviceElement.innerHTML = createPieChartHTML('stat-by-device', pieData, {
-            size: 180,
-            formatLabel: (label, value, index) => {
-              const shortId = label.length > 12 ? label.substring(0, 12) + '...' : label;
-              const rankIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📱';
-              return `${rankIcon} ${shortId}`;
-            }
-          });
-        } else {
-          deviceElement.textContent = '-';
-        }
-        
         // 处理最近记录表格（使用原始访问记录）
-        const allRecords = data.all || data.recent || data.records || [];
+        const rawAllRecords = data.all || data.recent || data.records || [];
+        const allRecords = excludedIds.size
+          ? rawAllRecords.filter(r => !r.deviceId || !excludedIds.has(r.deviceId))
+          : rawAllRecords;
         const tbody = document.getElementById('stat-recent-tbody');
-        if (allRecords.length === 0) {
+        if (!tbody) {
+          window.allRecords = [];
+        } else if (allRecords.length === 0) {
           tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无</td></tr>';
+          window.allRecords = [];
         } else {
           // 按日期分组（使用本地时区，避免 UTC 导致「2月6日凌晨」被记入 2月5日）
           const today = new Date();
@@ -4429,8 +3609,6 @@
             
             dailyDeviceRecords.forEach(item => {
               const deviceId = item.deviceId || 'unknown';
-              const deviceShort = deviceId.length > 12 ? deviceId.substring(0, 12) + '...' : deviceId;
-              
               // 构建在线时长显示（累计一天的总时长）
               let durationDisplay = '-';
               const firstTime = item.firstTime;
@@ -4443,6 +3621,8 @@
                 const duration = Math.floor((endTime - startTime) / 1000);
                 
                 if (duration > 0) {
+                  // 将本日该设备的在线秒数累加到全局映射，用于后续设备饼图
+                  deviceOnlineSeconds[deviceId] = (deviceOnlineSeconds[deviceId] || 0) + duration;
                   if (duration < 60) {
                     durationDisplay = `${duration}秒`;
                   } else if (duration < 3600) {
@@ -4489,7 +3669,7 @@
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${getCityName(item.city)}</td>
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${osDisplay}</td>
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${item.version || '-'}</td>
-                <td style="vertical-align:middle; text-align:left; line-height:1.5;" title="${deviceId}">${deviceShort}</td>
+                <td style="vertical-align:middle; text-align:left; line-height:1.5; font-family:monospace; word-break:break-all;">${deviceId}</td>
                 <td style="vertical-align:middle; text-align:left; line-height:1.5;">${durationDisplay}</td>
               </tr>`;
             });
@@ -4512,17 +3692,64 @@
           // 保存 allRecords 到全局变量供下载使用
           window.allRecords = allRecords;
         }
+        
+        // 美化设备统计显示 - 饼图（按过滤后累计在线时长占比；若无在线时长数据则按设备数量）
+        const deviceElement = document.getElementById('stat-by-device');
+        if (deviceElement) {
+          let byDeviceForChart = {};
+          // 优先使用 deviceOnlineSeconds（秒），没有时才退回到按设备数量统计
+          if (Object.keys(deviceOnlineSeconds).length) {
+            byDeviceForChart = { ...deviceOnlineSeconds };
+          } else {
+            byDeviceForChart = { ...byDeviceDevices };
+          }
+          const deviceEntries = Object.entries(byDeviceForChart)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+          if (deviceEntries.length) {
+            const pieData = deviceEntries.map(([k, v]) => ({
+              label: k,
+              value: v
+            }));
+            deviceElement.innerHTML = createPieChartHTML('stat-by-device', pieData, {
+              size: 180,
+              formatValue: (value) => {
+                // 将总在线秒数转为更易读的时长显示
+                const seconds = Math.floor(value || 0);
+                if (seconds <= 0) return '0秒';
+                if (seconds < 60) return `${seconds}秒`;
+                if (seconds < 3600) {
+                  const m = Math.floor(seconds / 60);
+                  const s = seconds % 60;
+                  return s > 0 ? `${m}分${s}秒` : `${m}分钟`;
+                }
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = seconds % 60;
+                if (h > 0 && m > 0 && s > 0) return `${h}小时${m}分${s}秒`;
+                if (h > 0 && m > 0) return `${h}小时${m}分钟`;
+                return `${h}小时`;
+              },
+              formatLabel: (label, value, index) => {
+                const rankIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📱';
+                return `${rankIcon} ${label}`;
+              }
+            });
+          } else {
+            deviceElement.textContent = '-';
+          }
+        }
         showStatus('changelog-status', '使用统计加载成功', 'success');
       } catch (e) {
         console.error('加载使用统计失败:', e);
         showStatus('changelog-status', `加载使用统计失败：${e.message}`, 'error');
-        document.getElementById('stat-users').textContent = '-';
-        document.getElementById('stat-unique-devices').textContent = '-';
-        document.getElementById('stat-by-country').textContent = '加载失败';
-        document.getElementById('stat-by-version').textContent = '-';
-        document.getElementById('stat-by-os').textContent = '-';
-        document.getElementById('stat-by-device').textContent = '-';
-        document.getElementById('stat-recent-tbody').innerHTML = '<tr><td colspan="7" class="empty-state">加载失败：' + e.message + '</td></tr>';
+        if (statUsersEl) statUsersEl.textContent = '-';
+        if (statUniqueEl) statUniqueEl.textContent = '-';
+        if (statByCountryEl) statByCountryEl.textContent = '加载失败';
+        if (statByVersionEl) statByVersionEl.textContent = '-';
+        if (statByOsEl) statByOsEl.textContent = '-';
+        if (statByDeviceEl) statByDeviceEl.textContent = '-';
+        if (statRecentTbodyEl) statRecentTbodyEl.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败：' + e.message + '</td></tr>';
         window.allRecords = [];
       }
     });
@@ -4832,11 +4059,12 @@
       const legendHTML = data.map((item, index) => {
         const percent = total > 0 ? ((item.value / total) * 100).toFixed(1) : 0;
         const label = options.formatLabel ? options.formatLabel(item.label, item.value, index, item) : item.label;
+        const displayValue = options.formatValue ? options.formatValue(item.value, item.label, index, item) : item.value;
         return `
           <div class="pie-legend-item">
             <div class="pie-legend-color" style="background:${colors[index]};"></div>
             <div class="pie-legend-label">${label}</div>
-            <div class="pie-legend-value">${item.value} (${percent}%)</div>
+            <div class="pie-legend-value">${displayValue} (${percent}%)</div>
           </div>
         `;
       }).join('');
@@ -5030,6 +4258,42 @@
       }
     });
     
+    // 排除的设备ID：实时同步到本地和服务器（无需点击刷新）
+    (function initExcludedDevicesAutoSync() {
+      const textarea = document.getElementById('stat-excluded-devices');
+      if (!textarea) return;
+      let timer = null;
+      textarea.addEventListener('input', () => {
+        const text = textarea.value.trim();
+
+        // 本地保存，保证本机刷新时仍能恢复
+        const localCfg = loadConfig();
+        localCfg.excludedDevices = text;
+        saveConfig(localCfg);
+
+        // 需要 API 地址和 Token 才同步到服务器
+        const cfg = loadConfig();
+        if (!cfg.apiBase || !cfg.token) {
+          console.warn('未配置 API 地址或 Token，跳过实时同步排除设备ID到服务器');
+          return;
+        }
+
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(async () => {
+          const ids = text
+            .split(/[\n\r]+/)
+            .map(s => s.trim())
+            .filter(Boolean);
+          try {
+            await callApi('PUT', '/stats/config', { excludedDevices: ids });
+            console.log('[Admin] ✅ 已实时同步排除设备ID到服务器');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 实时同步排除设备ID失败:', e);
+          }
+        }, 800);
+      });
+    })();
+
     // 初始化：启动时自动从服务器加载所有数据
     window.addEventListener('DOMContentLoaded', () => {
       initSidebarNavigation();
@@ -5037,6 +4301,9 @@
       document.getElementById('api-base').value = savedConfig.apiBase || '';
       document.getElementById('api-token').value = savedConfig.token || '';
       document.getElementById('api-base-display').textContent = savedConfig.apiBase || '未设置';
+      if (savedConfig.excludedDevices && document.getElementById('stat-excluded-devices')) {
+        document.getElementById('stat-excluded-devices').value = savedConfig.excludedDevices;
+      }
       const today = new Date();
       document.getElementById('holiday-query-date').value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
       
@@ -5044,11 +4311,43 @@
         // 延迟加载，确保所有事件监听器已注册
         setTimeout(() => {
           console.log('[Admin] 🚀 开始自动加载服务器数据...');
+          showAutoLoadModal();
+          let step = 0;
+          const totalSteps = 9;
+
+          // 0. 尝试从服务器加载统计配置（排除的设备ID列表），覆盖本地缓存，支持跨设备共享（需要 Token）
+          try {
+            if (savedConfig.token) {
+              callApi('GET', '/stats/config').then((cfg) => {
+                const list = (cfg && cfg.config && Array.isArray(cfg.config.excludedDevices))
+                  ? cfg.config.excludedDevices
+                  : [];
+                const text = list.join('\n');
+                const textarea = document.getElementById('stat-excluded-devices');
+                if (textarea) {
+                  textarea.value = text;
+                }
+                const localCfg = loadConfig();
+                localCfg.excludedDevices = text;
+                saveConfig(localCfg);
+                step++;
+                updateAutoLoadProgress((step / totalSteps) * 100, '已加载统计配置');
+              }).catch((e) => {
+                console.warn('从服务器加载统计配置失败:', e);
+              });
+            } else {
+              console.warn('未配置 Token，跳过从服务器加载统计配置');
+            }
+          } catch (e) {
+            console.warn('初始化加载统计配置出错:', e);
+          }
           
           // 1. 加载运控线路列表
           try {
             document.getElementById('btn-list-runtime').click();
             console.log('[Admin] ✅ 已触发运控线路列表加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载云控线路');
           } catch (e) {
             console.warn('[Admin] ⚠️ 运控线路列表加载失败:', e);
           }
@@ -5057,6 +4356,8 @@
           try {
             document.getElementById('btn-get-changelog').click();
             console.log('[Admin] ✅ 已触发更新日志加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载更新日志');
           } catch (e) {
             console.warn('[Admin] ⚠️ 更新日志加载失败:', e);
           }
@@ -5065,6 +4366,8 @@
           try {
             document.getElementById('btn-get-update-info').click();
             console.log('[Admin] ✅ 已触发版本信息加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载版本信息');
           } catch (e) {
             console.warn('[Admin] ⚠️ 版本信息加载失败:', e);
           }
@@ -5073,6 +4376,8 @@
           try {
             document.getElementById('btn-refresh-stats').click();
             console.log('[Admin] ✅ 已触发统计信息加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载统计信息');
           } catch (e) {
             console.warn('[Admin] ⚠️ 统计信息加载失败:', e);
           }
@@ -5081,6 +4386,8 @@
           try {
             document.getElementById('btn-refresh-usage').click();
             console.log('[Admin] ✅ 已触发使用统计加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载使用统计');
           } catch (e) {
             console.warn('[Admin] ⚠️ 使用统计加载失败:', e);
           }
@@ -5089,6 +4396,8 @@
           try {
             document.getElementById('btn-get-easter-eggs').click();
             console.log('[Admin] ✅ 已触发彩蛋配置加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载彩蛋配置');
           } catch (e) {
             console.warn('[Admin] ⚠️ 彩蛋配置加载失败:', e);
           }
@@ -5097,17 +4406,42 @@
           try {
             document.getElementById('btn-get-holidays').click();
             console.log('[Admin] ✅ 已触发节日配置加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载节日配置');
           } catch (e) {
             console.warn('[Admin] ⚠️ 节日配置加载失败:', e);
           }
+
+          // 8. 加载启动公告配置
+          try {
+            document.getElementById('btn-get-startup').click();
+            console.log('[Admin] ✅ 已触发启动公告加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载启动公告');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 启动公告加载失败:', e);
+          }
+
+          // 9. 加载显示端功能配置
+          try {
+            document.getElementById('btn-get-display-flags').click();
+            console.log('[Admin] ✅ 已触发显示端功能加载');
+            step++;
+            updateAutoLoadProgress((step / totalSteps) * 100, '已加载显示端功能');
+          } catch (e) {
+            console.warn('[Admin] ⚠️ 显示端功能加载失败:', e);
+          }
           
           console.log('[Admin] ✅ 所有数据加载任务已启动');
+          setTimeout(() => {
+            updateAutoLoadProgress(100, '加载完成');
+            hideAutoLoadModal();
+          }, 600);
         }, 800); // 延迟 800ms，确保所有事件监听器已注册
       } else {
         console.log('[Admin] ⚠️ API 地址未配置，跳过自动加载');
       }
     });
   </script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 </body>
 </html>

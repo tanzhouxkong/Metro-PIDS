@@ -4,6 +4,7 @@
  */
 import { createApp } from 'vue'
 import App from './App.js'
+import { i18n } from './locales/index.js'
 
 // 全局错误处理
 window.addEventListener('error', (event) => {
@@ -47,6 +48,7 @@ if (typeof window !== 'undefined' && window.electronAPI) {
 // 创建并挂载 Vue 应用
 try {
 const app = createApp(App)
+app.use(i18n)
 app.mount('#app')
   console.log('[Vite] ✅ Vue 应用已成功挂载')
 } catch (error) {

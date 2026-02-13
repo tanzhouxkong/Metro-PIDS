@@ -55,6 +55,13 @@
               <div class="as-car-exits"></div>
             </div>
           </div>
+          <div class="as-panel-middle">
+            <div class="as-car-badge">
+              <div class="as-car-label">当前车厢</div>
+              <div id="as-car-no" class="as-car-no">--</div>
+              <div class="as-car-label-en">Car No.</div>
+            </div>
+          </div>
             <div class="as-panel-right">
               <div class="as-map-track"></div>
               <div class="as-map-nodes"></div>

@@ -467,6 +467,26 @@
         </div>
         
         <div class="section">
+            <h2><i class="fas fa-share-alt"></i> 短交路分享码解析</h2>
+            <div class="test-group">
+                <div class="input-group">
+                    <label>分享码</label>
+                    <textarea id="share-code-input" placeholder="粘贴短交路分享码到此处" style="height: 120px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px;"></textarea>
+                </div>
+                <button class="btn btn-success" onclick="parseShareCode()">
+                    <i class="fas fa-search"></i> 解析分享码
+                </button>
+                <button class="btn btn-secondary" onclick="clearShareCodeResult()">
+                    <i class="fas fa-eraser"></i> 清除结果
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>解析结果</h3>
+                <div id="share-code-result" class="code-block" style="min-height: 150px;">等待解析...</div>
+            </div>
+        </div>
+        
+        <div class="section">
             <h2><i class="fas fa-vial"></i> 状态测试</h2>
             <div class="test-group">
                 <h3>当前状态信息</h3>
@@ -1941,6 +1961,180 @@
                 addLog('检查节日和彩蛋变化失败: ' + e.message, 'error');
             }
         }
+        
+        // ===== 短交路分享码解析功能 =====
+        
+        // Base64 解码函数
+        function base64ToString(base64Str) {
+            try {
+                // 处理可能的换行符和空格
+                const cleanedStr = base64Str.replace(/\s/g, '');
+                const decoded = atob(cleanedStr);
+                return decodeURIComponent(escape(decoded));
+            } catch (e) {
+                console.error('Base64 解码失败:', e);
+                return null;
+            }
+        }
+        
+        // 解析短交路分享码
+        function parseShareCode() {
+            const input = document.getElementById('share-code-input');
+            const resultDiv = document.getElementById('share-code-result');
+            
+            if (!input || !resultDiv) {
+                addLog('未找到输入框或结果显示区域', 'error');
+                return;
+            }
+            
+            let shareCode = input.value.trim();
+            
+            if (!shareCode) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b;">请输入分享码</span>';
+                addLog('未输入分享码', 'warn');
+                return;
+            }
+            
+            // 过滤前缀 "Metro-PIDS短交路分享码"
+            const prefix = 'Metro-PIDS短交路分享码';
+            if (shareCode.startsWith(prefix)) {
+                shareCode = shareCode.substring(prefix.length).trim();
+                addLog('检测到分享码前缀，已自动过滤', 'info');
+            }
+            
+            addLog('开始解析分享码...', 'info');
+            
+            try {
+                // 解码 Base64
+                const jsonText = base64ToString(shareCode);
+                
+                if (!jsonText) {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b;">❌ 分享码格式不正确或已损坏</span>';
+                    addLog('Base64 解码失败', 'error');
+                    return;
+                }
+                
+                // 解析 JSON
+                let shareData;
+                try {
+                    shareData = JSON.parse(jsonText);
+                } catch (e) {
+                    resultDiv.innerHTML = `<span style="color: #ff6b6b;">❌ JSON 解析失败</span><br><br>解码结果：<br>${escapeHtml(jsonText)}`;
+                    addLog('JSON 解析失败: ' + e.message, 'error');
+                    return;
+                }
+                
+                // 验证数据类型
+                if (!shareData || shareData.type !== 'preset-share') {
+                    resultDiv.innerHTML = `<span style="color: #ff9f43;">⚠️ 警告：这不是有效的短交路分享码</span><br><br><pre>${JSON.stringify(shareData, null, 2)}</pre>`;
+                    addLog('分享码类型不匹配', 'warn');
+                    return;
+                }
+                
+                // 显示解析结果
+                const data = shareData.data || {};
+                const source = shareData.source || {};
+                
+                // 格式化时间戳显示
+                const formatTimestamp = (isoString) => {
+                    if (!isoString) return 'N/A';
+                    try {
+                        const date = new Date(isoString);
+                        return date.toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                        });
+                    } catch (e) {
+                        return isoString;
+                    }
+                };
+                
+                // 简化设备ID显示
+                const formatDeviceId = (deviceId) => {
+                    if (!deviceId) return 'N/A';
+                    if (deviceId.length > 20) {
+                        return deviceId.substring(0, 8) + '...' + deviceId.substring(deviceId.length - 4);
+                    }
+                    return deviceId;
+                };
+                
+                const html = `
+<span style="color: #52c41a; font-weight: bold;">✅ 解析成功</span>
+
+<div style="margin-top: 16px; padding: 12px; background: rgba(82, 196, 26, 0.1); border-left: 3px solid #52c41a; border-radius: 4px;">
+    <div style="color: #52c41a; font-weight: bold; margin-bottom: 8px;">📋 基本信息</div>
+    <div><strong>类型：</strong>${escapeHtml(shareData.type || 'N/A')}</div>
+    <div><strong>版本：</strong>${escapeHtml(shareData.version || 'N/A')}</div>
+    <div><strong>分享ID：</strong>${escapeHtml(shareData.shareId || 'N/A')}</div>
+    <div><strong>分享时间：</strong>${formatTimestamp(shareData.timestamp)}</div>
+</div>
+
+<div style="margin-top: 12px; padding: 12px; background: rgba(24, 144, 255, 0.1); border-left: 3px solid #1890ff; border-radius: 4px;">
+    <div style="color: #1890ff; font-weight: bold; margin-bottom: 8px;">🚇 线路信息</div>
+    <div><strong>线路名称：</strong>${escapeHtml(shareData.lineName || 'N/A')}</div>
+    <div><strong>预设名称：</strong>${escapeHtml(shareData.presetName || 'N/A')}</div>
+</div>
+
+<div style="margin-top: 12px; padding: 12px; background: rgba(250, 173, 20, 0.1); border-left: 3px solid #faad14; border-radius: 4px;">
+    <div style="color: #faad14; font-weight: bold; margin-bottom: 8px;">📍 站点信息</div>
+    <div><strong>起点索引：</strong>${data.startIdx !== undefined ? data.startIdx : 'N/A'}</div>
+    <div><strong>起点站名：</strong>${escapeHtml(data.startStationName || 'N/A')}</div>
+    <div><strong>终点索引：</strong>${data.termIdx !== undefined ? data.termIdx : 'N/A'}</div>
+    <div><strong>终点站名：</strong>${escapeHtml(data.termStationName || 'N/A')}</div>
+    <div><strong>创建时间：</strong>${formatTimestamp(data.createdAt)}</div>
+</div>
+
+<div style="margin-top: 12px; padding: 10px 12px; background: rgba(153, 153, 153, 0.1); border-left: 3px solid #999; border-radius: 4px;">
+    <div style="color: #999; font-size: 12px; line-height: 1.6;">
+        <i class="fas fa-info-circle"></i> <strong>提示：</strong>Base64 编码的 JSON 数据开头总是 "eyJ"（这是 "{" 字符的 Base64 编码），这是正常现象，不存在安全问题。
+    </div>
+</div>
+
+<div style="margin-top: 16px; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
+    <div style="color: #999; font-weight: bold; margin-bottom: 8px;">📄 完整数据（JSON）</div>
+    <pre style="margin: 0; color: #d4d4d4; font-size: 12px; overflow-x: auto;">${JSON.stringify(shareData, null, 2)}</pre>
+</div>
+`;
+                
+                resultDiv.innerHTML = html;
+                addLog('分享码解析成功: ' + (shareData.presetName || shareData.shareId), 'success');
+                
+            } catch (e) {
+                resultDiv.innerHTML = `<span style="color: #ff6b6b;">❌ 解析失败</span><br><br>错误信息：${escapeHtml(e.message)}`;
+                addLog('解析分享码失败: ' + e.message, 'error');
+            }
+        }
+        
+        // 清除分享码解析结果
+        function clearShareCodeResult() {
+            const input = document.getElementById('share-code-input');
+            const resultDiv = document.getElementById('share-code-result');
+            
+            if (input) input.value = '';
+            if (resultDiv) resultDiv.innerHTML = '等待解析...';
+            
+            addLog('已清除分享码解析结果', 'info');
+        }
+        
+        // HTML 转义函数（防止 XSS）
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+        
+        // ===== 结束：短交路分享码解析功能 =====
         
         // 初始化
         window.addEventListener('DOMContentLoaded', () => {

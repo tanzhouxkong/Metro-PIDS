@@ -121,7 +121,7 @@ export default {
              style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:99999; background:transparent;"
              @click.self="close">
           <div class="se-dialog" role="dialog" aria-modal="true"
-               style="width:680px; max-width:95%; max-height:85vh; display:flex; flex-direction:column;">
+               style="width:900px; max-width:95%; max-height:85vh; display:flex; flex-direction:column;">
             <div class="se-header">
               <div class="se-header-left">
                 <div class="se-icon">
@@ -260,7 +260,7 @@ export default {
       }
 
       .se-dialog{
-        width: 680px;
+        width: 900px;
         max-width: 95%;
         max-height: 85vh;
         display:flex; flex-direction:column;

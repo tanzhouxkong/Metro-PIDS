@@ -22,11 +22,15 @@ export function useController() {
             r: rtToSend,
             settings: {
                 display: {
+                    // 显示器2：下一站/到站白屏相关配置
                     display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000,
                     display2FooterLED: settings?.display?.display2FooterLED || '',
                     display2FooterWatermark: settings?.display?.display2FooterWatermark !== false,
+                    // 显示器1/3：布局模式
                     display1LayoutMode: settings?.display?.displays?.['display-1']?.layoutMode ?? 'linear',
-                    display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type'
+                    display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type',
+                    // 显示器3：出站页面显示时长（毫秒）
+                    display3DepartDuration: settings?.display?.display3DepartDuration ?? 8000
                 }
             }
         };

@@ -238,6 +238,13 @@ export default {
       }
     }
 
+    // 双击直接应用线路（快速选择）
+    async function applyLineOnDoubleClick(line) {
+      selectedLine.value = line;
+      await new Promise(resolve => setTimeout(resolve, 50));
+      await applySelectedLine();
+    }
+
     // 应用选中的线路
     async function applySelectedLine() {
       // 先快照一份，避免中途被清空导致读取 name 报错
@@ -259,10 +266,25 @@ export default {
           const target = localStorage.getItem('throughOperationSelectorTarget');
           console.log('[线路管理器] applySelectedLine 调用 switchLine, lineName:', line.name, 'target:', target);
           const result = await window.electronAPI.switchLine(line.name);
-          if (result && result.ok) {
-            // 切换成功，关闭窗口
-            if (window.electronAPI.closeWindow) {
+          
+          // 延迟后关闭窗口（无论结果如何都关闭）
+          await new Promise(resolve => setTimeout(resolve, 200));
+          if (window.electronAPI.closeWindow) {
+            try {
               await window.electronAPI.closeWindow();
+            } catch (e) {
+              console.debug('[线路管理器] closeWindow API 调用失败，尝试 window.close():', e);
+              try {
+                window.close();
+              } catch (e2) {
+                console.debug('[线路管理器] window.close() 也失败:', e2);
+              }
+            }
+          } else {
+            try {
+              window.close();
+            } catch (e) {
+              console.debug('[线路管理器] window.close() 失败:', e);
             }
           }
         } else {
@@ -1299,7 +1321,8 @@ export default {
       createNewLine,
       clipboard,
       showRuntimeLineManager,
-      applyRuntimeLine
+      applyRuntimeLine,
+      applyLineOnDoubleClick
     };
   },
   components: {
@@ -1402,6 +1425,7 @@ export default {
                 v-for="(line, index) in currentLines" 
                 :key="index"
                 @contextmenu.prevent.stop="showLineContextMenu($event, line)"
+                @dblclick="applyLineOnDoubleClick(line)"
                 :style="{
                   padding: '12px 20px',
                   cursor: 'pointer',

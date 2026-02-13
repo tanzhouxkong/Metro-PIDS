@@ -1,5 +1,6 @@
 <script>
 import { reactive, ref, watch, computed, nextTick, Teleport, Transition } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 
 export default {
@@ -12,6 +13,7 @@ export default {
   },
   emits: ['update:modelValue', 'save'],
   setup(props, { emit }) {
+    const { t } = useI18n()
     const form = reactive({
       name: '',
       en: '',
@@ -226,7 +228,8 @@ export default {
       xferNameEditValue,
       openXferNameEdit,
       closeXferNameEdit,
-      confirmXferNameEdit
+      confirmXferNameEdit,
+      t
     }
   }
 }
@@ -243,8 +246,8 @@ export default {
                 <i :class="isNew ? 'fas fa-plus' : 'fas fa-edit'"></i>
               </div>
               <div class="se-titles">
-                <div class="se-title">{{ isNew ? '新建站点' : '站点编辑' }}</div>
-                <div class="se-subtitle">{{ isNew ? 'New Station' : 'Edit Station' }}</div>
+                <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
+                <div class="se-subtitle">{{ isNew ? t('stationEditor.subtitleNew') : t('stationEditor.subtitleEdit') }}</div>
               </div>
             </div>
             <button class="se-close" @click="close" aria-label="关闭">
@@ -252,69 +255,69 @@ export default {
             </button>
           </div>
 
-          <div class="se-content">
+            <div class="se-content">
             <div class="se-grid2">
               <div class="se-field">
-                <label class="se-label">中文站名</label>
-                <input v-model="form.name" class="se-input" placeholder="例如: 人民广场" />
+                <label class="se-label">{{ t('stationEditor.nameZhLabel') }}</label>
+                <input v-model="form.name" class="se-input" :placeholder="t('stationEditor.nameZhPlaceholder')" />
               </div>
               <div class="se-field">
-                <label class="se-label">英文站名 (English)</label>
-                <input v-model="form.en" class="se-input" placeholder="e.g. People's Square" />
+                <label class="se-label">{{ t('stationEditor.nameEnLabel') }}</label>
+                <input v-model="form.en" class="se-input" :placeholder="t('stationEditor.nameEnPlaceholder')" />
               </div>
             </div>
 
             <div class="se-grid3 se-mt">
               <div class="se-field">
-                <div class="se-label">站点状态 (Status)</div>
+                <div class="se-label">{{ t('stationEditor.statusLabel') }}</div>
                 <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: !form.skip }" @click="form.skip = false">正常运营</button>
-                  <button class="se-seg-btn" :class="{ on: form.skip, warn: form.skip }" @click="form.skip = true">暂缓开通</button>
+                  <button class="se-seg-btn" :class="{ on: !form.skip }" @click="form.skip = false">{{ t('stationEditor.statusNormal') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.skip, warn: form.skip }" @click="form.skip = true">{{ t('stationEditor.statusSuspended') }}</button>
                 </div>
               </div>
               <div class="se-field">
-                <div class="se-label">开门方向 (Door)</div>
+                <div class="se-label">{{ t('stationEditor.doorLabel') }}</div>
                 <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.door === 'left' }" @click="form.door = 'left'">左侧</button>
-                  <button class="se-seg-btn" :class="{ on: form.door === 'right' }" @click="form.door = 'right'">右侧</button>
-                  <button class="se-seg-btn" :class="{ on: form.door === 'both' }" @click="form.door = 'both'">双侧</button>
+                  <button class="se-seg-btn" :class="{ on: form.door === 'left' }" @click="form.door = 'left'">{{ t('stationEditor.doorLeft') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.door === 'right' }" @click="form.door = 'right'">{{ t('stationEditor.doorRight') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.door === 'both' }" @click="form.door = 'both'">{{ t('stationEditor.doorBoth') }}</button>
                 </div>
               </div>
               <div class="se-field">
-                <div class="se-label">停靠方向 (Dock)</div>
+                <div class="se-label">{{ t('stationEditor.dockLabel') }}</div>
                 <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.dock === 'up' }" @click="form.dock = 'up'">仅上行</button>
-                  <button class="se-seg-btn" :class="{ on: form.dock === 'down' }" @click="form.dock = 'down'">仅下行</button>
-                  <button class="se-seg-btn" :class="{ on: form.dock === 'both' }" @click="form.dock = 'both'">双向</button>
+                  <button class="se-seg-btn" :class="{ on: form.dock === 'up' }" @click="form.dock = 'up'">{{ t('stationEditor.dockUp') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.dock === 'down' }" @click="form.dock = 'down'">{{ t('stationEditor.dockDown') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.dock === 'both' }" @click="form.dock = 'both'">{{ t('stationEditor.dockBoth') }}</button>
                 </div>
               </div>
             </div>
 
             <div class="se-grid2 se-mt">
               <div class="se-field">
-                <div class="se-label">折返位置 (Turnback)</div>
+                <div class="se-label">{{ t('stationEditor.turnbackLabel') }}</div>
                 <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.turnback === 'none' }" @click="form.turnback = 'none'">无</button>
-                  <button class="se-seg-btn" :class="{ on: form.turnback === 'pre' }" @click="form.turnback = 'pre'">站前折返</button>
-                  <button class="se-seg-btn" :class="{ on: form.turnback === 'post' }" @click="form.turnback = 'post'">站后折返</button>
+                  <button class="se-seg-btn" :class="{ on: form.turnback === 'none' }" @click="form.turnback = 'none'">{{ t('stationEditor.turnbackNone') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.turnback === 'pre' }" @click="form.turnback = 'pre'">{{ t('stationEditor.turnbackPre') }}</button>
+                  <button class="se-seg-btn" :class="{ on: form.turnback === 'post' }" @click="form.turnback = 'post'">{{ t('stationEditor.turnbackPost') }}</button>
                 </div>
               </div>
               <div class="se-field se-field-narrow">
-                <div class="se-label">大站停靠</div>
+                <div class="se-label">{{ t('stationEditor.expressLabel') }}</div>
                 <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.expressStop }" @click="form.expressStop = true">停靠</button>
-                  <button class="se-seg-btn" :class="{ on: !form.expressStop }" @click="form.expressStop = false">跳过</button>
+                  <button class="se-seg-btn" :class="{ on: form.expressStop }" @click="form.expressStop = true">{{ t('stationEditor.expressStop') }}</button>
+                  <button class="se-seg-btn" :class="{ on: !form.expressStop }" @click="form.expressStop = false">{{ t('stationEditor.expressSkip') }}</button>
                 </div>
               </div>
             </div>
 
             <div class="se-section" @contextmenu.prevent="openSectionMenu($event)">
               <div class="se-section-head">
-                <div class="se-section-title">换乘线路</div>
-                <span class="se-section-hint">右键操作</span>
+                <div class="se-section-title">{{ t('stationEditor.xferSectionTitle') }}</div>
+                <span class="se-section-hint">{{ t('stationEditor.xferSectionHint') }}</span>
               </div>
 
-              <div v-if="form.xfer.length === 0" class="se-empty">暂无换乘，右键可添加或粘贴</div>
+              <div v-if="form.xfer.length === 0" class="se-empty">{{ t('stationEditor.xferEmpty') }}</div>
               <div v-else class="se-xfer-list">
                 <div
                   v-for="(xf, idx) in form.xfer"
@@ -322,15 +325,15 @@ export default {
                   class="se-xfer-row"
                   @contextmenu.prevent.stop="openRowMenu($event, idx)"
                 >
-                  <span class="se-xfer-name">{{ xf.line || '未命名' }}</span>
+                  <span class="se-xfer-name">{{ xf.line || t('stationEditor.xferUnnamed') }}</span>
                   <div v-if="xf.exitTransfer || xf.suspended" class="se-xfer-badges">
-                    <span v-if="xf.exitTransfer" class="se-xfer-badge exit">出站换乘</span>
-                    <span v-if="xf.suspended" class="se-xfer-badge suspended">暂缓开通</span>
+                    <span v-if="xf.exitTransfer" class="se-xfer-badge exit">{{ t('stationEditor.xferExitBadge') }}</span>
+                    <span v-if="xf.suspended" class="se-xfer-badge suspended">{{ t('stationEditor.xferSuspendedBadge') }}</span>
                   </div>
                   <div
                     class="se-xfer-swatch"
                     :style="{ backgroundColor: xf.color || '#808080' }"
-                    title="颜色（右键菜单可改）"
+                    :title="t('stationEditor.xferColorTitle')"
                   ></div>
                 </div>
               </div>
@@ -349,22 +352,22 @@ export default {
             >
               <template v-if="menuContext?.type === 'row'">
                 <div class="station-context-menu-item" @click="runAndClose(() => openXferNameEdit(menuContext.idx))">
-                  <i class="fas fa-edit"></i> 编辑名称
+                  <i class="fas fa-edit"></i> {{ t('stationEditor.menuEditName') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item" @click="runAndClose(() => copyXfer(menuContext.idx))">
-                  <i class="fas fa-copy"></i> 复制
+                  <i class="fas fa-copy"></i> {{ t('stationEditor.menuCopy') }}
                 </div>
                 <div
                   class="station-context-menu-item"
                   :class="{ disabled: !hasClipboard }"
                   @click="hasClipboard && runAndClose(() => pasteXfer(menuContext.idx))"
                 >
-                  <i class="fas fa-paste"></i> 粘贴
+                  <i class="fas fa-paste"></i> {{ t('stationEditor.menuPaste') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item" @click="runAndClose(() => openColorPicker(menuContext.idx))">
-                  <i class="fas fa-palette"></i> 选择颜色
+                  <i class="fas fa-palette"></i> {{ t('stationEditor.menuPickColor') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div
@@ -373,7 +376,7 @@ export default {
                   :style="form.xfer[menuContext.idx]?.suspended ? { opacity: 0.5, pointerEvents: 'none' } : undefined"
                   @click="!form.xfer[menuContext.idx]?.suspended && runAndClose(() => toggleExitTransfer(menuContext.idx))"
                 >
-                  <i class="fas fa-door-open"></i> 出站换乘
+                  <i class="fas fa-door-open"></i> {{ t('stationEditor.menuExitTransfer') }}
                 </div>
                 <div
                   class="station-context-menu-item"
@@ -381,11 +384,11 @@ export default {
                   :style="form.xfer[menuContext.idx]?.exitTransfer ? { opacity: 0.5, pointerEvents: 'none' } : undefined"
                   @click="!form.xfer[menuContext.idx]?.exitTransfer && runAndClose(() => toggleXferSuspended(menuContext.idx))"
                 >
-                  <i class="fas fa-pause-circle"></i> {{ form.xfer[menuContext.idx]?.suspended ? '恢复正常' : '暂缓开通' }}
+                  <i class="fas fa-pause-circle"></i> {{ form.xfer[menuContext.idx]?.suspended ? t('stationEditor.menuSuspendedOn') : t('stationEditor.menuSuspendedOff') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item danger" @click="runAndClose(() => removeXfer(menuContext.idx))">
-                  <i class="fas fa-trash-alt"></i> 删除
+                  <i class="fas fa-trash-alt"></i> {{ t('stationEditor.menuDelete') }}
                 </div>
               </template>
               <template v-else-if="menuContext?.type === 'section'">
@@ -394,18 +397,18 @@ export default {
                   class="station-context-menu-item"
                   @click="runAndClose(copyAllXfer)"
                 >
-                  <i class="fas fa-copy"></i> 复制全部
+                  <i class="fas fa-copy"></i> {{ t('stationEditor.menuCopyAll') }}
                 </div>
                 <div
                   class="station-context-menu-item"
                   :class="{ disabled: !hasClipboard }"
                   @click="hasClipboard && runAndClose(() => pasteXfer(-1))"
                 >
-                  <i class="fas fa-paste"></i> 粘贴
+                  <i class="fas fa-paste"></i> {{ t('stationEditor.menuPaste') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item" @click="runAndClose(addXfer)">
-                  <i class="fas fa-plus"></i> 添加换乘
+                  <i class="fas fa-plus"></i> {{ t('stationEditor.menuAddXfer') }}
                 </div>
               </template>
             </div>
@@ -417,16 +420,16 @@ export default {
             <Transition name="fade">
               <div v-if="showXferNameEdit" class="se-name-edit-overlay" @click.self="closeXferNameEdit">
                 <div class="se-name-edit-dialog" role="dialog" aria-modal="true">
-                  <div class="se-name-edit-title">编辑线路名称</div>
+                  <div class="se-name-edit-title">{{ t('stationEditor.xferNameDialogTitle') }}</div>
                   <input
                     v-model="xferNameEditValue"
                     class="se-input se-name-edit-input"
-                    placeholder="线路名称/编号"
+                    :placeholder="t('stationEditor.xferNamePlaceholder')"
                     @keydown.enter="confirmXferNameEdit"
                   />
                   <div class="se-name-edit-actions">
-                    <button type="button" class="se-btn se-btn-gray" @click="closeXferNameEdit">取消</button>
-                    <button type="button" class="se-btn se-btn-green" @click="confirmXferNameEdit">确定</button>
+                    <button type="button" class="se-btn se-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
+                    <button type="button" class="se-btn se-btn-green" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
                   </div>
                 </div>
               </div>
@@ -434,8 +437,8 @@ export default {
           </Teleport>
 
           <div class="se-footer">
-            <button class="se-btn se-btn-gray" @click="close">取消</button>
-            <button class="se-btn se-btn-green" @click="save" :disabled="!form.name">保存</button>
+            <button class="se-btn se-btn-gray" @click="close">{{ t('stationEditor.btnCancel') }}</button>
+            <button class="se-btn se-btn-green" @click="save" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
           </div>
         </div>
 
@@ -466,7 +469,7 @@ export default {
 }
 
 .se-dialog {
-  width: 680px;
+  width: 900px;
   max-width: 95%;
   max-height: 85vh;
   display: flex;

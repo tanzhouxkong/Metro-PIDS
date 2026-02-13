@@ -1,6 +1,7 @@
 <script>
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
 import { ref, computed, watch, onMounted, nextTick, Teleport, Transition } from 'vue'
+import { useI18n } from 'vue-i18n'
 import LineManagerDialog from '../LineManagerDialog.js'
 import LineManagerTopbar from '../LineManagerTopbar.js'
 import { useCloudConfig, CLOUD_API_BASE } from '../../composables/useCloudConfig.js'
@@ -48,6 +49,7 @@ export default {
   name: 'LineManagerWindow',
   components: { Teleport, Transition, LineManagerDialog, LineManagerTopbar, ContextMenu },
   setup() {
+    const { t } = useI18n()
     const folders = ref([])
     const currentFolderId = ref('default')
     const currentLines = ref([])
@@ -746,7 +748,7 @@ export default {
     async function renameFolder(folderId, currentName) {
       if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) return
       if (!window.__lineManagerDialog) return
-      const newName = await window.__lineManagerDialog.prompt('请输入新的文件夹名称', currentName, '重命名文件夹')
+      const newName = await window.__lineManagerDialog.prompt(t('lineManager.renameFolderPrompt'), currentName, t('lineManager.renameFolderTitle'))
       if (newName && newName.trim() !== currentName) {
         try {
           const res = await window.electronAPI.lines.folders.rename(folderId, newName)
@@ -893,9 +895,51 @@ export default {
       closeLineContextMenu()
       if (!line || !window.electronAPI?.lines || !window.__lineManagerDialog) return
       const currentName = line.name.replace(/<[^>]+>/g, '').replace(/<\/>/g, '')
-      const newName = await window.__lineManagerDialog.prompt('请输入新的线路名称', currentName, '重命名线路')
-      if (newName && newName.trim() !== currentName) {
-        await window.__lineManagerDialog.alert('线路重命名功能需要在主程序中进行', '提示')
+      const newName = await window.__lineManagerDialog.prompt(t('lineManager.renameLinePrompt'), currentName, t('lineManager.renameLineTitle'))
+      if (!newName || newName.trim() === currentName) return
+      
+      try {
+        const folderId = selectedFolderId.value || currentFolderId.value
+        const folder = folders.value.find((f) => f.id === folderId)
+        const folderPath = folder ? folder.path : null
+        const oldFileName = line.filePath || line.name
+        
+        // 读取原文件内容
+        const readRes = await window.electronAPI.lines.read(oldFileName, folderPath)
+        if (!(readRes && readRes.ok && readRes.content)) {
+          await window.__lineManagerDialog.alert(t('lineManager.readLineError'), t('console.error'))
+          return
+        }
+        
+        // 检查新文件名是否已存在
+        const listRes = await window.electronAPI.lines.list(folderPath)
+        const existingNames = (listRes || []).map((it) => it.name.replace(/\.json$/, ''))
+        const newNameTrimmed = newName.trim().replace(/\.json$/, '')
+        if (existingNames.includes(newNameTrimmed)) {
+          await window.__lineManagerDialog.alert(t('lineManager.lineNameExists'), t('console.error'))
+          return
+        }
+        
+        const newFileName = newNameTrimmed + '.json'
+        
+        // 保存为新文件名
+        const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath)
+        if (!(saveRes && saveRes.ok)) {
+          await window.__lineManagerDialog.alert(saveRes?.error || t('lineManager.saveNewFileError'), t('console.error'))
+          return
+        }
+        
+        // 删除旧文件
+        const deleteRes = await window.electronAPI.lines.delete(oldFileName, folderPath)
+        if (!(deleteRes && deleteRes.ok)) {
+          await window.__lineManagerDialog.alert(t('lineManager.deleteOldFileWarning'), t('console.warning'))
+        }
+        
+        // 重新加载线路列表
+        await loadLinesFromFolder(folderId)
+      } catch (e) {
+        console.error('重命名线路失败:', e)
+        await window.__lineManagerDialog.alert(t('lineManager.renameLineError') + '：' + (e.message || e), t('console.error'))
       }
     }
 
@@ -1234,6 +1278,7 @@ export default {
 
     return {
       parseColorMarkup,
+      t,
       hasFoldersAPI,
       folders,
       sidebarRef,
@@ -1287,33 +1332,33 @@ export default {
         const isDefault = contextMenu.value.folderId === 'default'
         const canCopyFolder = contextMenu.value.folderId && !isCloud && !isDefault
         return [
-          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
           { type: 'sep' },
-          { label: '复制', icon: 'fas fa-copy', action: 'copyFolder', disabled: !canCopyFolder },
-          { label: '粘贴', icon: 'fas fa-paste', action: 'pasteFolder', disabled: !clipboard.value.folder },
+          { label: t('lineManager.ctxCopy'), icon: 'fas fa-copy', action: 'copyFolder', disabled: !canCopyFolder },
+          { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'pasteFolder', disabled: !clipboard.value.folder },
           { type: 'sep' },
           {
-            label: '重命名',
+            label: t('lineManager.ctxRename'),
             icon: 'fas fa-edit',
             action: 'renameFolder',
             disabled: !contextMenu.value.folderId || isCloud || isDefault
           },
           {
-            label: '打开文件夹',
+            label: t('lineManager.ctxOpenFolder'),
             icon: 'fas fa-folder-open',
             action: 'openFolder',
             disabled: !contextMenu.value.folderId || isCloud
           },
           ...(canDelete && !isCloud && !isDefault
-            ? [{ type: 'sep' }, { label: '删除', icon: 'fas fa-trash', action: 'deleteFolder', danger: true }]
+            ? [{ type: 'sep' }, { label: t('lineManager.ctxDelete'), icon: 'fas fa-trash', action: 'deleteFolder', danger: true }]
             : [])
         ]
       }),
       sidebarNewMenuItems: computed(() => {
         const canPaste = clipboard.value.folder || clipboard.value.type
         return [
-          { label: '新建文件夹', icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
-          ...(canPaste ? [{ type: 'sep' }, { label: '粘贴', icon: 'fas fa-paste', action: 'paste', disabled: false }] : [])
+          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: false }] : [])
         ]
       }),
       linesNewMenuItems: computed(() => {
@@ -1321,51 +1366,51 @@ export default {
         const pasteDisabled = isCloudFolderActive.value || isDefaultFolderActive.value || !canPaste
         return [
           {
-            label: '新建线路',
+            label: t('lineManager.ctxNewLine'),
             icon: 'fas fa-plus',
             action: 'createNewLine',
             disabled: isCloudFolderActive.value || isDefaultFolderActive.value
           },
-          ...(canPaste ? [{ type: 'sep' }, { label: '粘贴', icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
+          ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
         ]
       }),
       lineMenuItems: computed(() => [
         {
-          label: '新建线路',
+          label: t('lineManager.ctxNewLine'),
           icon: 'fas fa-plus',
           action: 'createNewLine',
           disabled: isCloudFolderActive.value || isDefaultFolderActive.value
         },
         { type: 'sep' },
-        { label: '打开', icon: 'fas fa-folder-open', action: 'openLine' },
+        { label: t('lineManager.ctxOpen'), icon: 'fas fa-folder-open', action: 'openLine' },
         {
-          label: '重命名',
+          label: t('lineManager.ctxRename'),
           icon: 'fas fa-edit',
           action: 'renameLine',
           disabled: isCloudFolderActive.value || isDefaultFolderActive.value
         },
         { type: 'sep' },
         {
-          label: '复制',
+          label: t('lineManager.ctxCopy'),
           icon: 'fas fa-copy',
           action: 'copyLine',
           disabled: isCloudFolderActive.value
         },
         {
-          label: '剪切',
+          label: t('lineManager.ctxCut'),
           icon: 'fas fa-cut',
           action: 'cutLine',
           disabled: isCloudFolderActive.value || isDefaultFolderActive.value
         },
         {
-          label: '粘贴',
+          label: t('lineManager.ctxPaste'),
           icon: 'fas fa-paste',
           action: 'pasteLine',
           disabled: isCloudFolderActive.value || isDefaultFolderActive.value || !clipboard.value.type
         },
         { type: 'sep' },
         {
-          label: '删除',
+          label: t('lineManager.ctxDelete'),
           icon: 'fas fa-trash',
           action: 'deleteLine',
           danger: true,
@@ -1458,7 +1503,7 @@ export default {
             v-model="searchQuery"
             type="text"
             class="lmw-search-input"
-            placeholder="搜索线路、首站、末站..."
+            :placeholder="t('lineManager.searchPlaceholder')"
           />
           <button
             v-if="searchQuery"
@@ -1478,16 +1523,16 @@ export default {
         <i class="fas fa-exchange-alt"></i>
       </div>
       <div class="lmw-through-banner-main">
-        <div class="lmw-through-banner-title">正在保存贯通线路</div>
+        <div class="lmw-through-banner-title">{{ t('lineManager.throughSavingBannerTitle') }}</div>
         <div class="lmw-through-banner-sub">
-          线路名称: <strong>{{ pendingThroughLineInfo.lineName }}</strong>
+          <strong>{{ t('lineManager.throughSavingLineName', { lineName: pendingThroughLineInfo.lineName }) }}</strong>
           <span v-if="pendingThroughLineInfo.segmentCount > 0" class="lmw-through-banner-seg">
-            线路段数: <strong>{{ pendingThroughLineInfo.segmentCount }}</strong>
+            {{ t('lineManager.throughSavingSegmentCount', { count: pendingThroughLineInfo.segmentCount }) }}
           </span>
         </div>
         <div class="lmw-through-banner-tip">
           <i class="fas fa-info-circle"></i>
-          <span>请点击右下角的&quot;保存贯通线路&quot;按钮，将保存到当前选中的文件夹</span>
+          <span>{{ t('lineManager.throughSavingHint') }}</span>
         </div>
       </div>
     </div>
@@ -1515,19 +1560,19 @@ export default {
 
       <section class="lmw-content">
         <header v-if="folders.length > 0 && selectedFolderId" class="lmw-content-header">
-          <span>当前文件夹：</span>
+          <span>{{ t('lineManager.currentFolder') }}：</span>
           <strong>{{ folders.find(f => f.id === selectedFolderId)?.name || selectedFolderId }}</strong>
         </header>
 
         <div ref="linesRef" class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
-          <div v-if="loading || runtimeLoading || (isSearchActive && searchLoading)" class="lmw-loading">正在加载...</div>
+          <div v-if="loading || runtimeLoading || (isSearchActive && searchLoading)" class="lmw-loading">...</div>
           <div v-else-if="!isSearchActive && currentLines.length === 0" class="lmw-empty">
-            {{ activeFolderId === 'runtime-cloud' ? '暂无云控线路' : '当前文件夹暂无线路' }}
+            {{ activeFolderId === 'runtime-cloud' ? t('lineManager.emptyCloudLines') : t('lineManager.emptyFolder') }}
           </div>
           <div v-else-if="isSearchActive && filteredLines.length === 0" class="lmw-empty">
             <i class="fas fa-search" style="font-size:32px; color:var(--muted); margin-bottom:12px;"></i>
-            <span>无匹配结果</span>
-            <span class="lmw-search-hint">尝试其他关键词，或搜索文件夹名称</span>
+            <span>{{ t('lineManager.noSearchResult') }}</span>
+            <span class="lmw-search-hint">{{ t('lineManager.searchResultHint') }}</span>
           </div>
 
           <button
@@ -1554,9 +1599,9 @@ export default {
                     type="button"
                     class="lmw-locate-btn"
                     @click.stop="locateToFolder(line)"
-                    title="定位到文件夹"
+                    :title="t('lineManager.locate')"
                   >
-                    定位
+                    {{ t('lineManager.locate') }}
                   </button>
                 </span>
               </div>
@@ -1568,12 +1613,12 @@ export default {
         <!-- 底部操作栏：仅在保存贯通线路时显示，橙色「保存贯通线路」按钮 -->
         <div v-if="isSavingThroughLine" class="lmw-bottom-bar">
           <div class="lmw-bottom-bar-left">
-            <span class="lmw-bottom-bar-muted">当前将保存到：{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}</span>
+            <span class="lmw-bottom-bar-muted">{{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}</span>
           </div>
           <div class="lmw-bottom-bar-right">
             <button type="button" class="lmw-btn lmw-btn-through" @click="handleSaveThroughLine">
               <i class="fas fa-save"></i>
-              <span>保存贯通线路</span>
+              <span>{{ t('lineManager.throughSaveButton') }}</span>
             </button>
           </div>
         </div>

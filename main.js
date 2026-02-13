@@ -5814,12 +5814,12 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     
     // 跳过后续的配置读取逻辑
   } else if (displayId === 'display-3') {
-    // 香港地铁 LCD：强制使用 1600x500，和显示器3的设计尺寸一致
-    logicalWidth = 1600;
-    logicalHeight = 500;
+    // 北京地铁LCD显示器：强制使用 1900x600，和 display-1 相同的尺寸
+    logicalWidth = 1900;
+    logicalHeight = 600;
     console.log(`[main] display-3 强制使用固定尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, '和配置值)');
 
-    // 同步更新 store 中的配置，避免旧配置残留 1900x600
+    // 同步更新 store 中的配置，确保配置正确
     try {
       if (store) {
         const settings = store.get('settings', {});
@@ -5828,10 +5828,10 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         if (!settings.display.displays['display-3']) {
           settings.display.displays['display-3'] = {};
         }
-        settings.display.displays['display-3'].width = 1600;
+        settings.display.displays['display-3'].width = 1900;
         settings.display.displays['display-3'].height = 600;
         store.set('settings', settings);
-        console.log('[main] display-3 配置已更新为: 1600x500');
+        console.log('[main] display-3 配置已更新为: 1900x600');
       }
     } catch (e) {
       console.warn('[main] display-3 更新配置失败:', e);

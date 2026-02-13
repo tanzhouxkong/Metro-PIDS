@@ -8,6 +8,7 @@ import { useSettings } from '../composables/useSettings.js'
 import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 
 export default {
@@ -19,6 +20,7 @@ export default {
     const { uiState } = useUIState()
     const fileIO = useFileIO(pidsState)
     const { settings, saveSettings } = useSettings()
+    const { t } = useI18n()
     
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
@@ -421,6 +423,11 @@ export default {
             }
         }
         
+        // 确保至少保持2个线路段的结构（防止清空后再选择时丢失其他线路）
+        while (meta.throughLineSegments.length < 2) {
+            meta.throughLineSegments.push({ lineName: '', throughStationName: '' });
+        }
+        
         throughLineSegments.value = [...(meta.throughLineSegments || [])];
         lineSelectorTarget.value = null;
         localStorage.removeItem('throughOperationSelectorTarget');
@@ -705,8 +712,11 @@ export default {
                 meta.lineBLineName = '';
                 meta.throughStationIdx = -1;
                 meta.throughOperationEnabled = false;
-                // 清除新的贯通线路段配置
-                delete meta.throughLineSegments;
+                // 清除新的贯通线路段配置并重置为2个空元素（保持结构，防止后续选择时丢失）
+                meta.throughLineSegments = [
+                    { lineName: '', throughStationName: '' },
+                    { lineName: '', throughStationName: '' }
+                ];
                 // 清除自定义颜色范围（贯通线路特有）
                 delete meta.customColorRanges;
                 // 重置响应式数据
@@ -733,6 +743,30 @@ export default {
     
     // 短交路预设管理
     const shortTurnPresets = ref([]);
+    const presetContextMenu = ref({ visible: false, x: 0, y: 0, preset: null }); // 预设右键菜单
+    
+    // 生成分享ID（针对每次分享）
+    function generateShareId() {
+      try {
+        // 使用时间戳+随机数+预设名的组合生成唯一ID
+        const timestamp = Date.now().toString(36);
+        const randomPart = Math.random().toString(36).substring(2, 10);
+        // 简单的哈希函数
+        const hash = (str) => {
+          let h = 0;
+          for (let i = 0; i < str.length; i++) {
+            h = ((h << 5) - h) + str.charCodeAt(i);
+            h = h & h; // Convert to 32bit integer
+          }
+          return Math.abs(h).toString(16).toUpperCase();
+        };
+        const shareId = `SHARE-${timestamp}-${randomPart}-${hash(new Date().toISOString())}`;
+        return shareId;
+      } catch (e) {
+        console.error('生成分享ID失败:', e);
+        return 'SHARE-' + Date.now().toString(36);
+      }
+    }
     
     async function loadShortTurnPresets() {
         if (!window.electronAPI || !window.electronAPI.shortturns) {
@@ -861,6 +895,263 @@ export default {
             }
         } catch (e) {
             await showMsg('删除失败: ' + e.message);
+        }
+    }
+    
+    // 显示预设右键菜单
+    function showPresetContextMenu(event, preset) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        presetContextMenu.value = {
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            preset: preset
+        };
+        
+        // 使用 nextTick 在菜单渲染后调整位置
+        nextTick(() => {
+            const menuElement = document.querySelector('[data-preset-context-menu]');
+            if (menuElement) {
+                const rect = menuElement.getBoundingClientRect();
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                let x = event.clientX;
+                let y = event.clientY;
+                
+                // 如果菜单会在右侧被截断，调整到左侧
+                if (x + rect.width > viewportWidth) {
+                    x = event.clientX - rect.width;
+                }
+                
+                // 如果菜单会在底部被截断，调整到上方
+                if (y + rect.height > viewportHeight) {
+                    y = event.clientY - rect.height;
+                }
+                
+                // 确保不会超出左边界
+                if (x < 0) x = 10;
+                
+                // 确保不会超出上边界
+                if (y < 0) y = 10;
+                
+                // 更新位置
+                presetContextMenu.value.x = x;
+                presetContextMenu.value.y = y;
+            }
+        });
+    }
+    
+    // 关闭预设右键菜单
+    function closePresetContextMenu() {
+        presetContextMenu.value.visible = false;
+    }
+    
+    // 从菜单加载预设
+    async function applyPresetFromMenu() {
+        if (!presetContextMenu.value.preset) return;
+        const presetName = presetContextMenu.value.preset.name;
+        closePresetContextMenu(); // 先关闭右键菜单，再弹出对话框
+        if (!presetName) return;
+        await loadShortTurnPreset(presetName);
+    }
+    
+    // 从菜单删除预设
+    async function deletePresetFromMenu() {
+        if (!presetContextMenu.value.preset) return;
+        const presetName = presetContextMenu.value.preset.name;
+        closePresetContextMenu(); // 先关闭右键菜单，再弹出对话框
+        if (!presetName) return;
+        await deleteShortTurnPreset(presetName);
+    }
+    
+    // 辅助函数：将字符串转换为 Base64（支持 UTF-8）
+    function stringToBase64(str) {
+        try {
+            return btoa(unescape(encodeURIComponent(str)));
+        } catch (e) {
+            console.error('Base64编码失败:', e);
+            return btoa(str);
+        }
+    }
+
+    // 辅助函数：从 Base64 解码为字符串（支持 UTF-8）
+    function base64ToString(b64) {
+        try {
+            return decodeURIComponent(escape(atob(b64)));
+        } catch (e) {
+            console.error('Base64解码失败:', e);
+            try {
+                return atob(b64);
+            } catch {
+                return '';
+            }
+        }
+    }
+
+    // 生成预设分享码（离线分享）
+    async function sharePresetOffline() {
+        if (!presetContextMenu.value.preset) return;
+        const preset = presetContextMenu.value.preset;
+        // 先关闭右键菜单，避免与弹窗叠加
+        closePresetContextMenu();
+        try {
+            // 生成唯一分享ID
+            const shareId = generateShareId();
+            
+            // 创建分享数据包
+            const shareData = {
+                type: 'preset-share',
+                version: '1.0',
+                shareId: shareId,  // 分享ID
+                timestamp: new Date().toISOString(),
+                lineName: preset.lineName,
+                presetName: preset.name,
+                data: {
+                    startIdx: preset.startIdx,
+                    termIdx: preset.termIdx,
+                    startStationName: preset.startStationName,
+                    termStationName: preset.termStationName,
+                    createdAt: preset.createdAt
+                }
+            };
+            
+            // 使用 Base64 编码生成分享码
+            const shareCodeBase64 = stringToBase64(JSON.stringify(shareData));
+            const shareCode = t('console.shareCodePrefix') + '\n' + shareCodeBase64;
+            
+            // 使用自定义分享码对话框显示
+            if (window.__ui && window.__ui.dialog && window.__ui.dialog.shareCode) {
+                await window.__ui.dialog.shareCode(shareCode, shareId, t('console.presetShareOfflineTitle'));
+            } else {
+                // 降级方案：显示分享码供手动复制
+                const msg = `${t('console.presetShareCode')}:\n\n${shareCode}\n\n${t('console.presetShareId')}: ${shareId}\n${t('console.shareCodeLength')}: ${shareCode.length} ${t('console.shareCodeChars')}`;
+                await showMsg(msg, t('console.presetShareOfflineTitle'));
+            }
+        } catch (e) {
+            console.error('生成分享码错误:', e);
+            await showMsg(t('console.presetShareError') + ': ' + e.message, t('console.error'));
+        }
+    }
+
+    // 从分享码导入预设（离线导入）
+    async function importPresetFromShareCode() {
+        // 打开弹窗前先关闭右键菜单
+        closePresetContextMenu();
+
+        // 仅在 Electron 环境下可用
+        if (!window.electronAPI || !window.electronAPI.shortturns) {
+            await showMsg(t('console.electronOnlyError'), t('console.info'));
+            return;
+        }
+
+        try {
+            const inputCode = await promptUser(t('console.presetShareCodePrompt'), '', t('console.presetShareCode'));
+            if (!inputCode || !inputCode.trim()) {
+                return;
+            }
+            
+            // 过滤前缀 "Metro-PIDS短交路分享码"
+            let shareCode = inputCode.trim();
+            const prefix = t('console.shareCodePrefix');
+            if (shareCode.startsWith(prefix)) {
+                shareCode = shareCode.substring(prefix.length).trim();
+            }
+
+            // 解码并解析分享数据
+            const jsonText = base64ToString(shareCode);
+            if (!jsonText) {
+                await showMsg(t('console.shareCodeInvalid'), t('console.error'));
+                return;
+            }
+
+            let shareData;
+            try {
+                shareData = JSON.parse(jsonText);
+            } catch (e) {
+                console.error('解析分享码 JSON 失败:', e);
+                await showMsg(t('console.shareCodeJsonError'), t('console.error'));
+                return;
+            }
+
+            if (!shareData || shareData.type !== 'preset-share' || !shareData.data) {
+                await showMsg(t('console.shareCodeTypeMismatch'), t('console.error'));
+                return;
+            }
+
+            // 验证站点匹配（改为基于站点验证，而非线路名称）
+            const presetDataFromShare = shareData.data || {};
+            const currentStations = pidsState.appData?.stations || [];
+            const startStationName = presetDataFromShare.startStationName || '';
+            const termStationName = presetDataFromShare.termStationName || '';
+            
+            // 检查起点站和终点站是否都存在于当前线路中
+            const hasStartStation = currentStations.some(s => s.name === startStationName);
+            const hasTermStation = currentStations.some(s => s.name === termStationName);
+            
+            if (!hasStartStation || !hasTermStation) {
+                const missingStations = [];
+                if (!hasStartStation) missingStations.push(startStationName);
+                if (!hasTermStation) missingStations.push(termStationName);
+                
+                await showMsg(
+                    `${t('console.stationNotFound')}${missingStations.join('、')}。\n\n${t('console.stationNotFoundDetail')}`,
+                    t('console.stationMismatch')
+                );
+                return;
+            }
+
+            // 默认名称：优先使用分享内的预设名，其次用“起点→终点”
+            const defaultName =
+                shareData.presetName ||
+                `${presetDataFromShare.startStationName || '起点'}→${presetDataFromShare.termStationName || '终点'}`;
+
+            const nameInput = await promptUser(
+                t('console.presetImportNamePrompt'),
+                defaultName,
+                t('console.presetImportTitle')
+            );
+            const finalName = (nameInput && nameInput.trim()) || defaultName;
+            if (!finalName) return;
+
+            // 根据站点名称重新计算索引（因为不同线路的站点索引可能不同）
+            const currentStationsArray = pidsState.appData?.stations || [];
+            const newStartIdx = currentStationsArray.findIndex(s => s.name === startStationName);
+            const newTermIdx = currentStationsArray.findIndex(s => s.name === termStationName);
+            
+            if (newStartIdx === -1 || newTermIdx === -1) {
+                await showMsg('无法在当前线路中定位站点索引，导入失败', '错误');
+                return;
+            }
+
+            // 组装要保存的预设数据（使用当前线路名称和重新计算的索引）
+            const presetToSave = {
+                lineName: pidsState.appData?.meta?.lineName || '',  // 使用当前线路名称
+                startIdx: newStartIdx,  // 重新计算的起点索引
+                termIdx: newTermIdx,    // 重新计算的终点索引
+                startStationName: startStationName,
+                termStationName: termStationName,
+                createdAt: presetDataFromShare.createdAt || new Date().toISOString(),
+                // 记录分享元数据，方便将来调试或展示
+                shareId: shareData.shareId || '',
+                shareLineName: shareData.lineName || '',  // 记录原始分享线路名
+                importedAt: new Date().toISOString()
+            };
+
+            const res = await window.electronAPI.shortturns.save(finalName, presetToSave);
+            if (res && res.ok) {
+                await showMsg('预设已从分享码导入并保存', '成功');
+                await loadShortTurnPresets();
+            } else {
+                await showMsg('导入失败: ' + (res && res.error), '错误');
+            }
+        } catch (e) {
+            console.error('导入分享码失败:', e);
+            await showMsg('导入分享码失败: ' + (e.message || e), '错误');
+        } finally {
+            closePresetContextMenu();
         }
     }
     
@@ -1218,6 +1509,14 @@ export default {
         saveShortTurnPreset,
         loadShortTurnPreset,
         deleteShortTurnPreset,
+        presetContextMenu,
+        showPresetContextMenu,
+        closePresetContextMenu,
+        applyPresetFromMenu,
+        deletePresetFromMenu,
+        sharePresetOffline,
+        importPresetFromShareCode,
+        generateShareId,
         throughLineSegments,
         addThroughLineSegment,
         removeThroughLineSegment,
@@ -1233,7 +1532,8 @@ export default {
         setMicaTheme,
         setBackgroundColor,
         setRoundedCorner,
-        clearMicaLogs
+        clearMicaLogs,
+        t
     }
   },
   template: `
@@ -1241,8 +1541,8 @@ export default {
       <!-- Header -->
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
           <div style="text-align:left;">
-              <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">PIDS 控制台</div>
-              <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">V2-Multi Stable</div>
+              <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">{{ t('console.title') }}</div>
+              <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">{{ t('console.versionTag') }}</div>
           </div>
       </div>
       
@@ -1250,24 +1550,24 @@ export default {
       <div style="display:flex; flex-direction:column;">
           <!-- Folder & Line Management -->
           <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-          <div style="color:#FF9F43; font-weight:bold; margin-bottom:12px; font-size:15px;">线路管理器</div>
+          <div style="color:#FF9F43; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.lineManager') }}</div>
           
           <!-- 当前线路显示 -->
           <div style="margin-bottom:12px; padding:12px; background:rgba(255, 255, 255, 0.15); border-radius:8px; border:2px solid var(--divider);">
-              <div style="font-size:14px; color:var(--muted); margin-bottom:4px;">当前线路</div>
+              <div style="font-size:14px; color:var(--muted); margin-bottom:4px;">{{ t('console.currentLine') }}</div>
               <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
           </div>
           
           <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
           <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
-                  <i class="fas fa-folder-open" style="font-size:18px;"></i> 打开管理器
+                  <i class="fas fa-folder-open" style="font-size:18px;"></i> {{ t('console.openManager') }}
               </button>
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
-                  <i class="fas fa-save" style="font-size:18px;"></i> 保存当前线路
+                  <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
               </button>
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
-                  <i class="fas fa-trash-alt" style="font-size:18px;"></i> 重置数据
+                  <i class="fas fa-trash-alt" style="font-size:18px;"></i> {{ t('console.resetData') }}
               </button>
           </div>
           </div>
@@ -1275,13 +1575,13 @@ export default {
         <!-- Service Mode Settings -->
         <div class="card" style="border-left: 6px solid #FF4757; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <div style="color:#FF4757; font-weight:bold; font-size:15px;">运营模式</div>
+                <div style="color:#FF4757; font-weight:bold; font-size:15px;">{{ t('console.serviceMode') }}</div>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:12px; color:var(--muted);">当前模式</span>
+                    <span style="font-size:12px; color:var(--muted);">{{ t('console.currentMode') }}</span>
                     <div style="display:flex; gap:6px;">
-                        <span v-if="pidsState.appData.meta.serviceMode==='express'" style="padding:4px 8px; border-radius:4px; border:1px solid #ffa502; color:#ffa502; font-weight:bold; background:rgba(255,165,2,0.12);">大站车</span>
-                        <span v-else-if="pidsState.appData.meta.serviceMode==='direct'" style="padding:4px 8px; border-radius:4px; border:1px solid #ff4757; color:#ff4757; font-weight:bold; background:rgba(255,71,87,0.12);">直达</span>
-                        <span v-else style="padding:4px 8px; border-radius:4px; border:1px solid var(--divider); color:var(--text); font-weight:bold; background:var(--input-bg);">普通</span>
+                        <span v-if="pidsState.appData.meta.serviceMode==='express'" style="padding:4px 8px; border-radius:4px; border:1px solid #ffa502; color:#ffa502; font-weight:bold; background:rgba(255,165,2,0.12);">{{ t('console.modeExpress') }}</span>
+                        <span v-else-if="pidsState.appData.meta.serviceMode==='direct'" style="padding:4px 8px; border-radius:4px; border:1px solid #ff4757; color:#ff4757; font-weight:bold; background:rgba(255,71,87,0.12);">{{ t('console.modeDirect') }}</span>
+                        <span v-else style="padding:4px 8px; border-radius:4px; border:1px solid var(--divider); color:var(--text); font-weight:bold; background:var(--input-bg);">{{ t('console.modeNormal') }}</span>
                     </div>
                 </div>
             </div>
@@ -1322,7 +1622,7 @@ export default {
             </select>
 
             <div style="margin-bottom:16px;">
-                <div style="font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">运营模式</div>
+                <div style="font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ t('console.serviceMode') }}</div>
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">
                     <button class="btn" :style="{
                         padding:'10px 14px',
@@ -1333,7 +1633,7 @@ export default {
                         boxShadow: pidsState.appData.meta.serviceMode==='normal' ? '0 4px 12px rgba(22,119,255,0.25)' : 'none',
                         fontWeight:'bold',
                         minWidth:'92px'
-                    }" @click="changeServiceMode('normal')">普通</button>
+                    }" @click="changeServiceMode('normal')">{{ t('console.modeNormal') }}</button>
                     <button class="btn" :style="{
                         padding:'10px 14px',
                         borderRadius:'10px',
@@ -1343,7 +1643,7 @@ export default {
                         boxShadow: pidsState.appData.meta.serviceMode==='express' ? '0 4px 12px rgba(255,165,2,0.25)' : 'none',
                         fontWeight:'bold',
                         minWidth:'92px'
-                    }" @click="changeServiceMode('express')">大站车</button>
+                    }" @click="changeServiceMode('express')">{{ t('console.modeExpress') }}</button>
                     <button class="btn" :style="{
                         padding:'10px 14px',
                         borderRadius:'10px',
@@ -1353,10 +1653,10 @@ export default {
                         boxShadow: pidsState.appData.meta.serviceMode==='direct' ? '0 4px 12px rgba(255,71,87,0.25)' : 'none',
                         fontWeight:'bold',
                         minWidth:'92px'
-                    }" @click="changeServiceMode('direct')">直达</button>
+                    }" @click="changeServiceMode('direct')">{{ t('console.modeDirect') }}</button>
                 </div>
                 <div style="font-size:12px; color:var(--muted); margin-top:8px; line-height:1.5;">
-                    普通：全停；大站车：首末及换乘站停；直达：仅首末站。
+                    {{ t('console.modeHint') }}
                 </div>
             </div>
         </div>
@@ -1364,10 +1664,10 @@ export default {
         <!-- Short Turn Settings -->
         <template v-if="!pidsState.appData?.meta?.autoShortTurn">
         <div class="card" style="border-left: 6px solid #5F27CD; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-            <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">短交路</div>
+            <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.shortTurn') }}</div>
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">起点</label>
+                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
                 <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <option :value="-1">无</option>
                     <option v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" :value="i">[{{i+1}}] {{s.name}}</option>
@@ -1375,7 +1675,7 @@ export default {
             </div>
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:16px;">
-                <label style="color:var(--muted);">终点</label>
+                <label style="color:var(--muted);">{{ t('console.shortTurnEnd') }}</label>
                 <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                      <option :value="-1">无</option>
                      <option v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" :value="i">[{{i+1}}] {{s.name}}</option>
@@ -1383,77 +1683,78 @@ export default {
             </div>
             
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px;">
-                <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">清除</button>
-                <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">应用</button>
+                <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
+                <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
             </div>
 
             <!-- 短交路预设管理 -->
-            <div style="font-size:13px; color:var(--muted); margin-bottom:12px; font-weight:bold;">预设管理</div>
+            <div style="font-size:13px; color:var(--muted); margin-bottom:12px; font-weight:bold;">{{ t('console.shortTurnPreset') }}</div>
             <div style="display:flex; gap:8px; margin-bottom:12px;">
                 <button @click="saveShortTurnPreset()" class="btn" style="flex:1; background:#5F27CD; color:white; border:none; padding:8px; border-radius:6px; font-size:13px;">
-                    <i class="fas fa-save"></i> 保存预设
+                    <i class="fas fa-save"></i> {{ t('console.shortTurnSavePreset') }}
                 </button>
                 <button @click="loadShortTurnPresets()" class="btn" style="flex:1; background:#00D2D3; color:white; border:none; padding:8px; border-radius:6px; font-size:13px;">
-                    <i class="fas fa-sync-alt"></i> 刷新
+                    <i class="fas fa-sync-alt"></i> {{ t('console.shortTurnRefresh') }}
                 </button>
             </div>
-            <div v-if="shortTurnPresets.length > 0" style="max-height:200px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:12px;">
-                <div v-for="preset in shortTurnPresets" :key="preset.name" style="display:flex; align-items:center; justify-content:space-between; padding:8px; margin-bottom:4px; background:var(--input-bg); border-radius:4px;">
+            <div 
+                v-if="shortTurnPresets.length > 0" 
+                style="max-height:200px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:12px;"
+                @contextmenu.prevent="showPresetContextMenu($event, null)"
+            >
+                <div v-for="preset in shortTurnPresets" :key="preset.name" @contextmenu.prevent="showPresetContextMenu($event, preset)" style="display:flex; align-items:center; justify-content:space-between; padding:8px; margin-bottom:4px; background:var(--input-bg); border-radius:4px; cursor:pointer;" @click="loadShortTurnPreset(preset.name)">
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:2px;">{{ preset.name }}</div>
                         <div style="font-size:11px; color:var(--muted);">
                             {{ preset.startStationName || ('站点' + (preset.startIdx + 1)) }} → {{ preset.termStationName || ('站点' + (preset.termIdx + 1)) }}
                         </div>
                     </div>
-                    <div style="display:flex; gap:6px;">
-                        <button @click="loadShortTurnPreset(preset.name)" class="btn" style="background:#2ED573; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px;" title="加载">
-                            <i class="fas fa-download"></i>
-                        </button>
-                        <button @click="deleteShortTurnPreset(preset.name)" class="btn" style="background:#FF6B6B; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px;" title="删除">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
                 </div>
             </div>
-            <div v-else style="padding:12px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--divider); border-radius:6px; margin-bottom:12px;">
-                暂无预设，点击"保存预设"保存当前短交路设置
+            <div 
+                v-else 
+                style="padding:12px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--divider); border-radius:6px; margin-bottom:12px; cursor:context-menu;"
+                @contextmenu.prevent="showPresetContextMenu($event, null)"
+            >
+                <!-- 可根据需要新增 i18n 文案 -->
+                暂无预设，点击"保存预设"保存当前短交路设置（右键此处可从分享码导入）
             </div>
         </div>
         </template>
 
         <!-- Through Line Settings -->
         <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-            <div style="color:#9B59B6; font-weight:bold; margin-bottom:12px; font-size:15px;">贯通线路</div>
+            <div style="color:#9B59B6; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.throughTitle') }}</div>
             
             <div style="background:var(--input-bg); border:1px solid var(--divider); border-radius:8px; padding:12px; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div style="font-size:12px; font-weight:bold; color:var(--text);">线路段列表</div>
+                    <div style="font-size:12px; font-weight:bold; color:var(--text);">{{ t('console.throughSegments') }}</div>
                     <button @click="addThroughLineSegment()" class="btn" style="background:#2ED573; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer;" title="添加线路段">
-                        <i class="fas fa-plus"></i> 添加
+                        <i class="fas fa-plus"></i> {{ t('console.throughAdd') }}
                     </button>
                 </div>
                 
                 <div v-if="throughLineSegments.length === 0" style="padding:12px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--divider); border-radius:4px; margin-bottom:8px;">
-                    暂无线路段，点击"添加"添加第一条线路
+                    {{ t('console.throughNoSegments') }}
                 </div>
                 
                 <div v-for="(segment, index) in throughLineSegments" :key="index" style="margin-bottom:12px; padding:10px; background:var(--bg); border:1px solid var(--divider); border-radius:6px;">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
                         <div style="min-width:60px; font-size:12px; font-weight:bold; color:var(--text);">
-                            {{ '线路' + String.fromCharCode('A'.charCodeAt(0) + index) }}
+                            {{ t('console.throughLineLabel') + String.fromCharCode('A'.charCodeAt(0) + index) }}
                         </div>
                         <div style="flex:1; padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:12px; min-height:28px; display:flex; align-items:center;">
-                            {{ segment.lineName || '未选择' }}
+                            {{ segment.lineName || t('console.throughNotSelected') }}
                         </div>
                         <button @click="openLineManagerForSegment(index)" class="btn" style="background:#9B59B6; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:12px; cursor:pointer; white-space:nowrap;" title="从线路管理器选择">
-                            <i class="fas fa-folder-open"></i> 选择
+                            <i class="fas fa-folder-open"></i> {{ t('console.throughSelect') }}
                         </button>
                         <button v-if="throughLineSegments.length > 2" @click="removeThroughLineSegment(index)" class="btn" style="background:#FF6B6B; color:white; border:none; padding:6px 10px; border-radius:4px; font-size:12px; cursor:pointer;" title="删除此段">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
                     <div v-if="index < throughLineSegments.length - 1" style="display:grid; grid-template-columns: 60px 1fr; gap:8px; align-items:center; margin-top:8px;">
-                        <label style="color:var(--muted); font-size:11px;">贯通站点</label>
+                            <label style="color:var(--muted); font-size:11px;">{{ t('console.throughStation') }}</label>
                         <select 
                             v-if="segment.candidateThroughStations && segment.candidateThroughStations.length > 1"
                             v-model="segment.throughStationName" 
@@ -1465,24 +1766,24 @@ export default {
                             </option>
                         </select>
                         <div v-else style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:11px; min-height:24px; display:flex; align-items:center;">
-                            {{ segment.throughStationName || '未检测到' }}
+                            {{ segment.throughStationName || t('console.throughNotDetected') }}
                         </div>
                     </div>
                 </div>
             </div>
 
             <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button @click="clearThroughOperation()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">清除</button>
-                <button @click="applyThroughOperation()" class="btn" style="background:#9B59B6; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">应用</button>
+                <button @click="clearThroughOperation()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
+                <button @click="applyThroughOperation()" class="btn" style="background:#9B59B6; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
             </div>
         </div>
         
         <!-- Autoplay Control -->
         <div class="card" style="border-left: 6px solid #1E90FF; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-          <div style="color:#1E90FF; font-weight:bold; margin-bottom:12px; font-size:15px;">自动播放</div>
+          <div style="color:#1E90FF; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.autoplayTitle') }}</div>
           
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-              <span style="color:var(--text);">自动播放</span>
+              <span style="color:var(--text);">{{ t('console.autoplayEnable') }}</span>
               <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
                   <input type="checkbox" :checked="isPlaying" @change="isPlaying ? stopWithUnlock() : startWithLock(8)" style="opacity:0; width:0; height:0;">
                   <span :style="{
@@ -1499,7 +1800,7 @@ export default {
           </div>
           
           <div style="display:flex; align-items:center; gap:12px;">
-              <span style="color:var(--muted); font-size:14px;">启用间隔:</span>
+              <span style="color:var(--muted); font-size:14px;">{{ t('console.autoplayInterval') }}</span>
               <input type="number" :value="8" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
               <span v-if="isPlaying" style="font-size:12px; color:var(--muted);">({{ nextIn }}s)</span>
           </div>
@@ -1507,6 +1808,62 @@ export default {
         
       </div>
     </div>
+    
+    <!-- 预设右键菜单 - 使用 Teleport 传送到 body，复用站点右键菜单的视觉风格 -->
+    <Teleport to="body">
+        <div 
+            v-if="presetContextMenu.visible"
+            class="station-context-menu"
+            data-preset-context-menu
+            @click.stop
+            @contextmenu.prevent
+            :style="{
+                position: 'fixed',
+                left: presetContextMenu.x + 'px',
+                top: presetContextMenu.y + 'px',
+                zIndex: 9999
+            }"
+        >
+            <!-- 有选中预设时的菜单 -->
+            <template v-if="presetContextMenu.preset">
+                <div class="station-context-menu-item" @click="applyPresetFromMenu()">
+                    <i class="fas fa-download"></i>
+                    {{ t('console.presetLoad') }}
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item" @click="sharePresetOffline()">
+                    <i class="fas fa-share-alt"></i>
+                    {{ t('console.presetShare') }}
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item" @click="importPresetFromShareCode()">
+                    <i class="fas fa-file-import"></i>
+                    {{ t('console.presetImport') }}
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item danger" @click="deletePresetFromMenu()">
+                    <i class="fas fa-trash"></i>
+                    {{ t('console.presetDelete') }}
+                </div>
+            </template>
+            <!-- 没有预设时，仅提供从分享码导入 -->
+            <template v-else>
+                <div class="station-context-menu-item" @click="importPresetFromShareCode()">
+                    <i class="fas fa-file-import"></i>
+                    {{ t('console.presetImport') }}
+                </div>
+            </template>
+        </div>
+    </Teleport>
+    
+    <!-- 点击外部关闭预设右键菜单的遮罩 - 使用 Teleport 传送到 body -->
+    <Teleport to="body">
+        <div 
+            v-if="presetContextMenu.visible"
+            @click="closePresetContextMenu"
+            style="position: fixed; inset: 0; z-index: 9998; background: transparent;"
+        ></div>
+    </Teleport>
     
     <!-- Color Picker Dialog -->
     <ColorPicker 

@@ -1,6 +1,6 @@
 {
   "name": "metro-pids",
-  "version": "1.6.0",
+  "version": "1.6.1-b1",
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -133,7 +133,8 @@
     "electron-updater": "^6.7.3",
     "mica-electron": "^1.5.9",
     "photoviewer": "^3.11.1",
-    "vue": "^3.5.26"
+    "vue": "^3.5.26",
+    "vue-i18n": "^9.14.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.0",

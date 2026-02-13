@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import LineManagerWindow from './components/line-manager/LineManagerWindow.vue'
 import LineManagerTopbar from './components/LineManagerTopbar.js'
 import LineManagerDialog from './components/LineManagerDialog.js'
+import { i18n } from './locales/index.js'
 
 // 应用主题模式（从localStorage读取设置）
 function applyThemeMode() {
@@ -51,6 +52,8 @@ function applyThemeMode() {
 applyThemeMode();
 
 const app = createApp(LineManagerWindow)
+// 安装国际化插件
+app.use(i18n)
 // 全局注册组件以确保可用
 app.component('LineManagerTopbar', LineManagerTopbar)
 app.component('LineManagerDialog', LineManagerDialog)

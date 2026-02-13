@@ -627,7 +627,7 @@ export default {
                 <div ref="routeTextRef" class="admin-route-text" v-html="stationRouteInfo"></div>
                 <div class="admin-header-right">
                     <div class="badge admin-badge-arrdep" :class="state.rt.state === 0 ? 'arr' : 'dep'">
-                        {{ state.rt.state === 0 ? '进站' : '出站' }}
+                        {{ state.rt.state === 0 ? $t('consoleButtons.arrive') : $t('consoleButtons.depart') }}
                     </div>
                     <div class="admin-mode-group">
                         <span class="admin-mode-label">运营模式</span>
@@ -641,19 +641,19 @@ export default {
 
         <!-- Controls -->
         <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px;">
-            <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(-1)"><i class="fas fa-chevron-left"></i> 上一站</button>
-            <button class="btn b-org" style="height:48px; font-size:14px;" @click="setArr()"><i class="fas fa-sign-in-alt"></i> 进站</button>
-            <button class="btn b-blue" style="height:48px; font-size:14px;" @click="setDep()"><i class="fas fa-sign-out-alt"></i> 出站</button>
-            <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(1)">下一站 <i class="fas fa-chevron-right"></i></button>
-            <button class="btn b-red" style="height:48px; font-size:14px;" @click="next()"><i class="fas fa-step-forward"></i> 下一步</button>
+            <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(-1)"><i class="fas fa-chevron-left"></i> {{ $t('consoleButtons.prevStation') }}</button>
+            <button class="btn b-org" style="height:48px; font-size:14px;" @click="setArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
+            <button class="btn b-blue" style="height:48px; font-size:14px;" @click="setDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
+            <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(1)">{{ $t('consoleButtons.nextStation') }} <i class="fas fa-chevron-right"></i></button>
+            <button class="btn b-red" style="height:48px; font-size:14px;" @click="next()"><i class="fas fa-step-forward"></i> {{ $t('consoleButtons.nextStep') }}</button>
         </div>
 
         <!-- Station List Header（与 PIDS 控制台区块标题一致） -->
         <div class="admin-section-header">
-            <div class="admin-section-title">站点管理</div>
+            <div class="admin-section-title">{{ $t('lineManager.stationManager') }}</div>
             <div class="admin-section-hint">
                 <i class="fas fa-info-circle"></i>
-                <span>拖拽站点条可改变顺序，右键站点可进行编辑、删除、复制、剪切、粘贴操作，右键空白处可新建站点</span>
+                <span>{{ $t('lineManager.stationManagerHint') }}</span>
             </div>
         </div>
 
@@ -705,19 +705,19 @@ export default {
                                     gap: '2px'
                                 }">
                                     {{ x.line }}
-                                    <span v-if="x.suspended" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">暂缓</span>
-                                    <span v-else-if="x.exitTransfer" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span>
+                                    <span v-if="x.suspended" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">{{ $t('stationEditor.statusSuspended') }}</span>
+                                    <span v-else-if="x.exitTransfer" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">{{ $t('stationEditor.menuExitTransfer') }}</span>
                                 </span>
                             </div>
                             <!-- 双向上行下行站台停靠-->
                             <div style="margin-top:6px; display:flex; gap:6px; align-items:center;">
-                                <span v-if="st.dock && st.dock === 'up'" class="badge" style="background:#3498db; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">仅上行</span>
-                                <span v-if="st.dock && st.dock === 'down'" class="badge" style="background:#2ecc71; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">仅下行</span>
-                                <span v-if="st.expressStop !== false" class="badge" style="background:#ffa502; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">大站停靠</span>
+                                <span v-if="st.dock && st.dock === 'up'" class="badge" style="background:#3498db; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.dockUp') }}</span>
+                                <span v-if="st.dock && st.dock === 'down'" class="badge" style="background:#2ecc71; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.dockDown') }}</span>
+                                <span v-if="st.expressStop !== false" class="badge" style="background:#ffa502; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.expressLabel') }}</span>
                                 <!-- 不显示 '两向' 标签于控制面板 -->
                             </div>
                         </div>
-                        <span v-if="st.skip" class="badge" style="background:var(--btn-org-bg); font-size:10px; padding:2px 4px; border-radius:2px;">暂缓</span>
+                        <span v-if="st.skip" class="badge" style="background:var(--btn-org-bg); font-size:10px; padding:2px 4px; border-radius:2px;">{{ $t('stationEditor.statusSuspended') }}</span>
                     </div>
                 </div>
             </div>
@@ -747,21 +747,21 @@ export default {
             >
                 <div class="station-context-menu-item" @click="newStationFromMenu()">
                     <i class="fas fa-plus"></i>
-                    新建
+                    {{ $t('lineManager.btnNew') }}
                 </div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-divider"></div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item" @click="editStationFromMenu()">
                     <i class="fas fa-edit"></i>
-                    编辑
+                    {{ $t('lineManager.btnEdit') }}
                 </div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-divider"></div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item" @click="copyStation()">
                     <i class="fas fa-copy"></i>
-                    复制
+                    {{ $t('lineManager.btnCopy') }}
                 </div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item" @click="cutStation()">
                     <i class="fas fa-cut"></i>
-                    剪切
+                    {{ $t('lineManager.btnCut') }}
                 </div>
                 <div 
                     class="station-context-menu-item"
@@ -769,12 +769,12 @@ export default {
                     @click="pasteStation()"
                 >
                     <i class="fas fa-paste"></i>
-                    粘贴
+                    {{ $t('lineManager.btnPaste') }}
                 </div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-divider"></div>
                 <div v-if="stationContextMenu.index >= 0" class="station-context-menu-item danger" @click="deleteStationFromMenu()">
                     <i class="fas fa-trash"></i>
-                    删除
+                    {{ $t('lineManager.btnDelete') }}
                 </div>
             </div>
         </Teleport>
