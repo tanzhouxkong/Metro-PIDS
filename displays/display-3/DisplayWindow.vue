@@ -1,4 +1,80 @@
 <template>
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+  <div id="display-app" ref="rootRef">
+    <div id="scaler">
+      <div class="header">
+        <div class="h-left">
+          <div class="app-title">Metro PIDS</div>
+          <div class="line-info">
+            <div id="d-line-no" class="line-badge">--</div>
+          </div>
+        </div>
+        <div class="h-next">
+          <div class="lbl">
+            下一站
+            <span class="en">Next Station</span>
+          </div>
+          <div class="val">
+            <span id="d-next-st">--</span>
+          </div>
+        </div>
+        <div class="h-door"></div>
+        <div class="h-term">
+          <div class="lbl">
+            终点站
+            <span class="en">Terminal Station</span>
+          </div>
+          <div class="val">
+            --
+            <span class="en">--</span>
+          </div>
+        </div>
+      </div>
+      <div id="rec-tip">REC</div>
+      <div id="d-map" class="btm-map map-l"></div>
+      <div id="arrival-screen">
+        <div class="as-body">
+          <div class="as-panel-left">
+            <div class="as-door-area">
+              <div class="as-door-graphic">
+                <div class="door-arrow l-arrow">
+                  <i class="fas fa-chevron-left"></i>
+                </div>
+                <div class="as-door-img">
+                  <i class="fas fa-door-open"></i>
+                </div>
+                <div class="door-arrow r-arrow">
+                  <i class="fas fa-chevron-right"></i>
+                </div>
+              </div>
+              <div class="as-door-text">
+                <div id="as-door-msg-cn" class="as-door-t-cn">左侧开门</div>
+                <div id="as-door-msg-en" class="as-door-t-en">Left side doors open</div>
+              </div>
+            </div>
+            <div class="as-car-area">
+              <div class="as-car-exits"></div>
+            </div>
+          </div>
+          <div class="as-panel-middle">
+            <div class="as-car-badge">
+              <div class="as-car-label">当前车厢</div>
+              <div id="as-car-no" class="as-car-no">--</div>
+              <div class="as-car-label-en">Car No.</div>
+            </div>
+          </div>
+            <div class="as-panel-right">
+              <div class="as-map-track"></div>
+              <div class="as-map-nodes"></div>
+            </div>
+        </div>
+      </div>
+      <div id="welcome-end-screen">
+        <div class="welcome-end-body"></div>
+=======
+>>>>>>> Stashed changes
   <div id="display-app" ref="rootRef" class="exit-indicator">
     <!-- 左侧信息面板 40% -->
     <div class="panel-left">
@@ -96,6 +172,10 @@
           <div class="guide-cn" id="guide-cn">本侧开门</div>
           <div class="guide-en" id="guide-en">Please exit from this door</div>
         </div>
+<<<<<<< Updated upstream
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
       </div>
     </div>
   </div>
@@ -103,7 +183,16 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
+<<<<<<< Updated upstream
 import { initExitIndicator } from './displayWindowLogic.js';
+=======
+<<<<<<< HEAD
+// 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
+import { initDisplayWindow } from './displayWindowLogic.js';
+=======
+import { initExitIndicator } from './displayWindowLogic.js';
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
 
 const rootRef = ref(null);
 let cleanup = () => {};
@@ -119,6 +208,21 @@ if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.pl
 }
 
 onMounted(() => {
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+  cleanup = initDisplayWindow(rootRef.value);
+});
+
+onBeforeUnmount(() => {
+  if (cleanup) {
+  cleanup();
+    cleanup = null;
+  }
+});
+</script>
+=======
+>>>>>>> Stashed changes
   cleanup = initExitIndicator(rootRef.value) || (() => {});
 });
 
@@ -459,3 +563,7 @@ onBeforeUnmount(() => {
   margin-top: 4px;
 }
 </style>
+<<<<<<< Updated upstream
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes

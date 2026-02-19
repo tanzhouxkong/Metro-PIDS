@@ -29,6 +29,15 @@ export function useController() {
                     // 显示器1/3：布局模式
                     display1LayoutMode: settings?.display?.displays?.['display-1']?.layoutMode ?? 'linear',
                     display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type',
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+                    // 显示器1：壁纸（到站/结束页）
+                    display1WallpaperDataUrl: settings?.display?.displays?.['display-1']?.wallpaperDataUrl ?? '',
+                    display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
                     // 显示器3：出站页面显示时长（毫秒）
                     display3DepartDuration: settings?.display?.display3DepartDuration ?? 8000
                 }

@@ -107,6 +107,7 @@ const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot';
 // - ?d3_showXferCheck=0|1        是否显示右上角⚠换乘检测提示
 // =========================
 const DISPLAY3_DEV_FLAGS_KEY = 'metro-pids:display3:devFlags';
+const DISPLAY1_WALLPAPER_KEY = 'metro-pids:display1:wallpaper';
 
 function _parseBoolLike(v) {
   if (v === null || v === undefined) return null;
@@ -333,6 +334,32 @@ const displayStyleSheet = `
   -webkit-app-region: no-drag;
   pointer-events: none;
 }
+
+/* display-1 wallpaper rendering (arrival + welcome-end only) */
+#display-app.display-1.display1-wallpaper-enabled #arrival-screen,
+#display-app.display-1.display1-wallpaper-enabled #welcome-end-screen {
+  position: relative;
+}
+#display-app.display-1.display1-wallpaper-enabled #arrival-screen::before,
+#display-app.display-1.display1-wallpaper-enabled #welcome-end-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--display1-wallpaper-url, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--display1-wallpaper-opacity, 0.35);
+  z-index: 0;
+  pointer-events: none;
+}
+#display-app.display-1.display1-wallpaper-enabled #arrival-screen > *,
+#display-app.display-1.display1-wallpaper-enabled #welcome-end-screen > * {
+  position: relative;
+  z-index: 1;
+}
+#display-app.display-1.display1-wallpaper-enabled .as-body { background: transparent; }
+#display-app.display-1.display1-wallpaper-enabled .welcome-end-body { background: transparent; }
 /* controls container visibility helper */
 #display-window-controls { transition: opacity 160ms ease, transform 160ms ease; opacity: 0; transform: translateY(-6px); pointer-events: none; }
 #display-window-controls.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
@@ -463,7 +490,7 @@ const displayStyleSheet = `
 }
 #display-app .h-next .lbl .en {
     font-size: 12px;
-    font-weight: normal;
+    font-weight: bold;
     opacity: 0.9;
     display: block;
     color: #666;
@@ -523,7 +550,7 @@ const displayStyleSheet = `
 }
 #display-app .h-term .lbl .en {
     font-size: 12px;
-    font-weight: normal;
+    font-weight: bold;
     display: block;
     color: var(--contrast-color);
     opacity: 0.8;
@@ -664,7 +691,7 @@ const displayStyleSheet = `
 }
 #display-app .node .n-txt .en {
     font-size: 12px;
-    font-weight: normal;
+    font-weight: bold;
     color: #666;
     margin-top: 2px;
 }
@@ -843,6 +870,17 @@ const displayStyleSheet = `
   box-sizing: content-box;
   position: absolute;
 }
+/* 直线模式 #d-map：站名容器内部「上中文、下英文」，整体贴近圆点
+   根治：align-items: flex-start 使中英文第一个字同高，且整块在圆点下方，不会跑到圆点上面 */
+#display-app #d-map .l-node .info-btm {
+  justify-content: flex-start;
+  align-items: flex-start;   /* 必须 flex-start：中英文顶部对齐，长英文不会顶到圆点上方 */
+  min-height: auto;
+}
+/* 直线模式 #d-map：确保中文和英文顶部对齐 */
+#display-app #d-map .l-node .info-btm .name {
+  margin-bottom: 0;
+}
 #display-app .l-node .info-btm .name {
   font-size: 26px;
   font-weight: bold;
@@ -855,12 +893,14 @@ const displayStyleSheet = `
   transition: 0.3s;
 }
 #display-app .l-node .info-btm .en {
-  font-size: 16px;
+  font-size: 14px;
   color: #666;
-  font-weight: normal;
+  font-weight: bold;
   writing-mode: vertical-rl;
   text-orientation: sideways;
   margin: 0;
+  /* 直线模式使用 JS 控制 <br> 换行，这里禁止浏览器自动换行；C 型/到达页仍然受自身布局控制 */
+  white-space: nowrap;
   transition: 0.3s;
 }
 #display-app .l-node .info-top .defer {
@@ -1108,6 +1148,7 @@ const displayStyleSheet = `
 }
 #display-app .as-door-t-en {
     font-size: 18px;
+    font-weight: bold;
     color: #666;
 }
 #display-app .as-car-area {
@@ -1299,6 +1340,7 @@ const displayStyleSheet = `
 #display-app.display-3 #d-map .c-type-node .info-btm .en {
     font-size: 10px;
     color: #666;
+    font-weight: bold;
     writing-mode: horizontal-tb;
     text-orientation: mixed;
     text-align: right;
@@ -1398,6 +1440,7 @@ const displayStyleSheet = `
     text-orientation: mixed;
     font-size: 14px;
     color: #666;
+    font-weight: bold;
     text-align: right;
     white-space: normal;
     line-height: 1.1;
@@ -1469,6 +1512,7 @@ const displayStyleSheet = `
 }
 #display-app .as-m-en {
     font-size: 12px;
+    font-weight: bold;
     color: #999;
     text-align: center;
 }
@@ -1502,6 +1546,46 @@ function injectDisplayStyles() {
   style.id = 'display-window-styles';
   style.textContent = displayStyleSheet;
   document.head.appendChild(style);
+}
+
+function loadDisplay1WallpaperState() {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(DISPLAY1_WALLPAPER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const dataUrl = typeof parsed.dataUrl === 'string' ? parsed.dataUrl : '';
+    const opacity = Number.isFinite(parsed.opacity) ? parsed.opacity : parseFloat(parsed.opacity);
+    const normalizedOpacity = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0.35;
+    return { dataUrl, opacity: normalizedOpacity };
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveDisplay1WallpaperState(state) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(DISPLAY1_WALLPAPER_KEY, JSON.stringify(state || {}));
+  } catch (e) {
+    // ignore (quota etc.)
+  }
+}
+
+function applyDisplay1Wallpaper(root, state) {
+  if (!root) return;
+  const dataUrl = state && typeof state.dataUrl === 'string' ? state.dataUrl : '';
+  const opacity = state && Number.isFinite(state.opacity) ? state.opacity : 0.35;
+
+  if (dataUrl && dataUrl.trim()) {
+    root.style.setProperty('--display1-wallpaper-url', `url("${dataUrl}")`);
+    root.classList.add('display1-wallpaper-enabled');
+  } else {
+    root.style.setProperty('--display1-wallpaper-url', 'none');
+    root.classList.remove('display1-wallpaper-enabled');
+  }
+  root.style.setProperty('--display1-wallpaper-opacity', String(Math.max(0, Math.min(1, opacity))));
 }
 
 function normalizeKeyNameGlobal(name) {
@@ -1662,6 +1746,50 @@ function getNextValidSt(currentIdx, step, appData) {
   return nextIdx;
 }
 
+function isStopAllowedAtIndex(idx, appData) {
+  if (!appData) return false;
+  const stations = appData.stations || [];
+  const len = stations.length;
+  const st = stations[idx];
+  if (!st) return false;
+  // 暂缓 / 运营模式跳过
+  if (isSkippedByService(st, idx, len, appData.meta)) return false;
+  // 站台上下行限制：方向不匹配视为不可停靠
+  const dirType = appData && appData.meta ? appData.meta.dirType : null;
+  if (st.dock && st.dock !== 'both') {
+    if (st.dock === 'up' && !(dirType === 'up' || dirType === 'outer')) return false;
+    if (st.dock === 'down' && !(dirType === 'down' || dirType === 'inner')) return false;
+  }
+  return true;
+}
+
+// 显示端容错：当 rt.idx 指向暂缓/不可停靠站时，选择一个“可停靠”的站用于渲染（不改动主控端状态）
+function getEffectiveStopIdxForDisplay(currentIdx, appData) {
+  const stations = (appData && Array.isArray(appData.stations)) ? appData.stations : [];
+  const len = stations.length;
+  if (!len) return currentIdx;
+  let idx = Number.isFinite(currentIdx) ? currentIdx : parseInt(currentIdx);
+  if (!Number.isFinite(idx)) idx = 0;
+  idx = Math.max(0, Math.min(len - 1, idx));
+
+  if (isStopAllowedAtIndex(idx, appData)) return idx;
+
+  const meta = appData.meta || {};
+  const preferStep = (meta.dirType === 'up' || meta.dirType === 'outer') ? 1 : -1;
+
+  // 优先按行车方向找下一可停靠站；若到边界则反向找
+  let cand = getNextValidSt(idx, preferStep, appData);
+  if (cand !== idx && isStopAllowedAtIndex(cand, appData)) return cand;
+  cand = getNextValidSt(idx, -preferStep, appData);
+  if (cand !== idx && isStopAllowedAtIndex(cand, appData)) return cand;
+
+  // 极端兜底：整条线扫描一个可停靠站
+  for (let i = 0; i < len; i++) {
+    if (isStopAllowedAtIndex(i, appData)) return i;
+  }
+  return idx;
+}
+
 function mkNode(st, i, mode, appData, rtState) {
   const node = document.createElement('div');
   node.className = mode === 'loop' ? 'node' : 'l-node';
@@ -1698,8 +1826,8 @@ function mkNode(st, i, mode, appData, rtState) {
           xferHTML += `<span class="x-tag suspended" style="background:#ccc; color:#666; border:1px solid #999;">${label}<span class="sub">暂缓</span></span>`;
         }
       } else if (x.exitTransfer) {
-        // 出站换乘：到站页面(state === 0)显示“出站”子标签；下一站页面(state === 1)仅显示普通换乘标签
-        if (devFlags.showExitTransfer && state === 0) {
+        // 出站换乘：支持在下一站页面显示“出站”子标签
+        if (devFlags.showExitTransfer) {
           xferHTML += `<span class="x-tag exit-transfer" style="background:${x.color}; display:inline-flex; align-items:center; gap:2px;">${label}<span class="sub" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
         } else {
           xferHTML += `<span class="x-tag" style="background:${x.color}">${label}</span>`;
@@ -1767,7 +1895,7 @@ function mkNode(st, i, mode, appData, rtState) {
             tagHTML = `<span class="x-tag suspended" style="background:#f0f0f0 !important; color:#999 !important; border:1px solid #ccc; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:inline-flex; align-items:center; gap:2px; box-shadow:none; writing-mode:horizontal-tb; direction:ltr;">${label}<span class="sub" style="font-size:${subFontSize}px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; writing-mode:horizontal-tb; direction:ltr;">暂缓</span></span>`;
           }
         } else if (x.exitTransfer) {
-          if (devFlags.showExitTransfer && state === 0) {
+          if (devFlags.showExitTransfer) {
             const subFontSize = Math.max(7, fontSize - 2);
             tagHTML = `<span class="x-tag exit-transfer" style="background:${x.color}; color:${x.textColor || '#fff'}; font-size:${fontSize}px; padding:${padding}; border-radius:${borderRadius}px; display:flex; align-items:center; gap:2px; box-shadow:2px 3px 6px rgba(0,0,0,0.35) !important;">${label}<span class="sub" style="font-size:${subFontSize}px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">出站</span></span>`;
           } else {
@@ -1801,7 +1929,7 @@ function mkNode(st, i, mode, appData, rtState) {
             tagInfos.push({ text: label, type: 'xfer-suspended', bgColor: '#ccc', textColor: '#666', hasSub: true });
           }
         } else if (x.exitTransfer) {
-          if (devFlags.showExitTransfer && state === 0) {
+          if (devFlags.showExitTransfer) {
             tagInfos.push({ text: label, type: 'xfer-exit', bgColor: x.color, textColor: '#fff', hasSub: true, subText: '出站' });
           } else {
             tagInfos.push({ text: label, type: 'xfer', bgColor: x.color, textColor: '#fff', hasSub: false });
@@ -1871,7 +1999,7 @@ function mkNode(st, i, mode, appData, rtState) {
       const rows = [];
       tags.forEach(tag => {
         // 允许标签的阴影完整显示，不再裁切
-        rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:90px; overflow:visible;">${tag.html}</div>`);
+        rows.push(`<div style="display:flex; gap:3px; justify-content:center; width:100%; max-width:84px; overflow:visible;">${tag.html}</div>`);
       });
       tagsContent = rows.join('');
     }
@@ -1888,6 +2016,73 @@ function mkNode(st, i, mode, appData, rtState) {
     `;
   }
   return node;
+}
+
+// 直线模式：下一站页面英文站名换行逻辑（竖排，但换行由 JS 控制）
+// 仅在 #d-map 中使用，避免浏览器自动根据宽度随意断行
+// 要求：与 C 型布局/到达页使用同一套“按字符数+单词”拆行算法
+function applyLinearEnglishWrap(node) {
+  if (!node) return;
+  const infoBtm = node.querySelector('.info-btm');
+  if (!infoBtm) return;
+  const enEl = infoBtm.querySelector('.en');
+  if (!enEl) return;
+
+  // 直接基于当前 HTML 内容做拆分（已包含颜色标记等）
+  const rawHtml = (enEl.innerHTML || '').replace(/\u00A0/g, ' ');
+  const plain = rawHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!plain) return;
+
+  // 按单词拆分，控制每行大致字符数，生成显式 <br>
+  // 核心逻辑与 C 型布局/到达页英文换行一致：maxCharsPerLine = 24
+  const words = plain.split(' ');
+  const maxCharsPerLine = 40;
+  const lines = [];
+  let line = '';
+
+  for (const w of words) {
+    const next = line ? line + ' ' + w : w;
+    if (next.length <= maxCharsPerLine) {
+      line = next;
+    } else {
+      if (line) lines.push(line);
+      line = w;
+    }
+  }
+  if (line) lines.push(line);
+
+  // 用显式 <br> 替换原内容，让竖排下的英文按我们给的行切分
+  enEl.innerHTML = lines.length ? lines.join('<br>') : rawHtml;
+}
+
+// 直线模式：通过 JS 精确控制站名块相对圆点的垂直位置
+// 目标：中文和英文的第一个字都在同一高度，都在圆点下方
+function applyLinearNamePositionForBox(box) {
+  if (!box || !box.querySelectorAll) return;
+  // 用 rAF 确保节点已经完成布局，可以正确拿到尺寸
+  requestAnimationFrame(() => {
+    const nodes = box.querySelectorAll('.l-node');
+    nodes.forEach((node) => {
+      const infoBtm = node.querySelector('.info-btm');
+      const dot = node.querySelector('.dot');
+      const nameEl = infoBtm && infoBtm.querySelector ? infoBtm.querySelector('.name') : null;
+      const enEl = infoBtm && infoBtm.querySelector ? infoBtm.querySelector('.en') : null;
+      if (!infoBtm || !dot || !nameEl) return;
+
+      const nodeRect = node.getBoundingClientRect();
+      const dotRect = dot.getBoundingClientRect();
+
+      // 期望：中文和英文的第一个字都在圆点下方一个固定 gap（同一高度）
+      const gap = 4; // px，越小越靠近圆点
+      const desiredTopInNode = dotRect.bottom - nodeRect.top + gap;
+
+      // 直接设置 infoBtm 的顶部位置，确保 name 和 en 的顶部都在同一高度
+      // 因为 infoBtm 是 flex column，justify-content: flex-start，所以 name 和 en 都会从顶部开始
+      infoBtm.style.top = `${desiredTopInNode}px`;
+      // 水平仍然以圆点中心为参考（不改变 X 方向）
+      infoBtm.style.transform = 'translateX(-50%)';
+    });
+  });
 }
 
 // 检测运行环境
@@ -2005,12 +2200,9 @@ function createWarningMessage(root) {
   return warning;
 }
 
-// 创建状态栏（窗口控制按钮 + 直线/C型布局切换）
+// 创建状态栏（窗口控制按钮）
 function createStatusBar(root, options) {
   const opts = options || {};
-  const getLayoutMode = opts.getLayoutMode || (() => 'linear');
-  const onLayoutToggle = opts.onLayoutToggle || (() => {});
-  const registerRefresh = opts.registerLayoutRefresh || (() => {});
 
   // 检查是否已存在状态栏
   const existing = root.querySelector('#display-statusbar');
@@ -2039,23 +2231,7 @@ function createStatusBar(root, options) {
   appName.style.cursor = 'move';
   inner.appendChild(appName);
 
-  // 直线/C型布局切换按钮
-  const layoutToggle = document.createElement('button');
-  layoutToggle.type = 'button';
-  layoutToggle.className = 'layout-toggle-btn';
-  layoutToggle.style.cssText = 'margin-left:12px;padding:4px 10px;font-size:12px;border:1px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.1);color:#fff;border-radius:4px;cursor:pointer;webkit-app-region:no-drag;pointer-events:auto;';
-  layoutToggle.title = '切换线路图布局：直线 ⇄ C型';
-  const updateLayoutBtnText = () => {
-    layoutToggle.textContent = getLayoutMode() === 'c-type' ? '线路图: C型' : '线路图: 直线';
-  };
-  updateLayoutBtnText();
-  if (typeof registerRefresh === 'function') registerRefresh(updateLayoutBtnText);
-  layoutToggle.onclick = (e) => {
-    e.stopPropagation();
-    onLayoutToggle();
-    updateLayoutBtnText();
-  };
-  inner.appendChild(layoutToggle);
+  // 直线/C型布局切换按钮已移除
   
   // 检查是否在 Electron 环境中
   const isElectron = typeof window !== 'undefined' && window.electronAPI;
@@ -2322,6 +2498,16 @@ function updateXferCheck(xferCheckElement, appData, rtState) {
 export function initDisplayWindow(rootElement) {
   const root = rootElement || document.getElementById('display-app');
   if (!root) return () => {};
+
+  let display1WallpaperState = null;
+  try {
+    const pathname = window.location && window.location.pathname ? window.location.pathname : '';
+    if (typeof pathname === 'string' && pathname.includes('/display-1/')) {
+      root.classList.add('display-1');
+    }
+  } catch (e) {
+    // ignore
+  }
 
   // 布局模式：直线(linear) 或 C型(c-type)，可由 URL 参数 ?layout= 指定，也可通过状态栏按钮切换
   let layoutMode = 'linear';
@@ -2688,16 +2874,14 @@ export function initDisplayWindow(rootElement) {
     }
   };
 
-  // 主应用从设置下发布局时刷新状态栏按钮文字
-  let refreshLayoutBtn = () => {};
-  // 创建状态栏（含直线/C型切换按钮）
-  createStatusBar(root, {
-    getLayoutMode: () => layoutMode,
-    onLayoutToggle: () => {
-      setLayoutModeAndRedraw(layoutMode === 'c-type' ? 'linear' : 'c-type', renderDisp);
-    },
-    registerLayoutRefresh: (fn) => { refreshLayoutBtn = fn || (() => {}); }
-  });
+  // 创建状态栏
+  createStatusBar(root);
+
+  // display-1：壁纸（由主程序“编辑显示端”下发；本地 localStorage 作为兜底缓存）
+  if (root.classList.contains('display-1')) {
+    display1WallpaperState = loadDisplay1WallpaperState() || { dataUrl: '', opacity: 0.35 };
+    applyDisplay1Wallpaper(root, display1WallpaperState);
+  }
 
   const renderNormalScreen = (sts, meta) => {
     const lineEl = locateId('d-line-no');
@@ -3291,7 +3475,8 @@ export function initDisplayWindow(rootElement) {
   };
 
   const renderArrivalScreen = (sts, meta) => {
-    const st = sts[rt.idx];
+    const effectiveIdx = getEffectiveStopIdxForDisplay(rt.idx, appData);
+    const st = sts[effectiveIdx];
     if (!st) return;
     
     // 更新顶栏中间的到达站显示
@@ -3303,9 +3488,9 @@ export function initDisplayWindow(rootElement) {
       if (meta.mode !== 'loop') {
         let nextIdx;
         if (meta.dirType === 'up' || meta.dirType === 'outer') {
-          nextIdx = getNextValidSt(rt.idx, 1, appData);
+          nextIdx = getNextValidSt(effectiveIdx, 1, appData);
         } else {
-          nextIdx = getNextValidSt(rt.idx, -1, appData);
+          nextIdx = getNextValidSt(effectiveIdx, -1, appData);
         }
         // 检查是否是终点站
         // 1. 如果 getNextValidSt 返回当前索引，说明已到达边界
@@ -3331,7 +3516,7 @@ export function initDisplayWindow(rootElement) {
           }
         }
         
-        isTerminal = (nextIdx === rt.idx) || (terminalIdx !== -1 && rt.idx === terminalIdx);
+        isTerminal = (nextIdx === effectiveIdx) || (terminalIdx !== -1 && effectiveIdx === terminalIdx);
       }
       
       if (isTerminal) {
@@ -3438,7 +3623,7 @@ export function initDisplayWindow(rootElement) {
       try {
         const startIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx) : 0;
         const termIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx) : sts.length - 1;
-        const atTerminalForDir = (meta.dirType === 'up' || meta.dirType === 'outer') ? (rt.idx === termIdx) : (rt.idx === startIdx);
+        const atTerminalForDir = (meta.dirType === 'up' || meta.dirType === 'outer') ? (effectiveIdx === termIdx) : (effectiveIdx === startIdx);
         if (st.turnback && st.turnback !== 'none' && atTerminalForDir) {
           effectiveDoor = invertDoor(effectiveDoor);
         }
@@ -3540,7 +3725,7 @@ export function initDisplayWindow(rootElement) {
       return next;
     };
     const displaySts = [];
-    const curr = rt.idx;
+    const curr = effectiveIdx;
     
     // 根据系统缩放比例和分辨率计算最大显示站点数
     // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%, 3.0 = 300%）
@@ -4322,6 +4507,11 @@ export function initDisplayWindow(rootElement) {
     trackContainer.style.zIndex = '0';
     const total = sts.length;
     
+    // 创建位置映射：当站点数量少于27站时，将终点站映射到第27站的位置
+    // 这个映射将在后面根据27站的值来填充
+    let positionMap = null;
+    const BASE_STATION_COUNT = 27; // 固定使用27站作为基准
+    
     // 根据系统缩放比例和分辨率计算最大位置数
     // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%）
     const scaleFactor = window.devicePixelRatio || 1.0;
@@ -4383,11 +4573,11 @@ export function initDisplayWindow(rootElement) {
       }
     }
     
-    // 检查是否启用"显示全部站点"功能
-    // 如果 meta.showAllStations 为 true，则无论站点数量多少都使用 flexbox 布局
-    const showAllStations = (m.showAllStations === true);
-    const MAX_POSITIONS = showAllStations ? Infinity : targetMaxPositions;
-    let spacing = 90;
+    // showAllStations 已废弃：不再支持“显示全部站点”
+    const showAllStations = false;
+    const MAX_POSITIONS = targetMaxPositions;
+    // 直线模式“站间距（含圆点/箭头视觉密度）”基准：越小越紧凑
+    let spacing = 70;
     
     // 计算渐变位置：如果站点数量少于或等于MAX_POSITIONS，使用flexbox布局；否则使用原始计算
     let pStart, pEnd, pCurr;
@@ -5176,41 +5366,94 @@ export function initDisplayWindow(rootElement) {
     // 如果站点数量少于或等于MAX_POSITIONS，使用flexbox均匀分布
     if (total <= MAX_POSITIONS) {
       // 计算动态缩放比例（仅在启用 showAllStations 时）
+      // 注意：当站点数量少于MAX_POSITIONS时，不应该缩小站间距，应该保持正常站间距
+      // 终点站会映射到最后一个位置，站点均匀分布在起点站和终点站之间
       let scaleRatio = 1.0;
-      let nodeWidth = 90; // 默认节点宽度
+      let nodeWidth = 70; // 默认节点宽度（同时作为站点中心间距）
       let nameFontSize = 26; // 默认站点名称字体大小
       let enFontSize = 16; // 默认英文名称字体大小
-      let trackHeight = 18; // 默认线路条高度
-      let dotSize = 30; // 默认圆点大小（内径）
-      let dotBorder = 5; // 默认圆点边框宽度
-      let arrowFontSize = 24; // 默认箭头字体大小
-      let arrowSpacing = 20; // 默认箭头间距
+      let trackHeight = 16; // 默认线路条高度
+      let dotSize = 28; // 默认圆点大小（内径）
+      let dotBorder = 4; // 默认圆点边框宽度
+      let arrowFontSize = 22; // 默认箭头字体大小
+      let arrowSpacing = 18; // 默认箭头间距
       
-      if (showAllStations && total > 0) {
+      // 只有当站点数量大于MAX_POSITIONS时才缩小站间距
+      // 当站点数量少于MAX_POSITIONS时，保持正常站间距，终点站会映射到最后一个位置
+      if (showAllStations && total > MAX_POSITIONS) {
         // 基准值：假设 21 个站点时使用正常大小
         const baseStationCount = 21;
         // 计算缩放比例：站点越多，缩放越小，但最小不低于 0.4
         scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / total));
         
         // 根据缩放比例调整各项尺寸
-        nodeWidth = Math.max(36, Math.round(90 * scaleRatio)); // 最小宽度 36px
+        nodeWidth = Math.max(36, Math.round(70 * scaleRatio)); // 最小宽度 36px
         nameFontSize = Math.max(10, Math.round(26 * scaleRatio)); // 最小字体 10px
         enFontSize = Math.max(6, Math.round(16 * scaleRatio)); // 最小字体 6px
-        trackHeight = Math.max(8, Math.round(18 * scaleRatio)); // 最小高度 8px
-        dotSize = Math.max(12, Math.round(30 * scaleRatio)); // 最小圆点大小 12px
-        dotBorder = Math.max(2, Math.round(5 * scaleRatio)); // 最小边框 2px
-        arrowFontSize = Math.max(10, Math.round(24 * scaleRatio)); // 最小箭头字体 10px
-        arrowSpacing = Math.max(8, Math.round(20 * scaleRatio)); // 最小箭头间距 8px
+        trackHeight = Math.max(8, Math.round(16 * scaleRatio)); // 最小高度 8px
+        dotSize = Math.max(12, Math.round(28 * scaleRatio)); // 最小圆点大小 12px
+        dotBorder = Math.max(2, Math.round(4 * scaleRatio)); // 最小边框 2px
+        arrowFontSize = Math.max(10, Math.round(22 * scaleRatio)); // 最小箭头字体 10px
+        arrowSpacing = Math.max(8, Math.round(18 * scaleRatio)); // 最小箭头间距 8px
       }
       
       box.style.position = 'relative'; // 确保箭头绝对定位的基准
       box.style.display = 'flex';
-      box.style.justifyContent = 'space-between';
+      // 直线模式：固定站间距（不再把站点撑满整宽），整体居中
+      box.style.justifyContent = 'center';
       box.style.alignItems = 'center';
       box.style.width = '100%';
       box.style.height = '100%';
       // 直线模式：先插入线路条容器（在节点下方/背后），再插入站点节点
       box.appendChild(trackContainer);
+      
+      // 固定站间距布局：计算每个站点中心（整体居中）
+      // 如果站点数量少于27站，使用27站作为基准来计算总宽度，但站点均匀分布
+      // 如果站点数量大于等于27站，使用实际站点数量
+      const boxWidth = 1900; // box的实际宽度（scaler宽度）
+      const stationStep = nodeWidth; // 站点中心间距（正常站间距，不缩小）
+      // 如果站点数量少于27站，使用27站作为基准；否则使用实际站点数量
+      const effectiveStationCount = total < BASE_STATION_COUNT ? BASE_STATION_COUNT : total;
+      const groupWidth = effectiveStationCount * stationStep;
+      const groupLeft = Math.max(0, (boxWidth - groupWidth) / 2);
+      
+      // 填充位置映射：当站点数量少于27站时，将终点站映射到第27站的位置
+      // 使用精确的浮点数计算，确保站间距均匀分布
+      if (total < BASE_STATION_COUNT) {
+        const endPosition = BASE_STATION_COUNT - 1; // 终点站位置索引（第27站的位置，索引26）
+        
+        // 计算起点站和终点站的实际中心位置（基于固定站间距）
+        const startCenter = groupLeft + (0 * stationStep) + stationStep / 2;
+        const endCenter = groupLeft + (endPosition * stationStep) + stationStep / 2;
+        const availableWidth = endCenter - startCenter;
+        
+        // 计算每个站点之间的均匀间距
+        const spacing = total > 1 ? availableWidth / (total - 1) : 0;
+        
+        positionMap = new Map();
+        if (total > 0) {
+          for (let i = 0; i < total; i++) {
+            const realIdx = rangeStart + i;
+            // 计算站点应该显示的实际中心位置
+            const actualCenter = startCenter + (i * spacing);
+            // 存储实际像素位置（相对于groupLeft的偏移）
+            positionMap.set(realIdx, actualCenter - groupLeft);
+          }
+        }
+      }
+      
+      const getStationCenter = (idx) => {
+        // 如果站点数量少于27站，使用位置映射来获取站点的显示位置
+        // 位置映射中存储的是实际像素位置（相对于groupLeft），确保站间距均匀
+        if (positionMap && positionMap.has(idx)) {
+          const offset = positionMap.get(idx);
+          return groupLeft + offset;
+        } else {
+          // 如果没有位置映射，使用原始逻辑（站点数量>=27站的情况）
+          return groupLeft + (idx * stationStep) + stationStep / 2;
+        }
+      };
+      
       // 性能优化：使用 DocumentFragment 批量插入节点，减少重排
       const fragment = document.createDocumentFragment();
       sts.forEach((st, i) => {
@@ -5218,13 +5461,17 @@ export function initDisplayWindow(rootElement) {
         const dot = node.querySelector('.dot');
         const name = node.querySelector('.name');
         const en = node.querySelector('.en');
+
+        // 仅在直线模式主线路图 (#d-map) 中，对英文站名/站名位置应用 JS 控制逻辑
+        applyLinearEnglishWrap(node);
         
-        // 应用动态缩放
+        // 固定站间距：节点宽度始终跟随 nodeWidth（兼容 showAllStations 的缩放）
+        node.style.width = nodeWidth + 'px';
+        node.style.minWidth = nodeWidth + 'px';
+        node.style.maxWidth = nodeWidth + 'px';
+
+        // 应用动态缩放（仅字体/圆点/标签等按比例缩放）
         if (showAllStations && scaleRatio < 1.0) {
-          // 调整节点宽度
-          node.style.width = nodeWidth + 'px';
-          node.style.minWidth = nodeWidth + 'px';
-          node.style.maxWidth = nodeWidth + 'px';
           
           // 调整站点名称字体大小
           if (name) {
@@ -5308,9 +5555,12 @@ export function initDisplayWindow(rootElement) {
           });
         }
         
-        // 使用flex布局，不需要绝对定位
-        node.style.position = 'relative';
-        node.style.flexShrink = '0';
+        // 固定站间距：使用绝对定位，基于站间距计算位置
+        node.style.position = 'absolute';
+        const stationCenter = getStationCenter(i);
+        node.style.left = (stationCenter - nodeWidth / 2) + 'px';
+        node.style.top = '50%';
+        node.style.transform = 'translateY(-50%)';
         
         if (i < rangeStart || i > rangeEnd) {
           // 非运营区域使用已过站样式
@@ -5346,8 +5596,8 @@ export function initDisplayWindow(rootElement) {
           if (st.skip && dot) {
             dot.style.background = '#fff';
             dot.style.borderColor = '#ccc';
-            dot.style.width = '30px';
-            dot.style.height = '30px';
+            dot.style.width = dotSize + 'px';
+            dot.style.height = dotSize + 'px';
           } else if (i === targetIdx && dot) {
             // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
             const accent = computeArrowAccentColor(m.themeColor || '#00b894');
@@ -5389,9 +5639,11 @@ export function initDisplayWindow(rootElement) {
       });
       // 一次性插入所有节点，只触发一次重排
       box.appendChild(fragment);
+
+      // 节点插入后，根据圆点位置精确调整 info-btm 垂直位置（保证第一个字更贴近圆点）
+      applyLinearNamePositionForBox(box);
       
       // 设置track容器宽度
-      const boxWidth = 1900; // box的实际宽度（scaler宽度）
       const trackWidth = boxWidth; // track宽度与box宽度一致
       trackContainer.style.width = trackWidth + 'px';
       
@@ -5409,21 +5661,7 @@ export function initDisplayWindow(rootElement) {
         });
       }
       
-      // 计算站点的实际中心位置（考虑节点宽度）
-      // 使用space-between时，第一个节点的左边缘在0，最后一个节点的右边缘在boxWidth
-      // 第一个站点的中心在 nodeWidth/2，最后一个站点的中心在 boxWidth - nodeWidth/2
-      const firstNodeCenter = nodeWidth / 2;
-      const lastNodeCenter = boxWidth - nodeWidth / 2;
-      
-      // 辅助函数：计算站点的实际中心位置
-      const getStationCenter = (idx) => {
-        if (idx === 0) return firstNodeCenter;
-        if (idx === total - 1) return lastNodeCenter;
-        const ratio = idx / (total - 1);
-        return firstNodeCenter + (lastNodeCenter - firstNodeCenter) * ratio;
-      };
-      
-      // 为每个线段设置位置和宽度
+      // 为每个线段设置位置和宽度（使用之前定义的 getStationCenter）
       const segments = trackContainer.querySelectorAll('.track-segment');
       segments.forEach(segment => {
         const segIdx = parseInt(segment.dataset.segmentIndex);
@@ -5482,6 +5720,20 @@ export function initDisplayWindow(rootElement) {
         const dot = node.querySelector('.dot');
         const name = node.querySelector('.name');
         const en = node.querySelector('.en');
+        // 仅在直线模式主线路图 (#d-map) 中，对英文站名/站名位置应用 JS 控制逻辑
+        applyLinearEnglishWrap(node);
+        
+        // 固定站间距：使用绝对定位，基于站间距计算位置
+        node.style.position = 'absolute';
+        const stationCenter = (i + 0.5) * spacing;
+        // 节点宽度等于站间距，确保站点中心之间的距离就是 spacing
+        node.style.width = spacing + 'px';
+        node.style.minWidth = spacing + 'px';
+        node.style.maxWidth = spacing + 'px';
+        node.style.left = (stationCenter - spacing / 2) + 'px';
+        node.style.top = '50%';
+        node.style.transform = 'translateY(-50%)';
+        
         if (i < rangeStart || i > rangeEnd) {
           // 非运营区域使用已过站样式
           node.classList.add('passed');
@@ -5516,8 +5768,8 @@ export function initDisplayWindow(rootElement) {
           if (st.skip && dot) {
             dot.style.background = '#fff';
             dot.style.borderColor = '#ccc';
-            dot.style.width = '30px';
-            dot.style.height = '30px';
+            dot.style.width = '28px';
+            dot.style.height = '28px';
           } else if (i === targetIdx && dot) {
             // 下一站：与到达站一致（反色：主色底 + 白边、无光晕、无动画；主色逻辑与箭头一致）
             const accent = computeArrowAccentColor(m.themeColor || '#00b894');
@@ -5557,6 +5809,8 @@ export function initDisplayWindow(rootElement) {
         }
         box.appendChild(node);
       });
+      // 节点插入后，根据圆点位置精确调整 info-btm 垂直位置（保证第一个字更贴近圆点）
+      applyLinearNamePositionForBox(box);
     }
     c.appendChild(box);
     
@@ -5564,34 +5818,44 @@ export function initDisplayWindow(rootElement) {
     // 注意：如果启用了 showAllStations 且在 flexbox 布局中，nodeWidth 已经在上面计算过了
     const getArrowPosition = (i) => {
       if (total <= MAX_POSITIONS) {
-        // 使用flexbox布局时，箭头位置在两个站点中间
-        // 使用space-between时，第一个节点的左边缘在0，最后一个节点的右边缘在boxWidth
-        // nodeWidth 已经在上面根据缩放比例计算过了（在 if 块内）
+        // 固定站间距布局：箭头位置在两个站点中心的中间
         const boxWidth = 1900; // box的实际宽度（scaler宽度），与track宽度一致
-        // 如果启用了缩放，需要重新计算 nodeWidth（因为它在 if 块内）
-        let currentNodeWidth = 90; // 默认值
-        if (showAllStations && total > 0) {
+        // 当站点数量少于MAX_POSITIONS时，保持正常站间距，不缩小
+        // 只有当站点数量大于MAX_POSITIONS时才缩小站间距
+        let currentNodeWidth = 70; // 默认值（正常站间距）
+        if (showAllStations && total > MAX_POSITIONS) {
           const baseStationCount = 21;
           const scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / total));
-          currentNodeWidth = Math.max(36, Math.round(90 * scaleRatio));
+          currentNodeWidth = Math.max(36, Math.round(70 * scaleRatio));
         }
-        const firstNodeCenter = currentNodeWidth / 2;
-        const lastNodeCenter = boxWidth - currentNodeWidth / 2;
-        
-        // 计算第i个和第i+1个站点的中心位置（线性插值）
-        const ratio1 = i / (total - 1);
-        const ratio2 = (i + 1) / (total - 1);
-        const center1 = firstNodeCenter + (lastNodeCenter - firstNodeCenter) * ratio1;
-        const center2 = firstNodeCenter + (lastNodeCenter - firstNodeCenter) * ratio2;
-        
-        // 箭头位置在两个站点中心的中间
+        const stationStep = currentNodeWidth;
+        // 如果站点数量少于27站，使用27站作为基准来计算总宽度；否则使用实际站点数量
+        const effectiveStationCount = total < BASE_STATION_COUNT ? BASE_STATION_COUNT : total;
+        const groupWidth = effectiveStationCount * stationStep;
+        const groupLeft = Math.max(0, (boxWidth - groupWidth) / 2);
+        // 使用位置映射来获取站点的显示位置
+        if (positionMap) {
+          const realIdx1 = rangeStart + i;
+          const realIdx2 = rangeStart + i + 1;
+          // 位置映射中存储的是实际像素位置偏移（相对于groupLeft）
+          const offset1 = positionMap.get(realIdx1);
+          const offset2 = positionMap.get(realIdx2);
+          if (offset1 !== undefined && offset2 !== undefined) {
+            const center1 = groupLeft + offset1;
+            const center2 = groupLeft + offset2;
+            return (center1 + center2) / 2;
+          }
+        }
+        // 如果没有位置映射，使用原始逻辑
+        const center1 = groupLeft + (i * stationStep) + stationStep / 2;
+        const center2 = groupLeft + ((i + 1) * stationStep) + stationStep / 2;
         return (center1 + center2) / 2;
       } else {
         return (i + 1) * spacing;
       }
     };
     
-    // 计算当前站点位置（用于滚动）
+    // 计算当前站点位置（用于滚动）：使用简单的比例计算（与之前版本保持一致）
     const getCurrentPosition = (idx) => {
       if (total <= MAX_POSITIONS) {
         // 使用flexbox布局时，站点位置基于比例计算
@@ -5603,13 +5867,13 @@ export function initDisplayWindow(rootElement) {
     };
     
     // 获取箭头缩放值（如果启用了缩放）
-    let currentArrowFontSize = 24;
-    let currentArrowSpacing = 20;
+    let currentArrowFontSize = 22;
+    let currentArrowSpacing = 18;
     if (showAllStations && total > 0) {
       const baseStationCount = 21;
       const scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / total));
-      currentArrowFontSize = Math.max(10, Math.round(24 * scaleRatio));
-      currentArrowSpacing = Math.max(8, Math.round(20 * scaleRatio));
+      currentArrowFontSize = Math.max(10, Math.round(22 * scaleRatio));
+      currentArrowSpacing = Math.max(8, Math.round(18 * scaleRatio));
     }
     
     for (let i = 0; i < sts.length - 1; i++) {
@@ -5651,11 +5915,22 @@ export function initDisplayWindow(rootElement) {
       }
     }
     setTimeout(() => {
-      const currentPos = getCurrentPosition(rt.idx);
-      c.scrollTo({
-        left: currentPos - 2080 / 2 + 45,
-        behavior: 'smooth'
-      });
+      try {
+        // 确保 rt.idx 在有效范围内
+        if (rt && rt.idx !== undefined && rt.idx >= 0 && rt.idx < sts.length) {
+          const currentPos = getCurrentPosition(rt.idx);
+          if (currentPos !== undefined && !isNaN(currentPos)) {
+            const containerWidth = c.clientWidth || 2080;
+            const scrollLeft = Math.max(0, currentPos - containerWidth / 2 + 45);
+            c.scrollTo({
+              left: scrollLeft,
+              behavior: 'smooth'
+            });
+          }
+        }
+      } catch (e) {
+        // 静默处理滚动错误
+      }
     }, 50);
   };
 
@@ -6200,9 +6475,29 @@ export function initDisplayWindow(rootElement) {
         if (preferredLayout !== layoutMode) {
           setLayoutModeAndRedraw(preferredLayout, () => {
             renderDisp();
-            refreshLayoutBtn();
           });
         }
+      }
+      // display-1：壁纸（到站/结束页）
+      try {
+        if (root.classList.contains('display-1') && data.settings && data.settings.display) {
+          const wpUrl = data.settings.display.display1WallpaperDataUrl;
+          const wpOpacity = data.settings.display.display1WallpaperOpacity;
+          if (wpUrl !== undefined || wpOpacity !== undefined) {
+            if (!display1WallpaperState) display1WallpaperState = loadDisplay1WallpaperState() || { dataUrl: '', opacity: 0.35 };
+            const next = { ...display1WallpaperState };
+            if (wpUrl !== undefined) next.dataUrl = (typeof wpUrl === 'string') ? wpUrl : '';
+            if (wpOpacity !== undefined) {
+              const op = Number.isFinite(wpOpacity) ? wpOpacity : parseFloat(wpOpacity);
+              next.opacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : next.opacity;
+            }
+            display1WallpaperState = next;
+            applyDisplay1Wallpaper(root, display1WallpaperState);
+            saveDisplay1WallpaperState(display1WallpaperState);
+          }
+        }
+      } catch (e) {
+        // ignore
       }
       // 更新换乘检测显示（需要当前 rt.state 以支持“下一站/到站”范围开关）
       updateXferCheck(xferCheckElement, appData, rt);
@@ -6237,6 +6532,27 @@ export function initDisplayWindow(rootElement) {
           refreshLayoutBtn();
         });
       }
+    }
+    // display-1：壁纸（到站/结束页）
+    try {
+      if (root.classList.contains('display-1') && data.settings && data.settings.display) {
+        const wpUrl = data.settings.display.display1WallpaperDataUrl;
+        const wpOpacity = data.settings.display.display1WallpaperOpacity;
+        if (wpUrl !== undefined || wpOpacity !== undefined) {
+          if (!display1WallpaperState) display1WallpaperState = loadDisplay1WallpaperState() || { dataUrl: '', opacity: 0.35 };
+          const next = { ...display1WallpaperState };
+          if (wpUrl !== undefined) next.dataUrl = (typeof wpUrl === 'string') ? wpUrl : '';
+          if (wpOpacity !== undefined) {
+            const op = Number.isFinite(wpOpacity) ? wpOpacity : parseFloat(wpOpacity);
+            next.opacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : next.opacity;
+          }
+          display1WallpaperState = next;
+          applyDisplay1Wallpaper(root, display1WallpaperState);
+          saveDisplay1WallpaperState(display1WallpaperState);
+        }
+      }
+    } catch (e) {
+      // ignore
     }
     // 更新换乘检测显示（需要当前 rt.state 以支持“下一站/到站”范围开关）
     updateXferCheck(xferCheckElement, appData, rt);

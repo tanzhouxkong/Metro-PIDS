@@ -123,11 +123,6 @@ export default {
     // 兼容旧数据，补齐 serviceMode
     if (!pidsState.appData.meta.serviceMode) pidsState.appData.meta.serviceMode = 'normal';
     
-    // 初始化显示全部站点选项
-    if (pidsState.appData.meta.showAllStations === undefined) {
-        pidsState.appData.meta.showAllStations = false;
-    }
-    
     // 初始化贯通线路设置字段
     // 兼容旧版本：如果存在 lineALineName 和 lineBLineName，转换为新格式
     if (pidsState.appData.meta.throughLineSegments === undefined) {
@@ -1635,41 +1630,70 @@ export default {
                 });
 
                 window.electronAPI.onUpdateError((err) => {
-                    updateState.value.checking = false;
-                    updateState.value.downloading = false;
-                    const errorMsg = String(err);
-                    updateState.value.error = errorMsg;
-                    console.error('[SlidePanel] 收到更新错误事件:', err);
-                    
-                    // 对于校验和错误，提供更友好的提示
-                    let userFriendlyMsg = errorMsg;
-                    if (errorMsg.includes('checksum') || errorMsg.includes('sha512')) {
-                        userFriendlyMsg = '文件校验失败，可能是下载的文件损坏。\n\n建议：\n1. 检查网络连接\n2. 重新尝试下载\n3. 如果问题持续，请从GitHub手动下载';
+                    try {
+                        // 确保设置页面保持打开状态
+                        if (uiState.activePanel !== 'panel-4') {
+                            uiState.activePanel = 'panel-4';
+                        }
+                        updateState.value.checking = false;
+                        updateState.value.downloading = false;
+                        const errorMsg = String(err);
+                        updateState.value.error = errorMsg;
+                        console.error('[SlidePanel] 收到更新错误事件:', err);
+                        
+                        // 对于校验和错误，提供更友好的提示
+                        let userFriendlyMsg = errorMsg;
+                        if (errorMsg.includes('checksum') || errorMsg.includes('sha512')) {
+                            userFriendlyMsg = '文件校验失败，可能是下载的文件损坏。\n\n建议：\n1. 检查网络连接\n2. 重新尝试下载\n3. 如果问题持续，请从GitHub手动下载';
+                        }
+                        
+                        showMsg('更新错误：' + userFriendlyMsg);
+                    } catch (e) {
+                        console.error('[SlidePanel] 处理更新错误事件失败:', e);
                     }
-                    
-                    showMsg('更新错误：' + userFriendlyMsg);
                 });
 
                 window.electronAPI.onUpdateProgress((p) => {
                     try {
-                        if (p && p.percent) updateState.value.progress = Math.round(p.percent);
-                        else if (p && p.transferred && p.total) updateState.value.progress = Math.round((p.transferred / p.total) * 100);
+                        if (p && p.percent) {
+                            updateState.value.progress = Math.round(p.percent);
+                        } else if (p && p.transferred && p.total) {
+                            updateState.value.progress = Math.round((p.transferred / p.total) * 100);
+                        }
+                        // 确保下载状态正确，避免白屏
+                        if (!updateState.value.downloading) {
+                            updateState.value.downloading = true;
+                        }
+                        // 确保 available 状态正确，避免按钮区域被隐藏
+                        if (!updateState.value.available && updateState.value.info) {
+                            updateState.value.available = true;
+                        }
                         updateState.value.downloaded = false;
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error('[SlidePanel] 更新进度处理失败:', e);
+                    }
                 });
 
                 window.electronAPI.onUpdateDownloaded((info) => {
-                    updateState.value.downloading = false;
-                    updateState.value.progress = 100;
-                    updateState.value.downloaded = true;
-                    updateState.value.info = info || updateState.value.info;
-                    // 不再自动弹出对话框，由用户手动点击安装
-                    // 发送通知
-                    const version = info?.version || '新版本';
-                    showNotification('更新下载完成', `版本 ${version} 已下载完成，点击"重启应用"即可完成更新，无需走安装流程`, {
-                        tag: 'update-downloaded',
-                        urgency: 'normal'
-                    });
+                    try {
+                        // 确保设置页面保持打开状态
+                        if (uiState.activePanel !== 'panel-4') {
+                            uiState.activePanel = 'panel-4';
+                        }
+                        updateState.value.downloading = false;
+                        updateState.value.progress = 100;
+                        updateState.value.downloaded = true;
+                        updateState.value.info = info || updateState.value.info;
+                        // 不再自动弹出对话框，由用户手动点击安装
+                        // 发送通知
+                        const version = info?.version || '新版本';
+                        showNotification('更新下载完成', `版本 ${version} 已下载完成，点击"重启应用"即可完成更新，无需走安装流程`, {
+                            tag: 'update-downloaded',
+                            urgency: 'normal'
+                        });
+                    } catch (e) {
+                        console.error('[SlidePanel] 处理下载完成事件失败:', e);
+                    }
                 });
             } catch (e) {
                 // 可忽略监听安装异常
@@ -1744,6 +1768,14 @@ export default {
 
     async function downloadUpdateNow() {
         if (!window.electronAPI) return;
+        // 确保设置页面保持打开状态
+        if (uiState.activePanel !== 'panel-4') {
+            uiState.activePanel = 'panel-4';
+        }
+        // 确保 available 状态正确，避免按钮区域被隐藏导致白屏
+        if (!updateState.value.available && updateState.value.info) {
+            updateState.value.available = true;
+        }
         updateState.value.downloading = true;
         updateState.value.downloaded = false;
         updateState.value.error = null; // 清除之前的错误
@@ -1788,6 +1820,14 @@ export default {
             return downloadUpdateNow();
         }
         
+        // 确保设置页面保持打开状态
+        if (uiState.activePanel !== 'panel-4') {
+            uiState.activePanel = 'panel-4';
+        }
+        // 确保 available 状态正确，避免按钮区域被隐藏导致白屏
+        if (!updateState.value.available && updateState.value.info) {
+            updateState.value.available = true;
+        }
         updateState.value.downloading = true;
         updateState.value.downloaded = false;
         updateState.value.error = null;
@@ -2213,6 +2253,17 @@ export default {
             displays: initialDisplays
         });
 
+        function normalizeDisplaysMap(maybeMap) {
+            const raw = (maybeMap && typeof maybeMap === 'object' && !Array.isArray(maybeMap)) ? { ...maybeMap } : {};
+            // 永远兜底补齐系统显示器，避免因任何覆盖/序列化异常导致系统显示器“消失”
+            const merged = { ...DEFAULT_SETTINGS.display.displays, ...raw };
+            // 强制系统显示器标记
+            ['display-1', 'display-2', 'display-3'].forEach((id) => {
+                if (merged[id]) merged[id].isSystem = true;
+            });
+            return merged;
+        }
+
         // 监听设置变化，同步到本地状态
         watch(() => settings.display.currentDisplayId, (newId) => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 currentDisplayId 变化:', displayState.currentDisplayId, '->', newId);
@@ -2221,13 +2272,7 @@ export default {
 
         watch(() => settings.display.displays, (newDisplays) => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 displays 变化');
-            const raw = newDisplays && typeof newDisplays === 'object' ? { ...newDisplays } : {};
-            // 新安装或升级后可能为空，避免显示器1/2卡片不显示：空时使用默认列表
-            if (Object.keys(raw).length === 0) {
-                displayState.displays = { ...DEFAULT_SETTINGS.display.displays };
-            } else {
-                displayState.displays = raw;
-            }
+            displayState.displays = normalizeDisplaysMap(newDisplays);
         }, { deep: true, immediate: true });
 
         // 当前显示端ID的响应式引用（用于确保模板更新）
@@ -2239,13 +2284,8 @@ export default {
         // 检查显示端是否应该显示（考虑云控配置）
         function shouldShowDisplay(display, displayId) {
             if (!display) return false;
-            
-            // 检查系统显示器选项
-            if (!uiState.showSystemDisplayOption && display.isSystem) {
-                return false;
-            }
-            
-            // 检查云控配置：服务器显式关闭的显示器不显示
+
+            // 检查云控配置：服务器显式关闭的显示器不显示（系统显示器也遵守）
             const flags = uiState.displayFlags;
             if (flags && flags.displays && typeof flags.displays === 'object') {
                 const key = displayId;
@@ -2260,6 +2300,11 @@ export default {
                     }
                 }
             }
+
+            // 检查系统显示器选项（由云端配置控制是否在界面中展示“系统显示器”）
+            if (!uiState.showSystemDisplayOption && display.isSystem) {
+                return false;
+            }
             
             return true;
         }
@@ -2273,11 +2318,10 @@ export default {
                 ? fromState
                 : (fromSettings && typeof fromSettings === 'object' && Object.keys(fromSettings || {}).length > 0) ? fromSettings : null;
             // 新安装或老设备升级后可能为空，强制使用默认显示器列表，确保显示器1和2的卡片始终可见
-            if (!displays || typeof displays !== 'object' || Object.keys(displays).length === 0) {
-                displays = { ...DEFAULT_SETTINGS.display.displays };
-            }
+            displays = normalizeDisplaysMap(displays);
             const entries = Object.entries(displays)
                 .filter(([id, d]) => shouldShowDisplay(d, id));
+
             if (entries.length === 0) {
                 return Object.entries(displays)
                     .map(([id, d]) => [id, d]);
@@ -2294,16 +2338,86 @@ export default {
 
         // 编辑显示端弹窗（与更新日志同风格）
         const showDisplayEditDialog = ref(false);
+        const display1WallpaperInput = ref(null);
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
+<<<<<<< Updated upstream
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
+=======
+<<<<<<< HEAD
+            // 仅显示器1使用的选项：线路名合并 / C 型开关
+            lineNameMerge: false,
+            // 显示器1：壁纸（仅到站/结束页背景）
+            wallpaperDataUrl: '',
+            wallpaperOpacity: 0.35,
+=======
+            // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
+            lineNameMerge: false, showAllStations: false,
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
             // 显示器2：下一站/到站白屏时长
             nextStationDurationSeconds: 10,
             // 显示器3：出站页面显示时长
             departDurationSeconds: 8,
             isSystem: false, isDisplay1: false, isDisplay2: false, isDisplay3: false
         });
+
+        async function fileToWallpaperDataUrl(file) {
+            if (!file) return '';
+            const rawDataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(new Error('FileReader failed'));
+                reader.readAsDataURL(file);
+            });
+            // 降低体积：缩放到最长边 2048，并转 JPEG
+            try {
+                const img = new Image();
+                img.src = rawDataUrl;
+                if (img.decode) await img.decode();
+                const w = img.naturalWidth || img.width || 0;
+                const h = img.naturalHeight || img.height || 0;
+                if (!w || !h) return rawDataUrl;
+                const maxDim = 2048;
+                const ratio = Math.min(1, maxDim / Math.max(w, h));
+                if (ratio >= 0.999) return rawDataUrl;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(w * ratio));
+                canvas.height = Math.max(1, Math.round(h * ratio));
+                const ctx = canvas.getContext('2d', { alpha: false });
+                if (!ctx) return rawDataUrl;
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                return canvas.toDataURL('image/jpeg', 0.86);
+            } catch (e) {
+                return rawDataUrl;
+            }
+        }
+
+        function pickDisplay1Wallpaper() {
+            try {
+                if (display1WallpaperInput.value) display1WallpaperInput.value.click();
+            } catch (e) {}
+        }
+
+        async function onDisplay1WallpaperFileChange(e) {
+            try {
+                const file = e && e.target && e.target.files && e.target.files[0];
+                if (!file) return;
+                const dataUrl = await fileToWallpaperDataUrl(file);
+                displayEdit.wallpaperDataUrl = dataUrl || '';
+            } catch (err) {
+                console.error('壁纸读取失败:', err);
+                showMsg('壁纸读取失败: ' + (err && err.message ? err.message : err));
+            } finally {
+                try { if (e && e.target) e.target.value = ''; } catch (e2) {}
+            }
+        }
+
+        function clearDisplay1Wallpaper() {
+            displayEdit.wallpaperDataUrl = '';
+        }
 
         function openDisplayEditDialog(displayId) {
             const display = settings.display.displays[displayId];
@@ -2326,14 +2440,26 @@ export default {
             const meta = pidsState && pidsState.appData && pidsState.appData.meta;
             if ((displayId === 'display-1' || displayId === 'display-3') && isCurrentTargetDisplay && meta) {
                 displayEdit.lineNameMerge = meta.lineNameMerge === true || meta.lineNameMerge === 'true';
-                displayEdit.showAllStations = meta.showAllStations === true || meta.showAllStations === 'true';
             } else {
                 displayEdit.lineNameMerge = display.lineNameMerge !== undefined ? display.lineNameMerge : false;
-                displayEdit.showAllStations = display.showAllStations !== undefined ? display.showAllStations : false;
             }
             displayEdit.layoutMode = display.layoutMode !== undefined && (display.layoutMode === 'linear' || display.layoutMode === 'c-type')
                 ? display.layoutMode
                 : 'linear';
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+            if (displayId === 'display-1') {
+                displayEdit.wallpaperDataUrl = typeof display.wallpaperDataUrl === 'string' ? display.wallpaperDataUrl : '';
+                const op = Number.isFinite(display.wallpaperOpacity) ? display.wallpaperOpacity : parseFloat(display.wallpaperOpacity);
+                displayEdit.wallpaperOpacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 0.35;
+            } else {
+                displayEdit.wallpaperDataUrl = '';
+                displayEdit.wallpaperOpacity = 0.35;
+            }
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
             displayEdit.departDurationSeconds = departDurationSeconds;
             displayEdit.isSystem = display.isSystem === true;
@@ -2381,8 +2507,20 @@ export default {
                     : {
                         // 仅显示器1支持这些开关
                         lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
+<<<<<<< Updated upstream
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+=======
+<<<<<<< HEAD
+                        layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+                        // 仅显示器1：壁纸
+                        wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
+                        wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
+=======
+                        showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
+                        layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
                         // 显示器3：出站页面显示时长（毫秒）
                         departDuration: displayEdit.isDisplay3
                             ? displayEdit.departDurationSeconds * 1000
@@ -2424,8 +2562,20 @@ export default {
                 name, source, url, description,
                 // 仅显示器1支持这些开关
                 lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
+<<<<<<< Updated upstream
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+=======
+<<<<<<< HEAD
+                layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+                // 仅显示器1：壁纸
+                wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
+                wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
+=======
+                showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
+                layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
                 isDisplay1: displayEdit.isDisplay1,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
                 // 非系统显示端的 display-3 也可以单独配置出站页面时长
@@ -2469,16 +2619,13 @@ export default {
             // 强制触发响应性更新
             Object.assign(displayState, {
                 currentDisplayId: displayId,
-                displays: { ...settings.display.displays }
+                displays: normalizeDisplaysMap(settings.display.displays)
             });
             
             // 切换到显示器1/3时：同步显示端设置到线路 meta（用于显示端读取）
             if ((displayId === 'display-1' || displayId === 'display-3') && pidsState && pidsState.appData && pidsState.appData.meta && targetDisplay) {
                 if (targetDisplay.lineNameMerge !== undefined) {
                     pidsState.appData.meta.lineNameMerge = targetDisplay.lineNameMerge;
-                }
-                if (targetDisplay.showAllStations !== undefined) {
-                    pidsState.appData.meta.showAllStations = targetDisplay.showAllStations;
                 }
                 if (displayId === 'display-3' && targetDisplay.display3Tags && typeof targetDisplay.display3Tags === 'object') {
                     pidsState.appData.meta.display3Tags = { ...targetDisplay.display3Tags };
@@ -2631,7 +2778,8 @@ export default {
 
         // 重新排序显示端
         function reorderDisplays(sourceId, targetId) {
-            const displays = settings.display.displays;
+            // 兜底：任何重排都必须带上系统显示器，避免“只重排了用户显示器”导致系统显示器从对象里被丢掉
+            const displays = normalizeDisplaysMap(settings.display.displays);
             const displayIds = Object.keys(displays);
             
             const sourceIndex = displayIds.indexOf(sourceId);
@@ -2653,8 +2801,8 @@ export default {
             });
             
             // 同时更新设置和本地状态
-            settings.display.displays = newDisplays;
-            displayState.displays = { ...newDisplays }; // 创建新对象确保响应性
+            settings.display.displays = normalizeDisplaysMap(newDisplays);
+            displayState.displays = normalizeDisplaysMap(settings.display.displays);
             
             saveSettings();
             
@@ -2668,6 +2816,10 @@ export default {
 
         // 添加新显示端
         async function addNewDisplay() {
+            // 兜底：新增前先补齐系统显示器，避免任何异常覆盖导致系统显示器“消失”
+            settings.display.displays = normalizeDisplaysMap(settings.display.displays);
+            displayState.displays = normalizeDisplaysMap(displayState.displays);
+
             const name = await promptUser('请输入显示端名称', `显示端 ${Object.keys(settings.display.displays).length + 1}`);
             if (!name) return;
 
@@ -2689,7 +2841,8 @@ export default {
             
             // 同时更新设置和本地状态
             settings.display.displays[newId] = newDisplay;
-            displayState.displays = { ...settings.display.displays }; // 创建新对象确保响应性
+            settings.display.displays = normalizeDisplaysMap(settings.display.displays);
+            displayState.displays = normalizeDisplaysMap(settings.display.displays);
             
             settings.display.currentDisplayId = newId;
             displayState.currentDisplayId = newId;
@@ -2716,12 +2869,25 @@ export default {
                         if (displayData.lineNameMerge !== undefined) {
                             display.lineNameMerge = displayData.lineNameMerge;
                         }
-                        if (displayData.showAllStations !== undefined) {
-                            display.showAllStations = displayData.showAllStations;
-                        }
                         if (displayData.layoutMode !== undefined && (displayData.layoutMode === 'linear' || displayData.layoutMode === 'c-type')) {
                             display.layoutMode = displayData.layoutMode;
                         }
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+                            // 显示器1：壁纸
+                            if (displayId === 'display-1') {
+                                if (displayData.wallpaperDataUrl !== undefined) {
+                                    display.wallpaperDataUrl = (typeof displayData.wallpaperDataUrl === 'string') ? displayData.wallpaperDataUrl : '';
+                                }
+                                if (displayData.wallpaperOpacity !== undefined) {
+                                    const op = Number.isFinite(displayData.wallpaperOpacity) ? displayData.wallpaperOpacity : parseFloat(displayData.wallpaperOpacity);
+                                    display.wallpaperOpacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 0.35;
+                                }
+                            }
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
                         // 显示器3：更新“出站页面显示时长”
                         if (displayId === 'display-3' && displayData.departDuration !== undefined) {
                             settings.display.display3DepartDuration = displayData.departDuration;
@@ -2731,9 +2897,6 @@ export default {
                             if (pidsState && pidsState.appData && pidsState.appData.meta) {
                                 if (displayData.lineNameMerge !== undefined) {
                                     pidsState.appData.meta.lineNameMerge = displayData.lineNameMerge;
-                                }
-                                if (displayData.showAllStations !== undefined) {
-                                    pidsState.appData.meta.showAllStations = displayData.showAllStations;
                                 }
                                 sync();
                             }
@@ -2757,11 +2920,18 @@ export default {
                         if (displayData.lineNameMerge !== undefined) {
                             display.lineNameMerge = displayData.lineNameMerge;
                         }
-                        if (displayData.showAllStations !== undefined) {
-                            display.showAllStations = displayData.showAllStations;
-                        }
                         if (displayData.layoutMode !== undefined && (displayData.layoutMode === 'linear' || displayData.layoutMode === 'c-type')) {
                             display.layoutMode = displayData.layoutMode;
+                        }
+                    }
+                    // 显示器1：壁纸
+                    if (displayId === 'display-1') {
+                        if (displayData.wallpaperDataUrl !== undefined) {
+                            display.wallpaperDataUrl = (typeof displayData.wallpaperDataUrl === 'string') ? displayData.wallpaperDataUrl : '';
+                        }
+                        if (displayData.wallpaperOpacity !== undefined) {
+                            const op = Number.isFinite(displayData.wallpaperOpacity) ? displayData.wallpaperOpacity : parseFloat(displayData.wallpaperOpacity);
+                            display.wallpaperOpacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 0.35;
                         }
                     }
                     // 显示器3：保存标签/提示开关
@@ -2787,7 +2957,6 @@ export default {
                     if (pidsState && pidsState.appData && pidsState.appData.meta) {
                         if (displayId === 'display-1' || displayId === 'display-3') {
                             if (displayData.lineNameMerge !== undefined) pidsState.appData.meta.lineNameMerge = displayData.lineNameMerge;
-                            if (displayData.showAllStations !== undefined) pidsState.appData.meta.showAllStations = displayData.showAllStations;
                         }
                         if (displayId === 'display-3' && displayData.display3Tags && typeof displayData.display3Tags === 'object') {
                             pidsState.appData.meta.display3Tags = { ...displayData.display3Tags };
@@ -2798,7 +2967,8 @@ export default {
                 }
 
                 // 强制更新显示端状态确保响应性
-                displayState.displays = { ...settings.display.displays };
+                settings.display.displays = normalizeDisplaysMap(settings.display.displays);
+                displayState.displays = normalizeDisplaysMap(settings.display.displays);
                 saveSettings();
                 
                 return { ok: true, message: `显示端 "${display.name}" 已更新` };
@@ -2848,10 +3018,12 @@ export default {
         
         // 从右键菜单删除显示端
         async function deleteDisplayFromMenu() {
-            if (displayContextMenu.value.displayId) {
-                await deleteDisplay(displayContextMenu.value.displayId);
-            }
+            const id = displayContextMenu.value.displayId;
+            // 先关闭右键菜单，避免删除确认/异步流程期间菜单“卡住不消失”
             closeDisplayContextMenu();
+            if (id) {
+                await deleteDisplay(id);
+            }
         }
         
         // 从右键菜单新建显示端
@@ -2867,7 +3039,8 @@ export default {
                 display.enabled = !display.enabled;
                 
                 // 强制更新显示端状态确保响应性
-                displayState.displays = { ...settings.display.displays };
+                settings.display.displays = normalizeDisplaysMap(settings.display.displays);
+                displayState.displays = normalizeDisplaysMap(settings.display.displays);
                 
                 saveSettings();
                 
@@ -2902,7 +3075,8 @@ export default {
             delete settings.display.displays[displayId];
             
             // 创建新的显示端对象确保响应性
-            displayState.displays = { ...settings.display.displays };
+            settings.display.displays = normalizeDisplaysMap(settings.display.displays);
+            displayState.displays = normalizeDisplaysMap(settings.display.displays);
             
             // 如果删除的是当前显示端，切换到第一个可用的显示端
             if (settings.display.currentDisplayId === displayId) {
@@ -3040,6 +3214,7 @@ export default {
             shouldShowDisplay, visibleDisplayEntries, // 显示端可见列表（过滤后若为空则回退为全部）
             // 编辑显示端弹窗（与更新日志同风格）
             showDisplayEditDialog, displayEdit, closeDisplayEditDialog, saveDisplayEdit, pickDisplayEditFile,
+            display1WallpaperInput, pickDisplay1Wallpaper, onDisplay1WallpaperFileChange, clearDisplay1Wallpaper,
             // 显示端右键菜单
             displayContextMenu, showDisplayContextMenu, closeDisplayContextMenu,
             editDisplayFromMenu, toggleDisplayEnabledFromMenu, deleteDisplayFromMenu, addNewDisplayFromMenu,
@@ -3118,7 +3293,7 @@ export default {
       </div>
 
       <!-- Panel 4: Settings（与 PIDS 控制台同一套卡片与配色） -->
-      <div v-if="uiState.activePanel === 'panel-4'" class="panel-body" style="flex:1; display:flex; flex-direction:column; overflow:auto; background:var(--bg); padding:24px 16px;">
+      <div v-if="uiState.activePanel === 'panel-4'" class="panel-body" style="flex:1; display:flex; flex-direction:column; overflow:auto; background:var(--bg); padding:24px 16px; min-height:100%;">
         
         <!-- Header（与控制台一致左对齐） -->
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
@@ -3172,7 +3347,15 @@ export default {
         <!-- Language Settings -->
         <div class="card" style="border-left: 6px solid #4A90E2; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#4A90E2; font-weight:bold; margin-bottom:16px; font-size:15px;">
+<<<<<<< Updated upstream
               {{ $t('preferences.language') }} (Language)
+=======
+<<<<<<< HEAD
+              {{ $t('preferences.language') }}
+=======
+              {{ $t('preferences.language') }} (Language)
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
             </div>
 
             <div style="margin-bottom:8px; font-size:12px; color:var(--muted);">
@@ -3471,7 +3654,15 @@ export default {
                                 <input v-model="displayEdit.description" type="text" class="se-input" placeholder="显示端描述">
                             </div>
                         </template>
+<<<<<<< Updated upstream
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
+=======
+<<<<<<< HEAD
+                        <!-- 显示器1：线路名合并 / C 型开关 -->
+=======
+                        <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
                         <template v-if="displayEdit.isDisplay1">
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
@@ -3486,17 +3677,6 @@ export default {
                             </div>
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
-                                    <div class="se-label" style="margin-bottom:4px;">显示全部站点</div>
-                                    <div class="se-display-option-desc">启用后，所有站点都会显示在屏幕上</div>
-                                </div>
-                                <label class="se-toggle-wrap">
-                                    <input v-model="displayEdit.showAllStations" type="checkbox" class="se-toggle-input">
-                                    <span class="se-toggle-track" :class="{ on: displayEdit.showAllStations }"></span>
-                                    <span class="se-toggle-thumb" :class="{ on: displayEdit.showAllStations }"></span>
-                                </label>
-                            </div>
-                            <div class="se-display-option-row">
-                                <div class="se-display-option-text">
                                     <div class="se-label" style="margin-bottom:4px;">C型开关</div>
                                     <div class="se-display-option-desc">开启时底部线路图为 C 型，关闭时为直线</div>
                                 </div>
@@ -3505,6 +3685,38 @@ export default {
                                     <span class="se-toggle-track" :class="{ on: displayEdit.layoutMode === 'c-type' }"></span>
                                     <span class="se-toggle-thumb" :class="{ on: displayEdit.layoutMode === 'c-type' }"></span>
                                 </label>
+                            </div>
+                            <div class="se-display-option-row" style="align-items:flex-start;">
+                                <div class="se-display-option-text" style="flex:1;">
+                                    <div class="se-label" style="margin-bottom:4px;">壁纸</div>
+                                    <div class="se-display-option-desc">仅用于到站/结束页背景，可调透明度</div>
+                                    <div style="margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                        <button type="button" class="se-btn se-btn-green" style="min-width:auto; white-space:nowrap;" @click="pickDisplay1Wallpaper()">
+                                            <i class="fas fa-image" style="margin-right:6px;"></i>上传图片
+                                        </button>
+                                        <button type="button" class="se-btn se-btn-gray" style="min-width:auto; white-space:nowrap;" @click="clearDisplay1Wallpaper()" :disabled="!displayEdit.wallpaperDataUrl">
+                                            <i class="fas fa-eraser" style="margin-right:6px;"></i>清除
+                                        </button>
+                                        <input ref="display1WallpaperInput" type="file" accept="image/*" style="display:none;" @change="onDisplay1WallpaperFileChange" />
+                                    </div>
+                                    <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+                                        <div style="font-size:12px; color:var(--muted); width:54px; flex:0 0 auto;">透明度</div>
+                                        <input v-model.number="displayEdit.wallpaperOpacity" type="range" min="0" max="1" step="0.01" style="flex:1; cursor:pointer;">
+                                        <div style="font-size:12px; color:var(--text); font-weight:700; width:52px; text-align:right;">
+                                            {{ Math.round((displayEdit.wallpaperOpacity || 0) * 100) }}%
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="width:120px; flex:0 0 auto;">
+                                    <div :style="{
+                                            width:'120px', height:'68px', borderRadius:'10px',
+                                            border:'1px solid rgba(0,0,0,0.12)',
+                                            background: displayEdit.wallpaperDataUrl ? 'center / cover no-repeat url(' + displayEdit.wallpaperDataUrl + ')' : 'linear-gradient(135deg, rgba(0,0,0,0.05), rgba(0,0,0,0.02))',
+                                            opacity: 1,
+                                            boxShadow:'0 6px 18px rgba(0,0,0,0.10)'
+                                        }">
+                                    </div>
+                                </div>
                             </div>
                         </template>
                         <template v-if="displayEdit.isDisplay2">

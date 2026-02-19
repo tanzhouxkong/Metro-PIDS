@@ -21,36 +21,11 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[Unhandled Promise Rejection]', event.reason)
 })
 
-// 监听主进程的日志输出（用于调试 mica-electron 等）
-if (typeof window !== 'undefined' && window.electronAPI) {
-  try {
-    // 通过 preload 暴露的 API 监听主进程日志
-    if (window.electronAPI.onMainConsoleLog) {
-      window.electronAPI.onMainConsoleLog((message) => {
-        console.log('[Main Process]', message);
-      });
-    }
-    
-    if (window.electronAPI.onMainConsoleError) {
-      window.electronAPI.onMainConsoleError((message) => {
-        console.error('[Main Process]', message);
-      });
-    }
-    
-    console.log('[Vite] ✅ 已设置主进程日志监听器');
-  } catch (e) {
-    console.warn('[Vite] ⚠️ 无法设置主进程日志监听器:', e.message);
-  }
-} else if (typeof window !== 'undefined') {
-  console.warn('[Vite] ⚠️ window.electronAPI 不可用，无法设置主进程日志监听器');
-}
-
 // 创建并挂载 Vue 应用
 try {
 const app = createApp(App)
 app.use(i18n)
 app.mount('#app')
-  console.log('[Vite] ✅ Vue 应用已成功挂载')
 } catch (error) {
   console.error('[Vite] ❌ Vue 应用挂载失败:', error)
   // 显示错误信息到页面

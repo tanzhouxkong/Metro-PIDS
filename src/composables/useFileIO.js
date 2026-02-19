@@ -419,12 +419,6 @@ export function useFileIO(state) {
                 console.log('[refreshLinesFromFolder] 无 appData 或 lineName，清空 currentFilePath');
             }
             
-            // 自动检测并应用短交路逻辑（如果首末站是暂缓车站）
-            if (state.appData) {
-                const { autoApplyShortTurnIfNeeded } = await import('../utils/displayWindowLogic.js');
-                autoApplyShortTurnIfNeeded(state.appData);
-            }
-            
             // 若可用则触发同步，否则依赖响应式更新
             if (typeof window.sync === 'function') window.sync();
         } catch (e) {

@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <title>Metro-PIDS 云控管理后台</title>
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+  <meta name="application-name" content="Metro-PIDS 云控管理后台" />
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
@@ -877,7 +884,29 @@
       <div class="modal-body">
         <input type="hidden" id="holiday-edit-key" />
         <div class="field"><label>名称</label><input type="text" id="holiday-edit-name" /></div>
+<<<<<<< Updated upstream
         <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
+=======
+<<<<<<< HEAD
+        <div class="field">
+          <label>类型</label>
+          <select id="holiday-edit-typeDes">
+            <option value="全部">全部（仅按日期范围）</option>
+            <option value="工作日">工作日</option>
+            <option value="周末">周末</option>
+            <option value="春节">春节</option>
+            <option value="清明节">清明节</option>
+            <option value="劳动节">劳动节</option>
+            <option value="端午节">端午节</option>
+            <option value="中秋节">中秋节</option>
+            <option value="国庆节">国庆节</option>
+            <option value="其他">其他（与 API 不匹配时不会自动弹窗）</option>
+          </select>
+        </div>
+=======
+        <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
         <div class="field"><label>内容</label><textarea id="holiday-edit-content" rows="2"></textarea></div>
         <div class="field"><label><input type="checkbox" id="holiday-edit-enabled" checked /> 启用</label></div>
         <div class="grid">
@@ -2344,14 +2373,14 @@
         const val = (typeof cfg.showSystemDisplayOption === 'boolean') ? cfg.showSystemDisplayOption : true;
         document.getElementById('display-show-system').checked = val;
 
-        // 每个显示器的启用状态
+        // 每个显示器的启用状态（checkbox 要用 checked，不要用 value）
         const displays = cfg.displays || {};
         const d1 = displays['display-1'] || {};
         const d2 = displays['display-2'] || {};
         const d3 = displays['display-3'] || {};
-        document.getElementById('display-1-enabled').value = d1.enabled === false ? 'off' : 'on';
-        document.getElementById('display-2-enabled').value = d2.enabled === false ? 'off' : 'on';
-        document.getElementById('display-3-enabled').value = d3.enabled === false ? 'off' : 'on';
+        document.getElementById('display-1-enabled').checked = d1.enabled === false ? false : true;
+        document.getElementById('display-2-enabled').checked = d2.enabled === false ? false : true;
+        document.getElementById('display-3-enabled').checked = d3.enabled === false ? false : true;
 
         // 时间范围
         document.getElementById('display-start-time').value = isoToLocalDateTime(cfg.startTime);
@@ -2372,9 +2401,9 @@
 
     document.getElementById('btn-save-display-flags').addEventListener('click', async () => {
       const showSystem = document.getElementById('display-show-system').checked;
-      const d1Enabled  = document.getElementById('display-1-enabled').value === 'on';
-      const d2Enabled  = document.getElementById('display-2-enabled').value === 'on';
-      const d3Enabled  = document.getElementById('display-3-enabled').value === 'on';
+      const d1Enabled  = document.getElementById('display-1-enabled').checked;
+      const d2Enabled  = document.getElementById('display-2-enabled').checked;
+      const d3Enabled  = document.getElementById('display-3-enabled').checked;
       const startTime = localDateTimeToIso(document.getElementById('display-start-time').value);
       const endTime = localDateTimeToIso(document.getElementById('display-end-time').value);
 
@@ -3432,9 +3461,18 @@
           if (device.version) {
             byVersionDevices[device.version] = (byVersionDevices[device.version] || 0) + 1;
           }
-          // 按操作系统统计设备数量
+          // 按操作系统统计设备数量（规范化版本号以合并相同版本）
           if (device.os) {
-            byOSDevices[device.os] = (byOSDevices[device.os] || 0) + 1;
+            const normalizedOS = parseWindowsVersion(device.os);
+            byOSDevices[normalizedOS] = (byOSDevices[normalizedOS] || 0) + 1;
+          }
+          // 按设备统计访问数量
+          if (device.deviceId) {
+            byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
+          }
+          // 按设备统计访问数量
+          if (device.deviceId) {
+            byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
           }
           // 按设备统计访问数量
           if (device.deviceId) {
@@ -3851,7 +3889,20 @@
         15063: 'Windows 10 1703',
         14393: 'Windows 10 1607',
         10586: 'Windows 10 1511',
-        10240: 'Windows 10 1507'
+        10240: 'Windows 10 1507',
+        // Windows 8.1
+        9600: 'Windows 8.1',
+        // Windows 8
+        9200: 'Windows 8',
+        // Windows 7
+        7601: 'Windows 7 SP1',
+        7600: 'Windows 7',
+        // Windows Vista
+        6002: 'Windows Vista SP2',
+        6001: 'Windows Vista SP1',
+        6000: 'Windows Vista',
+        // Windows XP
+        2600: 'Windows XP'
       };
       
       if (buildNumber) {
@@ -3878,11 +3929,31 @@
         if (buildNumber >= 14393) return 'Windows 10 1607';
         if (buildNumber >= 10586) return 'Windows 10 1511';
         if (buildNumber >= 10240) return 'Windows 10 1507';
+        
+        // 范围匹配（Windows 8.1）
+        if (buildNumber >= 9600) return 'Windows 8.1';
+        
+        // 范围匹配（Windows 8）
+        if (buildNumber >= 9200) return 'Windows 8';
+        
+        // 范围匹配（Windows 7）
+        if (buildNumber >= 7600) return 'Windows 7';
+        
+        // 范围匹配（Windows Vista）
+        if (buildNumber >= 6000) return 'Windows Vista';
+        
+        // 范围匹配（Windows XP）
+        if (buildNumber >= 2600) return 'Windows XP';
       }
       
       // 如果无法解析，尝试从原始字符串中提取信息
       if (osLower.includes('windows 11')) return 'Windows 11';
       if (osLower.includes('windows 10')) return 'Windows 10';
+      if (osLower.includes('windows 8.1') || osLower.includes('windows 8.1')) return 'Windows 8.1';
+      if (osLower.includes('windows 8')) return 'Windows 8';
+      if (osLower.includes('windows 7')) return 'Windows 7';
+      if (osLower.includes('windows vista')) return 'Windows Vista';
+      if (osLower.includes('windows xp')) return 'Windows XP';
       
       return os;
     }
@@ -3981,6 +4052,38 @@
       for (const [key, value] of Object.entries(cityNames)) {
         if (key.toLowerCase() === cityLower) {
           return value;
+        }
+      }
+      
+      // 尝试模糊匹配（处理 Cloudflare 返回的城市名称变体）
+      // 例如：Xi'anxiufu -> Xi'an (西安)
+      const fuzzyMatches = [
+        { pattern: /xi['\s]*an/i, name: '西安' },
+        { pattern: /xian/i, name: '西安' },
+        { pattern: /shaanxi/i, name: '陕西' },
+        { pattern: /shanxi/i, name: '山西' }
+      ];
+      
+      // 检查是否包含已知的城市名称关键词
+      for (const { pattern, name } of fuzzyMatches) {
+        if (pattern.test(cityName)) {
+          return name;
+        }
+      }
+      
+      // 检查是否以已知城市名称开头或包含
+      for (const [key, value] of Object.entries(cityNames)) {
+        const keyLower = key.toLowerCase();
+        // 如果城市名称包含已知城市名（至少3个字符匹配）
+        if (keyLower.length >= 3) {
+          // 提取城市名的主要部分（去除空格和特殊字符）
+          const keyMain = keyLower.replace(/['\s-]/g, '');
+          const cityMain = cityLower.replace(/['\s-]/g, '');
+          
+          // 如果包含完整的城市名主要部分
+          if (cityMain.includes(keyMain) || keyMain.includes(cityMain.substring(0, Math.min(keyMain.length, cityMain.length)))) {
+            return value;
+          }
         }
       }
       

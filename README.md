@@ -135,13 +135,23 @@ npm run build
      $env:GH_TOKEN = "你的Token"
      ```
 
-2. **发布命令**：
+2. **发布命令**（⚠️ 重要：必须使用 npm 脚本，不要直接使用 electron-builder）：
 ```powershell
-# 使用 npm 脚本
+# ✅ 推荐方式1：使用 npm 脚本（会自动先执行 electron-vite build）
+npm run build:win:publish
+
+# ✅ 推荐方式2：使用别名（功能相同）
 npm run publish:gh
 
-# 或直接使用 electron-builder
-npx electron-builder --publish=always --win
+# ⚠️ 如果必须直接使用 electron-builder，请先手动构建：
+npx electron-vite build
+npx electron-builder --win --publish=always
+
+# ❌ 错误方式1：会跳过构建步骤，导致使用旧的构建产物
+# npx electron-builder --publish=always --win
+
+# ❌ 错误方式2：npm run 后面不能直接跟命令参数
+# npm run electron-builder --win --publish=always
 ```
 
 **注意**：如果遇到 SSL 证书验证错误（`unable to verify the first certificate`），可能是企业网络环境的 SSL 拦截导致的。可以尝试以下解决方案：

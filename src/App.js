@@ -53,7 +53,7 @@ export default {
         const d = disp.displays && disp.displays[curId];
         if (!d) return;
         if (d.lineNameMerge !== undefined) appData.meta.lineNameMerge = d.lineNameMerge;
-        if (d.showAllStations !== undefined) appData.meta.showAllStations = d.showAllStations;
+        // showAllStations 已废弃：不再从设置同步到线路 meta
         if (curId === 'display-3' && d.display3Tags && typeof d.display3Tags === 'object') {
           appData.meta.display3Tags = { ...d.display3Tags };
         }
@@ -317,17 +317,11 @@ export default {
       // 节日列表：与公告一样弹窗（由节日插件 dateCheck 处理）
       doAction('dateCheck', {});
 
-      console.log('[App] 📊 准备上报使用统计，API地址:', CLOUD_API_BASE);
       // 延迟上报，确保应用已完全加载
       setTimeout(async () => {
         try {
-          console.log('[App] 📤 开始上报使用统计...');
           const result = await cloudConfig.sendTelemetry();
-          if (result && result.ok) {
-            console.log('[App] ✅ 使用统计已上报成功');
-          } else {
-            console.warn('[App] ⚠️ 使用统计上报返回失败:', result?.error || '未知错误');
-          }
+          void result;
         } catch (e) {
           console.error('[App] ❌ 上报使用统计异常:', e);
         }

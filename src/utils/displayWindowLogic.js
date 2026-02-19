@@ -652,6 +652,12 @@ const displayStyleSheet = `
   box-sizing: content-box;
   position: absolute;
 }
+/* 直线模式 #d-map：站名容器内部「上中文、下英文」，避免在容器里垂直居中 */
+#display-app #d-map .l-node .info-btm {
+  justify-content: space-between;
+  align-items: center;
+  min-height: 150px;
+}
 #display-app .l-node .info-btm .name {
   font-size: 26px;
   font-weight: bold;
@@ -1136,62 +1142,9 @@ function getContrastRatio(color1, color2) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-// 自动检测首末站是否为暂缓车站，如果是则自动应用短交路逻辑
 export function autoApplyShortTurnIfNeeded(appData) {
-  if (!appData || !appData.stations || !appData.stations.length) return;
-  const meta = appData.meta || {};
-  const stations = appData.stations;
-  const len = stations.length;
-  
-  // 如果已经手动设置了短交路（非自动生成的），则不自动应用
-  // 检查是否有手动设置的标记（如果 autoShortTurn 为 false 或不存在，且 startIdx/termIdx 已设置，则认为是手动设置）
-  const hasManualShortTurn = (meta.startIdx !== undefined && meta.startIdx !== -1) || 
-                             (meta.termIdx !== undefined && meta.termIdx !== -1);
-  const isAutoShortTurn = meta.autoShortTurn === true;
-  
-  // 如果已有手动设置的短交路且不是自动生成的，则不处理
-  if (hasManualShortTurn && !isAutoShortTurn) return;
-  
-  // 检查首站和末站是否为暂缓车站
-  const firstStation = stations[0];
-  const lastStation = stations[len - 1];
-  const firstIsSuspended = firstStation && firstStation.skip === true;
-  const lastIsSuspended = lastStation && lastStation.skip === true;
-  
-  // 如果首站或末站是暂缓车站，自动应用短交路
-  if (firstIsSuspended || lastIsSuspended) {
-    // 找到第一个非暂缓站点作为起点
-    let autoStartIdx = 0;
-    for (let i = 0; i < len; i++) {
-      if (!stations[i].skip) {
-        autoStartIdx = i;
-        break;
-      }
-    }
-    
-    // 找到最后一个非暂缓站点作为终点
-    let autoTermIdx = len - 1;
-    for (let i = len - 1; i >= 0; i--) {
-      if (!stations[i].skip) {
-        autoTermIdx = i;
-        break;
-      }
-    }
-    
-    // 只有当找到的有效站点与首末站不同时，才设置短交路
-    if (autoStartIdx > 0 || autoTermIdx < len - 1) {
-      meta.startIdx = autoStartIdx;
-      meta.termIdx = autoTermIdx;
-      meta.autoShortTurn = true; // 标记为自动生成的短交路
-    }
-  } else {
-    // 如果首末站都不是暂缓车站，且当前是自动生成的短交路，则清除
-    if (isAutoShortTurn) {
-      meta.startIdx = -1;
-      meta.termIdx = -1;
-      meta.autoShortTurn = false;
-    }
-  }
+  // 自动短交路逻辑已移除：不再根据首末站 skip 自动修改 startIdx/termIdx/autoShortTurn
+  return;
 }
 
 function getNextValidSt(currentIdx, step, appData) {
@@ -3789,10 +3742,9 @@ export function initDisplayWindow(rootElement) {
       }
     }
     
-    // 检查是否启用"显示全部站点"功能
-    // 如果 meta.showAllStations 为 true，则无论站点数量多少都使用 flexbox 布局
-    const showAllStations = (m.showAllStations === true);
-    const MAX_POSITIONS = showAllStations ? Infinity : targetMaxPositions;
+    // showAllStations 已废弃：不再支持“显示全部站点”
+    const showAllStations = false;
+    const MAX_POSITIONS = targetMaxPositions;
     let spacing = 90;
     
     // 计算渐变位置：如果站点数量少于或等于MAX_POSITIONS，使用flexbox布局；否则使用原始计算
@@ -4845,10 +4797,6 @@ export function initDisplayWindow(rootElement) {
     if (!data || !data.t) return;
     if (data.t === 'SYNC') {
       appData = data.d;
-      // 自动检测并应用短交路逻辑（如果首末站是暂缓车站）
-      if (appData) {
-        autoApplyShortTurnIfNeeded(appData);
-      }
       // 更新换乘检测显示
       updateXferCheck(xferCheckElement, appData);
       rt = data.r || rt;
@@ -4866,10 +4814,6 @@ export function initDisplayWindow(rootElement) {
     const data = event.data;
     if (!data || data.t !== 'SYNC') return;
     appData = data.d;
-    // 自动检测并应用短交路逻辑（如果首末站是暂缓车站）
-    if (appData) {
-      autoApplyShortTurnIfNeeded(appData);
-    }
     // 更新换乘检测显示
     updateXferCheck(xferCheckElement, appData);
     rt = data.r || rt;
@@ -4884,10 +4828,6 @@ export function initDisplayWindow(rootElement) {
       const data = JSON.parse(raw);
       if (!data || data.t !== 'SYNC') return false;
       appData = data.d;
-      // 自动检测并应用短交路逻辑（如果首末站是暂缓车站）
-      if (appData) {
-        autoApplyShortTurnIfNeeded(appData);
-      }
       // 更新换乘检测显示
       updateXferCheck(xferCheckElement, appData);
       rt = data.r || rt;

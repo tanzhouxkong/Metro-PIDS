@@ -210,11 +210,6 @@ export default {
     if (!pidsState.appData.meta.serviceMode) pidsState.appData.meta.serviceMode = 'normal';
     // 兼容旧数据，补齐线路名合并开关
     if (pidsState.appData.meta.lineNameMerge === undefined) pidsState.appData.meta.lineNameMerge = false;
-    // 初始化显示全部站点选项
-    if (pidsState.appData.meta.showAllStations === undefined) {
-        pidsState.appData.meta.showAllStations = false;
-    }
-    
     // 初始化贯通线路设置字段
     if (pidsState.appData.meta.throughLineSegments === undefined) {
         if (pidsState.appData.meta.lineALineName && pidsState.appData.meta.lineBLineName) {
@@ -267,6 +262,10 @@ export default {
     }
     
     async function applyShortTurn() {
+        // 一旦用户手动应用短交路，视为“手动设置”，避免被自动短交路逻辑覆盖
+        if (pidsState?.appData?.meta) {
+            pidsState.appData.meta.autoShortTurn = false;
+        }
         saveCfg();
         const startName = pidsState.appData.meta.startIdx >= 0 ? pidsState.appData.stations[pidsState.appData.meta.startIdx].name : '无';
         const termName = pidsState.appData.meta.termIdx >= 0 ? pidsState.appData.stations[pidsState.appData.meta.termIdx].name : '无';
@@ -277,8 +276,18 @@ export default {
         if (await askUser('确定要清除短交路设置吗？')) {
             pidsState.appData.meta.startIdx = -1;
             pidsState.appData.meta.termIdx = -1;
+            if (pidsState?.appData?.meta) {
+                pidsState.appData.meta.autoShortTurn = false;
+            }
             saveCfg();
         }
+    }
+
+    function unlockAutoShortTurn() {
+        if (!pidsState?.appData?.meta) return;
+        // 将“自动短交路”切换为“手动短交路”，保留当前 startIdx/termIdx 作为初始值
+        pidsState.appData.meta.autoShortTurn = false;
+        saveCfg();
     }
     
     // 加载线路的站点列表
@@ -1504,6 +1513,7 @@ export default {
         onColorConfirm,
         clearShortTurn,
         applyShortTurn,
+        unlockAutoShortTurn,
         shortTurnPresets,
         loadShortTurnPresets,
         saveShortTurnPreset,
@@ -1662,13 +1672,51 @@ export default {
         </div>
         
         <!-- Short Turn Settings -->
-        <template v-if="!pidsState.appData?.meta?.autoShortTurn">
         <div class="card" style="border-left: 6px solid #5F27CD; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
             <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.shortTurn') }}</div>
+<<<<<<< Updated upstream
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+=======
+<<<<<<< HEAD
+
+            <div
+                v-if="pidsState.appData?.meta?.autoShortTurn"
+                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
+            >
+                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
+                    <i class="fas fa-magic" style="margin-right:6px;"></i>
+                    已启用自动短交路
+                </div>
+                <div style="color:var(--muted);">
+                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button
+                        class="btn"
+                        @click="unlockAutoShortTurn()"
+                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
+                    >
+                        转为手动设置
+                    </button>
+                </div>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
+                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+                <select
+                    v-model="pidsState.appData.meta.startIdx"
+                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
+                    style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+                >
+=======
+            
+            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
+                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+>>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
                     <option :value="-1">无</option>
                     <option v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" :value="i">[{{i+1}}] {{s.name}}</option>
                 </select>
@@ -1676,15 +1724,46 @@ export default {
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:16px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnEnd') }}</label>
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+                <select
+                    v-model="pidsState.appData.meta.termIdx"
+                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
+                    style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+                >
+=======
+>>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
                      <option :value="-1">无</option>
                      <option v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" :value="i">[{{i+1}}] {{s.name}}</option>
                 </select>
             </div>
             
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px;">
+<<<<<<< Updated upstream
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
+=======
+<<<<<<< HEAD
+                <button
+                    @click="clearShortTurn()"
+                    class="btn"
+                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
+                    style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;"
+                >{{ t('console.shortTurnClear') }}</button>
+                <button
+                    @click="applyShortTurn()"
+                    class="btn"
+                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
+                    style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;"
+                >{{ t('console.shortTurnApply') }}</button>
+=======
+                <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
+                <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
             </div>
 
             <!-- 短交路预设管理 -->
@@ -1720,7 +1799,6 @@ export default {
                 暂无预设，点击"保存预设"保存当前短交路设置（右键此处可从分享码导入）
             </div>
         </div>
-        </template>
 
         <!-- Through Line Settings -->
         <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">

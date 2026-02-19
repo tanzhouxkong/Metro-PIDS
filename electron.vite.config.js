@@ -100,6 +100,27 @@ const copyAssets = () => {
   }
 }
 
+// 复制 i18n 语言包到构建输出，确保打包后应用支持多语言
+const copyLocales = () => {
+  return {
+    name: 'copy-locales',
+    writeBundle() {
+      const localesSource = resolve(__dirname, 'src/locales')
+      const localesTarget = resolve(__dirname, 'out/renderer/locales')
+      if (!existsSync(localesSource)) return
+      try {
+        if (!existsSync(localesTarget)) {
+          mkdirSync(localesTarget, { recursive: true })
+        }
+        cpSync(localesSource, localesTarget, { recursive: true })
+        console.log('[copy-locales] ✅ Copied src/locales to out/renderer/locales for i18n')
+      } catch (e) {
+        console.error('[copy-locales] ❌ Failed to copy locales:', e)
+      }
+    }
+  }
+}
+
 export default defineConfig({
   // 主进程配置 - 支持热重启 🔥
   main: {
@@ -190,7 +211,8 @@ export default defineConfig({
         // 修复模板解析问题：禁用响应式转换以避免兼容性问题
         reactivityTransform: false
       }),
-      copyAssets()
+      copyAssets(),
+      copyLocales()
     ],
     resolve: {
       // 使用带编译器的构建，以支持运行时 template 选项（开发环境）
@@ -264,7 +286,7 @@ export default defineConfig({
       cssCodeSplit: true
     },
     optimizeDeps: {
-      include: ['vue'],
+      include: ['vue', 'vue-i18n'],
       exclude: [],
       // 强制重新预构建（开发环境）- 临时启用以修复缓存问题
       force: process.env.FORCE_VITE_OPTIMIZE === 'true', // 通过环境变量控制

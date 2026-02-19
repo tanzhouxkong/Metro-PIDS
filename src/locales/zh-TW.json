@@ -20,7 +20,15 @@
     "blur": "高斯模糊"
   },
   "display": {
+<<<<<<< Updated upstream
     "title": "顯示端管理 (Display Management)",
+=======
+<<<<<<< HEAD
+    "title": "顯示端管理",
+=======
+    "title": "顯示端管理 (Display Management)",
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
     "listTitle": "顯示端列表",
     "hint": "點擊卡片切換當前選中的顯示端，右鍵卡片或空白處可進行新建、編輯、啟用/停用、刪除操作，拖拽卡片可調整順序",
     "openAll": "開啟所有顯示端",
@@ -31,17 +39,38 @@
     "closeError": "關閉顯示端時出現錯誤"
   },
   "api": {
+<<<<<<< Updated upstream
     "title": "API 伺服器 (API Server)",
+=======
+<<<<<<< HEAD
+    "title": "API 伺服器",
+=======
+    "title": "API 伺服器 (API Server)",
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
     "enable": "啟用 HTTP API 伺服器",
     "tip1": "啟用後可透過 HTTP API 控制顯示器（用於 Python 等第三方客戶端）。",
     "tip2": "預設使用 BroadcastChannel 通訊，無需 HTTP 伺服器。",
     "tip3": "提示：如果第三方顯示器（特別是 Python 客戶端）顯示異常或無法連線，請嘗試更改此開關狀態並重啟應用重試。"
   },
   "keys": {
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+    "title": "快捷鍵",
+    "nextState": "進站/離站",
+    "prevStation": "上一站",
+    "nextStation": "下一站",
+=======
+>>>>>>> Stashed changes
     "title": "快捷鍵 (Keybindings)",
     "nextState": "進站/離站 (Next State)",
     "prevStation": "上一站 (Prev Station)",
     "nextStation": "下一站 (Next Station)",
+<<<<<<< Updated upstream
+=======
+>>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
     "placeholder": "按下按鍵...",
     "editHint": "點擊輸入框並按下鍵盤按鍵以修改快捷鍵。",
     "resetAll": "重置所有快捷鍵"

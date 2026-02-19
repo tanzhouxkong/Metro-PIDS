@@ -91,6 +91,122 @@ function generateAnnouncementId() {
 }
 
 /**
+ * 规范化 Windows 操作系统版本号（合并相同版本）
+ * @param {string} os - 操作系统字符串
+ * @returns {string} 规范化后的操作系统字符串
+ */
+function normalizeOSVersion(os) {
+  if (!os) return os;
+  const osLower = os.toLowerCase();
+  if (!osLower.includes('windows')) return os;
+  
+  // 提取构建号（Build number）
+  const buildMatch = os.match(/build\s*(\d+)|(\d+\.\d+\.(\d+))/i);
+  let buildNumber = null;
+  if (buildMatch) {
+    buildNumber = parseInt(buildMatch[1] || buildMatch[3] || '0');
+  }
+  
+  // 如果没有构建号，尝试从版本号中提取（如 10.0.26200）
+  if (!buildNumber) {
+    const versionMatch = os.match(/(\d+)\.(\d+)\.(\d+)/);
+    if (versionMatch) {
+      buildNumber = parseInt(versionMatch[3] || '0');
+    }
+  }
+  
+  // Windows版本映射表（Build号 -> 版本号）
+  const windowsVersionMap = {
+    // Windows 11
+    26200: 'Windows 11 25H2',
+    26100: 'Windows 11 24H2',
+    22631: 'Windows 11 23H2',
+    22621: 'Windows 11 22H2',
+    22000: 'Windows 11 21H2',
+    // Windows 10
+    19045: 'Windows 10 22H2',
+    19044: 'Windows 10 21H2',
+    19043: 'Windows 10 21H1',
+    19042: 'Windows 10 20H2',
+    19041: 'Windows 10 2004',
+    18363: 'Windows 10 19H2',
+    18362: 'Windows 10 1903',
+    17763: 'Windows 10 1809',
+    17134: 'Windows 10 1803',
+    16299: 'Windows 10 1709',
+    15063: 'Windows 10 1703',
+    14393: 'Windows 10 1607',
+    10586: 'Windows 10 1511',
+    10240: 'Windows 10 1507',
+    // Windows 8.1
+    9600: 'Windows 8.1',
+    // Windows 8
+    9200: 'Windows 8',
+    // Windows 7
+    7601: 'Windows 7 SP1',
+    7600: 'Windows 7',
+    // Windows Vista
+    6002: 'Windows Vista SP2',
+    6001: 'Windows Vista SP1',
+    6000: 'Windows Vista',
+    // Windows XP
+    2600: 'Windows XP'
+  };
+  
+  if (buildNumber) {
+    // 精确匹配
+    if (windowsVersionMap[buildNumber]) {
+      return windowsVersionMap[buildNumber];
+    }
+    
+    // 范围匹配（Windows 11）
+    if (buildNumber >= 26200) return 'Windows 11 25H2';
+    if (buildNumber >= 26100) return 'Windows 11 24H2';
+    if (buildNumber >= 22631) return 'Windows 11 23H2';
+    if (buildNumber >= 22621) return 'Windows 11 22H2';
+    if (buildNumber >= 22000) return 'Windows 11 21H2';
+    
+    // 范围匹配（Windows 10）
+    if (buildNumber >= 19045) return 'Windows 10 22H2';
+    if (buildNumber >= 19041) return 'Windows 10 21H2';
+    if (buildNumber >= 18363) return 'Windows 10 19H2';
+    if (buildNumber >= 17763) return 'Windows 10 1809';
+    if (buildNumber >= 17134) return 'Windows 10 1803';
+    if (buildNumber >= 16299) return 'Windows 10 1709';
+    if (buildNumber >= 15063) return 'Windows 10 1703';
+    if (buildNumber >= 14393) return 'Windows 10 1607';
+    if (buildNumber >= 10586) return 'Windows 10 1511';
+    if (buildNumber >= 10240) return 'Windows 10 1507';
+    
+    // 范围匹配（Windows 8.1）
+    if (buildNumber >= 9600) return 'Windows 8.1';
+    
+    // 范围匹配（Windows 8）
+    if (buildNumber >= 9200) return 'Windows 8';
+    
+    // 范围匹配（Windows 7）
+    if (buildNumber >= 7600) return 'Windows 7';
+    
+    // 范围匹配（Windows Vista）
+    if (buildNumber >= 6000) return 'Windows Vista';
+    
+    // 范围匹配（Windows XP）
+    if (buildNumber >= 2600) return 'Windows XP';
+  }
+  
+  // 如果无法解析，尝试从原始字符串中提取信息
+  if (osLower.includes('windows 11')) return 'Windows 11';
+  if (osLower.includes('windows 10')) return 'Windows 10';
+  if (osLower.includes('windows 8.1') || osLower.includes('windows 8.1')) return 'Windows 8.1';
+  if (osLower.includes('windows 8')) return 'Windows 8';
+  if (osLower.includes('windows 7')) return 'Windows 7';
+  if (osLower.includes('windows vista')) return 'Windows Vista';
+  if (osLower.includes('windows xp')) return 'Windows XP';
+  
+  return os;
+}
+
+/**
  * 检查时间范围是否有效
  * @param {string|null} startTime - 开始时间 (ISO 8601 格式，如 "2025-01-01T00:00:00Z")
  * @param {string|null} endTime - 结束时间 (ISO 8601 格式)
@@ -577,13 +693,168 @@ const ReleasesHandler = {
     }
   },
 
-  // GET /releases/download/:tag/:file - 代理下载
-  async download(tagName, fileName) {
+  // GET /releases/download/:tag/:file - 下载：有 R2 则从 R2 读，否则由 Worker 从 GitHub 实时代理（流式转发，无需 R2）
+  async download(env, tagName, fileName) {
+    const r2Key = `${tagName}/${fileName}`;
+    if (env.RELEASES_BUCKET) {
+      try {
+        const object = await env.RELEASES_BUCKET.get(r2Key);
+        if (object) {
+          const contentType = object.httpMetadata?.contentType || 'application/octet-stream';
+          const disposition = `attachment; filename="${fileName.replace(/"/g, '\\"')}"`;
+          return new Response(object.body, {
+            status: 200,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Disposition': disposition,
+              'Cache-Control': 'public, max-age=3600',
+              ...getCorsHeaders()
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('[Releases] R2 读取失败，回退到代理:', e?.message || e);
+      }
+    }
+    // 无 R2 或 R2 无此文件：从 GitHub 实时代理，流式转发给用户（用户仍从你的域名下载，无需 R2）
     const downloadUrl = `https://github.com/tanzhouxkong/Metro-PIDS/releases/download/${tagName}/${fileName}`;
-    return new Response(null, {
-      status: 301,
+    const res = await fetch(downloadUrl, { headers: getGitHubHeaders(env) });
+    if (!res.ok) {
+      return json(
+        { ok: false, error: res.status === 404 ? '文件不存在' : `拉取失败: ${res.status}` },
+        res.status === 404 ? 404 : 502,
+        getCorsHeaders()
+      );
+    }
+    const contentType = res.headers.get('Content-Type') || 'application/octet-stream';
+    const disposition = res.headers.get('Content-Disposition') || `attachment; filename="${fileName.replace(/"/g, '\\"')}"`;
+    return new Response(res.body, {
+      status: 200,
       headers: {
-        'Location': downloadUrl,
+        'Content-Type': contentType,
+        'Content-Disposition': disposition,
+        'Cache-Control': 'public, max-age=3600',
+        ...getCorsHeaders()
+      }
+    });
+  },
+
+  // POST /releases/sync-asset - 从 GitHub 拉取指定 release 文件并保存到 R2（需 Token 认证）
+  async syncAsset(env, tagName, fileName) {
+    if (!env.RELEASES_BUCKET) {
+      throw { status: 503, error: 'R2 未配置，请在 wrangler.toml 中配置 RELEASES_BUCKET 并创建桶 metro-pids-releases' };
+    }
+    const downloadUrl = `https://github.com/tanzhouxkong/Metro-PIDS/releases/download/${tagName}/${fileName}`;
+    const res = await fetch(downloadUrl, {
+      headers: getGitHubHeaders(env)
+    });
+    if (!res.ok) {
+      throw {
+        status: res.status === 404 ? 404 : 502,
+        error: res.status === 404 ? 'Release 或文件不存在' : `从 GitHub 拉取失败: ${res.status}`
+      };
+    }
+    const contentType = res.headers.get('Content-Type') || 'application/octet-stream';
+    const r2Key = `${tagName}/${fileName}`;
+    await env.RELEASES_BUCKET.put(r2Key, res.body, {
+      httpMetadata: { contentType }
+    });
+    console.log('[Releases] ✅ 已同步到 R2:', r2Key);
+    return { ok: true, key: r2Key, message: '已保存到服务器，用户将从服务器下载' };
+  },
+
+  // POST /releases/sync-release/:tag - 将某版本下所有 assets 从 GitHub 同步到 R2（需 Token 认证）
+  async syncRelease(env, tagName) {
+    if (!env.RELEASES_BUCKET) {
+      throw { status: 503, error: 'R2 未配置' };
+    }
+    const apiUrl = `${this.REPO_URL}/releases/tags/${encodeURIComponent(tagName)}`;
+    const res = await fetch(apiUrl, { headers: getGitHubHeaders(env) });
+    if (!res.ok) {
+      throw { status: res.status === 404 ? 404 : 502, error: res.status === 404 ? 'Release 不存在' : `GitHub API ${res.status}` };
+    }
+    const release = await res.json();
+    const assets = release.assets || [];
+    if (assets.length === 0) {
+      return { ok: true, synced: 0, message: '该版本没有可同步的附件' };
+    }
+    const results = [];
+    for (const asset of assets) {
+      const name = asset.name;
+      const downloadUrl = asset.browser_download_url;
+      try {
+        const fileRes = await fetch(downloadUrl, { headers: getGitHubHeaders(env) });
+        if (!fileRes.ok) continue;
+        const r2Key = `${tagName}/${name}`;
+        await env.RELEASES_BUCKET.put(r2Key, fileRes.body, {
+          httpMetadata: { contentType: fileRes.headers.get('Content-Type') || 'application/octet-stream' }
+        });
+        results.push({ name, ok: true });
+        console.log('[Releases] ✅ 已同步到 R2:', r2Key);
+      } catch (e) {
+        results.push({ name, ok: false, error: e?.message || String(e) });
+      }
+    }
+    return { ok: true, synced: results.filter(r => r.ok).length, results };
+  }
+};
+
+/**
+ * electron-updater generic 更新源（供应用自动更新走 Cloudflare）
+ * - GET /update/latest.yml → 从 GitHub 最新 release 拉取 latest.yml 并返回
+ * - GET /update/:fileName → 安装包请求，重定向到 /releases/download/:tag/:fileName（由现有 download 代理）
+ */
+const UpdateFeedHandler = {
+  // 从文件名解析版本号，用于拼 tag（如 Metro-PIDS-Setup-1.6.1.exe → v1.6.1）
+  versionFromFileName(fileName) {
+    const m = /Setup-([\d.]+)\.(exe|zip|dmg|AppImage)$/i.exec(fileName);
+    return m ? m[1] : null;
+  },
+
+  // GET /update/latest.yml
+  async getLatestYml(env) {
+    const res = await fetch(ReleasesHandler.REPO_URL + '/releases/latest', {
+      headers: getGitHubHeaders(env)
+    });
+    if (!res.ok) {
+      throw { status: res.status === 404 ? 404 : 502, error: res.status === 404 ? '未找到最新 Release' : `GitHub API ${res.status}` };
+    }
+    const release = await res.json();
+    const tag = release.tag_name || '';
+    const ymlUrl = `https://github.com/tanzhouxkong/Metro-PIDS/releases/download/${tag}/latest.yml`;
+    const ymlRes = await fetch(ymlUrl, { headers: getGitHubHeaders(env) });
+    if (!ymlRes.ok) {
+      throw { status: ymlRes.status === 404 ? 404 : 502, error: 'latest.yml 不存在，请确保发布时上传了 latest.yml' };
+    }
+    const ymlText = await ymlRes.text();
+    return new Response(ymlText, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/yaml; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        ...getCorsHeaders()
+      }
+    });
+  },
+
+  // GET /update/:fileName（安装包）→ 重定向到 /releases/download/vX.Y.Z/fileName
+  async handleFileRequest(env, fileName, origin) {
+    if (!fileName || fileName.includes('/') || fileName.includes('..')) {
+      throw { status: 400, error: '无效文件名' };
+    }
+    if (fileName === 'latest.yml') {
+      return await this.getLatestYml(env);
+    }
+    const version = this.versionFromFileName(fileName);
+    if (!version) {
+      throw { status: 404, error: '无法从文件名解析版本，仅支持 *-Setup-X.Y.Z.exe 等格式' };
+    }
+    const tag = version.startsWith('v') ? version : 'v' + version;
+    const location = `${origin.replace(/\/+$/, '')}/releases/download/${tag}/${encodeURIComponent(fileName)}`;
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': location,
         ...getCorsHeaders()
       }
     });
@@ -1030,6 +1301,9 @@ const TelemetryHandler = {
       }
     }
     
+    // 规范化操作系统版本号（合并相同版本）
+    os = normalizeOSVersion(os);
+    
     // 生成记录
     const ts = Date.now();
     const recordId = `${ts}_${deviceId.substring(0, 8)}_${Math.random().toString(36).substring(2, 9)}`;
@@ -1081,7 +1355,9 @@ const TelemetryHandler = {
         for (const row of aggRes.results) {
           byCountry[row.country] = (byCountry[row.country] || 0) + 1;
           byVersion[row.version] = (byVersion[row.version] || 0) + 1;
-          byOS[row.os] = (byOS[row.os] || 0) + 1;
+          // 规范化操作系统版本号以合并相同版本
+          const normalizedOS = normalizeOSVersion(row.os || 'unknown');
+          byOS[normalizedOS] = (byOS[normalizedOS] || 0) + 1;
           byDevice[row.device_id] = (byDevice[row.device_id] || 0) + 1;
         }
       }
@@ -1257,6 +1533,8 @@ async function migrateTelemetryKvToD1(env, cursorFromQuery) {
       }
       if (!record.deviceId || !record.ts) { skipped++; continue; }
       const recordId = record.id || k.name.replace(TELEMETRY_KV_PREFIX, '');
+      // 规范化操作系统版本号（合并相同版本）
+      const normalizedOS = normalizeOSVersion(record.os || 'unknown');
       await env.DB.prepare(
         'INSERT OR IGNORE INTO telemetry (id, device_id, version, country, city, os, ts) VALUES (?, ?, ?, ?, ?, ?, ?)'
       ).bind(
@@ -1265,7 +1543,7 @@ async function migrateTelemetryKvToD1(env, cursorFromQuery) {
         String(record.version || 'unknown'),
         String(record.country || 'unknown'),
         String(record.city || 'unknown'),
-        String(record.os || 'unknown'),
+        String(normalizedOS),
         record.ts
       ).run();
       migrated++;
@@ -1502,6 +1780,18 @@ const StartupNoticeHandler = {
 const DisplayFlagsHandler = {
   KEY: 'config:display-flags',
 
+  _normalizeDisplaysMap(displays) {
+    if (!displays || typeof displays !== 'object' || Array.isArray(displays)) return null;
+    const out = {};
+    for (const [id, val] of Object.entries(displays)) {
+      const v = (val && typeof val === 'object') ? val : {};
+      const enRaw = Object.prototype.hasOwnProperty.call(v, 'enabled') ? v.enabled : true;
+      const enabled = !(enRaw === false || enRaw === 'false' || enRaw === 0);
+      out[id] = { enabled };
+    }
+    return out;
+  },
+
   // GET /display-flags - 获取显示端功能开关
   async get(env, request = null) {
     const raw = await env.LINES.get(this.KEY);
@@ -1539,6 +1829,8 @@ const DisplayFlagsHandler = {
       if (config.blockedCountries === undefined) config.blockedCountries = null;
       if (config.allowedCities === undefined) config.allowedCities = null;
       if (config.blockedCities === undefined) config.blockedCities = null;
+      // 规范化 displays（兼容 enabled 为字符串/数字等旧数据）
+      config.displays = this._normalizeDisplaysMap(config.displays);
       
       // 如果提供了请求对象，检查是否应该生效（基于时间范围和地理位置）
       if (request) {
@@ -1565,6 +1857,8 @@ const DisplayFlagsHandler = {
         // 如果无效，使用默认值
         if (!config._isEffective) {
           config.showSystemDisplayOption = true; // 默认显示
+          // 不生效时：不应用每个显示器的独立开关，避免客户端“看似未关闭但实际被关闭”
+          config.displays = null;
         }
       }
       
@@ -1596,7 +1890,7 @@ const DisplayFlagsHandler = {
     const config = {
       showSystemDisplayOption: body.showSystemDisplayOption !== false,
       // 每个显示器的独立开关（例如 display-1, display-2）
-      displays: body.displays && typeof body.displays === 'object' ? body.displays : null,
+      displays: this._normalizeDisplaysMap(body.displays),
       startTime: typeof body.startTime === 'string' && body.startTime.trim() ? body.startTime.trim() : null,
       endTime: typeof body.endTime === 'string' && body.endTime.trim() ? body.endTime.trim() : null,
       allowedCountries: Array.isArray(body.allowedCountries) ? body.allowedCountries.filter(c => typeof c === 'string') : null,
@@ -1842,7 +2136,11 @@ async function handleRequest(request, env) {
           { method: 'DELETE', path: '/runtime/lines/:lineName', description: '' },
           { method: 'GET', path: '/releases', description: '' },
           { method: 'GET', path: '/releases/latest', description: '' },
-          { method: 'GET', path: '/releases/download/:tag/:file', description: '' },
+          { method: 'GET', path: '/releases/download/:tag/:file', description: '下载安装包（优先 R2，无则跳转 GitHub）' },
+          { method: 'POST', path: '/releases/sync-asset', description: '将指定 release 文件从 GitHub 同步到 R2（需 Token）' },
+          { method: 'POST', path: '/releases/sync-release/:tag', description: '将某版本全部附件同步到 R2（需 Token）' },
+          { method: 'GET', path: '/update/latest.yml', description: 'electron-updater generic 更新清单' },
+          { method: 'GET', path: '/update/:fileName', description: '更新安装包（重定向到 /releases/download）' },
           { method: 'GET', path: '/update/changelog', description: '' },
           { method: 'POST', path: '/update/changelog/sync/github', description: '' },
           { method: 'GET', path: '/update/check', description: '' },
@@ -1983,7 +2281,43 @@ async function handleRequest(request, env) {
       }
       const tagName = decodeURIComponent(pathParts[0]);
       const fileName = decodeURIComponent(pathParts[1]);
-      return await ReleasesHandler.download(tagName, fileName);
+      return await ReleasesHandler.download(env, tagName, fileName);
+    }
+    if (pathname === '/releases/sync-asset' && method === 'POST') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      try {
+        const body = await readJson(request);
+        const tagName = body?.tagName || body?.tag;
+        const fileName = body?.fileName || body?.file;
+        if (!tagName || !fileName) {
+          return json({ ok: false, error: '请提供 tagName 和 fileName（或 tag / file）' }, 400, corsHeaders);
+        }
+        return json(await ReleasesHandler.syncAsset(env, tagName, fileName), 200, corsHeaders);
+      } catch (error) {
+        if (error && typeof error === 'object' && 'status' in error) {
+          return json({ ok: false, error: error.error || String(error) }, error.status || 500, corsHeaders);
+        }
+        return json({ ok: false, error: error?.message || String(error) }, 500, corsHeaders);
+      }
+    }
+    if (pathname.startsWith('/releases/sync-release/') && method === 'POST') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const tagName = decodeURIComponent(pathname.slice('/releases/sync-release/'.length));
+      if (!tagName) {
+        return json({ ok: false, error: '请提供版本 tag，例如 v1.0.0' }, 400, corsHeaders);
+      }
+      try {
+        return json(await ReleasesHandler.syncRelease(env, tagName), 200, corsHeaders);
+      } catch (error) {
+        if (error && typeof error === 'object' && 'status' in error) {
+          return json({ ok: false, error: error.error || String(error) }, error.status || 500, corsHeaders);
+        }
+        return json({ ok: false, error: error?.message || String(error) }, 500, corsHeaders);
+      }
     }
     if (pathname === '/releases/refresh' && method === 'POST') {
       // 手动刷新 Releases 缓存（需要 Token 认证）
@@ -2013,7 +2347,7 @@ async function handleRequest(request, env) {
       }
     }
 
-    // 更新日志 API
+    // 更新日志 API（必须在 /update/:fileName 通配之前精确匹配）
     if (pathname === '/update/changelog' && method === 'GET') {
       return json(await ChangelogHandler.get(env, request), 200, corsHeaders);
     }
@@ -2096,6 +2430,31 @@ async function handleRequest(request, env) {
           ok: false, 
           error: error?.message || String(error || 'Internal Server Error')
         }, 500, corsHeaders);
+      }
+    }
+
+    // electron-updater generic 更新源（须在 /update/changelog、/update/check 等之后，仅匹配 latest.yml 与安装包文件名）
+    if (pathname === '/update/latest.yml' && method === 'GET') {
+      try {
+        return await UpdateFeedHandler.getLatestYml(env);
+      } catch (error) {
+        if (error && typeof error === 'object' && 'status' in error) {
+          return json({ ok: false, error: error.error || String(error) }, error.status || 502, corsHeaders);
+        }
+        return json({ ok: false, error: error?.message || String(error) }, 502, corsHeaders);
+      }
+    }
+    if (pathname.startsWith('/update/') && method === 'GET') {
+      const fileName = decodeURIComponent(pathname.slice('/update/'.length));
+      if (fileName) {
+        try {
+          return await UpdateFeedHandler.handleFileRequest(env, fileName, url.origin);
+        } catch (error) {
+          if (error && typeof error === 'object' && 'status' in error) {
+            return json({ ok: false, error: error.error || String(error) }, error.status || 400, corsHeaders);
+          }
+          return json({ ok: false, error: error?.message || String(error) }, 400, corsHeaders);
+        }
       }
     }
 
@@ -2202,7 +2561,8 @@ async function handleRequest(request, env) {
 
     // 显示端功能开关 API
     if (pathname === '/display-flags' && method === 'GET') {
-      return json(await DisplayFlagsHandler.get(env, request), 200, corsHeaders);
+      const result = await DisplayFlagsHandler.get(env, request);
+      return json(result, 200, { ...corsHeaders, 'Cache-Control': 'no-store' });
     }
     if (pathname === '/display-flags' && method === 'PUT') {
       if (!checkWriteAuth(request, env)) {

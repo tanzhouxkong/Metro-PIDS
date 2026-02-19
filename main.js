@@ -3620,7 +3620,6 @@ ipcMain.handle('app/get-device-id', async () => {
         const storedId = fileContent.trim();
         if (storedId && storedId.length > 10) {
           deviceId = storedId;
-          console.log('[main] 从文件系统读取设备ID:', deviceId.substring(0, 8) + '...');
         }
       }
     } catch (e) {
@@ -4145,11 +4144,10 @@ async function initAutoUpdater() {
   try {
     autoUpdater.disableWebInstaller = false;
     
-    // 如果指定了本地更新源，则优先使用（便于本地搭建HTTP服务测试更新）
-    // 用法：启动前设置环境变量 LOCAL_UPDATE_URL，例如
-    //   Windows PowerShell:  $env:LOCAL_UPDATE_URL="http://localhost:8080/"
-    //   macOS/Linux:         LOCAL_UPDATE_URL="http://localhost:8080/" npm start
+    // 更新源：优先本地调试，否则走 Cloudflare Worker（自动更新经服务器，不直连 GitHub）
     const localFeed = process.env.LOCAL_UPDATE_URL;
+    const cloudUpdateBase = process.env.CLOUD_UPDATE_URL || 'https://metro.tanzhouxiang.dpdns.org';
+    const cloudFeed = cloudUpdateBase.replace(/\/+$/, '') + '/update/';
     if (localFeed) {
       try {
         autoUpdater.setFeedURL({
@@ -4159,6 +4157,16 @@ async function initAutoUpdater() {
         console.log('[main] 使用本地更新源 LOCAL_UPDATE_URL:', localFeed);
       } catch (e) {
         console.error('[main] 设置本地更新源失败:', e);
+      }
+    } else {
+      try {
+        autoUpdater.setFeedURL({
+          url: cloudFeed,
+          provider: 'generic'
+        });
+        console.log('[main] 使用 Cloudflare 更新源（自动更新经服务器）:', cloudFeed);
+      } catch (e) {
+        console.error('[main] 设置 Cloudflare 更新源失败:', e);
       }
     }
     

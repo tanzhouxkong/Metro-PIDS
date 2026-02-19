@@ -1,4 +1,31 @@
+
 !macro customInit
-  MessageBox MB_OK "欢迎使用 Metro-PIDS 安装程序！"
+  ; 安装前清理旧版本残留的 displays 目录，避免覆盖安装后仍看到旧文件
+  Push $0
+  StrCpy $0 "$INSTDIR\resources\app.asar.unpacked\displays"
+  IfFileExists "$0\*.*" 0 skip_cleanup
+    RMDir /r "$0"
+  skip_cleanup:
+  Pop $0
 !macroend
 
+!macro customUnInstall
+  ; 防止卸载时程序仍在运行
+  Push $0
+
+  loop_check_app:
+    ; 根据窗口标题查找应用主窗口（标题：Metro-PIDS）
+    FindWindow $0 "" "Metro-PIDS"
+    StrCmp $0 0 done_check_app
+
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION \
+      "检测到 Metro-PIDS 正在运行，请先关闭应用后再继续卸载。" \
+      IDRETRY loop_check_app IDCANCEL cancel_uninstall
+
+  cancel_uninstall:
+    Pop $0
+    Abort
+
+  done_check_app:
+    Pop $0
+!macroend

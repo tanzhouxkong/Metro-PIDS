@@ -26,15 +26,10 @@ async function getDeviceIdAsync() {
                 // 检查 localStorage 中是否有不同的ID（可能是旧版本生成的）
                 const cachedId = localStorage.getItem(STORAGE_KEY);
                 if (cachedId && cachedId !== ipcDeviceId) {
-                    console.log('[useCloudConfig] ⚠️ 发现设备ID不一致:', {
-                        cached: cachedId.substring(0, 12) + '...',
-                        ipc: ipcDeviceId.substring(0, 12) + '...',
-                        action: '使用 IPC 返回的ID并更新缓存'
-                    });
+                    // 保持静默：不输出设备ID相关日志
                 }
                 // 始终使用 IPC 返回的ID，并更新 localStorage（确保一致性）
                 localStorage.setItem(STORAGE_KEY, ipcDeviceId);
-                console.log('[useCloudConfig] ✅ 从 Electron IPC 获取设备ID:', ipcDeviceId.substring(0, 12) + '...');
                 return ipcDeviceId;
             }
         } catch (e) {
@@ -45,7 +40,6 @@ async function getDeviceIdAsync() {
     // 第二优先级：localStorage（覆盖安装不会丢失）
     let deviceId = localStorage.getItem(STORAGE_KEY);
     if (deviceId) {
-        console.log('[useCloudConfig] 📦 从 localStorage 获取设备ID（缓存）:', deviceId.substring(0, 12) + '...');
         return deviceId;
     }
     
@@ -57,7 +51,6 @@ async function getDeviceIdAsync() {
         return v.toString(16);
     });
     localStorage.setItem(STORAGE_KEY, deviceId);
-    console.log('[useCloudConfig] 🆕 生成新的设备ID（UUID格式）:', deviceId.substring(0, 12) + '...');
     return deviceId;
 }
 
@@ -132,12 +125,6 @@ async function getGeolocation() {
             const cachedLat = localStorage.getItem(STORAGE_KEY_LAT);
             const cachedLon = localStorage.getItem(STORAGE_KEY_LON);
             
-            console.log('[useCloudConfig] 📍 使用缓存的地理位置:', {
-                country: cachedCountry || 'unknown',
-                city: cachedCity || 'unknown',
-                age: Math.round(age / 1000 / 60) + '分钟前'
-            });
-            
             return {
                 country: cachedCountry || null,
                 city: cachedCity || null,
@@ -150,7 +137,6 @@ async function getGeolocation() {
     // 优先使用操作系统原生 API（通过 Electron IPC）
     if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.getGeolocation === 'function') {
         try {
-            console.log('[useCloudConfig] 📍 尝试使用操作系统原生 API 获取地理位置...');
             const location = await Promise.race([
                 window.electronAPI.getGeolocation(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('原生 API 超时')), 10000))
@@ -167,13 +153,6 @@ async function getGeolocation() {
                     localStorage.setItem(STORAGE_KEY_LON, location.longitude.toString());
                 }
                 localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
-                
-                console.log('[useCloudConfig] ✅ 通过操作系统原生 API 获取地理位置成功:', {
-                    country: location.country,
-                    city: location.city,
-                    latitude: location.latitude ? location.latitude.toFixed(4) : null,
-                    longitude: location.longitude ? location.longitude.toFixed(4) : null
-                });
                 
                 return location;
             }
@@ -239,13 +218,6 @@ async function getGeolocation() {
                     localStorage.setItem(STORAGE_KEY_LON, longitude.toString());
                     localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
                     
-                    console.log('[useCloudConfig] ✅ 获取地理位置成功:', {
-                        country,
-                        city,
-                        latitude: latitude.toFixed(4),
-                        longitude: longitude.toFixed(4)
-                    });
-                    
                     return { country, city, latitude, longitude };
                 }
             } catch (geocodeError) {
@@ -266,10 +238,6 @@ async function getGeolocation() {
             const cachedCity = localStorage.getItem(STORAGE_KEY_CITY);
             
             if (cachedCountry || cachedCity) {
-                console.log('[useCloudConfig] 📦 使用过期的缓存地理位置:', {
-                    country: cachedCountry || 'unknown',
-                    city: cachedCity || 'unknown'
-                });
                 return {
                     country: cachedCountry || null,
                     city: cachedCity || null,
@@ -371,12 +339,6 @@ export function useCloudConfig(apiBase, token = null) {
     async function request(method, path, data = null) {
         const url = `${apiBase.replace(/\/+$/, '')}${path}`;
         
-        const logData = data ? {
-            ...data,
-            deviceId: data.deviceId ? (data.deviceId.length > 8 ? data.deviceId.substring(0, 8) + '...' : data.deviceId) : 'missing'
-        } : null;
-        console.log(`[useCloudConfig] 📤 发送请求: ${method} ${url}`, logData);
-        
         // 获取请求头（包含地理位置信息）
         const headers = await getHeaders(!!data);
         
@@ -403,8 +365,6 @@ export function useCloudConfig(apiBase, token = null) {
                 console.error('[useCloudConfig] ❌ 响应解析失败:', parseError);
                 throw new Error(`响应解析失败: ${parseError.message}`);
             }
-            
-            console.log(`[useCloudConfig] 📥 响应: ${response.status}`, result);
             
             if (!response.ok) {
                 const errorMsg = result.error || result.message || `HTTP ${response.status}`;
@@ -503,7 +463,8 @@ export function useCloudConfig(apiBase, token = null) {
             if (cfg && cfg._isEffective === false) {
                 if (uiState) {
                     uiState.showSystemDisplayOption = true;
-                    uiState.displayFlags = cfg;
+                    // 不生效时：不应用每显示器开关（兼容旧服务端返回仍带 enabled=false 的情况）
+                    uiState.displayFlags = cfg ? { ...cfg, displays: null } : null;
                 }
                 return { ok: true, config: cfg };
             }
@@ -611,12 +572,6 @@ export function useCloudConfig(apiBase, token = null) {
             return { ok: false, error: '无法获取设备ID' };
         }
         
-        console.log('[useCloudConfig] 📱 获取到的设备ID:', {
-            id: deviceId.substring(0, 12) + '...',
-            length: deviceId.length,
-            format: deviceId.startsWith('device-') ? '随机生成' : deviceId.length === 32 ? '哈希生成' : 'UUID格式'
-        });
-        
         // 获取平台信息
         let platform = 'unknown';
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.platform) {
@@ -645,21 +600,7 @@ export function useCloudConfig(apiBase, token = null) {
             osVersion: osVersion || undefined // 只在有值时发送
         };
         
-        console.log('[useCloudConfig] 📊 准备上报统计信息:', {
-            version,
-            deviceId: deviceId.substring(0, 12) + '...',
-            platform,
-            osVersion: osVersion || 'none'
-        });
-        
         const result = await request('POST', '/telemetry', payload);
-        
-        if (result && result.ok) {
-            console.log('[useCloudConfig] ✅ 统计信息上报成功，记录ID:', result.id || result.data?.id);
-        } else {
-            console.warn('[useCloudConfig] ⚠️ 统计信息上报失败:', result?.error || '未知错误');
-        }
-        
         return result;
     }
 

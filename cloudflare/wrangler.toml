@@ -2,6 +2,10 @@ name = "metro-pids-cloud"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
+# 注意：此文件用于配置 Cloudflare Worker
+# Pages 部署使用命令行参数，不需要在此配置 pages_build_output_dir
+# 部署 Pages 时使用：wrangler pages deploy . --project-name=metro-pids-admin
+
 # 这里的 account_id 和 kv id 需要你在 Cloudflare 控制台/命令行创建后填写
 # 获取方式：
 #   1) 安装 wrangler:  npm install -g wrangler
@@ -20,6 +24,13 @@ binding = "DB"
 database_name = "metro-pids-db"
 database_id = "a199a54b-78de-421d-8e2b-5d0930fd347c"
 
+
+# R2 存储桶（可选）：用于把 Release 安装包保存到服务器再供用户下载。
+# 若未启用 R2，部署时请注释掉下面 3 行，下载将直接 301 到 GitHub。
+# 启用步骤：Cloudflare 控制台 → R2 → 开通 R2 → 取消下面 3 行注释 → wrangler r2 bucket create metro-pids-releases → 重新部署
+# [[r2_buckets]]
+# binding = "RELEASES_BUCKET"
+# bucket_name = "metro-pids-releases"
 
 # 以下敏感信息请用 wrangler secret 配置（勿写入此文件，避免泄露）:
 #   wrangler secret put CLOUD_TOKEN          # 云控后台写操作鉴权
