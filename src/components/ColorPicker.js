@@ -1,5 +1,6 @@
 
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 export default {
   name: 'ColorPicker',
@@ -15,6 +16,7 @@ export default {
   },
   emits: ['update:modelValue', 'confirm'],
   setup(props, { emit }) {
+    const { t } = useI18n();
     const showDialog = computed({
       get: () => props.modelValue,
       set: (val) => emit('update:modelValue', val)
@@ -167,15 +169,16 @@ export default {
       validateHex,
       validateRgb,
       hasElectronAPI,
-      handlePaste
+      handlePaste,
+      t
     };
   },
   template: `
     <div v-if="showDialog" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20000; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px);" @click.self="cancel">
       <div @click.stop @paste.stop style="background:#ffffff; color:#000000; border-radius:12px; padding:24px; width:420px; max-width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-          <h2 style="margin:0; font-size:20px; font-weight:bold; color:#000000;">选择颜色</h2>
-          <button @click="cancel" style="background:none; border:none; color:#666666; cursor:pointer; font-size:24px; padding:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:6px; transition:background 0.2s;" @mouseover="$event.target.style.background='#f0f0f0'" @mouseout="$event.target.style.background='none'">&times;</button>
+          <h2 style="margin:0; font-size:20px; font-weight:bold; color:#000000;">{{ t('colorPicker.title') }}</h2>
+          <button @click="cancel" style="background:none; border:none; color:#666666; cursor:pointer; font-size:24px; padding:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:6px; transition:background 0.2s;" @mouseover="$event.target.style.background='#f0f0f0'" @mouseout="$event.target.style.background='none'">×</button>
         </div>
 
         <!-- 颜色预览 -->
@@ -185,7 +188,7 @@ export default {
 
         <!-- 十六进制输入 -->
         <div style="margin-bottom:20px;">
-          <label style="display:block; font-size:13px; font-weight:bold; color:#666666; margin-bottom:8px;">十六进制 (Hex)</label>
+          <label style="display:block; font-size:13px; font-weight:bold; color:#666666; margin-bottom:8px;">{{ t('colorPicker.hexLabel') }}</label>
           <div style="display:flex; gap:8px; align-items:center;">
             <input 
               type="text" 
@@ -207,10 +210,10 @@ export default {
 
         <!-- RGB 输入 -->
         <div style="margin-bottom:20px;">
-          <label style="display:block; font-size:13px; font-weight:bold; color:#666666; margin-bottom:8px;">RGB</label>
+          <label style="display:block; font-size:13px; font-weight:bold; color:#666666; margin-bottom:8px;">{{ t('colorPicker.rgbLabel') }}</label>
           <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
             <div>
-              <label style="display:block; font-size:11px; color:#666666; margin-bottom:4px;">R</label>
+              <label style="display:block; font-size:11px; color:#666666; margin-bottom:4px;">{{ t('colorPicker.rgbRLabel') }}</label>
               <input 
                 type="number" 
                 v-model.number="rgb.r" 
@@ -223,7 +226,7 @@ export default {
               >
             </div>
             <div>
-              <label style="display:block; font-size:11px; color:#666666; margin-bottom:4px;">G</label>
+              <label style="display:block; font-size:11px; color:#666666; margin-bottom:4px;">{{ t('colorPicker.rgbGLabel') }}</label>
               <input 
                 type="number" 
                 v-model.number="rgb.g" 
@@ -236,7 +239,7 @@ export default {
               >
             </div>
             <div>
-              <label style="display:block; font-size:11px; color:#666666; margin-bottom:4px;">B</label>
+              <label style="display:block; font-size:11px; color:#666666; margin-bottom:4px;">{{ t('colorPicker.rgbBLabel') }}</label>
               <input 
                 type="number" 
                 v-model.number="rgb.b" 
@@ -260,10 +263,10 @@ export default {
             style="background:var(--btn-blue-bg); color:white; padding:10px 16px; border-radius:6px; border:none; font-weight:bold;"
             :disabled="pickMode === 'picker'"
           >
-            <i class="fas fa-eye-dropper"></i> 屏幕取色
+            <i class="fas fa-eye-dropper"></i> {{ t('colorPicker.pickFromScreen') }}
           </button>
-          <button @click="cancel" class="btn" style="background:var(--btn-gray-bg); color:var(--btn-gray-text); padding:10px 16px; border-radius:6px; border:none;">取消</button>
-          <button @click="confirm" class="btn" style="background:var(--accent); color:white; padding:10px 16px; border-radius:6px; border:none; font-weight:bold;">确定</button>
+          <button @click="cancel" class="btn" style="background:var(--btn-gray-bg); color:var(--btn-gray-text); padding:10px 16px; border-radius:6px; border:none;">{{ t('colorPicker.btnCancel') }}</button>
+          <button @click="confirm" class="btn" style="background:var(--accent); color:white; padding:10px 16px; border-radius:6px; border:none; font-weight:bold;">{{ t('colorPicker.btnConfirm') }}</button>
         </div>
       </div>
     </div>

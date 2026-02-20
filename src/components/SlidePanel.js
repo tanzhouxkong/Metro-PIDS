@@ -2342,19 +2342,25 @@ export default {
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
             // 仅显示器1使用的选项：线路名合并 / C 型开关
             lineNameMerge: false,
             // 显示器1：壁纸（仅到站/结束页背景）
             wallpaperDataUrl: '',
             wallpaperOpacity: 0.35,
+<<<<<<< Updated upstream
 =======
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             // 显示器2：下一站/到站白屏时长
             nextStationDurationSeconds: 10,
@@ -2447,8 +2453,11 @@ export default {
                 ? display.layoutMode
                 : 'linear';
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
             if (displayId === 'display-1') {
                 displayEdit.wallpaperDataUrl = typeof display.wallpaperDataUrl === 'string' ? display.wallpaperDataUrl : '';
                 const op = Number.isFinite(display.wallpaperOpacity) ? display.wallpaperOpacity : parseFloat(display.wallpaperOpacity);
@@ -2457,8 +2466,11 @@ export default {
                 displayEdit.wallpaperDataUrl = '';
                 displayEdit.wallpaperOpacity = 0.35;
             }
+<<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
             displayEdit.departDurationSeconds = departDurationSeconds;
@@ -2508,18 +2520,24 @@ export default {
                         // 仅显示器1支持这些开关
                         lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
                         // 仅显示器1：壁纸
                         wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
                         wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
+<<<<<<< Updated upstream
 =======
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                         // 显示器3：出站页面显示时长（毫秒）
                         departDuration: displayEdit.isDisplay3
@@ -2563,18 +2581,24 @@ export default {
                 // 仅显示器1支持这些开关
                 lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
                 // 仅显示器1：壁纸
                 wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
                 wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
+<<<<<<< Updated upstream
 =======
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 isDisplay1: displayEdit.isDisplay1,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
@@ -2873,8 +2897,11 @@ export default {
                             display.layoutMode = displayData.layoutMode;
                         }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
                             // 显示器1：壁纸
                             if (displayId === 'display-1') {
                                 if (displayData.wallpaperDataUrl !== undefined) {
@@ -2885,8 +2912,11 @@ export default {
                                     display.wallpaperOpacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 0.35;
                                 }
                             }
+<<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                         // 显示器3：更新“出站页面显示时长”
                         if (displayId === 'display-3' && displayData.departDuration !== undefined) {
@@ -3348,6 +3378,7 @@ export default {
         <div class="card" style="border-left: 6px solid #4A90E2; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#4A90E2; font-weight:bold; margin-bottom:16px; font-size:15px;">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               {{ $t('preferences.language') }} (Language)
 =======
 <<<<<<< HEAD
@@ -3355,6 +3386,9 @@ export default {
 =======
               {{ $t('preferences.language') }} (Language)
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+              {{ $t('preferences.language') }}
 >>>>>>> Stashed changes
             </div>
 
@@ -3655,6 +3689,7 @@ export default {
                             </div>
                         </template>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
 =======
 <<<<<<< HEAD
@@ -3662,6 +3697,9 @@ export default {
 =======
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+                        <!-- 显示器1：线路名合并 / C 型开关 -->
 >>>>>>> Stashed changes
                         <template v-if="displayEdit.isDisplay1">
                             <div class="se-display-option-row">
@@ -3770,7 +3808,6 @@ export default {
                             </div>
                             <div>
                                 <h2 style="margin:0; font-size:22px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">更新日志</h2>
-                                <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Release Notes</div>
                                 <div v-if="releaseNotesSource" style="font-size:11px; color:var(--muted, #888); margin-top:2px;">数据来源：{{ releaseNotesSource === 'worker' ? '服务器' : 'GitHub' }}</div>
                             </div>
                         </div>

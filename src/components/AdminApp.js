@@ -1,5 +1,6 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { Teleport } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useFileIO } from '../composables/useFileIO.js'
@@ -10,6 +11,7 @@ export default {
   name: 'AdminApp',
   components: { StationEditor, Teleport },
   setup() {
+    const { t } = useI18n()
     const { state } = usePidsState()
     const { sync, next, move, setArr, setDep, jumpTo, getStep } = useController()
     
@@ -567,6 +569,36 @@ export default {
         return '普通';
     })
 
+    const lineModeLabel = computed(() => {
+        if (!state.appData || !state.appData.meta) return '';
+        const mode = state.appData.meta.mode;
+        if (mode === 'loop') {
+            return t('console.loopLine');
+        } else {
+            return t('console.singleLine');
+        }
+    })
+
+    const directionLabel = computed(() => {
+        if (!state.appData || !state.appData.meta) return '';
+        const dirType = state.appData.meta.dirType || 'up';
+        const mode = state.appData.meta.mode;
+        
+        if (mode === 'loop') {
+            if (dirType === 'outer') {
+                return t('console.outerLoop');
+            } else {
+                return t('console.innerLoop');
+            }
+        } else {
+            if (dirType === 'up') {
+                return t('folderLineManager.up');
+            } else {
+                return t('folderLineManager.down');
+            }
+        }
+    })
+
     // 检查是否到达终点站的辅助函数
     function isAtTerminal() {
         if (!state.appData || !state.appData.stations || state.appData.stations.length === 0) return false;
@@ -610,7 +642,9 @@ export default {
             next: handleNext, move, setArr, setDep, jumpTo,
             showEditor, editingStation, editingIndex, isNewStation,
             openEditor, saveStation, deleteStation,
-            currentStation, routeInfo, statusDesc, serviceModeLabel, stationRouteInfo, routeTextRef,
+            currentStation, routeInfo, statusDesc, serviceModeLabel, 
+            lineModeLabel, directionLabel,
+            stationRouteInfo, routeTextRef,
             onDragStart, onDragOver, onDrop, onDragEnter, onDragEnd, onDragLeave, draggingIndex, dragOverIndex, listRef,
             stationContextMenu, clipboard,
             showStationContextMenu, closeStationContextMenu,
@@ -634,6 +668,12 @@ export default {
                         <span class="admin-mode-value" :class="{ express: serviceModeLabel === '大站车', direct: serviceModeLabel === '直达' }">
                             {{ serviceModeLabel }}
                         </span>
+                    </div>
+                    <div class="admin-mode-group">
+                        <span class="admin-mode-value">{{ lineModeLabel }}</span>
+                    </div>
+                    <div class="admin-mode-group">
+                        <span class="admin-mode-value">{{ directionLabel }}</span>
                     </div>
                 </div>
             </div>

@@ -328,7 +328,73 @@ export default {
       }, 2000); // 延迟2秒上报
     });
 
-    return { pidState, uiState, stopAutoplay, toggleAutoplayPause };
+    // ===== 启动时更新提示（样式对齐更新日志弹窗） =====
+    const showUpdatePrompt = ref(false);
+    const updatePromptInfo = ref(null);
+    const updatePromptForce = ref(false);
+
+    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onUpdateHasUpdate) {
+      try {
+        window.electronAPI.onUpdateHasUpdate((data) => {
+          if (!data || !data.version) return;
+          const version = String(data.version);
+          const force = !!data.forceUpdate;
+          const key = `metro_pids_update_prompt_shown_${version}`;
+          try {
+            const already = window.localStorage.getItem(key);
+            if (already === '1') return;
+            window.localStorage.setItem(key, '1');
+          } catch (e) {
+            // 本地存储失败时，不阻止弹窗，只是不去重
+          }
+          updatePromptInfo.value = { version };
+          updatePromptForce.value = force;
+          showUpdatePrompt.value = true;
+        });
+      } catch (e) {
+        console.warn('[App] 绑定 update/has-update 事件失败:', e);
+      }
+    }
+
+    const handleUpdatePromptUpdate = async () => {
+      showUpdatePrompt.value = false;
+      try {
+        if (typeof window === 'undefined' || !window.electronAPI) return;
+        // 切到设置页“更新”面板
+        uiState.activePanel = 'panel-4';
+        const r = await window.electronAPI.checkForUpdates();
+        if (!r || !r.ok) {
+          const msg = (r && r.error) ? String(r.error) : '未知错误';
+          await dialogService.alert('检查更新失败：' + msg, '更新');
+        }
+      } catch (e) {
+        await dialogService.alert('检查更新失败：' + String(e), '更新');
+      }
+    };
+
+    const handleUpdatePromptCancel = () => {
+      showUpdatePrompt.value = false;
+    };
+
+    const handleUpdatePromptExit = async () => {
+      showUpdatePrompt.value = false;
+      try {
+        const confirm = await dialogService.confirm(
+          '此版本为强制更新版本，建议立即退出应用并安装最新版本。\n\n是否现在退出应用？',
+          '强制更新'
+        );
+        if (!confirm) return;
+        if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.close) {
+          window.electronAPI.windowControls.close();
+        } else if (typeof window !== 'undefined' && window.close) {
+          window.close();
+        }
+      } catch (e) {
+        // 忽略退出确认过程中的异常
+      }
+    };
+
+    return { pidState, uiState, stopAutoplay, toggleAutoplayPause, showUpdatePrompt, updatePromptInfo, updatePromptForce, handleUpdatePromptUpdate, handleUpdatePromptCancel, handleUpdatePromptExit };
   },
   template: `
     <div class="root" style="
@@ -409,6 +475,70 @@ export default {
                     </div>
                 </div>
             </Transition>
+        </Teleport>
+
+        <!-- 启动更新提示弹窗 - 样式对齐更新日志弹窗 -->
+        <Teleport to="body">
+          <Transition name="fade">
+            <div 
+              v-if="showUpdatePrompt" 
+              style="position:fixed; inset:0; z-index:20010; display:flex; align-items:center; justify-content:center; background:transparent;"
+            >
+              <div 
+                class="release-notes-dialog"
+                style="border-radius:20px; padding:0; max-width:520px; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset; overflow:hidden; transform:scale(1); transition:transform 0.2s;"
+                @click.stop
+              >
+                <!-- Header -->
+                <div class="release-notes-header" style="display:flex; justify-content:space-between; align-items:center; padding:20px 24px; border-bottom:1px solid rgba(0,0,0,0.08); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
+                  <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(37,99,235,0.4);">
+                      <i class="fas fa-arrow-alt-circle-up" style="color:white; font-size:18px;"></i>
+                    </div>
+                    <div>
+                      <h2 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">
+                        发现新版本 {{ updatePromptInfo && updatePromptInfo.version ? updatePromptInfo.version : '' }}
+                      </h2>
+                      <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">
+                        {{ updatePromptForce ? '此版本为强制更新版本，请尽快完成更新。' : '建议立即更新以获得最新功能和修复。' }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Content -->
+                <div class="release-notes-content" style="flex:1; padding:18px 24px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); display:flex; flex-direction:column; gap:14px;">
+                  <div style="font-size:13px; color:var(--text, #333); line-height:1.8;">
+                    更新内容可在“设置 &gt; 版本与更新 &gt; 查看更新日志”中查看。
+                  </div>
+                  <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:4px;">
+                    <button 
+                      v-if="!updatePromptForce"
+                      class="btn" 
+                      style="min-width:120px; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+                      @click="handleUpdatePromptCancel"
+                    >
+                      取消
+                    </button>
+                    <button 
+                      v-else
+                      class="btn" 
+                      style="min-width:120px; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+                      @click="handleUpdatePromptExit"
+                    >
+                      退出应用
+                    </button>
+                    <button 
+                      class="btn" 
+                      style="min-width:140px; background:#3b82f6; color:white; border:none; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer;"
+                      @click="handleUpdatePromptUpdate"
+                    >
+                      <i class="fas fa-download" style="margin-right:6px;"></i>立即更新
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </Teleport>
     </div>
   `

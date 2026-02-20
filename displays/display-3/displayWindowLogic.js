@@ -1,6 +1,9 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 // 判断站点是否因运营模式被跳过
 /**
  * 解析颜色标记文本，将 <color>文字</> 转换为带颜色的HTML
@@ -6531,6 +6534,7 @@ export function initDisplayWindow(rootElement) {
   };
 }
 
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
 /**
@@ -6879,4 +6883,6 @@ export function initExitIndicator(rootElement) {
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes

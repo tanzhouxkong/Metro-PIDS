@@ -1,5 +1,6 @@
 <script>
 import { ref, computed, watch, Teleport, Transition } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 export default {
   name: 'ColorPicker',
@@ -10,6 +11,7 @@ export default {
   },
   emits: ['update:modelValue', 'confirm'],
   setup(props, { emit }) {
+    const { t } = useI18n()
     const showDialog = computed({
       get: () => props.modelValue,
       set: (val) => emit('update:modelValue', val)
@@ -123,7 +125,8 @@ export default {
       cancel,
       updateHex,
       hasElectronAPI,
-      handlePaste
+      handlePaste,
+      t
     }
   }
 }
@@ -140,11 +143,10 @@ export default {
                 <i class="fas fa-palette"></i>
               </div>
               <div class="cp-titles">
-                <div class="cp-title">选择颜色</div>
-                <div class="cp-subtitle">Color Picker</div>
+                <div class="cp-title">{{ t('colorPicker.title') }}</div>
               </div>
             </div>
-            <button class="cp-close" @click="cancel" aria-label="关闭">
+            <button class="cp-close" @click="cancel" :aria-label="t('colorPicker.closeLabel')">
               <i class="fas fa-times"></i>
             </button>
           </div>
@@ -157,7 +159,7 @@ export default {
 
             <!-- 十六进制输入 -->
             <div class="cp-field">
-              <label class="cp-label">十六进制 (Hex)</label>
+              <label class="cp-label">{{ t('colorPicker.hexLabel') }}</label>
               <div class="cp-hex-row">
                 <input
                   type="text"
@@ -178,10 +180,10 @@ export default {
 
             <!-- RGB 输入 -->
             <div class="cp-field">
-              <label class="cp-label">RGB</label>
+              <label class="cp-label">{{ t('colorPicker.rgbLabel') }}</label>
               <div class="cp-rgb-grid">
                 <div class="cp-rgb-item">
-                  <label class="cp-rgb-label">R</label>
+                  <label class="cp-rgb-label">{{ t('colorPicker.rgbRLabel') }}</label>
                   <input
                     type="number"
                     v-model.number="rgb.r"
@@ -194,7 +196,7 @@ export default {
                   />
                 </div>
                 <div class="cp-rgb-item">
-                  <label class="cp-rgb-label">G</label>
+                  <label class="cp-rgb-label">{{ t('colorPicker.rgbGLabel') }}</label>
                   <input
                     type="number"
                     v-model.number="rgb.g"
@@ -207,7 +209,7 @@ export default {
                   />
                 </div>
                 <div class="cp-rgb-item">
-                  <label class="cp-rgb-label">B</label>
+                  <label class="cp-rgb-label">{{ t('colorPicker.rgbBLabel') }}</label>
                   <input
                     type="number"
                     v-model.number="rgb.b"
@@ -230,11 +232,11 @@ export default {
               class="cp-btn cp-btn-picker"
               :disabled="pickMode === 'picker'"
             >
-              <i class="fas fa-eye-dropper"></i> 屏幕取色
+              <i class="fas fa-eye-dropper"></i> {{ t('colorPicker.pickFromScreen') }}
             </button>
             <div class="cp-footer-right">
-              <button @click="cancel" class="cp-btn cp-btn-gray">取消</button>
-              <button @click="confirm" class="cp-btn cp-btn-green">确定</button>
+              <button @click="cancel" class="cp-btn cp-btn-gray">{{ t('colorPicker.btnCancel') }}</button>
+              <button @click="confirm" class="cp-btn cp-btn-green">{{ t('colorPicker.btnConfirm') }}</button>
             </div>
           </div>
         </div>

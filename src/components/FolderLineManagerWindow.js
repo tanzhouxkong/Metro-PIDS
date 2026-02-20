@@ -1,4 +1,5 @@
 import { ref, computed, watch, onMounted, nextTick, Teleport } from 'vue'
+import { useI18n } from 'vue-i18n'
 import LineManagerDialog from './LineManagerDialog.js'
 import LineManagerTopbar from './LineManagerTopbar.js'
 import RuntimeLineManager from './RuntimeLineManager.js'
@@ -40,6 +41,7 @@ export default {
     RuntimeLineManager
   },
   setup() {
+    const { t } = useI18n()
     const folders = ref([]);
     const currentFolderId = ref('default');
     const currentLines = ref([]);
@@ -1277,6 +1279,7 @@ export default {
     });
 
     return {
+      t,
       folders,
       currentFolderId,
       selectedFolderId,
@@ -1453,15 +1456,15 @@ export default {
                   <i :class="line.isThroughLine ? 'fas fa-exchange-alt' : (line.isLoopLine ? 'fas fa-circle-notch' : 'fas fa-subway')" :style="{fontSize:'16px', color: line.isThroughLine ? '#FF9F43' : (line.isLoopLine ? '#00b894' : 'var(--muted, #999)')}"></i>
                   <div style="font-size:14px; font-weight:500; color:var(--text, #333); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; flex:1; min-width:0;" v-html="parseColorMarkup(line.name)">
                   </div>
-                  <span v-if="line.isThroughLine" style="background:#FF9F43; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; white-space:nowrap; flex-shrink:0;">贯通</span>
-                  <span v-else-if="line.isLoopLine" style="background:#00b894; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; white-space:nowrap; flex-shrink:0;" title="环线 (Loop)">环线</span>
+                  <span v-if="line.isThroughLine" style="background:#FF9F43; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; white-space:nowrap; flex-shrink:0;">{{ t('folderLineManager.through') }}</span>
+                  <span v-else-if="line.isLoopLine" style="background:#00b894; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; white-space:nowrap; flex-shrink:0;">{{ t('folderLineManager.loop') }}</span>
                 </div>
                 
                 <!-- 类型 -->
                 <div style="width:76px; min-width:76px; display:flex; justify-content:center; align-items:center;" @click="toggleLineSelection(line)">
-                  <span v-if="line.isThroughLine" style="font-size:12px; color:#FF9F43; font-weight:500;">贯通</span>
-                  <span v-else-if="line.isLoopLine" style="font-size:12px; color:#00b894; font-weight:500;">环线</span>
-                  <span v-else style="font-size:12px; color:var(--muted, #999);">单线</span>
+                  <span v-if="line.isThroughLine" style="font-size:12px; color:#FF9F43; font-weight:500;">{{ t('folderLineManager.through') }}</span>
+                  <span v-else-if="line.isLoopLine" style="font-size:12px; color:#00b894; font-weight:500;">{{ t('folderLineManager.loop') }}</span>
+                  <span v-else style="font-size:12px; color:var(--muted, #999);">{{ t('folderLineManager.single') }}</span>
                 </div>
                 
                 <!-- 颜色 -->

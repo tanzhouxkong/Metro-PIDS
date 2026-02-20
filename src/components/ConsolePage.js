@@ -7,7 +7,12 @@ import { useController } from '../composables/useController.js'
 import { useSettings } from '../composables/useSettings.js'
 import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
+=======
+import { DEFAULT_SETTINGS } from '../utils/defaults.js'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
+>>>>>>> Stashed changes
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 
@@ -1332,6 +1337,62 @@ export default {
             addMicaLog('Mica Electron API 不可用（可能不在 Electron 环境）', 'warning');
         }
         
+        // 初始化录制监听
+        if (hasElectronAPI.value && window.electronAPI?.recording) {
+            loadAvailableEncoders();
+            recordingProgressUnsubscribe = window.electronAPI.recording.onRecordingProgress((progress) => {
+                if (progress) {
+                    // 主进程负责 elapsed，并在录制异常/停止时下发 isRecording=false + error
+                    if (progress.mode === 'parallel') {
+                        // 并行模式：主进程直接给 overall progress/duration
+                        if (typeof progress.duration === 'number' && progress.duration > 0) {
+                            recordingState.value.totalDuration = progress.duration;
+                        }
+                        if (typeof progress.progress === 'number' && recordingState.value.totalDuration > 0) {
+                            // 用 progress 反推 elapsed，复用现有“剩余时间/进度条”展示
+                            recordingState.value.elapsed = (recordingState.value.totalDuration * progress.progress) / 100;
+                        } else if (typeof progress.elapsed === 'number') {
+                            recordingState.value.elapsed = progress.elapsed;
+                        }
+                        if (progress.stage) recordingState.value.parallelStage = String(progress.stage);
+                        if (Array.isArray(progress.segments)) {
+                            const done = progress.segments.filter(s => s.status === 'done').length;
+                            const err = progress.segments.filter(s => s.status === 'error').length;
+                            recordingState.value.segmentSummary = { done, err, total: progress.segments.length };
+                        }
+                    } else {
+                        if (typeof progress.elapsed === 'number') {
+                            recordingState.value.elapsed = progress.elapsed;
+                        }
+                    }
+                    if (progress.isRecording === false) {
+                        // 主进程已停止（可能是完成、用户停止或异常），本地立刻退出录制态并清理计时器
+                        recordingState.value.isRecording = false;
+                        recordingState.value.progress = 0;
+                        recordingState.value.nextIn = 0;
+                        recordingState.value.totalSteps = 0;
+                        recordingState.value.totalDuration = 0;
+                        recordingState.value.parallelStage = '';
+                        recordingState.value.segmentSummary = null;
+                        try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
+                        recordingStepTimer = null;
+
+                        // 并行录制完成时，补一条“录制已停止”的系统通知
+                        if (progress.mode === 'parallel' && progress.completed && !progress.error) {
+                            showNotification('录制已停止', t('console.recordingStopped'), {
+                                tag: 'recording-stopped',
+                                urgency: 'normal'
+                            });
+                        }
+
+                        if (progress.error) {
+                            try { void showMsg(t('console.recordingError') + ': ' + String(progress.error)); } catch (e) {}
+                        }
+                    }
+                }
+            });
+        }
+        
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onSwitchLineRequest) {
             try {
                 window.electronAPI.onSwitchLineRequest(async (lineName, target) => {
@@ -1380,6 +1441,14 @@ export default {
         }
         
         initThroughOperationLines();
+    });
+    
+    // 组件卸载时清理录制监听
+    onBeforeUnmount(() => {
+        if (recordingProgressUnsubscribe) {
+            recordingProgressUnsubscribe();
+            recordingProgressUnsubscribe = null;
+        }
     });
     
     // 监听线路切换，自动加载预设列表
@@ -1493,6 +1562,389 @@ export default {
         }
     }
 
+    // ========== 视频录制相关 ==========
+    const recordingState = ref({
+        isRecording: false,
+        mode: 'single',      // single | parallel
+        encoder: 'cpu',
+        codec: 'h264',
+        container: 'mp4',   // 输出封装格式
+        bitrate: 8,          // Mbps
+        fps: 30,
+        intervalSec: 8,      // 像自动播放一样：多少秒后“下一步”
+        parallelEnabled: false,
+        parallelism: 2,
+        stepsPerSegment: 20,
+        progress: 0,         // 保留字段（单次间隔进度），整体进度由 elapsed/totalDuration 计算
+        elapsed: 0,          // 已录制秒数（来自主进程）
+        nextIn: 0,           // 距离下一步还有多少秒（用于“多少秒后下一步”展示）
+        totalSteps: 0,       // 本次录制预计总步数（首末站之间的“下一步”次数）
+        totalDuration: 0,    // 本次录制预计总时长（秒），= totalSteps * intervalSec
+        parallelStage: '',
+        segmentSummary: null,
+        availableEncoders: { cpu: [], gpu: [] },
+        hardware: { cpuModel: '', gpuModel: '' }
+    });
+
+    let recordingStepTimer = null;
+
+    // 录制整体进度
+    // 并行模式：按主进程给的 elapsed/totalDuration 显示
+    // 单线程模式：时间进度不允许超过线路实际进度，避免“尚未到终点，进度已 100%”
+    const recordingProgressPercent = computed(() => {
+        if (!recordingState.value.isRecording) return 0;
+        const total = Number(recordingState.value.totalDuration) || 0;
+        if (!total || total <= 0) return 0;
+        const elapsed = Math.max(0, Number(recordingState.value.elapsed) || 0);
+        const timeBased = Math.min(100, Math.max(0, (elapsed / total) * 100));
+
+        // 并行模式直接使用时间进度
+        if (recordingState.value.mode === 'parallel') {
+            return timeBased;
+        }
+
+        // 单线程模式：结合当前 rt.idx/rt.state 与首末站，计算一个“线路进度”作为上限
+        try {
+            const meta = (pidsState.appData && pidsState.appData.meta) ? pidsState.appData.meta : {};
+            const stations = (pidsState.appData && Array.isArray(pidsState.appData.stations))
+                ? pidsState.appData.stations
+                : [];
+            if (!stations.length) return timeBased;
+
+            const sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1)
+                ? parseInt(meta.startIdx)
+                : 0;
+            const eIdx = (meta.termIdx !== undefined && meta.termIdx !== -1)
+                ? parseInt(meta.termIdx)
+                : (stations.length - 1);
+            const minIdx = Math.min(sIdx, eIdx);
+            const maxIdx = Math.max(sIdx, eIdx);
+            const stationCount = Math.max(1, maxIdx - minIdx + 1);
+            const totalSteps = Math.max(1, 2 * (stationCount - 1));
+
+            const stepDir = (typeof getStep === 'function' ? getStep() : 1) > 0 ? 1 : -1;
+            const rtIdx = (pidsState.rt && typeof pidsState.rt.idx === 'number') ? pidsState.rt.idx : sIdx;
+            const rtState = (pidsState.rt && typeof pidsState.rt.state === 'number') ? pidsState.rt.state : 0;
+
+            const clampedIdx = Math.max(minIdx, Math.min(maxIdx, rtIdx));
+            const stationOffset = stepDir > 0
+                ? (clampedIdx - minIdx)
+                : (maxIdx - clampedIdx);
+            const stepFromStart = Math.max(0, stationOffset * 2 + (rtState === 1 ? 1 : 0));
+
+            const routePercent = Math.min(100, Math.max(0, (stepFromStart / totalSteps) * 100));
+
+            // 不让时间进度超过线路进度，确保只有达到终点时才出现 100%
+            return Math.min(timeBased, routePercent);
+        } catch (e) {
+            console.warn('recordingProgressPercent route-based calc failed:', e);
+            return timeBased;
+        }
+    });
+
+    function formatRecordingTime(sec) {
+        const s = Math.max(0, Math.round(Number(sec) || 0));
+        const mm = String(Math.floor(s / 60)).padStart(2, '0');
+        const ss = String(s % 60).padStart(2, '0');
+        return `${mm}:${ss}`;
+    }
+
+    const parallelStageLabel = computed(() => {
+        const stage = recordingState.value.parallelStage;
+        if (!stage) return '';
+        const map = {
+            'segments-start': t('console.recordingStageSegmentsStart'),
+            'segments-running': t('console.recordingStageSegmentsRunning'),
+            'segments-done': t('console.recordingStageSegmentsDone'),
+            'concat-start': t('console.recordingStageConcatStart')
+        };
+        return map[stage] || stage;
+    });
+
+    const recordingRemainingTimeText = computed(() => {
+        if (!recordingState.value.isRecording) return '00:00';
+        const total = Number(recordingState.value.totalDuration) || 0;
+        if (!total || total <= 0) return '00:00';
+        const elapsed = Math.max(0, Number(recordingState.value.elapsed) || 0);
+        const remain = Math.max(0, total - elapsed);
+        return formatRecordingTime(remain);
+    });
+
+    // 当前录制对应的“当前站 + 进/出站状态”
+    const recordingCurrentStationName = computed(() => {
+        const stations = (pidsState.appData && Array.isArray(pidsState.appData.stations))
+            ? pidsState.appData.stations
+            : [];
+        const idx = (pidsState.rt && typeof pidsState.rt.idx === 'number') ? pidsState.rt.idx : 0;
+        if (!stations.length || idx < 0 || idx >= stations.length) return '-';
+        return stations[idx]?.name || '-';
+    });
+
+    const recordingArrDepLabel = computed(() => {
+        const rtState = pidsState.rt && (typeof pidsState.rt.state === 'number') ? pidsState.rt.state : 0;
+        return rtState === 0 ? t('consoleButtons.arrive') : t('consoleButtons.depart');
+    });
+
+    // 当前录制所用显示端：沿用设置页的 currentDisplayId
+    const currentRecordingDisplay = computed(() => {
+        if (!settings.display) return null;
+        const displays = settings.display.displays && Object.keys(settings.display.displays).length
+            ? { ...DEFAULT_SETTINGS.display.displays, ...settings.display.displays }
+            : DEFAULT_SETTINGS.display.displays || {};
+        const id = settings.display.currentDisplayId || 'display-1';
+        const d = displays[id];
+        if (!d) return null;
+        return { id, name: d.name || id };
+    });
+
+    // 获取可用编码器
+    async function loadAvailableEncoders() {
+        if (!hasElectronAPI.value || !window.electronAPI?.recording) return;
+        try {
+            const result = await window.electronAPI.recording.getAvailableEncoders();
+            if (result && result.ok) {
+                if (result.encoders) {
+                    recordingState.value.availableEncoders = result.encoders;
+                }
+                if (result.hardware) {
+                    recordingState.value.hardware = {
+                        cpuModel: result.hardware.cpuModel || '',
+                        gpuModel: result.hardware.gpuModel || ''
+                    };
+                }
+            }
+        } catch (e) {
+            console.error('加载可用编码器失败:', e);
+        }
+    }
+
+    // 开始录制
+    async function startRecording() {
+        if (!hasElectronAPI.value || !window.electronAPI?.recording) {
+            await showMsg('录制功能需要 Electron 环境');
+            return;
+        }
+        if (recordingState.value.isRecording) return;
+
+        const displayInfo = currentRecordingDisplay.value;
+        if (!displayInfo) {
+            await showMsg(t('console.recordingSelectDisplay'));
+            return;
+        }
+
+        try {
+            // 约束码率与间隔
+            const safeBitrate = Math.max(1, Math.min(50, Number(recordingState.value.bitrate) || 8));
+            const safeInterval = Math.max(1, Number(recordingState.value.intervalSec) || 8);
+
+            recordingState.value.bitrate = safeBitrate;
+            recordingState.value.intervalSec = safeInterval;
+            recordingState.value.progress = 0;
+            recordingState.value.elapsed = 0;
+            recordingState.value.nextIn = safeInterval;
+
+            // 计算本次录制的预计总步数和总时长：
+            // 以运营区首末站为范围，按 getStep() 方向，从起点到终点的“下一步”次数 × 间隔秒数
+            try {
+                const meta = (pidsState.appData && pidsState.appData.meta) ? pidsState.appData.meta : {};
+                const stations = (pidsState.appData && Array.isArray(pidsState.appData.stations))
+                    ? pidsState.appData.stations
+                    : [];
+
+                // 环线模式无法预估完整录制时长，保持为 0
+                if (meta.mode === 'loop' || !stations.length) {
+                    recordingState.value.totalSteps = 0;
+                    recordingState.value.totalDuration = 0;
+                } else {
+                    const sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1)
+                        ? parseInt(meta.startIdx)
+                        : 0;
+                    const eIdx = (meta.termIdx !== undefined && meta.termIdx !== -1)
+                        ? parseInt(meta.termIdx)
+                        : (stations.length - 1);
+                    const minIdx = Math.min(sIdx, eIdx);
+                    const maxIdx = Math.max(sIdx, eIdx);
+                    const stationCount = Math.max(1, maxIdx - minIdx + 1);
+                    // 每两个站之间有两步：出站 + 下一站进站，因此总步数约为 2 * (stationCount - 1)
+                    const totalSteps = Math.max(1, 2 * (stationCount - 1));
+                    recordingState.value.totalSteps = totalSteps;
+                    recordingState.value.totalDuration = totalSteps * safeInterval;
+                }
+            } catch (e) {
+                console.warn('计算录制预计时长失败:', e);
+                recordingState.value.totalSteps = 0;
+                recordingState.value.totalDuration = 0;
+            }
+
+            // 如果启用并行分段录制：由主进程独立推进 SYNC，不再驱动 controllerNext
+            const enableParallel = !!recordingState.value.parallelEnabled;
+            recordingState.value.mode = enableParallel ? 'parallel' : 'single';
+            recordingState.value.isRecording = true;
+            const options = {
+                encoder: recordingState.value.encoder,
+                codec: recordingState.value.codec,
+                container: recordingState.value.container,
+                bitrate: safeBitrate,     // Mbps
+                fps: recordingState.value.fps,
+                intervalSec: safeInterval
+            };
+
+            let result;
+            if (enableParallel) {
+                // 计算并行分段需要的起点索引与方向
+                const meta = (pidsState.appData && pidsState.appData.meta) ? pidsState.appData.meta : {};
+                const stations = (pidsState.appData && Array.isArray(pidsState.appData.stations))
+                    ? pidsState.appData.stations
+                    : [];
+                const stepDir = (typeof getStep === 'function' ? getStep() : 1) > 0 ? 1 : -1;
+                const sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx) : 0;
+                const eIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx) : (stations.length ? stations.length - 1 : 0);
+                const minIdx = Math.min(sIdx, eIdx);
+                const maxIdx = Math.max(sIdx, eIdx);
+                const startIdx = stepDir > 0 ? minIdx : maxIdx;
+
+                // IPC 传参必须是可结构化克隆的纯对象（Vue 响应式 Proxy 会导致 An object could not be cloned）
+                let appDataPlain = null;
+                try {
+                    appDataPlain = JSON.parse(JSON.stringify(toRaw(pidsState.appData)));
+                } catch (e) {
+                    try {
+                        appDataPlain = JSON.parse(JSON.stringify(pidsState.appData));
+                    } catch (e2) {
+                        recordingState.value.isRecording = false;
+                        await showMsg(t('console.recordingError') + ': ' + 'appData 无法序列化（请检查线路数据是否包含不可序列化字段）');
+                        return;
+                    }
+                }
+
+                result = await window.electronAPI.recording.startParallelRecording(
+                    displayInfo.id,
+                    {
+                        ...options,
+                        appData: appDataPlain,
+                        totalSteps: recordingState.value.totalSteps || 0,
+                        stepDir,
+                        startIdx,
+                        parallelism: Math.max(1, Math.min(4, Number(recordingState.value.parallelism) || 2)),
+                        stepsPerSegment: Math.max(1, Number(recordingState.value.stepsPerSegment) || 20)
+                    }
+                );
+            } else {
+                result = await window.electronAPI.recording.startRecording(
+                    displayInfo.id,
+                    options
+                );
+            }
+            if (result && result.ok) {
+                showNotification('录制已开始', t('console.recordingStarted'), {
+                    tag: 'recording-started',
+                    urgency: 'normal'
+                });
+
+                // single 模式才驱动“下一步”
+                if (!enableParallel) {
+                    try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
+                    recordingStepTimer = setInterval(async () => {
+                        if (!recordingState.value.isRecording) return;
+                        // 到终点站时不要再推进（停止逻辑由 watch(rt.idx)+shouldStop 触发）
+                        if (shouldStop()) return;
+
+                        recordingState.value.nextIn = Math.max(0, (recordingState.value.nextIn || 0) - 1);
+                        const interval = Math.max(1, Number(recordingState.value.intervalSec) || 8);
+                        const passed = interval - recordingState.value.nextIn;
+                        recordingState.value.progress = Math.min(100, Math.max(0, (passed / interval) * 100));
+
+                        if (recordingState.value.nextIn <= 0) {
+                            try { await controllerNext(); } catch (e) {}
+                            recordingState.value.nextIn = interval;
+                            recordingState.value.progress = 0;
+                        }
+                    }, 1000);
+                } else {
+                    try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
+                    recordingStepTimer = null;
+                }
+            } else {
+                recordingState.value.isRecording = false;
+                await showMsg(result?.error || t('console.recordingError'));
+            }
+        } catch (e) {
+            recordingState.value.isRecording = false;
+            console.error('开始录制失败:', e);
+            await showMsg(t('console.recordingError') + ': ' + String(e));
+        }
+    }
+
+    // 停止录制
+    async function stopRecording() {
+        if (!hasElectronAPI.value || !window.electronAPI?.recording) return;
+        if (!recordingState.value.isRecording) return;
+
+        try {
+            const result = (recordingState.value.mode === 'parallel')
+                ? await window.electronAPI.recording.stopParallelRecording()
+                : await window.electronAPI.recording.stopRecording();
+            if (result && result.ok) {
+                recordingState.value.isRecording = false;
+                recordingState.value.progress = 0;
+                recordingState.value.nextIn = 0;
+                recordingState.value.totalSteps = 0;
+                recordingState.value.totalDuration = 0;
+                recordingState.value.parallelStage = '';
+                recordingState.value.segmentSummary = null;
+                showNotification('录制已停止', t('console.recordingStopped'), {
+                    tag: 'recording-stopped',
+                    urgency: 'normal'
+                });
+            }
+        } catch (e) {
+            console.error('停止录制失败:', e);
+        }
+
+        try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
+        recordingStepTimer = null;
+    }
+
+    // 录制按钮：在“开始录制 / 停止录制”之间切换
+    async function toggleRecording() {
+        if (recordingState.value.isRecording) {
+            await stopRecording();
+        } else {
+            await startRecording();
+        }
+    }
+
+    // 打开视频输出文件夹
+    async function openRecordingFolder() {
+        try {
+            if (!hasElectronAPI.value || !window.electronAPI?.recording?.openOutputFolder) return;
+            const res = await window.electronAPI.recording.openOutputFolder();
+            if (!res || !res.ok) {
+                await showMsg(t('console.recordingError') + (res && res.error ? (': ' + String(res.error)) : ''));
+            }
+        } catch (e) {
+            await showMsg(t('console.recordingError') + ': ' + String(e));
+        }
+    }
+
+    // 监听录制进度（订阅句柄在 onMounted 中赋值）
+    let recordingProgressUnsubscribe = null;
+
+    // 线路到达终点站后自动停止录制（复用自动播放的 shouldStop 逻辑）
+    watch(
+        () => pidsState.rt && pidsState.rt.idx,
+        (idx) => {
+            if (!recordingState.value.isRecording) return;
+            try {
+                if (typeof idx === 'number' && shouldStop(idx)) {
+                    stopRecording();
+                }
+            } catch (e) {
+                console.warn('录制自动停止检测失败:', e);
+            }
+        }
+    );
+
     return {
         pidsState,
         fileIO,
@@ -1543,7 +1995,24 @@ export default {
         setBackgroundColor,
         setRoundedCorner,
         clearMicaLogs,
+<<<<<<< Updated upstream
         t
+=======
+        t,
+        // 录制相关
+        recordingState,
+        parallelStageLabel,
+        recordingProgressPercent,
+        recordingRemainingTimeText,
+        recordingCurrentStationName,
+        recordingArrDepLabel,
+        currentRecordingDisplay,
+        startRecording,
+        stopRecording,
+        toggleRecording,
+        openRecordingFolder,
+        loadAvailableEncoders
+>>>>>>> Stashed changes
     }
   },
   template: `
@@ -1615,19 +2084,19 @@ export default {
                     ></div>
                 </div>
                 <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <option value="loop">环线 (Loop)</option>
-                    <option value="linear">单线 (Linear)</option>
+                    <option value="loop">{{ t('console.loopLine') }}</option>
+                    <option value="linear">{{ t('console.singleLine') }}</option>
                 </select>
             </div>
             
             <select v-model="pidsState.appData.meta.dirType" @change="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:16px; background:var(--input-bg); color:var(--text);">
                 <template v-if="pidsState.appData.meta.mode === 'loop'">
-                    <option value="outer">外环 (逆时针)</option>
-                    <option value="inner">内环 (顺时针)</option>
+                    <option value="outer">{{ t('console.outerLoop') }}</option>
+                    <option value="inner">{{ t('console.innerLoop') }}</option>
                 </template>
                 <template v-else>
-                    <option value="up">上行 ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</option>
-                    <option value="down">下行 ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</option>
+                    <option value="up">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</option>
+                    <option value="down">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</option>
                 </template>
             </select>
 
@@ -1675,6 +2144,7 @@ export default {
         <div class="card" style="border-left: 6px solid #5F27CD; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
             <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.shortTurn') }}</div>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
@@ -1705,11 +2175,39 @@ export default {
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+=======
+
+            <div
+                v-if="pidsState.appData?.meta?.autoShortTurn"
+                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
+            >
+                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
+                    <i class="fas fa-magic" style="margin-right:6px;"></i>
+                    已启用自动短交路
+                </div>
+                <div style="color:var(--muted);">
+                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button
+                        class="btn"
+                        @click="unlockAutoShortTurn()"
+                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
+                    >
+                        转为手动设置
+                    </button>
+                </div>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
+                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+>>>>>>> Stashed changes
                 <select
                     v-model="pidsState.appData.meta.startIdx"
                     :disabled="!!pidsState.appData?.meta?.autoShortTurn"
                     style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
                 >
+<<<<<<< Updated upstream
 =======
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
@@ -1717,6 +2215,8 @@ export default {
 >>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
                     <option :value="-1">无</option>
                     <option v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" :value="i">[{{i+1}}] {{s.name}}</option>
                 </select>
@@ -1725,17 +2225,23 @@ export default {
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:16px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnEnd') }}</label>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
                 <select
                     v-model="pidsState.appData.meta.termIdx"
                     :disabled="!!pidsState.appData?.meta?.autoShortTurn"
                     style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
                 >
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
                      <option :value="-1">无</option>
                      <option v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" :value="i">[{{i+1}}] {{s.name}}</option>
                 </select>
@@ -1743,10 +2249,13 @@ export default {
             
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px;">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
                 <button
                     @click="clearShortTurn()"
                     class="btn"
@@ -1759,10 +2268,13 @@ export default {
                     :disabled="!!pidsState.appData?.meta?.autoShortTurn"
                     style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;"
                 >{{ t('console.shortTurnApply') }}</button>
+<<<<<<< Updated upstream
 =======
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             </div>
 
@@ -1881,6 +2393,194 @@ export default {
               <span style="color:var(--muted); font-size:14px;">{{ t('console.autoplayInterval') }}</span>
               <input type="number" :value="8" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
               <span v-if="isPlaying" style="font-size:12px; color:var(--muted);">({{ nextIn }}s)</span>
+          </div>
+        </div>
+        
+        <!-- Video Recording Control -->
+        <div class="card" style="border-left: 6px solid #E74C3C; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
+          <div style="color:#E74C3C; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.recordingTitle') }}</div>
+          
+          <!-- Display Info (use settings page selection) -->
+          <div style="margin-bottom:12px;">
+            <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingDisplay') }}</label>
+            <div style="padding:8px 10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:13px;">
+              <span v-if="currentRecordingDisplay">
+                {{ currentRecordingDisplay.name }}
+              </span>
+              <span v-else style="color:var(--muted);">
+                {{ t('console.recordingSelectDisplay') }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Encoder Selection -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+            <div>
+              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingEncoder') }}</label>
+              <select v-model="recordingState.encoder" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                <option value="cpu">
+                  {{ recordingState.hardware.cpuModel ? (recordingState.hardware.cpuModel + ' CPU') : t('console.recordingEncoderCPU') }}
+                </option>
+                <option v-if="recordingState.availableEncoders.gpu.length > 0" value="gpu">
+                  {{ recordingState.hardware.gpuModel ? (recordingState.hardware.gpuModel + ' GPU') : t('console.recordingEncoderGPU') }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingCodec') }}</label>
+              <select v-model="recordingState.codec" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                <option value="h264">{{ t('console.recordingCodecH264') }}</option>
+                <option value="h265">{{ t('console.recordingCodecH265') }}</option>
+                <option value="vp9">{{ t('console.recordingCodecVP9') }}</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Container Selection -->
+          <div style="margin-bottom:12px;">
+            <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingContainer') }}</label>
+            <select v-model="recordingState.container" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+              <option value="mp4">MP4</option>
+              <option value="avi">AVI</option>
+              <option value="mov">MOV</option>
+              <option value="wmv">WMV</option>
+              <option value="mkv">MKV</option>
+              <option value="webm">WEBM</option>
+            </select>
+          </div>
+
+          <!-- Bitrate and FPS -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+            <div>
+              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingBitrate') }}</label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input
+                  type="number"
+                  v-model.number="recordingState.bitrate"
+                  :disabled="recordingState.isRecording"
+                  min="1"
+                  max="50"
+                  step="1"
+                  placeholder="1 - 50"
+                  style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+                >
+                <span style="font-size:12px; color:var(--muted);">Mbps</span>
+              </div>
+            </div>
+            <div>
+              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingFPS') }}</label>
+              <select v-model="recordingState.fps" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                <option :value="30">30</option>
+                <option :value="60">60</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Interval (like autoplay) -->
+          <div style="margin-bottom:12px;">
+            <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingIntervalLabel') }}</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input
+                type="number"
+                v-model.number="recordingState.intervalSec"
+                :disabled="recordingState.isRecording"
+                min="1"
+                max="60"
+                step="1"
+                placeholder="8"
+                style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
+              >
+            </div>
+          </div>
+
+          <!-- Parallel Segment Recording -->
+          <div style="margin-bottom:12px; padding:10px; border-radius:10px; border:1px solid var(--divider); background:var(--input-bg);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+              <div style="font-size:13px; color:var(--muted); font-weight:bold;">{{ t('console.recordingParallelTitle') }}</div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <label style="position:relative; display:inline-block; width:52px; height:28px;">
+                  <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
+                  <span style="position: absolute; cursor: pointer; inset: 0px; background-color: rgb(204, 204, 204); transition: 0.4s; border-radius: 24px;"
+                    :style="{ backgroundColor: recordingState.parallelEnabled ? 'var(--btn-blue-bg)' : 'rgb(204, 204, 204)', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.6 : 1 }"
+                  ></span>
+                  <span :style="{
+                      position:'absolute', content:'', height:'22px', width:'22px', left:'3px', bottom:'3px',
+                      backgroundColor:'white', transition:'0.4s', borderRadius:'50%',
+                      transform: recordingState.parallelEnabled ? 'translateX(24px)' : 'translateX(0)'
+                    }"></span>
+                </label>
+              </div>
+            </div>
+            <div v-if="recordingState.parallelEnabled" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingParallelism') }}</label>
+                <select v-model.number="recordingState.parallelism" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                  <option :value="4">4</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingStepsPerSegment') }}</label>
+                <input type="number" v-model.number="recordingState.stepsPerSegment" :disabled="recordingState.isRecording" min="1" max="5000"
+                  style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);" />
+              </div>
+            </div>
+            <div v-if="recordingState.parallelEnabled" style="margin-top:8px; font-size:12px; color:var(--muted);">
+              {{ t('console.recordingParallelHint') }}
+            </div>
+          </div>
+
+          <!-- Progress Bar（整体录制进度 + 预计剩余时间 + 当前站/进出站状态） -->
+          <div v-if="recordingState.isRecording" style="margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:13px; color:var(--muted);">
+                {{ t('console.recordingProgress') }}
+              </span>
+              <span style="font-size:13px; color:var(--text);">
+                <span>{{ Math.floor(recordingProgressPercent) }}%</span>
+                <span style="margin-left:8px;">
+                  {{ t('console.recordingRemainingTimeHint') }} {{ recordingRemainingTimeText }}
+                </span>
+              </span>
+            </div>
+            <div style="width:100%; height:8px; background:var(--input-bg); border-radius:4px; overflow:hidden;">
+              <div :style="{ width: Math.min(100, Math.max(0, recordingProgressPercent)) + '%', height: '100%', background: '#E74C3C', transition: 'width 0.3s' }"></div>
+            </div>
+            <div v-if="recordingState.mode!=='parallel'" style="margin-top:6px; display:flex; justify-content:space-between; font-size:12px; color:var(--muted);">
+              <span>
+                {{ t('console.recordingCurrentStation') }}：{{ recordingCurrentStationName }}
+              </span>
+              <span>
+                {{ recordingArrDepLabel }}
+              </span>
+            </div>
+            <div v-if="recordingState.mode==='parallel' && recordingState.segmentSummary" style="margin-top:6px; font-size:12px; color:var(--muted); display:flex; justify-content:space-between;">
+              <span>{{ t('console.recordingSegments') }}: {{ recordingState.segmentSummary.done }}/{{ recordingState.segmentSummary.total }}</span>
+              <span v-if="parallelStageLabel">{{ t('console.recordingStage') }}: {{ parallelStageLabel }}</span>
+            </div>
+          </div>
+
+          <!-- Control Buttons -->
+          <div style="display:flex; gap:10px;">
+            <button 
+              @click="toggleRecording" 
+              :disabled="!currentRecordingDisplay"
+              class="btn" 
+              style="flex:1; background:#E74C3C; color:white; border:none; padding:10px; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer; opacity: !currentRecordingDisplay ? 0.5 : 1;"
+            >
+              <i :class="recordingState.isRecording ? 'fas fa-stop' : 'fas fa-video'" style="margin-right:6px;"></i>
+              {{ recordingState.isRecording ? t('console.recordingStop') : t('console.recordingStart') }}
+            </button>
+            <button 
+              @click="openRecordingFolder" 
+              :disabled="false"
+              class="btn" 
+              style="flex:1; background:#95A5A6; color:white; border:none; padding:10px; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer;"
+            >
+              <i class="fas fa-folder-open" style="margin-right:6px;"></i>{{ t('console.recordingOpenFolder') }}
+            </button>
           </div>
         </div>
         

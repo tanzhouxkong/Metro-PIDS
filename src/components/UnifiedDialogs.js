@@ -212,9 +212,12 @@ export default {
                     color: 'var(--text, #333)', 
                     letterSpacing: '-0.5px' 
                   }">{{ title }}</div>
+<<<<<<< Updated upstream
                   <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">
                     {{ type === 'alert' ? 'Alert' : type === 'confirm' ? 'Confirm' : type === 'prompt' ? 'Prompt' : type === 'shareCode' ? 'Share' : '' }}
                   </div>
+=======
+>>>>>>> Stashed changes
                 </div>
               </div>
               <button @click="closeDialog(type==='confirm'?false:null)" 

@@ -48,6 +48,14 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
 const crypto = require('crypto');
+const { spawn } = require('child_process');
+const os = require('os');
+let ffmpegPath = null;
+try {
+  ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+} catch (e) {
+  console.warn('[main] FFmpeg未安装，录制功能将不可用:', e);
+}
 
 // HTTP API 服务器（可选，用于 Python 等第三方客户端）
 // 默认使用 BroadcastChannel 进行通信，如需使用 Python 客户端可启用此选项
@@ -174,6 +182,43 @@ try {
 let mainWin = null;
 let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
 let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
+
+// 录制状态管理
+let recordingState = {
+  isRecording: false,
+  displayId: null,
+  options: null,
+  offscreenWin: null,
+  ffmpegProcess: null,
+  captureTimer: null,
+  progressTimer: null,
+  durationTimer: null,
+  startTime: null,
+  duration: null,
+  progress: 0,
+  elapsed: 0,
+  remaining: null
+};
+
+// 并行/分段录制状态（每段独立 offscreen + 独立 FFmpeg，最终拼接）
+let parallelRecordingState = {
+  isRecording: false,
+  displayId: null,
+  options: null,
+  abort: false,
+  tempDir: null,
+  finalOutputPath: null,
+  segments: [], // { index, startStep, steps, durationSec, outputPath, status, error, elapsed }
+  running: new Map(), // index -> { offscreenWin, ffmpegProcess, captureTimer, stepTimer, startTs, framesWritten, lastStderrLine }
+  startTime: null,
+  totalDuration: 0
+};
+
+// 最近一次检测到的编码器信息（用于 GPU 编码器选择）
+let recordingEncoders = {
+  cpu: [],
+  gpu: []
+};
 let lineManagerWin = null;
 let devWin = null;
 let throughOperationTarget = null; // 存储贯通线路选择目标 ('lineA' 或 'lineB')
@@ -1646,6 +1691,1156 @@ function createWindow() {
     } catch (e) {
       return false;
     }
+  });
+
+  // ========== 视频录制相关 IPC ==========
+  
+  // 获取可用编码器
+  ipcMain.handle('recording/available-encoders', async () => {
+    if (!ffmpegPath) {
+      return { ok: false, error: 'FFmpeg未安装' };
+    }
+    try {
+      // 检测可用编码器
+      const encoders = await new Promise((resolve) => {
+        const process = spawn(ffmpegPath, ['-encoders']);
+        let output = '';
+        process.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+        process.stderr.on('data', (data) => {
+          output += data.toString();
+        });
+        process.on('close', () => {
+          const result = { cpu: [], gpu: [] };
+          const lines = output.split('\n');
+          for (const line of lines) {
+            if (line.includes('libx264')) result.cpu.push('libx264');
+            if (line.includes('libx265')) result.cpu.push('libx265');
+            if (line.includes('libvpx-vp9')) result.cpu.push('libvpx-vp9');
+            if (line.includes('h264_nvenc') || line.includes('hevc_nvenc')) result.gpu.push('nvenc');
+            if (line.includes('h264_amf') || line.includes('hevc_amf')) result.gpu.push('amf');
+            if (line.includes('h264_qsv') || line.includes('hevc_qsv')) result.gpu.push('qsv');
+          }
+          resolve(result);
+        });
+        process.on('error', (err) => {
+          resolve({ cpu: [], gpu: [], error: String(err) });
+        });
+      });
+
+      // 检测硬件型号
+      let cpuModel = '';
+      try {
+        const cpus = os.cpus();
+        if (cpus && cpus.length) cpuModel = cpus[0].model || '';
+      } catch (e) {
+        console.warn('[main] 获取CPU型号失败:', e);
+      }
+
+      let gpuModel = '';
+      try {
+        // 优先使用 Electron GPUInfo
+        const gpuInfo = await app.getGPUInfo('complete');
+        const devices = (gpuInfo && gpuInfo.gpuDevice) || [];
+        const active = devices.find(d => d.active) || devices[0];
+        if (active && active.deviceString) {
+          gpuModel = String(active.deviceString || '');
+        }
+
+        // 兜底：有些机器/驱动下 deviceString 为空，改用 basic 再试一次
+        if (!gpuModel) {
+          const basic = await app.getGPUInfo('basic');
+          const devices2 = (basic && basic.gpuDevice) || [];
+          const active2 = devices2.find(d => d.active) || devices2[0];
+          if (active2 && active2.deviceString) {
+            gpuModel = String(active2.deviceString || '');
+          }
+        }
+      } catch (e) {
+        console.warn('[main] getGPUInfo 获取GPU型号失败:', e);
+      }
+
+      // Windows 兜底：用系统接口读取显卡名称（驱动正常时更稳定）
+      if (!gpuModel && process.platform === 'win32') {
+        try {
+          gpuModel = await new Promise((resolve) => {
+            const ps = spawn('powershell', [
+              '-NoProfile',
+              '-Command',
+              "try { (Get-CimInstance Win32_VideoController | Select-Object -First 1 -ExpandProperty Name) } catch { '' }"
+            ], { windowsHide: true });
+            let out = '';
+            ps.stdout.on('data', (d) => { out += d.toString(); });
+            ps.on('close', () => resolve(String(out || '').trim()));
+            ps.on('error', () => resolve(''));
+          });
+
+          if (!gpuModel) {
+            gpuModel = await new Promise((resolve) => {
+              const wmic = spawn('wmic', ['path', 'win32_VideoController', 'get', 'name'], { windowsHide: true });
+              let out = '';
+              wmic.stdout.on('data', (d) => { out += d.toString(); });
+              wmic.on('close', () => {
+                // 输出通常包含表头 name，取第一条有效行
+                const lines = String(out || '')
+                  .split(/\r?\n/)
+                  .map(s => s.trim())
+                  .filter(Boolean)
+                  .filter(s => s.toLowerCase() !== 'name');
+                resolve(lines[0] || '');
+              });
+              wmic.on('error', () => resolve(''));
+            });
+          }
+        } catch (e) {
+          console.warn('[main] Windows 系统接口获取GPU型号失败:', e);
+        }
+      }
+
+      // 记住编码器信息供后续录制使用
+      recordingEncoders = encoders || { cpu: [], gpu: [] };
+
+      return { ok: true, encoders, hardware: { cpuModel, gpuModel } };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  // 开始录制
+  ipcMain.handle('recording/start', async (event, displayId, options) => {
+    if (!ffmpegPath) {
+      return { ok: false, error: 'FFmpeg未安装' };
+    }
+    if (recordingState.isRecording) {
+      return { ok: false, error: '录制已在进行中' };
+    }
+
+    try {
+      // 规范化参数，避免 FFmpeg 因参数格式直接退出
+      const safeOptions = options && typeof options === 'object' ? { ...options } : {};
+      const safeFps = Math.max(1, Math.min(240, parseInt(safeOptions.fps || 30, 10) || 30));
+      safeOptions.fps = safeFps;
+
+      function normalizeBitrate(bitrate) {
+        if (bitrate === undefined || bitrate === null || bitrate === '') return null;
+        if (typeof bitrate === 'number' && Number.isFinite(bitrate)) {
+          const mbps = Math.max(0.1, bitrate);
+          return `${mbps}M`;
+        }
+        const s = String(bitrate).trim();
+        if (!s) return null;
+        // 如果已经带单位（k/K/m/M/g/G 或 bps），直接用
+        if (/[kKmMgG]$/.test(s) || /bps$/i.test(s)) return s;
+        // 纯数字：默认按 Mbps
+        if (/^\d+(\.\d+)?$/.test(s)) return `${s}M`;
+        return s; // 兜底
+      }
+
+      const normalizedBitrate = normalizeBitrate(safeOptions.bitrate);
+      if (normalizedBitrate) safeOptions.bitrate = normalizedBitrate;
+      else safeOptions.bitrate = '2M';
+
+      // 编码器可用性检查：请求 GPU 但没检测到可用 GPU 编码器时直接报错
+      const wantGpu = safeOptions.encoder === 'gpu';
+      if (wantGpu && (!recordingEncoders || !Array.isArray(recordingEncoders.gpu) || recordingEncoders.gpu.length === 0)) {
+        return { ok: false, error: '未检测到可用的 GPU 编码器，请选择 CPU 编码或先刷新编码器列表' };
+      }
+
+      // 获取显示端配置
+      const settings = store ? store.get('settings', {}) : {};
+      let displays = settings.display?.displays || {};
+      
+      // 如果displays为空或没有该显示端，尝试从config.json读取默认配置
+      if (!displays || Object.keys(displays).length === 0 || !displays[displayId]) {
+        try {
+          const configPath = path.join(__dirname, 'displays', 'config.json');
+          if (fs.existsSync(configPath)) {
+            const configContent = fs.readFileSync(configPath, 'utf-8');
+            const config = JSON.parse(configContent);
+            if (config.displays && config.displays[displayId]) {
+              displays[displayId] = config.displays[displayId];
+            }
+          }
+        } catch (e) {
+          console.warn('[main] 读取默认显示端配置失败:', e);
+        }
+      }
+      
+      let displayConfig = displays[displayId];
+      if (!displayConfig) {
+        // 如果还是没有，使用硬编码的默认值
+        const defaultConfigs = {
+          'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
+          'display-2': { width: 1500, height: 400, source: 'builtin', url: '', name: '副显示器' },
+          'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
+        };
+        if (defaultConfigs[displayId]) {
+          displayConfig = defaultConfigs[displayId];
+        } else {
+          return { ok: false, error: `显示端 ${displayId} 不存在` };
+        }
+      }
+
+      const width = displayConfig.width || 1900;
+      const height = displayConfig.height || 600;
+
+      // 创建离屏窗口
+      const offscreenWin = new BrowserWindow({
+        width,
+        height,
+        show: false,
+        webPreferences: {
+          offscreen: true,
+          preload: getPreloadPath(),
+          contextIsolation: true,
+          nodeIntegration: false,
+          backgroundThrottling: false
+        }
+      });
+
+      // 获取显示端URL（复用createDisplayWindow的逻辑）
+      let dispPath;
+      if (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') {
+        dispPath = displayConfig.url;
+      } else if (displayConfig.source === 'builtin' && displayConfig.url) {
+        let customFilePath = displayConfig.url.trim();
+        let resolvedPath = path.isAbsolute(customFilePath) 
+          ? customFilePath 
+          : (app.isPackaged ? path.join(app.getAppPath(), customFilePath) : path.join(__dirname, '..', customFilePath));
+        resolvedPath = path.normalize(resolvedPath);
+        if (fs.existsSync(resolvedPath)) {
+          dispPath = process.platform === 'win32' 
+            ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+            : `file://${resolvedPath}`;
+        } else {
+          dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+        }
+      } else {
+        if (displayId === 'display-1') {
+          dispPath = getRendererUrl('displays/display-1/display_window.html');
+        } else {
+          dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+        }
+      }
+
+      // 等待窗口加载完成
+      await new Promise((resolve) => {
+        offscreenWin.webContents.once('did-finish-load', resolve);
+        offscreenWin.loadURL(dispPath);
+      });
+
+      // 等待一小段时间确保页面渲染
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // 获取系统视频文件夹
+      const videosDir = app.getPath('videos');
+      const outputDir = path.join(videosDir, 'Metro-PIDS-Videos');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // 生成文件名
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const container = String(safeOptions.container || '').toLowerCase() || null;
+      const containerNormalized = (container === 'mp4' || container === 'avi' || container === 'mov' || container === 'wmv' || container === 'mkv' || container === 'webm')
+        ? container
+        : null;
+
+      // 默认封装：VP9 → webm，其它 → mp4
+      const finalContainer = containerNormalized || (safeOptions.codec === 'vp9' ? 'webm' : 'mp4');
+
+      // 容器与编码兼容性校验（不兼容直接报错，避免“点了没录制”）
+      if (safeOptions.codec === 'vp9' && finalContainer !== 'webm' && finalContainer !== 'mkv') {
+        return { ok: false, error: 'VP9 编码建议使用 WEBM（或 MKV）封装，请调整输出格式' };
+      }
+      if (finalContainer === 'webm' && safeOptions.codec !== 'vp9') {
+        return { ok: false, error: 'WEBM 封装通常搭配 VP9 编码，请选择 VP9 或改用 MP4/MKV/MOV 等格式' };
+      }
+
+      const outputPath = path.join(outputDir, `MetroPIDS_${timestamp}.${finalContainer}`);
+
+      // 确定编码器
+      let encoder = 'libx264';
+      const useGpu = safeOptions.encoder === 'gpu';
+
+      // VP9 目前统一用 CPU 编码，避免兼容性问题
+      if (safeOptions.codec === 'vp9') {
+        encoder = 'libvpx-vp9';
+      } else if (useGpu && recordingEncoders && Array.isArray(recordingEncoders.gpu) && recordingEncoders.gpu.length > 0) {
+        // 根据可用 GPU 编码器类型选择具体实现
+        const gpuType = recordingEncoders.gpu[0]; // nvenc / amf / qsv
+        if (gpuType === 'nvenc') {
+          encoder = safeOptions.codec === 'h265' ? 'hevc_nvenc' : 'h264_nvenc';
+        } else if (gpuType === 'amf') {
+          encoder = safeOptions.codec === 'h265' ? 'hevc_amf' : 'h264_amf';
+        } else if (gpuType === 'qsv') {
+          encoder = safeOptions.codec === 'h265' ? 'hevc_qsv' : 'h264_qsv';
+        } else {
+          // 未知类型，退回 CPU
+          encoder = safeOptions.codec === 'h265' ? 'libx265' : 'libx264';
+        }
+      } else {
+        // CPU 编码
+        if (safeOptions.codec === 'h265') encoder = 'libx265';
+        else encoder = 'libx264';
+      }
+
+      // 构建FFmpeg命令
+      const muxer = (
+        finalContainer === 'mp4' ? 'mp4'
+          : finalContainer === 'mov' ? 'mov'
+            : finalContainer === 'avi' ? 'avi'
+              : finalContainer === 'mkv' ? 'matroska'
+                : finalContainer === 'webm' ? 'webm'
+                  : finalContainer === 'wmv' ? 'asf'
+                    : finalContainer
+      );
+
+      const ffmpegArgs = [
+        '-f', 'rawvideo',
+        '-vcodec', 'rawvideo',
+        '-pix_fmt', 'bgra',
+        '-s', `${width}x${height}`,
+        '-r', String(safeOptions.fps || 30),
+        '-i', 'pipe:0',
+        '-c:v', encoder,
+        '-b:v', safeOptions.bitrate || '2M',
+        '-pix_fmt', 'yuv420p',
+        ...(finalContainer === 'mp4' ? ['-movflags', '+faststart'] : []),
+        '-f', muxer,
+        outputPath
+      ];
+
+      // 启动FFmpeg进程
+      const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+      // 更新录制状态
+      recordingState.isRecording = true;
+      recordingState.displayId = displayId;
+      recordingState.options = safeOptions;
+      recordingState.offscreenWin = offscreenWin;
+      recordingState.ffmpegProcess = ffmpegProcess;
+      recordingState.startTime = Date.now();
+      recordingState.duration = null;
+      recordingState.progress = 0;
+      recordingState.elapsed = 0;
+      recordingState.remaining = null;
+
+      // 如果 FFmpeg 启动即失败/很快退出，及时回传错误并让前端停止录制态
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        let closed = false;
+        const cleanup = () => {
+          try { ffmpegProcess.removeListener('error', onErr); } catch (e) {}
+          try { ffmpegProcess.removeListener('close', onClose); } catch (e) {}
+          try { ffmpegProcess.removeListener('spawn', onSpawn); } catch (e) {}
+          try { if (timer) clearTimeout(timer); } catch (e) {}
+        };
+        const onErr = (err) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(err);
+        };
+        const onClose = (code) => {
+          closed = true;
+          if (settled) return;
+          // 200ms 内就退出，视为启动失败
+          if (code !== 0 && code !== null) {
+            settled = true;
+            cleanup();
+            reject(new Error(`FFmpeg 启动失败（退出码 ${code}）`));
+          }
+        };
+        const onSpawn = () => {
+          // 给一点时间让它不要“秒退”
+          setTimeout(() => {
+            if (settled) return;
+            if (closed) return;
+            settled = true;
+            cleanup();
+            resolve(true);
+          }, 200);
+        };
+        ffmpegProcess.once('error', onErr);
+        ffmpegProcess.once('close', onClose);
+        ffmpegProcess.once('spawn', onSpawn);
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(true);
+        }, 1200);
+      });
+
+      // 监控：是否成功抓到画面/是否写入过帧，避免“卡住不报错”
+      let framesWritten = 0;
+      let captureErrorCount = 0;
+      let lastStderrLine = '';
+      let firstFrameWatchdog = setTimeout(() => {
+        try {
+          if (recordingState.isRecording && recordingState.ffmpegProcess === ffmpegProcess) {
+            if (framesWritten <= 0) {
+              stopRecording({
+                error: '录制启动后未捕获到画面（首帧超时）。开发环境下可能是显示端页面未渲染完成/加载失败，或 offscreen 抓帧不可用。'
+              });
+            }
+          }
+        } catch (e) {}
+      }, 4000);
+
+      // 启动抓帧定时器
+      const frameInterval = 1000 / (safeOptions.fps || 30);
+      recordingState.captureTimer = setInterval(async () => {
+        if (!recordingState.isRecording || !offscreenWin || offscreenWin.isDestroyed()) return;
+        try {
+          const image = await offscreenWin.webContents.capturePage();
+          const bitmap = image.toBitmap();
+          if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+            ffmpegProcess.stdin.write(bitmap);
+            framesWritten += 1;
+            if (firstFrameWatchdog) {
+              clearTimeout(firstFrameWatchdog);
+              firstFrameWatchdog = null;
+            }
+          } else {
+            stopRecording({ error: 'FFmpeg 输入流已关闭，无法写入视频帧' });
+          }
+        } catch (e) {
+          console.error('[main] 抓帧失败:', e);
+          captureErrorCount += 1;
+          // 连续失败直接报错，避免静默生成坏文件
+          if (captureErrorCount >= 5) {
+            stopRecording({ error: `抓帧失败（已连续 ${captureErrorCount} 次）：${String(e)}` });
+          }
+        }
+      }, frameInterval);
+
+      // 启动进度更新定时器（仅用于展示已录制时间；“下一步间隔进度”在渲染层计算）
+      recordingState.progressTimer = setInterval(() => {
+        if (!recordingState.isRecording) return;
+        const elapsed = (Date.now() - recordingState.startTime) / 1000;
+        recordingState.elapsed = elapsed;
+        // 发送进度更新事件
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('recording-progress', {
+            progress: null,
+            elapsed: recordingState.elapsed,
+            remaining: null,
+            duration: null
+          });
+        }
+      }, 1000);
+
+      // FFmpeg错误处理
+      ffmpegProcess.stderr.on('data', (data) => {
+        const s = data.toString();
+        console.log('[FFmpeg]', s);
+        // 记录最后一条 stderr（用于失败提示）
+        const lastLine = String(s || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+        if (lastLine) lastStderrLine = lastLine;
+        // 如果还没写入过任何帧就出现明显错误，直接停止并上报
+        if (framesWritten <= 0 && /unknown encoder|invalid|error|could not|failed/i.test(s)) {
+          stopRecording({ error: `FFmpeg 错误：${lastLine || s.trim()}` });
+        }
+      });
+
+      ffmpegProcess.on('error', (err) => {
+        console.error('[main] FFmpeg进程错误:', err);
+        stopRecording({ error: String(err) });
+      });
+
+      ffmpegProcess.on('close', (code) => {
+        console.log(`[main] FFmpeg进程退出，代码: ${code}`);
+        if (code !== 0 && code !== null) {
+          console.error('[main] FFmpeg编码失败');
+          const extra = lastStderrLine ? `：${lastStderrLine}` : '';
+          stopRecording({ error: `FFmpeg 编码失败（退出码 ${code}）${extra}` });
+          return;
+        }
+        stopRecording({ completed: true });
+      });
+
+      return { ok: true, outputPath };
+    } catch (e) {
+      console.error('[main] 开始录制失败:', e);
+      stopRecording({ error: String(e) });
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  // 停止录制
+  function stopRecording({ error = null, completed = false } = {}) {
+    if (!recordingState.isRecording) return;
+
+    // 清除所有定时器
+    if (recordingState.captureTimer) {
+      clearInterval(recordingState.captureTimer);
+      recordingState.captureTimer = null;
+    }
+    if (recordingState.progressTimer) {
+      clearInterval(recordingState.progressTimer);
+      recordingState.progressTimer = null;
+    }
+    if (recordingState.durationTimer) {
+      clearTimeout(recordingState.durationTimer);
+      recordingState.durationTimer = null;
+    }
+
+    // 关闭FFmpeg stdin
+    if (recordingState.ffmpegProcess && recordingState.ffmpegProcess.stdin) {
+      recordingState.ffmpegProcess.stdin.end();
+    }
+
+    // 销毁离屏窗口
+    if (recordingState.offscreenWin && !recordingState.offscreenWin.isDestroyed()) {
+      recordingState.offscreenWin.destroy();
+    }
+
+    // 清理状态
+    const wasRecording = recordingState.isRecording;
+    const lastElapsed = recordingState.elapsed;
+    recordingState.isRecording = false;
+    recordingState.displayId = null;
+    recordingState.options = null;
+    recordingState.offscreenWin = null;
+    recordingState.ffmpegProcess = null;
+    recordingState.startTime = null;
+    recordingState.duration = null;
+    recordingState.progress = 0;
+    recordingState.elapsed = 0;
+    recordingState.remaining = null;
+
+    // 发送停止/错误事件（让前端退出录制态；仅完成时发送 100%）
+    if (wasRecording && mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('recording-progress', {
+        isRecording: false,
+        completed: !!completed,
+        error: error ? String(error) : null,
+        progress: completed ? 100 : null,
+        elapsed: lastElapsed,
+        remaining: completed ? 0 : null,
+        duration: recordingState.duration
+      });
+    }
+  }
+
+  ipcMain.handle('recording/stop', async () => {
+    stopRecording({ completed: true });
+    return { ok: true };
+  });
+
+  ipcMain.handle('recording/status', async () => {
+    return {
+      ok: true,
+      isRecording: recordingState.isRecording,
+      progress: recordingState.progress,
+      elapsed: recordingState.elapsed,
+      remaining: recordingState.remaining,
+      duration: recordingState.duration
+    };
+  });
+
+  // ========== 并行/分段离屏录制 ==========
+  function clampInt(n, min, max, fallback) {
+    const v = parseInt(n, 10);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function normalizeBitrateToFfmpeg(bitrate) {
+    if (bitrate === undefined || bitrate === null || bitrate === '') return null;
+    if (typeof bitrate === 'number' && Number.isFinite(bitrate)) {
+      const mbps = Math.max(0.1, bitrate);
+      return `${mbps}M`;
+    }
+    const s = String(bitrate).trim();
+    if (!s) return null;
+    if (/[kKmMgG]$/.test(s) || /bps$/i.test(s)) return s;
+    if (/^\d+(\.\d+)?$/.test(s)) return `${s}M`;
+    return s;
+  }
+
+  // 打开视频输出文件夹（用于“打开文件夹”按钮）
+  ipcMain.handle('recording/open-output-folder', async () => {
+    try {
+      const videosDir = app.getPath('videos');
+      const outputDir = path.join(videosDir, 'Metro-PIDS-Videos');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      const r = await shell.openPath(outputDir);
+      if (r && r.length) return { ok: false, error: r };
+      return { ok: true, path: outputDir };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  function resolveContainerAndMuxer(options) {
+    const container = String(options.container || '').toLowerCase() || null;
+    const containerNormalized = (container === 'mp4' || container === 'avi' || container === 'mov' || container === 'wmv' || container === 'mkv' || container === 'webm')
+      ? container
+      : null;
+    const finalContainer = containerNormalized || (options.codec === 'vp9' ? 'webm' : 'mp4');
+
+    if (options.codec === 'vp9' && finalContainer !== 'webm' && finalContainer !== 'mkv') {
+      return { ok: false, error: 'VP9 编码建议使用 WEBM（或 MKV）封装，请调整输出格式' };
+    }
+    if (finalContainer === 'webm' && options.codec !== 'vp9') {
+      return { ok: false, error: 'WEBM 封装通常搭配 VP9 编码，请选择 VP9 或改用 MP4/MKV/MOV 等格式' };
+    }
+
+    const muxer = (
+      finalContainer === 'mp4' ? 'mp4'
+        : finalContainer === 'mov' ? 'mov'
+          : finalContainer === 'avi' ? 'avi'
+            : finalContainer === 'mkv' ? 'matroska'
+              : finalContainer === 'webm' ? 'webm'
+                : finalContainer === 'wmv' ? 'asf'
+                  : finalContainer
+    );
+    return { ok: true, container: finalContainer, muxer };
+  }
+
+  function resolveVideoEncoder(options) {
+    const wantGpu = options.encoder === 'gpu';
+    if (options.codec === 'vp9') return { ok: true, encoder: 'libvpx-vp9' };
+    if (wantGpu) {
+      if (!recordingEncoders || !Array.isArray(recordingEncoders.gpu) || recordingEncoders.gpu.length === 0) {
+        return { ok: false, error: '未检测到可用的 GPU 编码器，请选择 CPU 编码或先刷新编码器列表' };
+      }
+      const gpuType = recordingEncoders.gpu[0];
+      if (gpuType === 'nvenc') return { ok: true, encoder: options.codec === 'h265' ? 'hevc_nvenc' : 'h264_nvenc' };
+      if (gpuType === 'amf') return { ok: true, encoder: options.codec === 'h265' ? 'hevc_amf' : 'h264_amf' };
+      if (gpuType === 'qsv') return { ok: true, encoder: options.codec === 'h265' ? 'hevc_qsv' : 'h264_qsv' };
+      // 未知类型，退回 CPU
+    }
+    return { ok: true, encoder: options.codec === 'h265' ? 'libx265' : 'libx264' };
+  }
+
+  async function resolveDisplayConfig(displayId) {
+    const settings = store ? store.get('settings', {}) : {};
+    let displays = settings.display?.displays || {};
+    if (!displays || Object.keys(displays).length === 0 || !displays[displayId]) {
+      try {
+        const configPath = path.join(__dirname, 'displays', 'config.json');
+        if (fs.existsSync(configPath)) {
+          const configContent = fs.readFileSync(configPath, 'utf-8');
+          const config = JSON.parse(configContent);
+          if (config.displays && config.displays[displayId]) {
+            displays[displayId] = config.displays[displayId];
+          }
+        }
+      } catch (e) {
+        console.warn('[main] 读取默认显示端配置失败:', e);
+      }
+    }
+
+    let displayConfig = displays[displayId];
+    if (!displayConfig) {
+      const defaultConfigs = {
+        'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
+        'display-2': { width: 1500, height: 400, source: 'builtin', url: '', name: '副显示器' },
+        'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
+      };
+      if (defaultConfigs[displayId]) displayConfig = defaultConfigs[displayId];
+    }
+    return displayConfig || null;
+  }
+
+  function resolveDisplayUrl(displayId, displayConfig) {
+    if (!displayConfig) return null;
+    let dispPath;
+    if (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') {
+      dispPath = displayConfig.url;
+    } else if (displayConfig.source === 'builtin' && displayConfig.url) {
+      let customFilePath = String(displayConfig.url || '').trim();
+      let resolvedPath = path.isAbsolute(customFilePath)
+        ? customFilePath
+        : (app.isPackaged ? path.join(app.getAppPath(), customFilePath) : path.join(__dirname, '..', customFilePath));
+      resolvedPath = path.normalize(resolvedPath);
+      if (fs.existsSync(resolvedPath)) {
+        dispPath = process.platform === 'win32'
+          ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+          : `file://${resolvedPath}`;
+      } else {
+        dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+      }
+    } else {
+      if (displayId === 'display-1') dispPath = getRendererUrl('displays/display-1/display_window.html');
+      else dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+    }
+    return dispPath;
+  }
+
+  function broadcastParallelProgress(extra = {}) {
+    if (!mainWin || mainWin.isDestroyed()) return;
+    const now = Date.now();
+    const elapsed = parallelRecordingState.startTime ? (now - parallelRecordingState.startTime) / 1000 : 0;
+    const total = parallelRecordingState.totalDuration || 0;
+    const completedDur = parallelRecordingState.segments
+      .filter(s => s.status === 'done')
+      .reduce((sum, s) => sum + (s.durationSec || 0), 0);
+    const runningDur = Array.from(parallelRecordingState.running.values())
+      .reduce((sum, r) => sum + (r && r.startTs ? Math.max(0, (now - r.startTs) / 1000) : 0), 0);
+    const overall = total > 0 ? Math.min(100, Math.max(0, ((completedDur + runningDur) / total) * 100)) : 0;
+
+    mainWin.webContents.send('recording-progress', {
+      mode: 'parallel',
+      isRecording: parallelRecordingState.isRecording,
+      progress: overall,
+      elapsed,
+      duration: total,
+      segments: parallelRecordingState.segments.map(s => ({
+        index: s.index,
+        status: s.status,
+        error: s.error || null
+      })),
+      ...extra
+    });
+  }
+
+  async function stopParallelRecording({ error = null, completed = false } = {}) {
+    if (!parallelRecordingState.isRecording) return;
+    parallelRecordingState.abort = true;
+
+    // 停止所有正在运行的段
+    for (const [idx, r] of parallelRecordingState.running.entries()) {
+      try { if (r.captureTimer) clearInterval(r.captureTimer); } catch (e) {}
+      try { if (r.stepTimer) clearInterval(r.stepTimer); } catch (e) {}
+      try { if (r.ffmpegProcess && r.ffmpegProcess.stdin) r.ffmpegProcess.stdin.end(); } catch (e) {}
+      try { if (r.offscreenWin && !r.offscreenWin.isDestroyed()) r.offscreenWin.destroy(); } catch (e) {}
+      parallelRecordingState.running.delete(idx);
+    }
+
+    const was = parallelRecordingState.isRecording;
+    parallelRecordingState.isRecording = false;
+    const finalPath = parallelRecordingState.finalOutputPath;
+
+    if (was && mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('recording-progress', {
+        mode: 'parallel',
+        isRecording: false,
+        completed: !!completed,
+        error: error ? String(error) : null,
+        outputPath: completed ? finalPath : null
+      });
+    }
+  }
+
+  function computeRtFromStep({ startIdx, stepDir, startStep }) {
+    const seg = Math.floor(startStep / 2);
+    const state = (startStep % 2 === 0) ? 0 : 1;
+    const idx = startIdx + seg * stepDir;
+    return { idx, state };
+  }
+
+  async function runSegmentRecording({ displayId, displayConfig, dispUrl, width, height, segment, appData, startRt, stepDir, intervalSec, options, encoder, muxer, container }) {
+    const segmentIndex = segment.index;
+    const partition = `recseg_${Date.now()}_${Math.random().toString(16).slice(2)}_${segmentIndex}`;
+
+    const offscreenWin = new BrowserWindow({
+      width,
+      height,
+      show: false,
+      webPreferences: {
+        offscreen: true,
+        preload: getPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false,
+        partition
+      }
+    });
+
+    await new Promise((resolve) => {
+      offscreenWin.webContents.once('did-finish-load', resolve);
+      offscreenWin.loadURL(dispUrl);
+    });
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 在该 partition 内独立驱动 displayWindowLogic：发送 SYNC，并按 intervalSec 推进 steps
+    const inject = `
+      (function() {
+        try {
+          const bc = new BroadcastChannel('metro_pids_v3');
+          const appData = ${JSON.stringify(appData)};
+          let rt = ${JSON.stringify(startRt)};
+          const stepDir = ${JSON.stringify(stepDir)};
+          const totalSteps = ${JSON.stringify(segment.steps)};
+          const intervalSec = ${JSON.stringify(intervalSec)};
+          let stepCount = 0;
+
+          function post() { try { bc.postMessage({ t: 'SYNC', d: appData, r: rt }); } catch(e) {} }
+          post();
+
+          const timer = setInterval(() => {
+            stepCount += 1;
+            if (stepCount > totalSteps) {
+              clearInterval(timer);
+              try { bc.close(); } catch(e) {}
+              return;
+            }
+            if (rt.state === 0) {
+              rt = { idx: rt.idx, state: 1 };
+            } else {
+              rt = { idx: rt.idx + stepDir, state: 0 };
+            }
+            post();
+          }, Math.max(1, intervalSec) * 1000);
+
+          window.__metroPidsSegmentStop = function() {
+            try { clearInterval(timer); } catch(e) {}
+            try { bc.close(); } catch(e) {}
+          };
+          return true;
+        } catch (e) {
+          return String(e);
+        }
+      })();
+    `;
+    const injected = await offscreenWin.webContents.executeJavaScript(inject);
+    if (injected !== true) {
+      try { offscreenWin.destroy(); } catch (e) {}
+      throw new Error(`片段初始化失败: ${String(injected)}`);
+    }
+
+    const outputPath = segment.outputPath;
+    const safeFps = clampInt(options.fps || 30, 1, 240, 30);
+    const bitrate = normalizeBitrateToFfmpeg(options.bitrate) || '2M';
+
+    const ffmpegArgs = [
+      '-f', 'rawvideo',
+      '-vcodec', 'rawvideo',
+      '-pix_fmt', 'bgra',
+      '-s', `${width}x${height}`,
+      '-r', String(safeFps),
+      '-i', 'pipe:0',
+      '-c:v', encoder,
+      '-b:v', bitrate,
+      '-pix_fmt', 'yuv420p',
+      ...(container === 'mp4' ? ['-movflags', '+faststart'] : []),
+      '-f', muxer,
+      outputPath
+    ];
+
+    const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let framesWritten = 0;
+    let captureErrorCount = 0;
+    let lastStderrLine = '';
+    let closedCode = null;
+
+    const startTs = Date.now();
+    const recordObj = { offscreenWin, ffmpegProcess, captureTimer: null, stepTimer: null, startTs, framesWritten: 0, lastStderrLine: '' };
+    parallelRecordingState.running.set(segmentIndex, recordObj);
+
+    const firstFrameWatchdog = setTimeout(() => {
+      try {
+        const r = parallelRecordingState.running.get(segmentIndex);
+        if (r && r.framesWritten <= 0 && parallelRecordingState.isRecording && !parallelRecordingState.abort) {
+          stopParallelRecording({ error: `片段 #${segmentIndex} 首帧超时，未捕获到画面` });
+        }
+      } catch (e) {}
+    }, 4000);
+
+    ffmpegProcess.stderr.on('data', (data) => {
+      const s = data.toString();
+      const lastLine = String(s || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+      if (lastLine) lastStderrLine = lastLine;
+      const r = parallelRecordingState.running.get(segmentIndex);
+      if (r) r.lastStderrLine = lastStderrLine;
+      if (framesWritten <= 0 && /unknown encoder|invalid|error|could not|failed/i.test(s)) {
+        stopParallelRecording({ error: `片段 #${segmentIndex} FFmpeg 错误：${lastLine || s.trim()}` });
+      }
+    });
+
+    ffmpegProcess.on('error', (err) => {
+      stopParallelRecording({ error: `片段 #${segmentIndex} FFmpeg 进程错误：${String(err)}` });
+    });
+
+    ffmpegProcess.on('close', (code) => {
+      closedCode = code;
+    });
+
+    // 抓帧：按帧数而不是墙钟时间来控制片段时长，避免并行时因性能不足导致视频整体“快进”
+    const frameInterval = 1000 / safeFps;
+    const targetFrames = Math.max(1, Math.round(safeFps * (segment.durationSec || 0.1)));
+    recordObj.captureTimer = setInterval(async () => {
+      if (parallelRecordingState.abort || !parallelRecordingState.isRecording) return;
+      if (!offscreenWin || offscreenWin.isDestroyed()) return;
+      try {
+        const image = await offscreenWin.webContents.capturePage();
+        const bitmap = image.toBitmap();
+        if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+          ffmpegProcess.stdin.write(bitmap);
+          framesWritten += 1;
+          recordObj.framesWritten = framesWritten;
+          if (framesWritten === 1) {
+            try { clearTimeout(firstFrameWatchdog); } catch (e) {}
+          }
+        } else {
+          // FFmpeg 已正常或提前结束，输入流被关闭。
+          // 此时不再将其视为致命错误，而是停止该段的抓帧，后续由等待 FFmpeg 退出的逻辑判断是否成功。
+          try { if (recordObj.captureTimer) clearInterval(recordObj.captureTimer); } catch (e) {}
+          recordObj.captureTimer = null;
+          return;
+        }
+      } catch (e) {
+        captureErrorCount += 1;
+        if (captureErrorCount >= 5) {
+          stopParallelRecording({ error: `片段 #${segmentIndex} 抓帧失败（连续 ${captureErrorCount} 次）：${String(e)}` });
+        }
+      }
+    }, frameInterval);
+
+    // 进度上报定时器（轻量：每秒）
+    recordObj.stepTimer = setInterval(() => {
+      if (!parallelRecordingState.isRecording) return;
+      broadcastParallelProgress();
+    }, 1000);
+
+    // 等待该段达到目标帧数或被中止
+    await new Promise((resolve) => {
+      const checkDone = () => {
+        if (parallelRecordingState.abort || !parallelRecordingState.isRecording) {
+          return resolve();
+        }
+        if (framesWritten >= targetFrames || !recordObj.captureTimer) {
+          return resolve();
+        }
+        setTimeout(checkDone, 200);
+      };
+      checkDone();
+    });
+
+    // 清理段内驱动器
+    try {
+      await offscreenWin.webContents.executeJavaScript(`(function(){ try{ if(window.__metroPidsSegmentStop) window.__metroPidsSegmentStop(); }catch(e){} })();`);
+    } catch (e) {}
+
+    // 结束本段录制
+    try { if (recordObj.captureTimer) clearInterval(recordObj.captureTimer); } catch (e) {}
+    try { if (recordObj.stepTimer) clearInterval(recordObj.stepTimer); } catch (e) {}
+    try { if (ffmpegProcess.stdin) ffmpegProcess.stdin.end(); } catch (e) {}
+
+    // 等待 FFmpeg 退出（最多 10 秒）
+    await new Promise((resolve, reject) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error(`片段 #${segmentIndex} FFmpeg 结束超时`));
+      }, 10000);
+      ffmpegProcess.once('close', (code) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (code !== 0 && code !== null) {
+          reject(new Error(`片段 #${segmentIndex} FFmpeg 编码失败（退出码 ${code}）${lastStderrLine ? `：${lastStderrLine}` : ''}`));
+          return;
+        }
+        resolve(true);
+      });
+    });
+
+    try { if (firstFrameWatchdog) clearTimeout(firstFrameWatchdog); } catch (e) {}
+    try { if (offscreenWin && !offscreenWin.isDestroyed()) offscreenWin.destroy(); } catch (e) {}
+    parallelRecordingState.running.delete(segmentIndex);
+    return true;
+  }
+
+  async function concatSegmentsFFmpeg({ container, segmentPaths, outputPath, tempDir }) {
+    const listPath = path.join(tempDir, 'concat.txt');
+    const lines = segmentPaths.map(p => `file '${String(p).replace(/'/g, `'\\''`)}'`).join('\n') + '\n';
+    fs.writeFileSync(listPath, lines, 'utf-8');
+
+    // 优先 -c copy 快速拼接
+    const args = ['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath];
+    await new Promise((resolve, reject) => {
+      const p = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let errOut = '';
+      p.stderr.on('data', (d) => { errOut += d.toString(); });
+      p.on('error', (e) => reject(e));
+      p.on('close', (code) => {
+        if (code === 0 || code === null) return resolve(true);
+        const lastLine = String(errOut || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+        reject(new Error(`拼接失败（退出码 ${code}）${lastLine ? `：${lastLine}` : ''}`));
+      });
+    });
+    return true;
+  }
+
+  ipcMain.handle('recording/start-parallel', async (event, displayId, options) => {
+    if (!ffmpegPath) return { ok: false, error: 'FFmpeg未安装' };
+    if (recordingState.isRecording || parallelRecordingState.isRecording) return { ok: false, error: '录制已在进行中' };
+
+    try {
+      const safeOptions = options && typeof options === 'object' ? { ...options } : {};
+      const appData = safeOptions.appData;
+      if (!appData || typeof appData !== 'object') return { ok: false, error: '缺少 appData，无法进行并行分段录制' };
+
+      const intervalSec = Math.max(1, clampInt(safeOptions.intervalSec || 8, 1, 60, 8));
+      const totalSteps = clampInt(safeOptions.totalSteps, 1, 200000, null);
+      if (!totalSteps) return { ok: false, error: '缺少 totalSteps，无法进行并行分段录制' };
+
+      const stepsPerSegment = clampInt(safeOptions.stepsPerSegment || 20, 1, 5000, 20);
+      let parallelism = clampInt(safeOptions.parallelism || 2, 1, 4, 2);
+
+      const stepDir = clampInt(safeOptions.stepDir || 1, -1, 1, 1) || 1;
+      const startIdx = clampInt(safeOptions.startIdx, -100000, 100000, 0);
+
+      // 编码器/封装解析
+      const contRes = resolveContainerAndMuxer(safeOptions);
+      if (!contRes.ok) return { ok: false, error: contRes.error };
+      const encRes = resolveVideoEncoder(safeOptions);
+      if (!encRes.ok) return { ok: false, error: encRes.error };
+
+      // 部分硬件编码器（如 NVENC / QSV / AMF）对并行编码进程数量有限制，
+      // 如果检测到是硬件编码器，则自动降低最大并行度，避免频繁出现输入流被 FFmpeg 主动关闭的问题。
+      if (encRes.encoder && /nvenc|qsv|amf/i.test(String(encRes.encoder))) {
+        parallelism = Math.min(parallelism, 2);
+      }
+
+      const displayConfig = await resolveDisplayConfig(displayId);
+      if (!displayConfig) return { ok: false, error: `显示端 ${displayId} 不存在` };
+      const dispUrl = resolveDisplayUrl(displayId, displayConfig);
+      if (!dispUrl) return { ok: false, error: '无法解析显示端 URL' };
+
+      const width = displayConfig.width || 1900;
+      const height = displayConfig.height || 600;
+
+      const videosDir = app.getPath('videos');
+      const outputDir = path.join(videosDir, 'Metro-PIDS-Videos');
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const finalOutputPath = path.join(outputDir, `MetroPIDS_${timestamp}.${contRes.container}`);
+
+      const tmpBase = path.join(app.getPath('temp'), 'Metro-PIDS-VideoSegments');
+      if (!fs.existsSync(tmpBase)) fs.mkdirSync(tmpBase, { recursive: true });
+      const tempDir = path.join(tmpBase, `seg_${timestamp}_${Math.random().toString(16).slice(2)}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+
+      const segmentCount = Math.ceil(totalSteps / stepsPerSegment);
+      const segments = [];
+      for (let i = 0; i < segmentCount; i++) {
+        const startStep = i * stepsPerSegment;
+        const steps = Math.min(stepsPerSegment, totalSteps - startStep);
+        const durationSec = steps * intervalSec;
+        const segPath = path.join(tempDir, `segment_${String(i).padStart(3, '0')}.${contRes.container}`);
+        segments.push({
+          index: i,
+          startStep,
+          steps,
+          durationSec,
+          outputPath: segPath,
+          status: 'pending',
+          error: null
+        });
+      }
+
+      parallelRecordingState.isRecording = true;
+      parallelRecordingState.displayId = displayId;
+      parallelRecordingState.options = safeOptions;
+      parallelRecordingState.abort = false;
+      parallelRecordingState.tempDir = tempDir;
+      parallelRecordingState.finalOutputPath = finalOutputPath;
+      parallelRecordingState.segments = segments;
+      parallelRecordingState.running = new Map();
+      parallelRecordingState.startTime = Date.now();
+      parallelRecordingState.totalDuration = totalSteps * intervalSec;
+
+      // 初始化阶段：准备分段
+      broadcastParallelProgress({ stage: 'segments-start' });
+
+      // 后台执行调度
+      (async () => {
+        try {
+          let nextIndex = 0;
+          const workers = new Array(parallelism).fill(0).map(async () => {
+            while (!parallelRecordingState.abort) {
+              const seg = parallelRecordingState.segments[nextIndex];
+              if (!seg) return;
+              nextIndex += 1;
+
+              seg.status = 'running';
+              // 分段正式开始录制
+              broadcastParallelProgress({ stage: 'segments-running' });
+              const startRt = computeRtFromStep({ startIdx, stepDir, startStep: seg.startStep });
+
+              try {
+                await runSegmentRecording({
+                  displayId,
+                  displayConfig,
+                  dispUrl,
+                  width,
+                  height,
+                  segment: seg,
+                  appData,
+                  startRt,
+                  stepDir,
+                  intervalSec,
+                  options: safeOptions,
+                  encoder: encRes.encoder,
+                  muxer: contRes.muxer,
+                  container: contRes.container
+                });
+                seg.status = 'done';
+                broadcastParallelProgress();
+              } catch (e) {
+                seg.status = 'error';
+                seg.error = String(e);
+                broadcastParallelProgress();
+                throw e;
+              }
+            }
+          });
+
+          await Promise.all(workers);
+          if (parallelRecordingState.abort) return;
+
+          // 所有分段录制完成，准备拼接
+          broadcastParallelProgress({ stage: 'segments-done' });
+
+          broadcastParallelProgress({ stage: 'concat-start' });
+          const paths = parallelRecordingState.segments.map(s => s.outputPath);
+          await concatSegmentsFFmpeg({
+            container: contRes.container,
+            segmentPaths: paths,
+            outputPath: finalOutputPath,
+            tempDir
+          });
+
+          await stopParallelRecording({ completed: true });
+        } catch (err) {
+          await stopParallelRecording({ error: String(err) });
+        }
+      })();
+
+      return { ok: true, outputPath: finalOutputPath, tempDir, segmentCount };
+    } catch (e) {
+      await stopParallelRecording({ error: String(e) });
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('recording/stop-parallel', async () => {
+    await stopParallelRecording({ completed: false, error: '用户停止' });
+    return { ok: true };
+  });
+
+  ipcMain.handle('recording/status-parallel', async () => {
+    return {
+      ok: true,
+      isRecording: parallelRecordingState.isRecording,
+      outputPath: parallelRecordingState.finalOutputPath,
+      tempDir: parallelRecordingState.tempDir,
+      totalDuration: parallelRecordingState.totalDuration,
+      segments: parallelRecordingState.segments
+    };
   });
 
   // 文件选择对话框
@@ -4247,8 +5442,9 @@ async function initAutoUpdater() {
       try { 
         // 通知渲染进程有更新可用（用于显示NEW标记）
         mainWin && mainWin.webContents.send('update/available', info);
-        // 发送一个特殊事件来标记有更新（用于UI显示）
-        mainWin && mainWin.webContents.send('update/has-update', { version: info.version, silentUpdate: silentUpdateEnabled });
+        // 发送一个特殊事件来标记有更新（用于UI显示 + 首次启动弹窗）
+        const forceUpdate = !!(info && info.updateInfo && info.updateInfo.forceUpdate === true);
+        mainWin && mainWin.webContents.send('update/has-update', { version: info.version, silentUpdate: silentUpdateEnabled, forceUpdate });
       } catch (e) {
         console.error('[main] 发送 update-available 事件失败:', e);
       }
@@ -5020,10 +6216,11 @@ async function checkGiteeUpdate() {
                   releaseDate: latestRelease.created_at,
                   releaseNotes: latestRelease.body,
                   releaseUrl: latestRelease.html_url || `https://gitee.com/tanzhouxkong/Metro-PIDS-/releases/${latestRelease.tag_name}`,
-                  assets: latestRelease.assets || []
+                  assets: latestRelease.assets || [],
+                  forceUpdate: latestRelease && latestRelease.updateInfo && latestRelease.updateInfo.forceUpdate === true
                 };
                 mainWin && mainWin.webContents.send('update/available', updateInfo);
-                mainWin && mainWin.webContents.send('update/has-update', { version: latestVersion, silentUpdate: silentUpdateEnabled });
+                mainWin && mainWin.webContents.send('update/has-update', { version: latestVersion, silentUpdate: silentUpdateEnabled, forceUpdate: !!updateInfo.forceUpdate });
                 
                 // 如果启用了静默更新，自动触发下载（通过调用 update/download IPC）
                 if (silentUpdateEnabled) {

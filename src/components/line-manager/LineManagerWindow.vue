@@ -120,9 +120,9 @@ export default {
         if (availableFolders.length === 0) {
           if (!window.__lineManagerDialog) return
           const folderName = await window.__lineManagerDialog.prompt(
-            '当前没有可用的文件夹，请创建一个新文件夹用于保存贯通线路：',
-            '新建文件夹',
-            '创建文件夹'
+            t('lineManagerWindow.noAvailableFolders'),
+            t('lineManagerWindow.newFolder'),
+            t('lineManagerWindow.createFolder')
           )
 
           if (!folderName || !folderName.trim()) {
@@ -145,7 +145,7 @@ export default {
             } else {
               localStorage.setItem(
                 'throughLineSaveResult',
-                JSON.stringify({ success: false, error: '创建文件夹后未找到' })
+                JSON.stringify({ success: false, error: t('lineManagerWindow.folderCreatedButNotFound') })
               )
               if (window.electronAPI?.closeWindow) await window.electronAPI.closeWindow()
             }
@@ -154,7 +154,7 @@ export default {
               'throughLineSaveResult',
               JSON.stringify({
                 success: false,
-                error: (addRes && addRes.error) || '创建文件夹失败'
+                error: (addRes && addRes.error) || t('lineManagerWindow.createFolderFailed')
               })
             )
             if (window.electronAPI?.closeWindow) await window.electronAPI.closeWindow()
@@ -166,7 +166,7 @@ export default {
         await new Promise((resolve) => setTimeout(resolve, 800))
         const selectedFolder = await showFolderSelector(
           availableFolders,
-          '请选择保存贯通线路的文件夹：',
+          t('lineManagerWindow.selectFolderForThroughLine'),
           lineName
         )
         if (selectedFolder) {
@@ -194,14 +194,14 @@ export default {
 
     async function doSaveThroughLine(lineData, cleanLineName, folder) {
       try {
-        if (folder.id === 'default' || folder.name === '默认' || folder.id === CLOUD_FOLDER_ID) {
+        if (folder.id === 'default' || folder.name === t('lineManagerWindow.defaultFolder') || folder.id === CLOUD_FOLDER_ID) {
           if (window.__lineManagerDialog) {
-            await window.__lineManagerDialog.alert('不允许保存到默认或云控文件夹，请选择其他文件夹', '提示')
+            await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotSaveToDefaultOrCloudFolder'), '提示')
           }
           return
         }
 
-        const safeName = (cleanLineName || '贯通线路').replace(/[<>:"/\\|?*]/g, '').trim()
+        const safeName = (cleanLineName || t('lineManagerWindow.throughLine')).replace(/[<>:"/\\|?*]/g, '').trim()
         const targetFileName = (safeName || 'through-line') + '.json'
         const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path)
 
@@ -233,7 +233,7 @@ export default {
             'throughLineSaveResult',
             JSON.stringify({
               success: false,
-              error: (saveRes && saveRes.error) || '保存失败'
+              error: (saveRes && saveRes.error) || t('lineManagerWindow.saveFailed')
             })
           )
           if (window.electronAPI?.closeWindow) await window.electronAPI.closeWindow()
@@ -262,6 +262,9 @@ export default {
         const header = document.createElement('div')
         header.style.cssText =
           'padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); display:flex; flex-direction:column; gap:16px; flex-shrink:0; background:linear-gradient(135deg, rgba(255,159,67,0.05) 0%, rgba(255,159,67,0.02) 100%);'
+        const selectFolderText = t('lineManagerWindow.selectFolder')
+        const saveThroughLineText = t('lineManagerWindow.saveThroughLine')
+        const lineNameText = t('lineManagerWindow.lineName')
         header.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:12px;">
@@ -269,7 +272,7 @@ export default {
                 <i class="fas fa-folder-open" style="color:white; font-size:18px;"></i>
               </div>
               <div>
-                <h3 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">${title || '选择文件夹'}</h3>
+                <h3 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">${title || selectFolderText}</h3>
                 <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Select Folder</div>
               </div>
             </div>
@@ -283,8 +286,8 @@ export default {
           <div style="padding:14px 16px; background:linear-gradient(135deg, #FF9F43 0%, #FFC371 100%); border-radius:10px; display:flex; align-items:center; gap:12px; box-shadow:0 4px 12px rgba(255,159,67,0.3);">
             <i class="fas fa-exchange-alt" style="font-size:20px; color:#fff;"></i>
             <div style="flex:1;">
-              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:4px;">保存贯通线路</div>
-              <div style="font-size:12px; color:rgba(255,255,255,0.95);">线路名称: ${lineName}</div>
+              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:4px;">${saveThroughLineText}</div>
+              <div style="font-size:12px; color:rgba(255,255,255,0.95);">${lineNameText} ${lineName}</div>
             </div>
           </div>
           `
@@ -324,8 +327,9 @@ export default {
         const footer = document.createElement('div')
         footer.style.cssText =
           'padding:14px 20px; border-top:1px solid var(--divider, rgba(0,0,0,0.08)); background:var(--card, #ffffff); display:flex; justify-content:flex-end; gap:10px;'
+        const cancelText = t('lineManagerWindow.btnCancel')
         footer.innerHTML = `
-          <button id="cancelBtn" style="padding:8px 14px; border-radius:6px; border:1px solid var(--divider, rgba(0,0,0,0.1)); background:transparent; cursor:pointer; font-size:13px;">取消</button>
+          <button id="cancelBtn" style="padding:8px 14px; border-radius:6px; border:1px solid var(--divider, rgba(0,0,0,0.1)); background:transparent; cursor:pointer; font-size:13px;">${cancelText}</button>
         `
 
         dialogContent.appendChild(header)
@@ -436,7 +440,7 @@ export default {
               const isThroughLine = d.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
               const isLoopLine = d.meta?.mode === 'loop'
               lines.push({
-                name: d.meta?.lineName || '未命名线路',
+                name: d.meta?.lineName || t('lineManagerWindow.unnamedLine'),
                 filePath: it?.name || '',
                 data: d,
                 themeColor: buildLineColor(d),
@@ -462,8 +466,8 @@ export default {
       if (!hasFoldersAPI.value) {
         // 非 Electron 环境：默认文件夹 + 云控虚拟文件夹
         folders.value = [
-          { id: 'default', name: '默认', path: '', isCurrent: true },
-          { id: CLOUD_FOLDER_ID, name: '云控线路', path: null, isRuntime: true }
+          { id: 'default', name: t('lineManagerWindow.defaultFolder'), path: '', isCurrent: true },
+          { id: CLOUD_FOLDER_ID, name: t('lineManagerWindow.cloudLinesFolder'), path: null, isRuntime: true }
         ]
         currentFolderId.value = 'default'
         selectedFolderId.value = 'default'
@@ -503,7 +507,7 @@ export default {
               line.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
             const isLoopLine = line.meta?.mode === 'loop'
             return {
-              name: lineName || '未命名线路',
+              name: lineName || t('lineManagerWindow.unnamedLine'),
               data: line,
               stationCount: line.stations?.length || 0,
               themeColor: buildLineColor(line),
@@ -517,11 +521,11 @@ export default {
           runtimeLines.value = lines
           currentLines.value = lines
         } else {
-          await dialogService.alert('获取云控线路失败：' + (result.error || '未知错误'), '错误')
+          await dialogService.alert(t('lineManagerWindow.failedToGetCloudLines') + (result.error || t('lineManagerWindow.unknownError')), '错误')
         }
       } catch (e) {
         console.error('加载云控线路失败:', e)
-        await dialogService.alert('加载云控线路失败：' + (e.message || e), '错误')
+        await dialogService.alert(t('lineManagerWindow.failedToLoadCloudLines') + (e.message || e), '错误')
       } finally {
         runtimeLoading.value = false
       }
@@ -552,7 +556,7 @@ export default {
                 const isThroughLine = d.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
                 const isLoopLine = d.meta?.mode === 'loop'
                 results.push({
-                  name: lineName || '未命名线路',
+                  name: lineName || t('lineManagerWindow.unnamedLine'),
                   filePath: it?.name || '',
                   data: d,
                   themeColor: buildLineColor(d),
@@ -587,7 +591,7 @@ export default {
                   raw.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
                 const isLoopLine = raw.meta?.mode === 'loop'
                 results.push({
-                  name: lineName || '未命名线路',
+                  name: lineName || t('lineManagerWindow.unnamedLine'),
                   data: raw,
                   stationCount: raw.stations?.length || 0,
                   themeColor: buildLineColor(raw),
@@ -597,7 +601,7 @@ export default {
                   isThroughLine,
                   isLoopLine,
                   folderId: CLOUD_FOLDER_ID,
-                  folderName: '云控线路'
+                  folderName: t('lineManagerWindow.cloudLinesFolder')
                 })
               }
             }
@@ -651,7 +655,7 @@ export default {
       if (!normalized || !normalized.meta || !normalized.meta.lineName) {
         console.warn('[线路管理器] applyRuntimeLine: invalid lineData', lineData)
         if (window.__lineManagerDialog)
-          await window.__lineManagerDialog.alert('云控线路数据无效，无法应用', '提示')
+          await window.__lineManagerDialog.alert(t('lineManagerWindow.cloudLineDataInvalid'), '提示')
         return
       }
       try {
@@ -662,7 +666,7 @@ export default {
           if (result && result.ok) {
             // 不自动关闭线路管理器，方便用户确认主窗口已应用后再手动关闭
           } else if (result && result.error && window.__lineManagerDialog) {
-            await window.__lineManagerDialog.alert('应用失败：' + result.error, '错误')
+            await window.__lineManagerDialog.alert(t('lineManagerWindow.applicationFailed') + result.error, '错误')
           }
         } else {
           localStorage.setItem('runtimeLineData', JSON.stringify(payload))
@@ -685,7 +689,7 @@ export default {
       } catch (e) {
         console.error('[线路管理器] 应用云控线路失败:', e)
         try {
-          await dialogService.alert('应用云控线路失败：' + (e.message || e), '错误')
+          await dialogService.alert(t('lineManagerWindow.failedToApplyCloudLine') + (e.message || e), '错误')
         } catch (_) {}
       }
     }
@@ -702,7 +706,7 @@ export default {
     async function addFolder() {
       if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) return
       if (!window.__lineManagerDialog) return
-      const name = await window.__lineManagerDialog.prompt('请输入文件夹名称', '', '新建文件夹')
+      const name = await window.__lineManagerDialog.prompt(t('lineManagerWindow.enterFolderName'), '', t('lineManagerWindow.newFolder'))
       if (!name) return
       try {
         const res = await window.electronAPI.lines.folders.add(name)
@@ -716,28 +720,28 @@ export default {
       // 完全对齐备份逻辑：默认文件夹不可删，使用 lines.folders.remove(path||id)
       if (!window.__lineManagerDialog) return
       if (folderId === 'default') {
-        await window.__lineManagerDialog.alert('不能删除默认文件夹', '提示')
+        await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotDeleteDefaultFolder'), '提示')
         return
       }
       const confirmed = await window.__lineManagerDialog.confirm(
-        `确定要删除文件夹"${folderName}"吗？\n\n警告：删除后文件夹及其内部的所有文件将被永久删除，无法恢复！`,
-        '删除文件夹'
+        t('lineManagerWindow.confirmDeleteFolder', { folderName }),
+        t('lineManagerWindow.deleteFolder')
       )
       if (!confirmed) return
       if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
-        await window.__lineManagerDialog.alert('Electron API 不可用', '错误')
+        await window.__lineManagerDialog.alert(t('lineManagerWindow.electronApiNotAvailable'), '错误')
         return
       }
       try {
         const res = await window.electronAPI.lines.folders.remove(folderPath || folderId)
         if (res && res.ok) {
           await loadFolders()
-          await window.__lineManagerDialog.alert('文件夹已删除', '成功')
+          await window.__lineManagerDialog.alert(t('lineManagerWindow.folderDeleted'), t('lineManagerWindow.success'))
         } else {
-          const errorMsg = res && res.error ? res.error : '未知错误'
+          const errorMsg = res && res.error ? res.error : t('lineManagerWindow.unknownError')
           console.error('删除文件夹失败:', res)
           await loadFolders()
-          await window.__lineManagerDialog.alert(`删除文件夹失败\n\n${errorMsg}`, '错误')
+          await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToDeleteFolder', { errorMsg }), '错误')
         }
       } catch (e) {
         console.error('删除文件夹失败:', e)
@@ -807,12 +811,12 @@ export default {
           const res = await window.electronAPI.lines.folders.open(folder.path)
           if (!res || !res.ok) {
             if (window.__lineManagerDialog)
-              await window.__lineManagerDialog.alert(res?.error || '打开文件夹失败', '错误')
+              await window.__lineManagerDialog.alert(res?.error || t('lineManagerWindow.failedToOpenFolder'), '错误')
           }
         } catch (e) {
           console.error('打开文件夹失败:', e)
           if (window.__lineManagerDialog)
-            await window.__lineManagerDialog.alert('打开文件夹失败：' + (e.message || e), '错误')
+            await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToOpenFolder') + '：' + (e.message || e), '错误')
         }
       }
     }
@@ -873,7 +877,7 @@ export default {
         } catch (e) {
           console.error('打开线路失败:', e)
           if (window.__lineManagerDialog)
-            await window.__lineManagerDialog.alert('打开线路失败：' + (e.message || e), '错误')
+            await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToOpenLine') + (e.message || e), '错误')
         }
       } else {
         const lineName = line.name

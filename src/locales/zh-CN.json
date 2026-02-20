@@ -21,6 +21,7 @@
   },
   "display": {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "显示端管理 (Display Management)",
 =======
 <<<<<<< HEAD
@@ -28,6 +29,9 @@
 =======
     "title": "显示端管理 (Display Management)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "显示端管理",
 >>>>>>> Stashed changes
     "listTitle": "显示端列表",
     "hint": "点击卡片切换当前选中的显示端，右键卡片或空白处可进行新建、编辑、启用/禁用、删除操作，拖拽卡片可调整顺序",
@@ -40,6 +44,7 @@
   },
   "api": {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "API 服务器 (API Server)",
 =======
 <<<<<<< HEAD
@@ -48,6 +53,9 @@
     "title": "API 服务器 (API Server)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
 >>>>>>> Stashed changes
+=======
+    "title": "API 服务器",
+>>>>>>> Stashed changes
     "enable": "启用 HTTP API 服务器",
     "tip1": "启用后可通过 HTTP API 控制显示器（用于 Python 等第三方客户端）。",
     "tip2": "默认使用 BroadcastChannel 通信，无需 HTTP 服务器。",
@@ -55,12 +63,16 @@
   },
   "keys": {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
     "title": "快捷键",
     "nextState": "进站/离站",
     "prevStation": "上一站",
     "nextStation": "下一站",
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
     "title": "快捷键 (Keybindings)",
@@ -70,6 +82,8 @@
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "placeholder": "按下按键...",
     "editHint": "点击输入框并按下键盘按键以修改快捷键。",
@@ -112,7 +126,14 @@
     "resetData": "重置数据",
     "serviceMode": "运营模式",
     "currentMode": "当前模式",
+<<<<<<< Updated upstream
     "singleLine": "单线 (Linear)",
+=======
+    "singleLine": "单线",
+    "loopLine": "环线",
+    "outerLoop": "外环 (逆时针)",
+    "innerLoop": "内环 (顺时针)",
+>>>>>>> Stashed changes
     "dirLabel": "上行",
     "modeNormal": "普通",
     "modeExpress": "大站车",
@@ -164,7 +185,56 @@
     "throughLineLabel": "线路",    
     "autoplayTitle": "自动播放",
     "autoplayEnable": "自动播放",
+<<<<<<< Updated upstream
     "autoplayInterval": "启用间隔:"
+=======
+    "autoplayInterval": "启用间隔:",
+    "recordingTitle": "视频录制",
+    "recordingDisplay": "显示端",
+    "recordingEncoder": "编码器",
+    "recordingEncoderCPU": "CPU（软件）",
+    "recordingEncoderGPU": "GPU（硬件）",
+    "recordingCodec": "编码格式",
+    "recordingCodecH264": "H.264",
+    "recordingCodecH265": "H.265 (HEVC)",
+    "recordingCodecVP9": "VP9",
+          "recordingBitrate": "码率（最大支持50Mbps）",
+          "recordingBitrateCustom": "自定义",
+          "recordingFPS": "帧率",
+          "recordingDuration": "录制时长（秒）",
+          "recordingDurationManual": "手动停止",
+          "recordingStart": "开始录制",
+          "recordingStop": "停止录制",
+          "recordingStatus": "录制状态",
+          "recordingStatusIdle": "未录制",
+          "recordingStatusRecording": "录制中",
+          "recordingElapsed": "已录制",
+          "recordingRemaining": "剩余",
+          "recordingProgress": "进度",
+          "recordingSelectDisplay": "请选择显示端",
+          "recordingStarting": "正在启动录制...",
+          "recordingStarted": "录制已开始",
+          "recordingStopped": "录制已停止",
+          "recordingError": "录制错误",
+          "recordingNoEncoders": "未检测到可用编码器",
+          "recordingIntervalLabel": "多少秒后下一步",
+          "recordingRemainingTimeHint": "预计剩余时间",
+          "recordingCurrentStation": "当前站",
+          "recordingContainer": "输出格式",
+          "recordingParallelTitle": "并行分段录制",
+          "recordingParallelOn": "已启用",
+          "recordingParallelOff": "未启用",
+          "recordingParallelism": "并行度",
+          "recordingStepsPerSegment": "每段步数",
+          "recordingParallelHint": "开启后将拆分为多个片段并行录制，完成后自动拼接。",
+          "recordingSegments": "片段",
+          "recordingStage": "阶段",
+          "recordingStageSegmentsStart": "准备分段",
+          "recordingStageSegmentsRunning": "片段录制中",
+          "recordingStageSegmentsDone": "分段录制完成",
+          "recordingStageConcatStart": "正在拼接片段",
+          "recordingOpenFolder": "打开文件夹"
+>>>>>>> Stashed changes
   },
   "lineManager": {
     "title": "线路管理器",
@@ -298,6 +368,63 @@
     "btnCancel": "取消",
     "btnConfirm": "确定",
     "btnSave": "保存"
+<<<<<<< Updated upstream
+=======
+  },
+  "colorPicker": {
+    "title": "选择颜色",
+    "hexLabel": "十六进制 (Hex)",
+    "rgbLabel": "RGB",
+    "rgbRLabel": "R",
+    "rgbGLabel": "G",
+    "rgbBLabel": "B",
+    "pickFromScreen": "屏幕取色",
+    "btnCancel": "取消",
+    "btnConfirm": "确定",
+    "closeLabel": "关闭"
+  },
+  "lineManagerWindow": {
+    "noAvailableFolders": "当前没有可用的文件夹，请创建一个新文件夹用于保存贯通线路：",
+    "newFolder": "新建文件夹",
+    "createFolder": "创建文件夹",
+    "folderCreatedButNotFound": "创建文件夹后未找到",
+    "createFolderFailed": "创建文件夹失败",
+    "selectFolderForThroughLine": "请选择保存贯通线路的文件夹：",
+    "cannotSaveToDefaultOrCloudFolder": "不允许保存到默认或云控文件夹，请选择其他文件夹",
+    "throughLine": "贯通线路",
+    "saveFailed": "保存失败",
+    "selectFolder": "选择文件夹",
+    "saveThroughLine": "保存贯通线路",
+    "lineName": "线路名称: ",
+    "unnamedLine": "未命名线路",
+    "defaultFolder": "默认",
+    "cloudLinesFolder": "云控线路",
+    "failedToGetCloudLines": "获取云控线路失败：",
+    "unknownError": "未知错误",
+    "failedToLoadCloudLines": "加载云控线路失败：",
+    "cloudLineDataInvalid": "云控线路数据无效，无法应用",
+    "applicationFailed": "应用失败：",
+    "failedToApplyCloudLine": "应用云控线路失败：",
+    "enterFolderName": "请输入文件夹名称",
+    "cannotDeleteDefaultFolder": "不能删除默认文件夹",
+    "confirmDeleteFolder": "确定要删除文件夹\"{folderName}\"吗？\n\n警告：删除后文件夹及其内部的所有文件将被永久删除，无法恢复！",
+    "deleteFolder": "删除文件夹",
+    "electronApiNotAvailable": "Electron API 不可用",
+    "folderDeleted": "文件夹已删除",
+    "success": "成功",
+    "failedToDeleteFolder": "删除文件夹失败\n\n{errorMsg}",
+    "failedToOpenFolder": "打开文件夹失败",
+    "failedToOpenLine": "打开线路失败："
+  },
+  "folderLineManager": {
+    "through": "贯通",
+    "loop": "环线",
+    "single": "单线",
+    "up": "上行",
+    "down": "下行",
+    "outer": "外环",
+    "inner": "内环"
+>>>>>>> Stashed changes
   }
 }
 

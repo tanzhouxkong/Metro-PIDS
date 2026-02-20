@@ -480,5 +480,78 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.warn('[preload] 获取原生地理位置失败:', e);
       return { country: null, city: null, latitude: null, longitude: null };
     }
+  },
+  // 视频录制相关 API
+  recording: {
+    getAvailableEncoders: async () => {
+      try {
+        return await ipcRenderer.invoke('recording/available-encoders');
+      } catch (e) {
+        console.error('[preload] 获取可用编码器失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    startRecording: async (displayId, options) => {
+      try {
+        return await ipcRenderer.invoke('recording/start', displayId, options);
+      } catch (e) {
+        console.error('[preload] 开始录制失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    startParallelRecording: async (displayId, options) => {
+      try {
+        return await ipcRenderer.invoke('recording/start-parallel', displayId, options);
+      } catch (e) {
+        console.error('[preload] 开始并行录制失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    stopRecording: async () => {
+      try {
+        return await ipcRenderer.invoke('recording/stop');
+      } catch (e) {
+        console.error('[preload] 停止录制失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    stopParallelRecording: async () => {
+      try {
+        return await ipcRenderer.invoke('recording/stop-parallel');
+      } catch (e) {
+        console.error('[preload] 停止并行录制失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    getRecordingStatus: async () => {
+      try {
+        return await ipcRenderer.invoke('recording/status');
+      } catch (e) {
+        console.error('[preload] 获取录制状态失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    getParallelRecordingStatus: async () => {
+      try {
+        return await ipcRenderer.invoke('recording/status-parallel');
+      } catch (e) {
+        console.error('[preload] 获取并行录制状态失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    },
+    onRecordingProgress: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const handler = (event, progress) => callback(progress);
+      ipcRenderer.on('recording-progress', handler);
+      return () => ipcRenderer.removeListener('recording-progress', handler);
+    },
+    openOutputFolder: async () => {
+      try {
+        return await ipcRenderer.invoke('recording/open-output-folder');
+      } catch (e) {
+        console.error('[preload] 打开视频输出文件夹失败:', e);
+        return { ok: false, error: String(e) };
+      }
+    }
   }
 });

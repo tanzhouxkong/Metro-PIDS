@@ -129,7 +129,6 @@ export default {
                 </div>
                 <div class="se-titles">
                   <div class="se-title">{{ isNew ? '新建站点' : '站点编辑' }}</div>
-                  <div class="se-subtitle">{{ isNew ? 'New Station' : 'Edit Station' }}</div>
                 </div>
               </div>
               <button class="se-close" @click="close" aria-label="关闭">

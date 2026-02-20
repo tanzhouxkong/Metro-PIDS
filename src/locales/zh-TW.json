@@ -21,6 +21,7 @@
   },
   "display": {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "顯示端管理 (Display Management)",
 =======
 <<<<<<< HEAD
@@ -28,6 +29,9 @@
 =======
     "title": "顯示端管理 (Display Management)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "顯示端管理",
 >>>>>>> Stashed changes
     "listTitle": "顯示端列表",
     "hint": "點擊卡片切換當前選中的顯示端，右鍵卡片或空白處可進行新建、編輯、啟用/停用、刪除操作，拖拽卡片可調整順序",
@@ -40,6 +44,7 @@
   },
   "api": {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "API 伺服器 (API Server)",
 =======
 <<<<<<< HEAD
@@ -48,6 +53,9 @@
     "title": "API 伺服器 (API Server)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
 >>>>>>> Stashed changes
+=======
+    "title": "API 伺服器",
+>>>>>>> Stashed changes
     "enable": "啟用 HTTP API 伺服器",
     "tip1": "啟用後可透過 HTTP API 控制顯示器（用於 Python 等第三方客戶端）。",
     "tip2": "預設使用 BroadcastChannel 通訊，無需 HTTP 伺服器。",
@@ -55,12 +63,16 @@
   },
   "keys": {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
     "title": "快捷鍵",
     "nextState": "進站/離站",
     "prevStation": "上一站",
     "nextStation": "下一站",
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
     "title": "快捷鍵 (Keybindings)",
@@ -70,6 +82,8 @@
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "placeholder": "按下按鍵...",
     "editHint": "點擊輸入框並按下鍵盤按鍵以修改快捷鍵。",
@@ -112,7 +126,14 @@
     "resetData": "重設資料",
     "serviceMode": "營運模式",
     "currentMode": "目前模式",
+<<<<<<< Updated upstream
     "singleLine": "單線 (Linear)",
+=======
+    "singleLine": "單線",
+    "loopLine": "環線",
+    "outerLoop": "外環 (逆時針)",
+    "innerLoop": "內環 (順時針)",
+>>>>>>> Stashed changes
     "dirLabel": "上行",
     "modeNormal": "普通",
     "modeExpress": "大站車",
@@ -162,7 +183,56 @@
     "throughNotDetected": "未偵測到",    "throughNoSegments": "暂無線路段，點擊\"\u65b0\u5f35\"\u65b0張第一条線路",
     "throughLineLabel": "線路",    "autoplayTitle": "自動播放",
     "autoplayEnable": "自動播放",
+<<<<<<< Updated upstream
     "autoplayInterval": "啟用間隔:"
+=======
+    "autoplayInterval": "啟用間隔:",
+    "recordingTitle": "影片錄製",
+    "recordingDisplay": "顯示端",
+    "recordingEncoder": "編碼器",
+    "recordingEncoderCPU": "CPU（軟體）",
+    "recordingEncoderGPU": "GPU（硬體）",
+    "recordingCodec": "編碼格式",
+    "recordingCodecH264": "H.264",
+    "recordingCodecH265": "H.265 (HEVC)",
+    "recordingCodecVP9": "VP9",
+      "recordingBitrate": "碼率（最大支援 50Mbps）",
+      "recordingBitrateCustom": "自訂",
+      "recordingFPS": "幀率",
+      "recordingDuration": "錄製時長（秒）",
+      "recordingDurationManual": "手動停止",
+      "recordingStart": "開始錄製",
+      "recordingStop": "停止錄製",
+      "recordingStatus": "錄製狀態",
+      "recordingStatusIdle": "未錄製",
+      "recordingStatusRecording": "錄製中",
+      "recordingElapsed": "已錄製",
+      "recordingRemaining": "剩餘",
+      "recordingProgress": "進度",
+      "recordingSelectDisplay": "請選擇顯示端",
+      "recordingStarting": "正在啟動錄製...",
+      "recordingStarted": "錄製已開始",
+      "recordingStopped": "錄製已停止",
+      "recordingError": "錄製錯誤",
+      "recordingNoEncoders": "未檢測到可用編碼器",
+      "recordingIntervalLabel": "多少秒後下一步",
+      "recordingRemainingTimeHint": "預計剩餘時間",
+      "recordingCurrentStation": "當前站",
+      "recordingContainer": "輸出格式",
+      "recordingParallelTitle": "並行分段錄製",
+      "recordingParallelOn": "已啟用",
+      "recordingParallelOff": "未啟用",
+      "recordingParallelism": "並行度",
+      "recordingStepsPerSegment": "每段步數",
+      "recordingParallelHint": "開啟後將拆分為多個片段並行錄製，完成後自動拼接。",
+      "recordingSegments": "片段",
+      "recordingStage": "階段",
+      "recordingStageSegmentsStart": "準備分段",
+      "recordingStageSegmentsRunning": "片段錄製中",
+      "recordingStageSegmentsDone": "分段錄製完成",
+      "recordingStageConcatStart": "正在拼接片段",
+      "recordingOpenFolder": "打開資料夾"
+>>>>>>> Stashed changes
   },
   "lineManager": {
     "title": "線路管理器",
@@ -271,6 +341,7 @@
     "expressStop": "停靠",
     "expressSkip": "跳過",
 
+<<<<<<< Updated upstream
     "xferSectionTitle": "換乘線路",
     "xferSectionHint": "右鍵操作",
     "xferEmpty": "暫無換乘，右鍵可新增或貼上",
@@ -282,12 +353,26 @@
     "menuEditName": "編輯名稱",
     "menuCopy": "複製",
     "menuPaste": "貼上",
+=======
+    "xferSectionTitle": "換乘路線",
+    "xferSectionHint": "右鍵操作",
+    "xferEmpty": "暫無換乘，右鍵可添加或粘貼",
+    "xferUnnamed": "未命名",
+    "xferExitBadge": "出站換乘",
+    "xferSuspendedBadge": "暫緩開通",
+    "xferColorTitle": "顏色（右鍵菜單可改）",
+
+    "menuEditName": "編輯名稱",
+    "menuCopy": "複製",
+    "menuPaste": "粘貼",
+>>>>>>> Stashed changes
     "menuPickColor": "選擇顏色",
     "menuExitTransfer": "出站換乘",
     "menuSuspendedOn": "恢復正常",
     "menuSuspendedOff": "暫緩開通",
     "menuDelete": "刪除",
     "menuCopyAll": "複製全部",
+<<<<<<< Updated upstream
     "menuAddXfer": "新增換乘",
 
     "xferNameDialogTitle": "編輯線路名稱",
@@ -296,5 +381,69 @@
     "btnCancel": "取消",
     "btnConfirm": "確定",
     "btnSave": "儲存"
+=======
+    "menuAddXfer": "添加換乘",
+
+    "xferNameDialogTitle": "編輯路線名稱",
+    "xferNamePlaceholder": "路線名稱/編號",
+
+    "btnCancel": "取消",
+    "btnConfirm": "確定",
+    "btnSave": "保存"
+  },
+  "colorPicker": {
+    "title": "選擇顏色",
+    "hexLabel": "十六進制 (Hex)",
+    "rgbLabel": "RGB",
+    "rgbRLabel": "R",
+    "rgbGLabel": "G",
+    "rgbBLabel": "B",
+    "pickFromScreen": "螢幕取色",
+    "btnCancel": "取消",
+    "btnConfirm": "確定",
+    "closeLabel": "關閉"
+  },
+  "lineManagerWindow": {
+    "noAvailableFolders": "當前沒有可用的資料夾，請創建一個新資料夾用於保存貫通路線：",
+    "newFolder": "新建資料夾",
+    "createFolder": "創建資料夾",
+    "folderCreatedButNotFound": "創建資料夾後未找到",
+    "createFolderFailed": "創建資料夾失敗",
+    "selectFolderForThroughLine": "請選擇保存貫通路線的資料夾：",
+    "cannotSaveToDefaultOrCloudFolder": "不允許保存到默認或雲控資料夾，請選擇其他資料夾",
+    "throughLine": "貫通路線",
+    "saveFailed": "保存失敗",
+    "selectFolder": "選擇資料夾",
+    "saveThroughLine": "保存貫通路線",
+    "lineName": "路線名稱: ",
+    "unnamedLine": "未命名路線",
+    "defaultFolder": "默認",
+    "cloudLinesFolder": "雲控路線",
+    "failedToGetCloudLines": "獲取雲控路線失敗：",
+    "unknownError": "未知錯誤",
+    "failedToLoadCloudLines": "加載雲控路線失敗：",
+    "cloudLineDataInvalid": "雲控路線數據無效，無法應用",
+    "applicationFailed": "應用失敗：",
+    "failedToApplyCloudLine": "應用雲控路線失敗：",
+    "enterFolderName": "請輸入資料夾名稱",
+    "cannotDeleteDefaultFolder": "不能刪除默認資料夾",
+    "confirmDeleteFolder": "確定要刪除資料夾\"{folderName}\"嗎？\n\n警告：刪除後資料夾及其內部的所有檔案將被永久刪除，無法恢復！",
+    "deleteFolder": "刪除資料夾",
+    "electronApiNotAvailable": "Electron API 不可用",
+    "folderDeleted": "資料夾已刪除",
+    "success": "成功",
+    "failedToDeleteFolder": "刪除資料夾失敗\n\n{errorMsg}",
+    "failedToOpenFolder": "打開資料夾失敗",
+    "failedToOpenLine": "打開路線失敗："
+  },
+  "folderLineManager": {
+    "through": "貫通",
+    "loop": "環線",
+    "single": "單線",
+    "up": "上行",
+    "down": "下行",
+    "outer": "外環",
+    "inner": "內環"
+>>>>>>> Stashed changes
   }
 }

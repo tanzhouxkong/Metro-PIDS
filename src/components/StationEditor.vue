@@ -241,15 +241,22 @@ export default {
       <div v-if="modelValue" class="se-overlay" @click.self="close">
         <div class="se-dialog" role="dialog" aria-modal="true">
           <div class="se-header">
-            <div class="se-header-left">
-              <div class="se-icon">
-                <i :class="isNew ? 'fas fa-plus' : 'fas fa-edit'"></i>
+              <div class="se-header-left">
+                <div class="se-icon">
+                  <i :class="isNew ? 'fas fa-plus' : 'fas fa-edit'"></i>
+                </div>
+                <div class="se-titles">
+                  <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
+                </div>
               </div>
+<<<<<<< Updated upstream
               <div class="se-titles">
                 <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
                 <div class="se-subtitle">{{ isNew ? t('stationEditor.subtitleNew') : t('stationEditor.subtitleEdit') }}</div>
               </div>
             </div>
+=======
+>>>>>>> Stashed changes
             <button class="se-close" @click="close" aria-label="关闭">
               <i class="fas fa-times"></i>
             </button>

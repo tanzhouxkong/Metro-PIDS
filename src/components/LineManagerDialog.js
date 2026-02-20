@@ -124,9 +124,6 @@ export default {
                 </div>
                 <div>
                   <div style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">{{ title }}</div>
-                  <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">
-                    {{ type === 'alert' ? 'Alert' : type === 'confirm' ? 'Confirm' : 'Prompt' }}
-                  </div>
                 </div>
               </div>
               <button @click="handleCancel" 

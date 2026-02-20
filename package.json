@@ -1,7 +1,13 @@
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 {
   "name": "metro-pids",
   "version": "1.6.1",
+=======
+{
+  "name": "metro-pids",
+  "version": "1.6.3",
+>>>>>>> Stashed changes
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -131,6 +137,10 @@
     }
   },
   "dependencies": {
+<<<<<<< Updated upstream
+=======
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+>>>>>>> Stashed changes
     "electron-log": "^5.4.3",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
@@ -147,6 +157,7 @@
     "sass": "^1.97.3"
   }
 }
+<<<<<<< Updated upstream
 =======
 {
   "name": "metro-pids",
@@ -295,3 +306,5 @@
   }
 }
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
