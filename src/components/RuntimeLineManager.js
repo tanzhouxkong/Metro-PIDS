@@ -63,14 +63,84 @@ export default {
     // 选择并应用运控线路
     async function applyRuntimeLine(line) {
       try {
+        let lineData = line.data
+        const lineName = line?.name || line?.data?.meta?.lineName
+        if (lineName) {
+          try {
+            const full = await cloudConfig.getRuntimeLine(lineName)
+            if (full?.ok && full?.data) {
+              lineData = full.data
+            } else if (full && !full.ok && full.line) {
+              lineData = full.line
+            } else if (full?.line) {
+              lineData = full.line
+            }
+          } catch (e) {
+            console.warn('[RuntimeLineManager] 获取完整运控线路失败，回退使用列表数据:', e)
+          }
+        }
+
         if (props.onApplyLine) {
-          await props.onApplyLine(line.data)
+          await props.onApplyLine(lineData)
           showDialog.value = false
           await dialogService.alert(`已成功应用运控线路：${line.name}`, '成功')
         }
       } catch (e) {
         console.error('应用运控线路失败:', e)
         await dialogService.alert('应用运控线路失败：' + e.message, '错误')
+      }
+    }
+
+    // 复制运控线路
+    async function duplicateRuntimeLine(line) {
+      try {
+        const sourceName = String(line?.name || line?.data?.meta?.lineName || '').trim()
+        if (!sourceName) {
+          await dialogService.alert('无法识别要复制的线路名称', '错误')
+          return
+        }
+
+        const inputName = await dialogService.prompt('请输入复制后的线路名称', `${sourceName}-副本`, '复制运控线路')
+        if (inputName == null) return
+
+        const targetName = String(inputName || '').trim()
+        if (!targetName) {
+          await dialogService.alert('线路名称不能为空', '提示')
+          return
+        }
+
+        const existed = runtimeLines.value.some((it) => String(it?.name || '').trim() === targetName)
+        if (existed) {
+          const ok = await dialogService.confirm(`线路「${targetName}」已存在，是否覆盖？`, '确认覆盖')
+          if (!ok) return
+        }
+
+        let sourceLineData = line.data
+        try {
+          const full = await cloudConfig.getRuntimeLine(sourceName)
+          if (full?.ok && full?.data) {
+            sourceLineData = full.data
+          } else if (full?.line) {
+            sourceLineData = full.line
+          }
+        } catch (e) {
+          console.warn('[RuntimeLineManager] 复制时获取完整线路失败，回退使用列表数据:', e)
+        }
+
+        const cloned = JSON.parse(JSON.stringify(sourceLineData || {}))
+        if (!cloned.meta || typeof cloned.meta !== 'object') cloned.meta = {}
+        cloned.meta.lineName = targetName
+
+        const save = await cloudConfig.updateRuntimeLine(targetName, cloned)
+        if (!save?.ok) {
+          throw new Error(save?.error || '复制失败')
+        }
+
+        await loadRuntimeLines()
+        await dialogService.alert(`已复制运控线路：${sourceName} → ${targetName}`, '成功')
+      } catch (e) {
+        console.error('复制运控线路失败:', e)
+        await dialogService.alert('复制运控线路失败：' + e.message, '错误')
       }
     }
 
@@ -86,7 +156,8 @@ export default {
       loading,
       runtimeLines,
       loadRuntimeLines,
-      applyRuntimeLine
+      applyRuntimeLine,
+      duplicateRuntimeLine
     }
   },
   template: `
@@ -107,7 +178,7 @@ export default {
         <!-- Toolbar -->
         <div class="rtlm-toolbar">
           <button @click="loadRuntimeLines()" 
-                  class="rtlm-btn rtml-btn-primary">
+                  class="rtlm-btn rtlm-btn-primary">
             <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i> 刷新列表
           </button>
           <div style="flex:1;"></div>
@@ -168,8 +239,12 @@ export default {
 
               <!-- Actions -->
               <div style="flex:1; display:flex; justify-content:flex-end; gap:8px;">
+                <button @click="duplicateRuntimeLine(line)" 
+                        class="rtlm-btn rtlm-btn-secondary">
+                  <i class="fas fa-copy"></i> 复制
+                </button>
                 <button @click="applyRuntimeLine(line)" 
-                        class="rtlm-btn rtml-btn-primary rtml-btn-apply">
+                        class="rtlm-btn rtlm-btn-primary rtlm-btn-apply">
                   <i class="fas fa-check"></i> 应用
                 </button>
               </div>
@@ -183,7 +258,7 @@ export default {
             共 {{ runtimeLines.length }} 条运控线路
           </div>
           <button @click="showDialog = false" 
-                  class="rtlm-btn rtml-btn-gray">
+                  class="rtlm-btn rtlm-btn-gray">
             关闭
           </button>
         </div>
@@ -321,6 +396,15 @@ export default {
         }
         .rtlm-btn-gray:hover{
           filter: brightness(0.97);
+          transform: translateY(-1px);
+        }
+        .rtlm-btn-secondary{
+          background: rgba(30, 144, 255, 0.14);
+          color: #1E90FF;
+          border: 1px solid rgba(30, 144, 255, 0.35);
+        }
+        .rtlm-btn-secondary:hover{
+          background: rgba(30, 144, 255, 0.22);
           transform: translateY(-1px);
         }
 

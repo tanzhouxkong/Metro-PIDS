@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick, Teleport } from 'vue'
+=======
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport } from 'vue'
+>>>>>>> Stashed changes
 import { useI18n } from 'vue-i18n'
 import LineManagerDialog from './LineManagerDialog.js'
 import LineManagerTopbar from './LineManagerTopbar.js'
@@ -43,7 +47,7 @@ export default {
   setup() {
     const { t } = useI18n()
     const folders = ref([]);
-    const currentFolderId = ref('default');
+    const currentFolderId = ref(null);
     const currentLines = ref([]);
     const loading = ref(false);
     const selectedFolderId = ref(null);
@@ -79,10 +83,9 @@ export default {
     // 加载文件夹列表
     async function loadFolders() {
       if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
-        // 非 Electron 环境，使用默认文件夹
-        folders.value = [{ id: 'default', name: '默认', path: '', isCurrent: true }];
-        currentFolderId.value = 'default';
-        selectedFolderId.value = 'default';
+        folders.value = [];
+        currentFolderId.value = null;
+        selectedFolderId.value = null;
         // 尝试从 localStorage 加载线路列表
         try {
           const saved = localStorage.getItem('pids_global_store_v1');
@@ -127,7 +130,8 @@ export default {
         const res = await window.electronAPI.lines.folders.list();
         if (res && res.ok && res.folders) {
           folders.value = res.folders;
-          currentFolderId.value = res.current || 'default';
+          const firstId = (res.folders && res.folders[0]) ? res.folders[0].id : null;
+          currentFolderId.value = res.current || firstId;
           selectedFolderId.value = currentFolderId.value;
           // 加载当前文件夹的线路
           await loadLinesFromFolder(currentFolderId.value);
@@ -218,15 +222,6 @@ export default {
     async function selectFolder(folderId) {
       if (folderId === selectedFolderId.value) return;
       
-      // 在保存贯通线路模式下，不允许选择默认文件夹（直接阻止，不显示提示）
-      if (isSavingThroughLine.value) {
-        const folder = folders.value.find(f => f.id === folderId);
-        if (folder && (folder.id === 'default' || folder.name === '默认')) {
-          // 直接返回，不执行任何操作
-          return;
-        }
-      }
-      
       selectedFolderId.value = folderId;
       await loadLinesFromFolder(folderId);
     }
@@ -262,12 +257,18 @@ export default {
           await loadLinesFromFolder(selectedFolderId.value);
         }
         
-        // 通过 IPC 通知主窗口切换线路（Electron 环境）
+        const folderId = selectedFolderId.value || currentFolderId.value;
+        const folder = folders.value.find((f) => f.id === folderId);
+        const folderPath = folder?.path ?? null;
         if (window.electronAPI && window.electronAPI.switchLine) {
-          // 获取贯通线路选择目标（如果有）
           const target = localStorage.getItem('throughOperationSelectorTarget');
+<<<<<<< Updated upstream
           console.log('[线路管理器] applySelectedLine 调用 switchLine, lineName:', line.name, 'target:', target);
           const result = await window.electronAPI.switchLine(line.name);
+=======
+          console.log('[线路管理器] applySelectedLine 调用 switchLine, lineName:', line.name, 'target:', target, 'folderPath:', folderPath);
+          const result = await window.electronAPI.switchLine(line.name, { folderPath });
+>>>>>>> Stashed changes
           
           // 延迟后关闭窗口（无论结果如何都关闭）
           await new Promise(resolve => setTimeout(resolve, 200));
@@ -307,17 +308,15 @@ export default {
             window.opener.postMessage({
               type: 'switch-line-request',
               lineName: lineName,
-              target: target
+              target: target,
+              folderPath: folderPath
             }, '*');
           }
           
-          // 触发 storage 事件（用于同源页面通信）
           window.dispatchEvent(new StorageEvent('storage', {
             key: 'lineManagerSelectedLine',
             newValue: lineName
           }));
-          
-          // 关闭窗口
           window.close();
         }
       } catch (e) {
@@ -417,12 +416,6 @@ export default {
 
     // 删除文件夹
     async function deleteFolder(folderId, folderName, folderPath) {
-      if (folderId === 'default') {
-        if (window.__lineManagerDialog) {
-          await window.__lineManagerDialog.alert('不能删除默认文件夹', '提示');
-        }
-        return;
-      }
       if (!window.__lineManagerDialog) return;
       const confirmed = await window.__lineManagerDialog.confirm(`确定要删除文件夹"${folderName}"吗？\n\n警告：删除后文件夹及其内部的所有文件将被永久删除，无法恢复！`, '删除文件夹');
       if (!confirmed) {
@@ -620,13 +613,14 @@ export default {
       closeLineContextMenu();
       if (!line) return;
       
-      // Electron 环境
+      const folderId = selectedFolderId.value || currentFolderId.value;
+      const folder = folders.value.find((f) => f.id === folderId);
+      const folderPath = folder?.path ?? null;
       if (window.electronAPI && window.electronAPI.switchLine) {
         try {
-          // 获取贯通线路选择目标（如果有）
           const target = localStorage.getItem('throughOperationSelectorTarget');
-          console.log('[线路管理器] openLine 调用 switchLine, lineName:', line.name, 'target:', target);
-          const result = await window.electronAPI.switchLine(line.name);
+          console.log('[线路管理器] openLine 调用 switchLine, lineName:', line.name, 'target:', target, 'folderPath:', folderPath);
+          const result = await window.electronAPI.switchLine(line.name, { folderPath });
           if (result && result.ok) {
             // 切换成功，关闭线路管理器窗口
             if (window.electronAPI.closeWindow) {
@@ -657,17 +651,14 @@ export default {
           window.opener.postMessage({
             type: 'switch-line-request',
             lineName: lineName,
-            target: target
+            target: target,
+            folderPath: folderPath
           }, '*');
         }
-        
-        // 触发 storage 事件（用于同源页面通信）
         window.dispatchEvent(new StorageEvent('storage', {
           key: 'lineManagerSelectedLine',
           newValue: lineName
         }));
-        
-        // 关闭窗口
         window.close();
       }
     }
@@ -723,13 +714,6 @@ export default {
       if (!window.__lineManagerDialog) return;
 
         const folderId = selectedFolderId.value || currentFolderId.value;
-      
-      // 检查是否为默认文件夹
-      if (folderId === 'default') {
-        await window.__lineManagerDialog.alert('默认文件夹不允许创建线路', '提示');
-        return;
-      }
-
         const folder = folders.value.find(f => f.id === folderId);
         if (!folder) {
           await window.__lineManagerDialog.alert('请先选择一个文件夹', '提示');
@@ -764,9 +748,9 @@ export default {
           await window.__lineManagerDialog.alert('线路名称无效', '错误');
           return;
         }
-        const fileName = cleanName + '.json';
+        const fileName = cleanName + '.mpl';
 
-        // 保存到当前文件夹
+        // 保存到当前文件夹（.mpl 为 zip 包格式）
         const saveRes = await window.electronAPI.lines.save(fileName, newLine, folder.path);
         if (saveRes && saveRes.ok) {
           // 重新加载当前文件夹的线路列表
@@ -790,13 +774,6 @@ export default {
       if (!window.__lineManagerDialog) return;
 
       const folderId = selectedFolderId.value || currentFolderId.value;
-      
-      // 检查是否为默认文件夹
-      if (folderId === 'default') {
-        await window.__lineManagerDialog.alert('默认文件夹不允许删除线路', '提示');
-        return;
-      }
-
       const folder = folders.value.find(f => f.id === folderId);
       if (!folder) return;
 
@@ -850,12 +827,16 @@ export default {
           return;
         }
 
-        // 生成目标文件名（使用线路名称作为文件名）
+        // 生成目标文件名（使用线路名称，与新建线路一致用 .mpl）
         const lineName = sourceLine.name.replace(/<[^>]+>/g, '').replace(/<\/>/g, '').trim();
-        const targetFileName = lineName + '.json';
+        const targetFileName = lineName + '.mpl';
 
         // 保存到目标文件夹
-        const saveRes = await window.electronAPI.lines.save(targetFileName, readRes.content, targetFolder.path);
+        const sep = sourceFolderPath && sourceFolderPath.includes('\\') ? '\\' : '/';
+        const sourceLinePath = sourceFolderPath
+          ? ((sourceFolderPath.endsWith(sep) ? sourceFolderPath : sourceFolderPath + sep) + sourceLine.filePath)
+          : null;
+        const saveRes = await window.electronAPI.lines.save(targetFileName, readRes.content, targetFolder.path, sourceLinePath);
         if (!saveRes || !saveRes.ok) {
           await window.__lineManagerDialog.alert('保存线路文件失败：' + (saveRes && saveRes.error ? saveRes.error : '未知错误'), '错误');
           return;
@@ -920,7 +901,7 @@ export default {
         }
         
         const pendingData = JSON.parse(pendingDataStr);
-        const { lineData, lineName, cleanLineName, validSegments } = pendingData;
+        const { lineData, lineName, cleanLineName, validSegments, sourceLinePaths } = pendingData;
         
         console.log('[线路管理器] 贯通线路信息:', { 
           lineName, 
@@ -940,8 +921,7 @@ export default {
         // 等待状态更新
         await nextTick();
         
-        // 检查是否有可用的文件夹（排除默认文件夹）
-        const availableFolders = folders.value.filter(f => f.id !== 'default' && f.name !== '默认');
+        const availableFolders = folders.value.slice();
         
         console.log('[线路管理器] 可用文件夹数量:', availableFolders.length);
         
@@ -954,9 +934,13 @@ export default {
           );
           
           if (!folderName || !folderName.trim()) {
-            // 用户取消，通知主窗口
+            // 用户取消，清除贯通保存态并通知主窗口
             isSavingThroughLine.value = false;
             pendingThroughLineInfo.value = null;
+            try {
+              localStorage.removeItem('pendingThroughLineData');
+              localStorage.removeItem('throughOperationSelectorTarget');
+            } catch (e) {}
             localStorage.setItem('throughLineSaveResult', JSON.stringify({ success: false, error: 'cancelled' }));
             if (window.electronAPI && window.electronAPI.closeWindow) {
               await window.electronAPI.closeWindow();
@@ -971,7 +955,7 @@ export default {
             // 使用新创建的文件夹
             const newFolder = folders.value.find(f => f.id === addRes.folderId);
             if (newFolder) {
-              await doSaveThroughLine(lineData, cleanLineName, newFolder);
+              await doSaveThroughLine(lineData, cleanLineName, newFolder, sourceLinePaths);
             } else {
               localStorage.setItem('throughLineSaveResult', JSON.stringify({ success: false, error: '创建文件夹后未找到' }));
               if (window.electronAPI && window.electronAPI.closeWindow) {
@@ -990,7 +974,7 @@ export default {
         // 如果只有一个文件夹，等待一小段时间让横幅显示，然后直接使用
         if (availableFolders.length === 1) {
           await new Promise(resolve => setTimeout(resolve, 800)); // 让用户看到横幅
-          await doSaveThroughLine(lineData, cleanLineName, availableFolders[0]);
+          await doSaveThroughLine(lineData, cleanLineName, availableFolders[0], sourceLinePaths);
           return;
         }
         
@@ -998,11 +982,15 @@ export default {
         await new Promise(resolve => setTimeout(resolve, 800)); // 让用户看到横幅
         const selectedFolder = await showFolderSelector(availableFolders, '请选择保存贯通线路的文件夹：', lineName);
         if (selectedFolder) {
-          await doSaveThroughLine(lineData, cleanLineName, selectedFolder);
+          await doSaveThroughLine(lineData, cleanLineName, selectedFolder, sourceLinePaths);
         } else {
-          // 用户取消
+          // 用户取消，清除贯通保存态
           isSavingThroughLine.value = false;
           pendingThroughLineInfo.value = null;
+          try {
+            localStorage.removeItem('pendingThroughLineData');
+            localStorage.removeItem('throughOperationSelectorTarget');
+          } catch (e) {}
           localStorage.setItem('throughLineSaveResult', JSON.stringify({ success: false, error: 'cancelled' }));
           if (window.electronAPI && window.electronAPI.closeWindow) {
             await window.electronAPI.closeWindow();
@@ -1012,6 +1000,10 @@ export default {
         console.error('保存贯通线路失败:', e);
         isSavingThroughLine.value = false;
         pendingThroughLineInfo.value = null;
+        try {
+          localStorage.removeItem('pendingThroughLineData');
+          localStorage.removeItem('throughOperationSelectorTarget');
+        } catch (e2) {}
         localStorage.setItem('throughLineSaveResult', JSON.stringify({ success: false, error: e.message || e }));
         if (window.electronAPI && window.electronAPI.closeWindow) {
           await window.electronAPI.closeWindow();
@@ -1020,23 +1012,19 @@ export default {
     }
     
     // 执行保存贯通线路
-    async function doSaveThroughLine(lineData, cleanLineName, folder) {
+    async function doSaveThroughLine(lineData, cleanLineName, folder, sourceLinePaths = null) {
       try {
-        // 检查是否是默认文件夹，如果是则拒绝保存
-        if (folder.id === 'default' || folder.name === '默认') {
-          if (window.__lineManagerDialog) {
-            await window.__lineManagerDialog.alert('不允许保存到默认文件夹，请选择其他文件夹', '提示');
-          }
-          return;
-        }
-        
-        const targetFileName = cleanLineName.replace(/[<>:"/\\|?*]/g, '').trim() + '.json';
-        const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path);
+        const targetFileName = cleanLineName.replace(/[<>:"/\\|?*]/g, '').trim() + '.mpl';
+        const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path, sourceLinePaths);
         
         if (saveRes && saveRes.ok) {
-          // 保存成功
+          // 保存成功，清除贯通保存态，避免下次打开线路管理时再次提示
           isSavingThroughLine.value = false;
           pendingThroughLineInfo.value = null;
+          try {
+            localStorage.removeItem('pendingThroughLineData');
+            localStorage.removeItem('throughOperationSelectorTarget');
+          } catch (e) {}
           localStorage.setItem('throughLineSaveResult', JSON.stringify({
             success: true,
             folderId: folder.id,
@@ -1057,6 +1045,10 @@ export default {
         } else {
           isSavingThroughLine.value = false;
           pendingThroughLineInfo.value = null;
+          try {
+            localStorage.removeItem('pendingThroughLineData');
+            localStorage.removeItem('throughOperationSelectorTarget');
+          } catch (e) {}
           localStorage.setItem('throughLineSaveResult', JSON.stringify({
             success: false,
             error: saveRes && saveRes.error || '保存失败'
@@ -1067,6 +1059,10 @@ export default {
         }
       } catch (e) {
         console.error('执行保存失败:', e);
+        try {
+          localStorage.removeItem('pendingThroughLineData');
+          localStorage.removeItem('throughOperationSelectorTarget');
+        } catch (e2) {}
         localStorage.setItem('throughLineSaveResult', JSON.stringify({ success: false, error: e.message || e }));
         if (window.electronAPI && window.electronAPI.closeWindow) {
           await window.electronAPI.closeWindow();
@@ -1077,11 +1073,13 @@ export default {
     // 显示文件夹选择器
     async function showFolderSelector(foldersList, title, lineName = '') {
       return new Promise((resolve) => {
+        const isDarkTheme = !!(document?.documentElement?.classList?.contains('dark'));
+        const glassBg = isDarkTheme ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)';
         const dialog = document.createElement('div');
-        dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); animation:fadeIn 0.3s ease;';
+        dialog.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; animation:fadeIn 0.3s ease;';
         
         const dialogContent = document.createElement('div');
-        dialogContent.style.cssText = 'background:var(--card, #ffffff); border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;';
+        dialogContent.style.cssText = `background:${glassBg}; backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%); border:1px solid rgba(255,255,255,0.14); border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;`;
         
         const header = document.createElement('div');
         header.style.cssText = 'padding:24px 28px; border-bottom:1px solid var(--divider, rgba(0,0,0,0.1)); display:flex; flex-direction:column; gap:16px; flex-shrink:0; background:linear-gradient(135deg, rgba(255,159,67,0.05) 0%, rgba(255,159,67,0.02) 100%);';
@@ -1248,16 +1246,7 @@ export default {
             segmentCount: validSegments ? validSegments.length : 0
           };
           
-          // 如果当前选中的是默认文件夹，自动切换到第一个非默认文件夹
           await nextTick();
-          if (selectedFolderId.value === 'default' || 
-              folders.value.find(f => f.id === selectedFolderId.value)?.name === '默认') {
-            const firstNonDefaultFolder = folders.value.find(f => f.id !== 'default' && f.name !== '默认');
-            if (firstNonDefaultFolder) {
-              selectedFolderId.value = firstNonDefaultFolder.id;
-              await loadLinesFromFolder(firstNonDefaultFolder.id);
-            }
-          }
         } catch (e) {
           console.error('解析待保存数据失败:', e);
         }
@@ -1271,6 +1260,16 @@ export default {
       // 检查是否是保存贯通线路模式（仅设置状态，不自动执行）
       await nextTick();
       await checkSaveThroughLineMode();
+    });
+
+    // 关闭窗口时若仍在“保存贯通线路”引导态且未保存，清除 localStorage，避免下次打开再次弹出横幅
+    onBeforeUnmount(() => {
+      if (isSavingThroughLine.value) {
+        try {
+          localStorage.removeItem('pendingThroughLineData');
+          localStorage.removeItem('throughOperationSelectorTarget');
+        } catch (e) {}
+      }
     });
 
     // 计算当前活动的文件夹ID
@@ -1361,28 +1360,27 @@ export default {
             <div 
               v-for="folder in folders" 
               :key="folder.id"
-              @click="isSavingThroughLine && (folder.id === 'default' || folder.name === '默认') ? null : selectFolder(folder.id)"
+              @click="selectFolder(folder.id)"
               @contextmenu.prevent.stop="showContextMenu($event, folder)"
               :style="{
                 padding: '10px 16px',
-                cursor: (isSavingThroughLine && (folder.id === 'default' || folder.name === '默认')) ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 background: selectedFolderId === folder.id ? 'var(--lm-sidebar-item-active, #e8e8e8)' : 'transparent',
                 transition: 'background 0.2s',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
                 borderLeft: selectedFolderId === folder.id ? '3px solid var(--accent, #12b7f5)' : '3px solid transparent',
-                opacity: (isSavingThroughLine && (folder.id === 'default' || folder.name === '默认')) ? 0.5 : 1
+                opacity: 1
               }"
-              @mouseover="(e) => { if (!(isSavingThroughLine && (folder.id === 'default' || folder.name === '默认'))) { e.target.style.background = selectedFolderId === folder.id ? 'var(--lm-sidebar-item-active, #e8e8e8)' : 'var(--lm-sidebar-item-hover, #f0f0f0)'; } }"
+              @mouseover="(e) => { e.target.style.background = selectedFolderId === folder.id ? 'var(--lm-sidebar-item-active, #e8e8e8)' : 'var(--lm-sidebar-item-hover, #f0f0f0)'; }"
               @mouseout="(e) => { e.target.style.background = selectedFolderId === folder.id ? 'var(--lm-sidebar-item-active, #e8e8e8)' : 'transparent'; }"
-              :title="(isSavingThroughLine && (folder.id === 'default' || folder.name === '默认')) ? '保存贯通线路时不允许选择默认文件夹' : ''"
+              :title="folder.name"
             >
               <i class="fas fa-folder" :style="{fontSize:'16px', color: selectedFolderId === folder.id ? 'var(--accent, #12b7f5)' : 'var(--muted, #666)'}"></i>
               <div style="flex:1; min-width:0;">
                 <div style="font-size:14px; font-weight:500; color:var(--text, #333); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                   {{ folder.name }}
-                  <span v-if="isSavingThroughLine && (folder.id === 'default' || folder.name === '默认')" style="margin-left:6px; font-size:11px; color:var(--muted, #999);">(不可用)</span>
                 </div>
               </div>
             </div>
@@ -1592,11 +1590,11 @@ export default {
         新建文件夹
       </div>
       <div 
-        @click="closeContextMenu(); activeFolderId !== 'default' && createNewLine()"
-        :style="{ padding: '8px 16px', cursor: activeFolderId === 'default' ? 'not-allowed' : 'pointer', fontSize: '13px', color: activeFolderId === 'default' ? 'var(--muted, #999)' : 'var(--text, #333)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s', opacity: activeFolderId === 'default' ? 0.6 : 1 }"
-        @mouseover="activeFolderId !== 'default' && ($event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)')"
+        @click="closeContextMenu(); activeFolderId && createNewLine()"
+        :style="{ padding: '8px 16px', cursor: activeFolderId ? 'pointer' : 'not-allowed', fontSize: '13px', color: activeFolderId ? 'var(--text, #333)' : 'var(--muted, #999)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s', opacity: activeFolderId ? 1 : 0.6 }"
+        @mouseover="activeFolderId && ($event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)')"
         @mouseout="$event.target.style.background='transparent'"
-        :title="activeFolderId === 'default' ? '默认文件夹不允许创建线路' : '新建线路'"
+        :title="activeFolderId ? '新建线路' : '请先选择文件夹'"
       >
         <i class="fas fa-plus-circle" style="font-size: 12px; color: var(--btn-blue-bg, #1677ff);"></i>
         新建线路
@@ -1621,7 +1619,7 @@ export default {
         打开
       </div>
       <div 
-        v-if="contextMenu.folderId !== 'default'"
+        v-if="contextMenu.folderId"
         @click="handleContextMenuDelete(contextMenu.folderId)"
         style="padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 8px; transition: background 0.2s;"
         @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"
@@ -1666,11 +1664,11 @@ export default {
           新建文件夹
         </div>
         <div style="height:1px; background:var(--lm-menu-border,#e0e0e0); margin:4px 0;"></div>
-        <div @click="closeLinesNewMenu(); activeFolderId !== 'default' && createNewLine()"
-          :style="{ padding:'8px 16px', cursor: activeFolderId === 'default' ? 'not-allowed' : 'pointer', fontSize:'13px', color: activeFolderId === 'default' ? 'var(--muted,#999)' : 'var(--text,#333)', display:'flex', alignItems:'center', gap:'8px', opacity: activeFolderId === 'default' ? 0.6 : 1 }"
-          @mouseover="activeFolderId !== 'default' && ($event.currentTarget.style.background='var(--lm-menu-item-hover,#f0f0f0)')"
+        <div @click="closeLinesNewMenu(); activeFolderId && createNewLine()"
+          :style="{ padding:'8px 16px', cursor: activeFolderId ? 'pointer' : 'not-allowed', fontSize:'13px', color: activeFolderId ? 'var(--text,#333)' : 'var(--muted,#999)', display:'flex', alignItems:'center', gap:'8px', opacity: activeFolderId ? 1 : 0.6 }"
+          @mouseover="activeFolderId && ($event.currentTarget.style.background='var(--lm-menu-item-hover,#f0f0f0)')"
           @mouseout="$event.currentTarget.style.background='transparent'"
-          :title="activeFolderId === 'default' ? '默认文件夹不允许创建线路' : '新建线路'">
+          :title="activeFolderId ? '新建线路' : '请先选择文件夹'">
           <i class="fas fa-plus-circle" style="font-size:12px; color:var(--btn-blue-bg,#1677ff);"></i>
           新建线路
         </div>
@@ -1708,11 +1706,11 @@ export default {
         新建文件夹
       </div>
       <div 
-        @click="closeLineContextMenu(); activeFolderId !== 'default' && createNewLine()"
-        :style="{ padding: '8px 16px', cursor: activeFolderId === 'default' ? 'not-allowed' : 'pointer', fontSize: '13px', color: activeFolderId === 'default' ? 'var(--muted, #999)' : 'var(--text, #333)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s', opacity: activeFolderId === 'default' ? 0.6 : 1 }"
-        @mouseover="activeFolderId !== 'default' && ($event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)')"
+        @click="closeLineContextMenu(); activeFolderId && createNewLine()"
+        :style="{ padding: '8px 16px', cursor: activeFolderId ? 'pointer' : 'not-allowed', fontSize: '13px', color: activeFolderId ? 'var(--text, #333)' : 'var(--muted, #999)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s', opacity: activeFolderId ? 1 : 0.6 }"
+        @mouseover="activeFolderId && ($event.target.style.background='var(--lm-menu-item-hover, #f0f0f0)')"
         @mouseout="$event.target.style.background='transparent'"
-        :title="activeFolderId === 'default' ? '默认文件夹不允许创建线路' : '新建线路'"
+        :title="activeFolderId ? '新建线路' : '请先选择文件夹'"
       >
         <i class="fas fa-plus-circle" style="font-size: 12px; color: var(--btn-blue-bg, #1677ff);"></i>
         新建线路
@@ -1776,7 +1774,7 @@ export default {
       </div>
       <div style="height: 1px; background: var(--lm-menu-border, #e0e0e0); margin: 4px 0;"></div>
       <div 
-        v-if="activeFolderId !== 'default'"
+        v-if="activeFolderId"
         @click="deleteLine(lineContextMenu.line)"
         style="padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 8px; transition: background 0.2s;"
         @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"
@@ -1790,7 +1788,7 @@ export default {
         style="padding: 8px 16px; font-size: 13px; color: var(--muted, #999); display: flex; align-items: center; gap: 8px; opacity: 0.5; cursor: not-allowed;"
       >
         <i class="fas fa-trash" style="font-size: 12px; color: var(--muted, #999);"></i>
-        删除（默认文件夹不允许删除）
+        删除
       </div>
       </div>
       </Teleport>

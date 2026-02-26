@@ -3,6 +3,8 @@ import { Teleport } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
+import { useSettings } from '../composables/useSettings.js'
+import { useStationAudio } from '../composables/useStationAudio.js'
 import { useFileIO } from '../composables/useFileIO.js'
 import StationEditor from './StationEditor.vue'
 import dialogService from '../utils/dialogService.js'
@@ -14,6 +16,74 @@ export default {
     const { t } = useI18n()
     const { state } = usePidsState()
     const { sync, next, move, setArr, setDep, jumpTo, getStep } = useController()
+    const { settings } = useSettings()
+    const { playArrive, playDepart } = useStationAudio(state)
+
+    const defaultCommonAudio = () => ({ separateDirection: true, up: { list: [] }, down: { list: [] } })
+    const ensureCommonAudio = () => {
+        if (!state.appData) return
+        if (!state.appData.meta || typeof state.appData.meta !== 'object') state.appData.meta = {}
+        if (!state.appData.meta.commonAudio || typeof state.appData.meta.commonAudio !== 'object') {
+            state.appData.meta.commonAudio = defaultCommonAudio()
+        } else {
+            const c = state.appData.meta.commonAudio
+            const toList = (d) => {
+                if (!d || typeof d !== 'object') return { list: [] }
+                if (Array.isArray(d.list)) return { list: d.list }
+                const merged = []
+                const pushList = (arr) => Array.isArray(arr) && merged.push(...arr)
+                pushList(d.welcome)
+                pushList(d.depart)
+                pushList(d.arrive)
+                pushList(d.end)
+                return { list: merged }
+            }
+            if (Array.isArray(c.list)) {
+                state.appData.meta.commonAudio = { separateDirection: false, up: { list: c.list }, down: { list: [] } }
+            } else {
+                state.appData.meta.commonAudio = {
+                    separateDirection: c.separateDirection !== false,
+                    up: toList(c.up),
+                    down: toList(c.down)
+                }
+            }
+        }
+    }
+    ensureCommonAudio()
+    const commonAudioRef = computed(() => {
+        ensureCommonAudio()
+        return state.appData?.meta?.commonAudio || defaultCommonAudio()
+    })
+    
+    // 计算当前线路目录路径：优先从 currentFilePath 提取目录，否则用当前文件夹路径，最后用默认文件夹
+    const currentLineFolderPath = computed(() => {
+      // 方法1：从 currentFilePath 提取目录（最可靠）
+      if (state.currentFilePath && typeof state.currentFilePath === 'string' && state.currentFilePath.trim()) {
+        const lastSlash = Math.max(state.currentFilePath.lastIndexOf('/'), state.currentFilePath.lastIndexOf('\\'))
+        if (lastSlash >= 0) {
+          const dir = state.currentFilePath.substring(0, lastSlash)
+          if (dir) return dir
+        }
+      }
+      // 方法2：从当前文件夹获取路径
+      if (state.currentFolderId && state.folders && Array.isArray(state.folders) && state.folders.length > 0) {
+        const folder = state.folders.find(f => f && f.id === state.currentFolderId)
+        if (folder && folder.path && typeof folder.path === 'string' && folder.path.trim()) {
+          return folder.path
+        }
+        // 方法3：如果当前文件夹找不到，尝试使用默认文件夹
+        const defaultFolder = state.folders.find(f => f && (f.id === 'default' || f.name === '默认'))
+        if (defaultFolder && defaultFolder.path && typeof defaultFolder.path === 'string' && defaultFolder.path.trim()) {
+          return defaultFolder.path
+        }
+        // 方法4：使用第一个可用的文件夹
+        const firstFolder = state.folders.find(f => f && f.path && typeof f.path === 'string' && f.path.trim())
+        if (firstFolder && firstFolder.path) {
+          return firstFolder.path
+        }
+      }
+      return ''
+    })
     
     const showEditor = ref(false)
     const editingStation = ref({})
@@ -29,6 +99,37 @@ export default {
     
     // 剪贴板状态（用于复制/剪贴站点）
     const clipboard = ref({ type: null, station: null, index: -1 })
+
+    const getEditingAudioStats = () => {
+        const up = editingStation.value?.stationAudio?.up?.list
+        const down = editingStation.value?.stationAudio?.down?.list
+        const upCount = Array.isArray(up) ? up.length : 0
+        const downCount = Array.isArray(down) ? down.length : 0
+        return { upCount, downCount, total: upCount + downCount }
+    }
+    const hasEditingStationAudio = () => getEditingAudioStats().total > 0
+    const onEditorModelValueChange = (nextVal) => {
+        if (hasEditingStationAudio()) {
+            console.warn('[AdminApp][EditorDebug] update:modelValue', {
+                from: showEditor.value,
+                to: nextVal,
+                editingIndex: editingIndex.value,
+                isNewStation: isNewStation.value,
+                ...getEditingAudioStats()
+            })
+        }
+        showEditor.value = nextVal
+    }
+    watch(showEditor, (val, oldVal) => {
+        if (!oldVal || val || !hasEditingStationAudio()) return
+        console.warn('[AdminApp][EditorDebug] showEditor-false', {
+            from: oldVal,
+            to: val,
+            editingIndex: editingIndex.value,
+            isNewStation: isNewStation.value,
+            ...getEditingAudioStats()
+        })
+    })
 
     function onDragStart(e, index) {
         draggingIndex.value = index
@@ -92,9 +193,13 @@ export default {
     }
 
     function openEditor(index) {
+        ensureCommonAudio()
         if (index === -1) {
-            // 新增站点
-            editingStation.value = { name: '', en: '', skip: false, door: 'left', dock: 'both', xfer: [], expressStop: false }
+            // 新增站点（含 stationAudio 默认结构供车站音频功能使用）
+            editingStation.value = {
+                name: '', en: '', skip: false, door: 'left', dock: 'both', xfer: [], expressStop: false,
+                stationAudio: { separateDirection: true, up: { welcome: [], depart: [], arrive: [], end: [] }, down: { welcome: [], depart: [], arrive: [], end: [] } }
+            }
             editingIndex.value = -1
             isNewStation.value = true
         } else {
@@ -103,6 +208,7 @@ export default {
             editingIndex.value = index
             isNewStation.value = false
         }
+        if (typeof window !== 'undefined') window.__currentLineFilePath = state.currentFilePath || null
         // 注意：从右键菜单触发时，click 事件可能在同一轮冒泡中立刻命中遮罩 @click.self 导致“打开又关闭”
         // 这里延迟到下一轮事件循环再打开，避免被当前 click 冒泡关闭
         setTimeout(() => {
@@ -113,6 +219,7 @@ export default {
     const fileIO = useFileIO(state)
 
     async function saveStation(data) {
+        ensureCommonAudio()
         if (editingIndex.value === -1) {
             // 如果 editingIndex 是 -1，说明是从"新建站点"按钮调用的，添加到末尾
             state.appData.stations.push(data)
@@ -147,6 +254,10 @@ export default {
                 })
             })
         }
+        // 先立即关闭弹窗，再后台执行同步与落盘，避免“保存后等待一会儿才关闭”
+        showEditor.value = false
+        editingIndex.value = -1
+        console.log('[AdminApp] saveStation - editor closed immediately')
         try {
             console.log('[AdminApp] saveStation - calling sync with', data);
             sync()
@@ -158,11 +269,52 @@ export default {
             }
         } catch (e) {
             console.error('[AdminApp] sync failed in saveStation', e);
-        } finally {
-            showEditor.value = false
-            editingIndex.value = -1
-            console.log('[AdminApp] saveStation - editor closed');
         }
+    }
+
+    function saveLineCommonAudio(payload) {
+        ensureCommonAudio()
+        const next = payload && typeof payload === 'object' ? payload : defaultCommonAudio()
+        state.appData.meta.commonAudio = JSON.parse(JSON.stringify(next))
+        sync()
+        fileIO.saveCurrentLine({ silent: true }).catch((e) => console.warn('[AdminApp] saveCurrentLine after saveLineCommonAudio failed', e))
+    }
+
+    function applyAudioToAllStations({ dir, items, indices, target = 'both', separateDirection }) {
+        const stations = state.appData?.stations
+        if (!stations || !Array.isArray(stations) || !items || !items.length) return
+        const listCopy = JSON.parse(JSON.stringify(items))
+        const idxCopy = Array.isArray(indices) ? indices.map((n) => Number(n)).filter((n) => n >= 0) : []
+
+        const applyToDir = (st, dirKey) => {
+            if (!st.stationAudio[dirKey] || typeof st.stationAudio[dirKey] !== 'object') st.stationAudio[dirKey] = { list: [] }
+            const list = Array.isArray(st.stationAudio[dirKey].list) ? st.stationAudio[dirKey].list : (st.stationAudio[dirKey].list = [])
+            if (idxCopy.length === listCopy.length && idxCopy.length > 0) {
+                idxCopy.forEach((idx, i) => {
+                    const nextItem = JSON.parse(JSON.stringify(listCopy[i]))
+                    if (idx < list.length) {
+                        list[idx] = nextItem
+                    } else {
+                        list.push(nextItem)
+                    }
+                })
+            } else {
+                list.push(...JSON.parse(JSON.stringify(listCopy)))
+            }
+        }
+
+        stations.forEach((st) => {
+            if (!st.stationAudio || typeof st.stationAudio !== 'object') {
+                st.stationAudio = { separateDirection: true, up: { list: [] }, down: { list: [] } }
+            }
+            if (!st.stationAudio.up || typeof st.stationAudio.up !== 'object') st.stationAudio.up = { list: [] }
+            if (!st.stationAudio.down || typeof st.stationAudio.down !== 'object') st.stationAudio.down = { list: [] }
+
+            if (target === 'up' || target === 'both') applyToDir(st, 'up')
+            if (target === 'down' || target === 'both') applyToDir(st, 'down')
+        })
+        sync()
+        fileIO.saveCurrentLine({ silent: true }).catch((e) => console.warn('[AdminApp] saveCurrentLine after applyAudioToAllStations failed', e))
     }
 
     async function deleteStation(index) {
@@ -365,55 +517,55 @@ export default {
     })
 
     // 生成路线信息格式：【首站··· 上一站→当前站→下一站··· 末站】
-    const stationRouteInfo = computed(() => {
-        if (!state.appData || !state.appData.stations) return ''
-        const s = state.appData.stations
-        if (s.length === 0) return ''
-        
-        const meta = state.appData.meta || {}
-        const dirType = meta.dirType || 'up'
-        const currentIdx = state.rt.idx
-        
-        // 确定首站和末站
-        let firstIdx, lastIdx
-        if (meta.startIdx !== undefined && meta.startIdx !== -1 && meta.termIdx !== undefined && meta.termIdx !== -1) {
-            // 有短交路设置
-            if (dirType === 'up' || dirType === 'outer') {
-                firstIdx = meta.startIdx
-                lastIdx = meta.termIdx
-            } else {
-                firstIdx = meta.termIdx
-                lastIdx = meta.startIdx
-            }
-        } else {
-            // 没有短交路设置
-            if (dirType === 'up' || dirType === 'outer') {
-                firstIdx = 0
-                lastIdx = s.length - 1
-            } else {
-                firstIdx = s.length - 1
-                lastIdx = 0
-            }
-        }
-        
-        const firstSt = s[firstIdx]
-        const lastSt = s[lastIdx]
-        const currentSt = s[currentIdx]
-        
-        if (!firstSt || !lastSt || !currentSt) return currentSt?.name || ''
-        
-        // 获取上一站和下一站
-        const step = getStep()
-        const prevIdx = currentIdx - step
-        const nextIdx = currentIdx + step
-        
-        const prevSt = (prevIdx >= 0 && prevIdx < s.length) ? s[prevIdx] : null
-        const nextSt = (nextIdx >= 0 && nextIdx < s.length) ? s[nextIdx] : null
-        
-        // 构建显示 HTML 字符串，每个站点用不同颜色的背景，文字为白色
-        let result = ''
-        const isFirst = currentIdx === firstIdx
-        const isLast = currentIdx === lastIdx
+        const stationRouteInfo = computed(() => {
+                if (!state.appData || !state.appData.stations) return ''
+                const s = state.appData.stations
+                if (s.length === 0) return ''
+
+                const meta = state.appData.meta || {}
+                const dirType = meta.dirType || 'up'
+                const step = getStep() || 1
+                const safeIdx = (idx) => {
+                        if (!Number.isFinite(idx)) return 0
+                        return Math.min(s.length - 1, Math.max(0, idx))
+                }
+                const currentIdx = safeIdx(state.rt.idx)
+
+                const hasShortTurn = Number.isFinite(meta.startIdx) && Number.isFinite(meta.termIdx) && meta.startIdx !== -1 && meta.termIdx !== -1
+                let firstIdx, lastIdx
+                if (hasShortTurn) {
+                    if (dirType === 'up' || dirType === 'outer') {
+                        firstIdx = safeIdx(meta.startIdx)
+                        lastIdx = safeIdx(meta.termIdx)
+                    } else {
+                        firstIdx = safeIdx(meta.termIdx)
+                        lastIdx = safeIdx(meta.startIdx)
+                    }
+                } else {
+                    if (dirType === 'up' || dirType === 'outer') {
+                        firstIdx = 0
+                        lastIdx = s.length - 1
+                    } else {
+                        firstIdx = s.length - 1
+                        lastIdx = 0
+                    }
+                }
+
+                const firstSt = s[firstIdx]
+                const lastSt = s[lastIdx]
+                const currentSt = s[currentIdx]
+
+                if (!firstSt || !lastSt || !currentSt) return currentSt?.name || ''
+
+                const prevIdx = safeIdx(currentIdx - step)
+                const nextIdx = safeIdx(currentIdx + step)
+                const prevSt = s[prevIdx] || null
+                const nextSt = s[nextIdx] || null
+
+                // 构建显示 HTML 字符串，每个站点用不同颜色的背景，文字为白色
+                let result = ''
+                const isFirst = currentIdx === firstIdx
+                const isLast = currentIdx === lastIdx
         
         // 检测深色模式
         const isDarkMode = document.documentElement.classList.contains('dark') || 
@@ -624,6 +776,15 @@ export default {
         return currentIdx === terminalIdx;
     }
 
+    function handleSetArr() {
+        setArr()
+        if (settings.vehicleAudioEnabled !== false && typeof state.rt.idx === 'number') playArrive(state.rt.idx)
+    }
+    function handleSetDep() {
+        setDep()
+        if (settings.vehicleAudioEnabled !== false && typeof state.rt.idx === 'number') playDepart(state.rt.idx)
+    }
+
     // 包装 next 函数，添加终点站检查
     async function handleNext() {
         // 检查是否在终点站
@@ -634,14 +795,25 @@ export default {
         }
         
         // 否则正常执行 next 操作
+        const prevIdx = typeof state.rt.idx === 'number' ? state.rt.idx : 0
         next();
+        if (settings.vehicleAudioEnabled !== false) {
+            const targetIdx = typeof state.rt.idx === 'number' ? state.rt.idx : prevIdx
+            if (state.rt.state === 0) playArrive(targetIdx)
+            else playDepart(targetIdx)
+        }
     }
 
         return {
             state,
-            next: handleNext, move, setArr, setDep, jumpTo,
+            next: handleNext, move, setArr, setDep, handleSetArr, handleSetDep, jumpTo,
             showEditor, editingStation, editingIndex, isNewStation,
+<<<<<<< Updated upstream
             openEditor, saveStation, deleteStation,
+=======
+            openEditor, saveStation, saveLineCommonAudio, deleteStation, applyAudioToAllStations,
+            commonAudioRef,
+>>>>>>> Stashed changes
             currentStation, routeInfo, statusDesc, serviceModeLabel, 
             lineModeLabel, directionLabel,
             stationRouteInfo, routeTextRef,
@@ -649,7 +821,9 @@ export default {
             stationContextMenu, clipboard,
             showStationContextMenu, closeStationContextMenu,
             newStationFromMenu, copyStation, cutStation, pasteStation,
-            editStationFromMenu, deleteStationFromMenu
+            editStationFromMenu, deleteStationFromMenu,
+            currentLineFolderPath,
+            onEditorModelValueChange
         }
   },
   template: `
@@ -682,8 +856,13 @@ export default {
         <!-- Controls -->
         <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px;">
             <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(-1)"><i class="fas fa-chevron-left"></i> {{ $t('consoleButtons.prevStation') }}</button>
+<<<<<<< Updated upstream
             <button class="btn b-org" style="height:48px; font-size:14px;" @click="setArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
             <button class="btn b-blue" style="height:48px; font-size:14px;" @click="setDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
+=======
+            <button class="btn b-org" style="height:48px; font-size:14px;" @click="handleSetArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
+            <button class="btn b-blue" style="height:48px; font-size:14px;" @click="handleSetDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
+>>>>>>> Stashed changes
             <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(1)">{{ $t('consoleButtons.nextStation') }} <i class="fas fa-chevron-right"></i></button>
             <button class="btn b-red" style="height:48px; font-size:14px;" @click="next()"><i class="fas fa-step-forward"></i> {{ $t('consoleButtons.nextStep') }}</button>
         </div>
@@ -764,10 +943,16 @@ export default {
         </div>
 
         <StationEditor 
-            v-model="showEditor" 
+            :model-value="showEditor"
+            @update:modelValue="onEditorModelValueChange"
             :station="editingStation" 
             :is-new="isNewStation"
-            @save="saveStation" 
+            :current-line-file-path="state.currentFilePath || ''"
+            :current-line-folder-path="currentLineFolderPath"
+            :line-common-audio="commonAudioRef"
+            @save="saveStation"
+            @save-line-audio="saveLineCommonAudio"
+            @apply-audio-to-all="applyAudioToAllStations"
         />
         
         <!-- 站点右键菜单 - 使用 Teleport 传送到 body，允许溢出窗口 -->

@@ -1,8 +1,11 @@
 <template>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   <div id="display-app" ref="rootRef">
@@ -76,6 +79,7 @@
       </div>
       <div id="welcome-end-screen">
         <div class="welcome-end-body"></div>
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
@@ -182,6 +186,8 @@
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
+=======
+>>>>>>> Stashed changes
       </div>
     </div>
   </div>
@@ -189,6 +195,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 import { initExitIndicator } from './displayWindowLogic.js';
@@ -199,6 +206,10 @@ import { initDisplayWindow } from './displayWindowLogic.js';
 =======
 import { initExitIndicator } from './displayWindowLogic.js';
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+// 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
+import { initDisplayWindow } from './displayWindowLogic.js';
 >>>>>>> Stashed changes
 =======
 // 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
@@ -221,8 +232,11 @@ if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.pl
 onMounted(() => {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   cleanup = initDisplayWindow(rootRef.value);
@@ -235,6 +249,7 @@ onBeforeUnmount(() => {
   }
 });
 </script>
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
@@ -581,6 +596,8 @@ onBeforeUnmount(() => {
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes

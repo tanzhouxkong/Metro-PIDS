@@ -6,11 +6,32 @@ import { applyThroughOperation } from '../utils/throughOperation.js'
 export function useController() {
     const { state, bcPost } = usePidsState();
     const { settings } = useSettings();
+    const cleanLineName = (n) => (n ? String(n).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim() : '');
+
+    const persistLinePathInfo = () => {
+        if (typeof localStorage === 'undefined') return;
+        try {
+            const map = {};
+            if (state.lineNameToFilePath && typeof state.lineNameToFilePath === 'object') {
+                Object.entries(state.lineNameToFilePath).forEach(([k, v]) => {
+                    if (!v || typeof v !== 'string') return;
+                    map[k] = v;
+                    const clean = cleanLineName(k);
+                    if (clean && clean !== k && !map[clean]) map[clean] = v;
+                });
+            }
+            const payload = { currentFilePath: state.currentFilePath || null, map };
+            localStorage.setItem('pids_line_path_map_v1', JSON.stringify(payload));
+        } catch (e) {
+            console.warn('[useController] Failed to persist line path info', e);
+        }
+    };
 
     function sync() {
         if (!state.store || !state.store.list) return;
         state.store.list[state.store.cur] = state.appData;
         localStorage.setItem('pids_global_store_v1', JSON.stringify(state.store));
+        persistLinePathInfo();
         
         // 直接使用当前线路数据（贯通线路已在控制面板中合并完成）
         let appDataToSend = cloneDisplayState(state.appData);
@@ -31,6 +52,7 @@ export function useController() {
                     display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type',
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
                     // 显示器1：壁纸（到站/结束页）
@@ -38,6 +60,11 @@ export function useController() {
                     display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+                    // 显示器1：壁纸（到站/结束页）
+                    display1WallpaperDataUrl: settings?.display?.displays?.['display-1']?.wallpaperDataUrl ?? '',
+                    display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
 >>>>>>> Stashed changes
 =======
                     // 显示器1：壁纸（到站/结束页）

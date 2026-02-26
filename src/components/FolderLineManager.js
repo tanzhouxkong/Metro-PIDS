@@ -57,7 +57,7 @@ export default {
     });
 
     const folders = ref([]);
-    const currentFolderId = ref('default');
+    const currentFolderId = ref(null);
     const currentLines = ref([]);
     const loading = ref(false);
     const selectedFolderId = ref(null);
@@ -65,10 +65,9 @@ export default {
     // 加载文件夹列表
     async function loadFolders() {
       if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
-        // 非 Electron 环境，使用默认文件夹
-        folders.value = [{ id: 'default', name: '默认', path: '', isCurrent: true }];
-        currentFolderId.value = 'default';
-        selectedFolderId.value = 'default';
+        folders.value = [];
+        currentFolderId.value = null;
+        selectedFolderId.value = null;
         // 尝试从 pidsState 加载线路列表
         if (props.pidsState && props.pidsState.store && props.pidsState.store.list) {
           currentLines.value = props.pidsState.store.list.map((l, idx) => ({
@@ -84,7 +83,8 @@ export default {
         const res = await window.electronAPI.lines.folders.list();
         if (res && res.ok && res.folders) {
           folders.value = res.folders;
-          currentFolderId.value = res.current || 'default';
+          const firstId = (res.folders && res.folders[0]) ? res.folders[0].id : null;
+          currentFolderId.value = res.current || firstId;
           selectedFolderId.value = currentFolderId.value;
           // 加载当前文件夹的线路
           await loadLinesFromFolder(currentFolderId.value);
@@ -248,7 +248,6 @@ export default {
 
     // 删除文件夹
     async function deleteFolder(folderId, folderName) {
-      if (folderId === 'default') return;
       if (!confirm(`确定要删除文件夹"${folderName}"吗？删除后文件夹配置将被移除，但文件本身不会被删除。`)) {
         return;
       }
@@ -369,7 +368,7 @@ export default {
                   <div style="font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ folder.name }}</div>
                   <div style="font-size:11px; opacity:0.7; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ folder.path }}</div>
                 </div>
-                <div v-if="folder.id !== 'default'" style="display:flex; gap:4px;">
+                <div style="display:flex; gap:4px;">
                   <button 
                     @click.stop="renameFolder(folder.id, folder.name)"
                     style="background:none; border:none; color:inherit; cursor:pointer; padding:4px; border-radius:4px; opacity:0.7;"

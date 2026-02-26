@@ -96,7 +96,17 @@ export default {
     <Teleport to="body">
       <Transition name="fade">
         <div v-if="visible" 
-             style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10000; background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none;" 
+             :style="{ 
+               position: 'fixed', 
+               inset: '0', 
+               display: 'flex', 
+               alignItems: 'center', 
+               justifyContent: 'center', 
+               zIndex: '10000', 
+               background: 'transparent', 
+               backdropFilter: 'none', 
+               WebkitBackdropFilter: 'none' 
+             }" 
              @click.self="handleCancel">
           <div @click.stop 
                :style="{ background: getGlassBg(), backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderRadius:'16px', padding:'0', width:'420px', maxWidth:'90%', boxShadow:'0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1)', overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">

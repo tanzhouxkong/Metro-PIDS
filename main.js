@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol } = require('electron');
 
 // 辅助函数：显示显示器识别错误对话框
 function showDisplayErrorDialog(title, message, details) {
@@ -40,19 +40,94 @@ ${JSON.stringify(details.config || {}, null, 2)}`;
   // 同时输出到控制台和日志文件
   console.error(`[main] ${title}: ${message}`);
   console.error(`[main] 详细信息:`, details);
-  if (logger) {
-    logger.error(`[main] ${title}: ${message}`, details);
-  }
+  ntLog('error', `[main] ${title}: ${message}`, details);
 }
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
+const NT_LOG_DIR_SEGMENTS = ['data', 'log'];
+
+function getNtLogDir() {
+  try {
+    return path.join(app.getPath('userData'), ...NT_LOG_DIR_SEGMENTS);
+  } catch (e) {
+    return path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS);
+  }
+}
+
+function ensureNtLogDir() {
+  const ntLogDir = getNtLogDir();
+  fs.mkdirSync(ntLogDir, { recursive: true });
+  return ntLogDir;
+}
+
+function ntLog(level, message, meta) {
+  if (!logger || !logger[level]) {
+    if (level === 'error') {
+      console.error(message, meta || '');
+    } else if (level === 'warn') {
+      console.warn(message, meta || '');
+    } else {
+      console.log(message, meta || '');
+    }
+    return;
+  }
+
+  if (typeof meta === 'undefined') {
+    logger[level](message);
+    return;
+  }
+
+  logger[level](message, meta);
+}
+let archiver = null;
+let extractZip = null;
+try { archiver = require('archiver'); } catch (e) { /* optional */ }
+try { extractZip = require('extract-zip'); } catch (e) { /* optional */ }
+let ZipReader = null;
+let ZipWriter = null;
+let BlobReader = null;
+let BlobWriter = null;
+let TextReader = null;
+let TextWriter = null;
+let Uint8ArrayReader = null;
+let Uint8ArrayWriter = null;
+try {
+  const zipjs = require('@zip.js/zip.js');
+  ZipReader = zipjs.ZipReader;
+  ZipWriter = zipjs.ZipWriter;
+  BlobReader = zipjs.BlobReader;
+  BlobWriter = zipjs.BlobWriter;
+  TextReader = zipjs.TextReader;
+  TextWriter = zipjs.TextWriter;
+  Uint8ArrayReader = zipjs.Uint8ArrayReader;
+  Uint8ArrayWriter = zipjs.Uint8ArrayWriter;
+} catch (e) {
+  console.warn('[main] zip.js not available, fallback to archiver/extract-zip', e && e.message);
+}
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const os = require('os');
+<<<<<<< Updated upstream
 let ffmpegPath = null;
 try {
   ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+=======
+let WebSocketServer = null;
+try {
+  WebSocketServer = require('ws').WebSocketServer;
+} catch (e) {
+  console.warn('[main] ws 模块不可用，局域网 WebSocket 同步将被禁用:', e && e.message);
+}
+let ffmpegPath = null;
+try {
+  const ffmpeg = require('@ffmpeg-installer/ffmpeg');
+  ffmpegPath = ffmpeg.path;
+  // 打包后路径中包含 app.asar，实际可执行文件在 app.asar.unpacked 中
+  if (ffmpegPath && ffmpegPath.includes('app.asar')) {
+    ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+  }
+>>>>>>> Stashed changes
 } catch (e) {
   console.warn('[main] FFmpeg未安装，录制功能将不可用:', e);
 }
@@ -81,6 +156,31 @@ try {
 } catch (e) {
   console.warn('[main] 配置 GPU 开关失败:', e);
 }
+
+// 进程级崩溃诊断日志（用于定位“闪退”）
+process.on('uncaughtException', (err) => {
+  console.error('[main][CrashTrace] uncaughtException:', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[main][CrashTrace] unhandledRejection:', reason && reason.stack ? reason.stack : reason);
+});
+app.on('render-process-gone', (event, webContents, details) => {
+  console.error('[main][CrashTrace] render-process-gone:', {
+    reason: details && details.reason,
+    exitCode: details && details.exitCode,
+    webContentsId: webContents && webContents.id,
+    url: webContents && typeof webContents.getURL === 'function' ? webContents.getURL() : ''
+  });
+});
+app.on('child-process-gone', (event, details) => {
+  console.error('[main][CrashTrace] child-process-gone:', {
+    type: details && details.type,
+    reason: details && details.reason,
+    exitCode: details && details.exitCode,
+    serviceName: details && details.serviceName,
+    name: details && details.name
+  });
+});
 
 // 启用主进程日志输出（打包后也需要日志来调试）
 const ENABLE_MAIN_VERBOSE_LOG = true; // 改为 true，确保打包后也能看到日志
@@ -123,9 +223,12 @@ try {
   
   // 配置 logger 输出到文件和控制台
   if (logger) {
+    const ntLogDir = ensureNtLogDir();
+    logger.transports.file.resolvePathFn = () => path.join(ntLogDir, 'main.log');
     logger.transports.console.level = 'debug';
     logger.transports.file.level = 'debug';
     logger.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
+    console.log('[main] 日志目录:', ntLogDir);
     console.log('[main] 日志文件位置:', logger.transports.file.getFile().path);
   }
 } catch (e) {
@@ -182,12 +285,633 @@ try {
 let mainWin = null;
 let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
 let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
+<<<<<<< Updated upstream
+=======
+const ENABLE_BACKGROUND_RENDER = process.env.METRO_PIDS_BACKGROUND_RENDER === '1';
+const WINDOW_BACKGROUND_THROTTLING = !ENABLE_BACKGROUND_RENDER;
+
+// WebSocket 局域网同步（用于跨设备的显示端/第三方显示器）
+let wsServer = null;
+const wsClients = new Set();
+let wsSyncTimer = null;
+let lastWsSyncKey = null;
+
+async function switchDisplay(displayId, width, height, options = {}) {
+  const source = options.reason || 'ipc';
+  console.log(`[main] switch-display requested (${source}), displayId=`, displayId, 'width=', width, 'height=', height);
+
+  // 优先从主窗口的 localStorage 读取最新的 currentDisplayId，确保使用最新配置
+  let actualDisplayId = displayId;
+  if (mainWin && !mainWin.isDestroyed()) {
+    try {
+      const localStorageSettings = await mainWin.webContents.executeJavaScript(`
+        (function() {
+          try {
+            const raw = localStorage.getItem('pids_settings_v1');
+            if (raw) {
+              const settings = JSON.parse(raw);
+              return settings.display?.currentDisplayId || null;
+            }
+            return null;
+          } catch(e) {
+            return null;
+          }
+        })();
+      `);
+      if (localStorageSettings) {
+        actualDisplayId = localStorageSettings;
+        console.log(`[main] switch-display: 从主窗口读取到最新的 currentDisplayId: ${actualDisplayId} (传入的: ${displayId})`);
+      }
+    } catch (e) {
+      console.warn('[main] 从主窗口读取 currentDisplayId 失败，使用传入的 displayId:', e);
+    }
+  }
+
+  // 使用实际应该切换到的 displayId
+  displayId = actualDisplayId;
+  console.log(`[main] switch-display: 最终使用的 displayId: ${displayId}`);
+
+  // 切换显示端时，窗口尺寸应以显示端配置为准（而不是主窗口/屏幕尺寸）。
+  // 传入的 width/height 常常是 1920×1080 等屏幕尺寸，会覆盖 display-3 等内置显示端的默认 1900×600。
+  // 这里统一清空尺寸参数，让 createDisplayWindow() 自行从配置读取并应用正确分辨率。
+  if (typeof width === 'number' || typeof height === 'number') {
+    console.log(`[main] switch-display: 忽略传入尺寸参数，改用配置尺寸 (传入: ${width}x${height})`);
+  }
+  width = undefined;
+  height = undefined;
+
+  const notifyWs = (id) => {
+    if (!id) return;
+    try {
+      broadcastToWebSocketClients({ t: 'DISPLAY_SWITCHED', displayId: id });
+    } catch (e) {
+      console.warn('[main] WS 通知 DISPLAY_SWITCHED 失败', e && e.message);
+    }
+  };
+
+  // 检查是否已存在该显示端窗口
+  const existingWin = displayWindows.get(displayId);
+  if (existingWin && !existingWin.isDestroyed()) {
+    // 如果已存在该显示端窗口，检查是否需要重新加载URL（配置可能已更改）
+    try {
+      // 读取当前配置，检查URL是否变化
+      let needReload = false;
+      let expectedUrl = null;
+
+      // 从 electron-store 读取配置
+      let displayConfig = null;
+      if (store) {
+        try {
+          const settings = store.get('settings', {});
+          const displays = settings.display?.displays || {};
+          displayConfig = displays[displayId];
+          console.log(`[main] switch-display: 从 electron-store 读取显示端配置 ${displayId}:`, displayConfig ? {
+            source: displayConfig.source,
+            url: displayConfig.url,
+            name: displayConfig.name
+          } : '未找到配置');
+        } catch (e) {
+          console.warn('[main] 从 electron-store 读取显示端配置失败:', e);
+        }
+      }
+
+      // 如果 electron-store 中没有配置，尝试从主窗口的 localStorage 读取
+      if (!displayConfig && mainWin && !mainWin.isDestroyed()) {
+        try {
+          const localStorageSettings = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                const raw = localStorage.getItem('pids_settings_v1');
+                if (raw) {
+                  return JSON.parse(raw);
+                }
+                return null;
+              } catch(e) {
+                return null;
+              }
+            })();
+          `);
+
+          if (localStorageSettings && localStorageSettings.display && localStorageSettings.display.displays) {
+            displayConfig = localStorageSettings.display.displays[displayId];
+            if (displayConfig) {
+              console.log(`[main] switch-display: 从主窗口 localStorage 读取显示端配置 ${displayId}:`, {
+                source: displayConfig.source,
+                url: displayConfig.url,
+                name: displayConfig.name
+              });
+              // 同步到 electron-store
+              if (store) {
+                const currentSettings = store.get('settings', {});
+                if (!currentSettings.display) currentSettings.display = {};
+                if (!currentSettings.display.displays) currentSettings.display.displays = {};
+                currentSettings.display.displays[displayId] = displayConfig;
+                store.set('settings', currentSettings);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[main] 从主窗口读取配置失败:', e);
+        }
+      }
+
+      // 计算期望的URL
+      if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+        // 在线显示器：直接使用URL（包括 online、custom、gitee）
+        expectedUrl = displayConfig.url.trim();
+        console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
+
+        // 验证URL格式
+        if (!expectedUrl || expectedUrl.trim() === '') {
+          const errorDetails = {
+            displayId: displayId,
+            name: displayConfig.name,
+            source: displayConfig.source,
+            url: displayConfig.url,
+            expectedUrl: expectedUrl,
+            actualUrl: currentUrl,
+            reason: '配置的URL为空',
+            config: displayConfig
+          };
+          showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置的URL为空`, errorDetails);
+        }
+      } else if (displayConfig && displayConfig.source === 'builtin') {
+        if (displayConfig.url) {
+          // 自定义HTML文件路径
+          let customFilePath = displayConfig.url.trim();
+          let resolvedPath;
+          if (path.isAbsolute(customFilePath)) {
+            resolvedPath = customFilePath;
+          } else {
+            if (app.isPackaged) {
+              resolvedPath = path.join(app.getAppPath(), customFilePath);
+            } else {
+              resolvedPath = path.join(__dirname, '..', customFilePath);
+            }
+          }
+          resolvedPath = path.normalize(resolvedPath);
+
+          if (fs.existsSync(resolvedPath)) {
+            const fileUrl = process.platform === 'win32' 
+              ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+              : `file://${resolvedPath}`;
+            expectedUrl = fileUrl;
+          } else {
+            console.warn(`[main] switch-display: 配置的本地文件不存在: ${resolvedPath}`);
+          }
+        } else {
+          // 使用默认路径
+          if (displayId === 'display-1') {
+            expectedUrl = getRendererUrl('displays/display-1/display_window.html');
+          } else {
+            const customRel = path.join('displays', displayId, 'display_window.html');
+            const customPath = app.isPackaged 
+              ? path.join(app.getAppPath(), 'out/renderer', customRel)
+              : path.join(__dirname, '../renderer', customRel);
+            if (fs.existsSync(customPath)) {
+              expectedUrl = getRendererUrl(customRel);
+            } else {
+              expectedUrl = getRendererUrl('display_window.html');
+            }
+          }
+        }
+      } else if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+        // 在线显示器：直接使用URL（包括 online、custom、gitee）
+        expectedUrl = displayConfig.url.trim();
+        console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
+      } else {
+        // 没有配置，使用默认路径
+        // 如果配置了第三方显示器但URL为空或source不匹配，显示错误
+        if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+          const errorDetails = {
+            displayId: displayId,
+            name: displayConfig.name,
+            source: displayConfig.source,
+            url: displayConfig.url || '(空)',
+            expectedUrl: expectedUrl,
+            actualUrl: currentUrl,
+            reason: displayConfig.url ? 'URL格式错误或无法识别' : '配置的URL为空',
+            config: displayConfig
+          };
+          showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置错误`, errorDetails);
+        }
+
+        if (displayId === 'display-1') {
+          expectedUrl = getRendererUrl('displays/display-1/display_window.html');
+        } else {
+          expectedUrl = getRendererUrl('display_window.html');
+        }
+      }
+
+      // 获取当前窗口的URL
+      const currentUrl = existingWin.webContents.getURL();
+      console.log(`[main] switch-display: 当前窗口URL: ${currentUrl}`);
+      console.log(`[main] switch-display: 期望URL: ${expectedUrl}`);
+      console.log(`[main] switch-display: 显示端配置:`, displayConfig ? {
+        id: displayConfig.id,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url
+      } : '未找到配置');
+
+      // 检查第三方显示器是否被错误识别为默认显示器
+      if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+        const expectedThirdPartyUrl = displayConfig.url.trim();
+        // 如果期望的是第三方URL，但当前URL是默认的display_window.html，说明识别失败
+        if (currentUrl && currentUrl.includes('display_window.html') && expectedThirdPartyUrl && !expectedThirdPartyUrl.includes('display_window.html')) {
+          const errorDetails = {
+            displayId: displayId,
+            name: displayConfig.name,
+            source: displayConfig.source,
+            url: displayConfig.url,
+            expectedUrl: expectedThirdPartyUrl,
+            actualUrl: currentUrl,
+            reason: '第三方显示器被错误识别为默认显示器，URL不匹配',
+            config: displayConfig
+          };
+          showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 被错误识别为默认显示器`, errorDetails);
+        }
+      }
+
+      // 比较URL，如果不一致则需要重新加载
+      if (expectedUrl && currentUrl !== expectedUrl) {
+        needReload = true;
+        console.log(`[main] switch-display: URL不一致，需要重新加载 (${currentUrl} -> ${expectedUrl})`);
+      } else if (expectedUrl && currentUrl === expectedUrl) {
+        console.log(`[main] switch-display: URL一致，但检查是否需要强制重新加载`);
+        // 如果配置了自定义URL，即使URL相同也重新加载（确保使用最新配置）
+        if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) {
+          console.log(`[main] switch-display: 检测到自定义URL配置，强制重新加载以确保使用最新配置`);
+          needReload = true;
+        }
+      }
+
+      if (needReload) {
+        // 需要重新加载，关闭旧窗口并创建新窗口
+        console.log(`[main] 显示端 ${displayId} 配置已更改，重新加载窗口`);
+        try {
+          existingWin.close();
+          displayWindows.delete(displayId);
+        } catch (e) {
+          console.warn(`[main] 关闭显示窗口 ${displayId} 失败:`, e);
+        }
+      } else {
+        // 配置未更改，直接聚焦并调整尺寸
+        if (typeof width === 'number' && typeof height === 'number') {
+          existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
+        }
+        existingWin.focus();
+        console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦 (URL: ${currentUrl})`);
+
+        // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+        forceReapplyMicaEffect();
+
+        // 即使 URL 相同，也发送一个消息通知显示端切换（确保数据同步）
+        try {
+          const jsCode = `
+            (function() {
+              try {
+                // 发送一个切换通知，让显示端知道当前应该显示哪个显示端的数据
+                if (typeof BroadcastChannel !== 'undefined') {
+                  const bc = new BroadcastChannel('metro_pids_v3');
+                  bc.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' });
+                  bc.close();
+                }
+                if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+                  window.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' }, '*');
+                }
+                return true;
+              } catch(e) {
+                console.error('[Display] 发送切换通知失败:', e);
+                return false;
+              }
+            })();
+          `;
+          existingWin.webContents.executeJavaScript(jsCode).catch(e => {
+            console.warn(`[main] 向显示端 ${displayId} 发送切换通知失败:`, e);
+          });
+        } catch (e) {
+          console.warn(`[main] 执行切换通知脚本失败 (${displayId}):`, e);
+        }
+
+        notifyWs(displayId);
+        return true;
+      }
+    } catch (e) {
+      console.warn(`[main] 处理显示窗口 ${displayId} 失败:`, e);
+    }
+  }
+
+  // 关闭所有现有的显示窗口（除了目标显示端）
+  const windowsToClose = [];
+  for (const [id, win] of displayWindows.entries()) {
+    if (id !== displayId && win && !win.isDestroyed()) {
+      windowsToClose.push({ id, win });
+    }
+  }
+
+  // 关闭窗口（关闭操作可能会影响主窗口的模糊效果）
+  for (const { id, win } of windowsToClose) {
+    try {
+      win.close();
+    } catch (e) {
+      console.warn(`[main] 关闭显示窗口 ${id} 失败:`, e);
+    }
+  }
+
+  // 清理已关闭的窗口引用
+  for (const [id, win] of displayWindows.entries()) {
+    if (win && win.isDestroyed()) {
+      displayWindows.delete(id);
+    }
+  }
+
+  // 如果关闭了窗口，立即强制重新应用主窗口的模糊效果（防止因关闭窗口导致模糊消失）
+  if (windowsToClose.length > 0) {
+    console.log(`[main] switch-display: 已关闭 ${windowsToClose.length} 个其他显示窗口，立即重新应用主窗口模糊效果`);
+    forceReapplyMicaEffect();
+  }
+
+  // 创建新的显示窗口（如果不存在或需要重新加载）
+  createDisplayWindow(width, height, displayId);
+
+  // 创建新窗口后，强制重新应用主窗口的模糊效果（防止因创建窗口导致模糊消失）
+  forceReapplyMicaEffect();
+
+  notifyWs(displayId);
+  return true;
+}
+
+async function fetchAppDataSnapshot() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  try {
+    const result = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          const raw = localStorage.getItem('pids_global_store_v1');
+          if (!raw) return null;
+          const store = JSON.parse(raw);
+          if (!store || !store.list || !store.cur) return null;
+          return store.list[store.cur] || null;
+        } catch(e) {
+          return null;
+        }
+      })();
+    `);
+    return result;
+  } catch (e) {
+    console.warn('[DisplayAPI] 获取应用数据失败:', e);
+    return null;
+  }
+}
+
+async function fetchRtStateSnapshot() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  try {
+    const result = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          const raw = localStorage.getItem('pids_global_store_v1');
+          if (!raw) return null;
+          const store = JSON.parse(raw);
+          if (!store || !store.rt) return null;
+          return store.rt || null;
+        } catch(e) {
+          return null;
+        }
+      })();
+    `);
+    return result;
+  } catch (e) {
+    console.warn('[DisplayAPI] 获取实时状态失败:', e);
+    return null;
+  }
+}
+
+function broadcastToDisplayWindows(payload) {
+  const channelName = 'metro_pids_v3';
+  const payloadStr = JSON.stringify(payload);
+  const jsCode = `
+    (function() {
+      try {
+        let success = false;
+        if (typeof BroadcastChannel !== 'undefined') {
+          try {
+            const bc = new BroadcastChannel('${channelName}');
+            bc.postMessage(${payloadStr});
+            bc.close();
+            success = true;
+          } catch(e) {
+            console.warn('[Display] BroadcastChannel 发送失败:', e);
+          }
+        }
+        if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+          try {
+            window.postMessage(${payloadStr}, '*');
+            success = true;
+          } catch(e) {
+            console.warn('[Display] postMessage 发送失败:', e);
+          }
+        }
+        return success;
+      } catch(e) {
+        console.error('[Display] 发送消息失败:', e);
+        return false;
+      }
+    })();
+  `;
+
+  let successCount = 0;
+  for (const [id, win] of displayWindows.entries()) {
+    if (win && !win.isDestroyed() && win.webContents) {
+      try {
+        win.webContents.executeJavaScript(jsCode).catch(e => {
+          console.warn(`[DisplayAPI] 向 ${id} 发送消息失败:`, e);
+        });
+        successCount++;
+      } catch (e) {
+        console.warn(`[DisplayAPI] 执行脚本失败 (${id}):`, e);
+      }
+    }
+  }
+
+  if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
+    try {
+      mainWin.webContents.executeJavaScript(jsCode).catch(e => {
+        console.warn('[DisplayAPI] 向主窗口发送消息失败:', e);
+      });
+    } catch (e) {
+      console.warn('[DisplayAPI] 向主窗口执行脚本失败:', e);
+    }
+  }
+
+  return successCount;
+}
+
+function broadcastToWebSocketClients(payload, { skipClient } = {}) {
+  if (!wsServer || wsClients.size === 0) return 0;
+  let delivered = 0;
+  const data = JSON.stringify(payload);
+  for (const client of wsClients) {
+    if (skipClient && client === skipClient) continue;
+    if (client.readyState === 1) { // OPEN
+      try {
+        client.send(data);
+        delivered++;
+      } catch (e) {
+        console.warn('[WS] 向客户端发送失败:', e && e.message);
+      }
+    }
+  }
+  return delivered;
+}
+
+function broadcastToAllChannels(payload, options = {}) {
+  const count = broadcastToDisplayWindows(payload);
+  broadcastToWebSocketClients(payload, options);
+  return count;
+}
+
+async function sendSyncToWsClient(client) {
+  if (!client || client.readyState !== 1) return;
+  try {
+    const [appData, rtState] = await Promise.all([
+      fetchAppDataSnapshot(),
+      fetchRtStateSnapshot()
+    ]);
+    client.send(JSON.stringify({ t: 'SYNC', d: appData, r: rtState || null }));
+  } catch (e) {
+    console.warn('[WS] 发送 SYNC 失败:', e && e.message);
+  }
+}
+
+async function maybePushStateToWsClients(force = false) {
+  if (!wsServer || wsClients.size === 0) return;
+  try {
+    const [appData, rtState] = await Promise.all([
+      fetchAppDataSnapshot(),
+      fetchRtStateSnapshot()
+    ]);
+    const payload = { t: 'SYNC', d: appData, r: rtState || null };
+    const key = JSON.stringify(payload);
+    if (!force && key === lastWsSyncKey) return;
+    lastWsSyncKey = key;
+    broadcastToWebSocketClients(payload);
+  } catch (e) {
+    console.warn('[WS] 定时同步失败:', e && e.message);
+  }
+}
+
+function startWebSocketBridge(portOverride) {
+  if (!WebSocketServer) {
+    console.warn('[WS] ws 模块未安装，跳过 WebSocket Bridge');
+    return false;
+  }
+
+  stopWebSocketBridge();
+
+  const port = parseInt(portOverride || process.env.PIDS_WS_PORT || process.env.METRO_PIDS_WS_PORT || '9400', 10);
+  try {
+    wsServer = new WebSocketServer({ port });
+  } catch (e) {
+    console.warn(`[WS] 无法启动 WebSocket Bridge (端口 ${port}):`, e && e.message);
+    wsServer = null;
+    return false;
+  }
+
+  wsServer.on('connection', (socket, req) => {
+    wsClients.add(socket);
+    console.log('[WS] 客户端已连接:', req && req.socket && req.socket.remoteAddress);
+    sendSyncToWsClient(socket);
+
+    socket.on('message', async (raw) => {
+      let msg = null;
+      try {
+        msg = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(Buffer.from(raw).toString('utf8'));
+      } catch (e) {
+        console.warn('[WS] 收到无法解析的消息');
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+
+      if (msg.t === 'PING') {
+        try { socket.send(JSON.stringify({ t: 'PONG', ts: Date.now() })); } catch (e) {}
+        return;
+      }
+
+      if (msg.t === 'REQ') {
+        await sendSyncToWsClient(socket);
+        return;
+      }
+
+      if (msg.t === 'SWITCH_DISPLAY' && msg.displayId) {
+        const targetId = String(msg.displayId);
+        const ok = await switchDisplay(targetId, msg.width, msg.height, { reason: 'ws' });
+        try {
+          socket.send(JSON.stringify({ t: 'SWITCH_DISPLAY_ACK', ok: !!ok, displayId: targetId }));
+        } catch (e) {
+          console.warn('[WS] 发送 SWITCH_DISPLAY_ACK 失败', e && e.message);
+        }
+        if (ok) {
+          broadcastToWebSocketClients({ t: 'DISPLAY_SWITCHED', displayId: targetId }, { skipClient: socket });
+        }
+        return;
+      }
+
+      // 将控制命令或同步数据转发给显示端和其他 WS 客户端
+      if (msg.t === 'CMD_KEY' || msg.t === 'CMD' || msg.t === 'STATE' || msg.t === 'SYNC') {
+        broadcastToDisplayWindows(msg);
+        broadcastToWebSocketClients(msg, { skipClient: socket });
+        return;
+      }
+    });
+
+    socket.on('close', () => {
+      wsClients.delete(socket);
+    });
+    socket.on('error', () => {
+      wsClients.delete(socket);
+    });
+  });
+
+  wsServer.on('error', (e) => {
+    console.warn('[WS] WebSocket 服务器错误:', e && e.message);
+  });
+
+  wsSyncTimer = setInterval(() => {
+    if (wsClients.size === 0) return;
+    maybePushStateToWsClients();
+  }, 1200);
+
+  console.log(`[WS] WebSocket Bridge 已启动，端口: ${port}`);
+  return true;
+}
+
+function stopWebSocketBridge() {
+  if (wsSyncTimer) {
+    clearInterval(wsSyncTimer);
+    wsSyncTimer = null;
+  }
+  if (wsServer) {
+    try { wsServer.close(); } catch (e) {}
+    wsServer = null;
+  }
+  wsClients.clear();
+  lastWsSyncKey = null;
+}
+>>>>>>> Stashed changes
 
 // 录制状态管理
 let recordingState = {
   isRecording: false,
   displayId: null,
   options: null,
+<<<<<<< Updated upstream
+=======
+  outputPath: null,
+  audioMixEnabled: false,
+  audioEvents: [],
+>>>>>>> Stashed changes
   offscreenWin: null,
   ffmpegProcess: null,
   captureTimer: null,
@@ -219,6 +943,100 @@ let recordingEncoders = {
   cpu: [],
   gpu: []
 };
+<<<<<<< Updated upstream
+=======
+
+function normalizeRecordingAudioEvent(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const offsetSec = Number(payload.offsetSec);
+  const absolutePath = String(payload.absolutePath || '').trim();
+  if (!Number.isFinite(offsetSec) || offsetSec < 0) return null;
+  if (!absolutePath) return null;
+  try {
+    if (!fs.existsSync(absolutePath)) return null;
+  } catch (e) {
+    return null;
+  }
+  return {
+    offsetSec: Math.max(0, offsetSec),
+    absolutePath,
+    relativePath: String(payload.relativePath || '').trim()
+  };
+}
+
+async function muxStationAudioTimelineToVideo({ inputVideoPath, audioEvents }) {
+  if (!ffmpegPath) return { ok: false, error: 'FFmpeg未安装' };
+  if (!inputVideoPath || !fs.existsSync(inputVideoPath)) return { ok: false, error: '录制视频文件不存在' };
+  const validEvents = Array.isArray(audioEvents)
+    ? audioEvents
+      .filter(e => e && e.absolutePath && fs.existsSync(e.absolutePath) && Number.isFinite(e.offsetSec) && e.offsetSec >= 0)
+      .sort((a, b) => a.offsetSec - b.offsetSec)
+      .slice(0, 512)
+    : [];
+  if (!validEvents.length) return { ok: true, outputPath: inputVideoPath, mixed: false };
+
+  const ext = path.extname(inputVideoPath) || '.mp4';
+  const parsed = path.parse(inputVideoPath);
+  const mixedPath = path.join(parsed.dir, `${parsed.name}.with-audio${ext}`);
+
+  const inputs = ['-y', '-i', inputVideoPath];
+  for (const ev of validEvents) {
+    inputs.push('-i', ev.absolutePath);
+  }
+
+  const filters = [];
+  const labels = [];
+  for (let i = 0; i < validEvents.length; i++) {
+    const delayMs = Math.max(0, Math.round(validEvents[i].offsetSec * 1000));
+    const outLabel = `a${i}`;
+    labels.push(`[${outLabel}]`);
+    filters.push(`[${i + 1}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,adelay=${delayMs}|${delayMs}[${outLabel}]`);
+  }
+  if (labels.length > 1) {
+    filters.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0:dropout_transition=0[aout]`);
+  } else {
+    filters.push(`${labels[0]}anull[aout]`);
+  }
+
+  const lowerExt = ext.toLowerCase();
+  const isWebm = lowerExt === '.webm';
+  const args = [
+    ...inputs,
+    '-filter_complex', filters.join(';'),
+    '-map', '0:v:0',
+    '-map', '[aout]',
+    '-c:v', 'copy',
+    '-c:a', isWebm ? 'libopus' : 'aac',
+    ...(isWebm ? ['-b:a', '160k'] : ['-b:a', '192k']),
+    '-shortest',
+    ...((lowerExt === '.mp4' || lowerExt === '.mov') ? ['-movflags', '+faststart'] : []),
+    mixedPath
+  ];
+
+  await new Promise((resolve, reject) => {
+    const p = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let errOut = '';
+    p.stderr.on('data', (d) => { errOut += d.toString(); });
+    p.on('error', (e) => reject(e));
+    p.on('close', (code) => {
+      if (code === 0 || code === null) return resolve(true);
+      const lastLine = String(errOut || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+      reject(new Error(`音轨封装失败（退出码 ${code}）${lastLine ? `：${lastLine}` : ''}`));
+    });
+  });
+
+  if (!fs.existsSync(mixedPath)) {
+    return { ok: false, error: '音轨封装输出文件不存在' };
+  }
+
+  try {
+    fs.unlinkSync(inputVideoPath);
+  } catch (e) {}
+  fs.renameSync(mixedPath, inputVideoPath);
+  return { ok: true, outputPath: inputVideoPath, mixed: true };
+}
+
+>>>>>>> Stashed changes
 let lineManagerWin = null;
 let devWin = null;
 let throughOperationTarget = null; // 存储贯通线路选择目标 ('lineA' 或 'lineB')
@@ -385,6 +1203,10 @@ function forceReapplyMicaEffect() {
   
   const isWindows = process.platform === 'win32';
   if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
+
+  const now = Date.now();
+  if (forceReapplyMicaEffect._lastApplyTs && now - forceReapplyMicaEffect._lastApplyTs < 300) return;
+  forceReapplyMicaEffect._lastApplyTs = now;
   
   // 只调用一次，不使用多个延迟
   try {
@@ -450,117 +1272,15 @@ function startApiServer() {
         }
       },
       sendBroadcastMessage: (payload) => {
-        const channelName = 'metro_pids_v3';
-        const payloadStr = JSON.stringify(payload);
-        
-        const jsCode = `
-          (function() {
-            try {
-              let success = false;
-              
-              if (typeof BroadcastChannel !== 'undefined') {
-                try {
-                  const bc = new BroadcastChannel('${channelName}');
-                  bc.postMessage(${payloadStr});
-                  bc.close();
-                  success = true;
-                } catch(e) {
-                  console.warn('[Display] BroadcastChannel 发送失败:', e);
-                }
-              }
-              
-              if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
-                try {
-                  window.postMessage(${payloadStr}, '*');
-                  success = true;
-                } catch(e) {
-                  console.warn('[Display] postMessage 发送失败:', e);
-                }
-              }
-              
-              return success;
-            } catch(e) {
-              console.error('[Display] 发送消息失败:', e);
-              return false;
-            }
-          })();
-        `;
-        
-        let successCount = 0;
-        for (const [id, win] of displayWindows.entries()) {
-          if (win && !win.isDestroyed() && win.webContents) {
-            try {
-              win.webContents.executeJavaScript(jsCode).catch(e => {
-                console.warn(`[DisplayAPI] 向 ${id} 发送消息失败:`, e);
-              });
-              successCount++;
-            } catch (e) {
-              console.warn(`[DisplayAPI] 执行脚本失败 (${id}):`, e);
-            }
-          }
-        }
-        
-        if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
-          try {
-            mainWin.webContents.executeJavaScript(jsCode).catch(e => {
-              console.warn('[DisplayAPI] 向主窗口发送消息失败:', e);
-            });
-          } catch (e) {
-            console.warn('[DisplayAPI] 向主窗口执行脚本失败:', e);
-          }
-        }
-        
-        return successCount;
+        return broadcastToAllChannels(payload);
       },
       getMainWindow: () => mainWin,
       getStore: () => store,
       getAppData: async () => {
-        if (!mainWin || mainWin.isDestroyed()) {
-          return null;
-        }
-        try {
-          const result = await mainWin.webContents.executeJavaScript(`
-            (function() {
-              try {
-                const raw = localStorage.getItem('pids_global_store_v1');
-                if (!raw) return null;
-                const store = JSON.parse(raw);
-                if (!store || !store.list || !store.cur) return null;
-                return store.list[store.cur] || null;
-              } catch(e) {
-                return null;
-              }
-            })();
-          `);
-          return result;
-        } catch (e) {
-          console.warn('[DisplayAPI] 获取应用数据失败:', e);
-          return null;
-        }
+        return fetchAppDataSnapshot();
       },
       getRtState: async () => {
-        if (!mainWin || mainWin.isDestroyed()) {
-          return null;
-        }
-        try {
-          const result = await mainWin.webContents.executeJavaScript(`
-            (function() {
-              try {
-                const raw = localStorage.getItem('pids_global_store_v1');
-                if (!raw) return null;
-                const store = JSON.parse(raw);
-                if (!store || !store.rt) return null;
-                return store.rt || null;
-              } catch(e) {
-                return null;
-              }
-            })();
-          `);
-          return result;
-        } catch (e) {
-          console.warn('[DisplayAPI] 获取实时状态失败:', e);
-          return null;
-        }
+        return fetchRtStateSnapshot();
       },
       editDisplay: async (displayId, displayData) => {
         try {
@@ -753,7 +1473,7 @@ function createWindow() {
     console.log('[MainWindow] 窗口是否可见:', mainWin && mainWin.isVisible());
     
     // 按照官方示例：窗口创建后立即设置主题和效果
-    if (isWindows && mainWin && MicaBrowserWindow !== BrowserWindow) {
+    if (isWindows && mainWin && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
       try {
         // 读取当前主题设置（从 electron-store 或默认值）
         let themeMode = 'system';
@@ -994,7 +1714,7 @@ function createWindow() {
           console.log('[MainWindow] ✅ 页面加载完成后设置背景为透明');
           
           // 如果 Mica 效果可用，再次应用（确保模糊效果显示）
-          if (isWindows && MicaBrowserWindow !== BrowserWindow) {
+          if (isWindows && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
             if (IS_WINDOWS_11 && typeof mainWin.setMicaAcrylicEffect === 'function') {
               mainWin.setMicaAcrylicEffect();
               console.log('[MainWindow] ✅ 页面加载后重新应用 Mica Acrylic 效果');
@@ -1147,340 +1867,7 @@ function createWindow() {
   });
 
   // 暴露 IPC 供渲染层切换显示端
-  ipcMain.handle('switch-display', async (event, displayId, width, height) => {
-    console.log('[main] switch-display requested, displayId=', displayId, 'width=', width, 'height=', height);
-    
-    // 优先从主窗口的 localStorage 读取最新的 currentDisplayId，确保使用最新配置
-    let actualDisplayId = displayId;
-    if (mainWin && !mainWin.isDestroyed()) {
-      try {
-        const localStorageSettings = await mainWin.webContents.executeJavaScript(`
-          (function() {
-            try {
-              const raw = localStorage.getItem('pids_settings_v1');
-              if (raw) {
-                const settings = JSON.parse(raw);
-                return settings.display?.currentDisplayId || null;
-              }
-              return null;
-            } catch(e) {
-              return null;
-            }
-          })();
-        `);
-        
-        if (localStorageSettings) {
-          actualDisplayId = localStorageSettings;
-          console.log(`[main] switch-display: 从主窗口读取到最新的 currentDisplayId: ${actualDisplayId} (传入的: ${displayId})`);
-        }
-      } catch (e) {
-        console.warn('[main] 从主窗口读取 currentDisplayId 失败，使用传入的 displayId:', e);
-      }
-    }
-    
-    // 使用实际应该切换到的 displayId
-    displayId = actualDisplayId;
-    console.log(`[main] switch-display: 最终使用的 displayId: ${displayId}`);
-
-    // 切换显示端时，窗口尺寸应以显示端配置为准（而不是主窗口/屏幕尺寸）。
-    // 传入的 width/height 常常是 1920×1080 等屏幕尺寸，会覆盖 display-3 等内置显示端的默认 1900×600。
-    // 这里统一清空尺寸参数，让 createDisplayWindow() 自行从配置读取并应用正确分辨率。
-    if (typeof width === 'number' || typeof height === 'number') {
-      console.log(`[main] switch-display: 忽略传入尺寸参数，改用配置尺寸 (传入: ${width}x${height})`);
-    }
-    width = undefined;
-    height = undefined;
-    
-    // 检查是否已存在该显示端窗口
-    const existingWin = displayWindows.get(displayId);
-    if (existingWin && !existingWin.isDestroyed()) {
-      // 如果已存在该显示端窗口，检查是否需要重新加载URL（配置可能已更改）
-      try {
-        // 读取当前配置，检查URL是否变化
-        let needReload = false;
-        let expectedUrl = null;
-        
-        // 从 electron-store 读取配置
-        let displayConfig = null;
-        if (store) {
-          try {
-            const settings = store.get('settings', {});
-            const displays = settings.display?.displays || {};
-            displayConfig = displays[displayId];
-            console.log(`[main] switch-display: 从 electron-store 读取显示端配置 ${displayId}:`, displayConfig ? {
-              source: displayConfig.source,
-              url: displayConfig.url,
-              name: displayConfig.name
-            } : '未找到配置');
-          } catch (e) {
-            console.warn('[main] 从 electron-store 读取显示端配置失败:', e);
-          }
-        }
-        
-        // 如果 electron-store 中没有配置，尝试从主窗口的 localStorage 读取
-        if (!displayConfig && mainWin && !mainWin.isDestroyed()) {
-          try {
-            const localStorageSettings = await mainWin.webContents.executeJavaScript(`
-              (function() {
-                try {
-                  const raw = localStorage.getItem('pids_settings_v1');
-                  if (raw) {
-                    return JSON.parse(raw);
-                  }
-                  return null;
-                } catch(e) {
-                  return null;
-                }
-              })();
-            `);
-            
-            if (localStorageSettings && localStorageSettings.display && localStorageSettings.display.displays) {
-              displayConfig = localStorageSettings.display.displays[displayId];
-              if (displayConfig) {
-                console.log(`[main] switch-display: 从主窗口 localStorage 读取显示端配置 ${displayId}:`, {
-                  source: displayConfig.source,
-                  url: displayConfig.url,
-                  name: displayConfig.name
-                });
-                // 同步到 electron-store
-                if (store) {
-                  const currentSettings = store.get('settings', {});
-                  if (!currentSettings.display) currentSettings.display = {};
-                  if (!currentSettings.display.displays) currentSettings.display.displays = {};
-                  currentSettings.display.displays[displayId] = displayConfig;
-                  store.set('settings', currentSettings);
-                }
-              }
-            }
-          } catch (e) {
-            console.warn('[main] 从主窗口读取配置失败:', e);
-          }
-        }
-        
-        // 计算期望的URL
-        if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
-          // 在线显示器：直接使用URL（包括 online、custom、gitee）
-          expectedUrl = displayConfig.url.trim();
-          console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
-          
-          // 验证URL格式
-          if (!expectedUrl || expectedUrl.trim() === '') {
-            const errorDetails = {
-              displayId: displayId,
-              name: displayConfig.name,
-              source: displayConfig.source,
-              url: displayConfig.url,
-              expectedUrl: expectedUrl,
-              actualUrl: currentUrl,
-              reason: '配置的URL为空',
-              config: displayConfig
-            };
-            showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置的URL为空`, errorDetails);
-          }
-        } else if (displayConfig && displayConfig.source === 'builtin') {
-          if (displayConfig.url) {
-            // 自定义HTML文件路径
-            let customFilePath = displayConfig.url.trim();
-            let resolvedPath;
-            if (path.isAbsolute(customFilePath)) {
-              resolvedPath = customFilePath;
-            } else {
-              if (app.isPackaged) {
-                resolvedPath = path.join(app.getAppPath(), customFilePath);
-              } else {
-                resolvedPath = path.join(__dirname, '..', customFilePath);
-              }
-            }
-            resolvedPath = path.normalize(resolvedPath);
-            
-            if (fs.existsSync(resolvedPath)) {
-              const fileUrl = process.platform === 'win32' 
-                ? `file:///${resolvedPath.replace(/\\/g, '/')}`
-                : `file://${resolvedPath}`;
-              expectedUrl = fileUrl;
-            } else {
-              console.warn(`[main] switch-display: 配置的本地文件不存在: ${resolvedPath}`);
-            }
-          } else {
-            // 使用默认路径
-            if (displayId === 'display-1') {
-              expectedUrl = getRendererUrl('displays/display-1/display_window.html');
-            } else {
-              const customRel = path.join('displays', displayId, 'display_window.html');
-              const customPath = app.isPackaged 
-                ? path.join(app.getAppPath(), 'out/renderer', customRel)
-                : path.join(__dirname, '../renderer', customRel);
-              if (fs.existsSync(customPath)) {
-                expectedUrl = getRendererUrl(customRel);
-              } else {
-                expectedUrl = getRendererUrl('display_window.html');
-              }
-            }
-          }
-        } else if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
-          // 在线显示器：直接使用URL（包括 online、custom、gitee）
-          expectedUrl = displayConfig.url.trim();
-          console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
-        } else {
-          // 没有配置，使用默认路径
-          // 如果配置了第三方显示器但URL为空或source不匹配，显示错误
-          if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
-            const errorDetails = {
-              displayId: displayId,
-              name: displayConfig.name,
-              source: displayConfig.source,
-              url: displayConfig.url || '(空)',
-              expectedUrl: expectedUrl,
-              actualUrl: currentUrl,
-              reason: displayConfig.url ? 'URL格式错误或无法识别' : '配置的URL为空',
-              config: displayConfig
-            };
-            showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置错误`, errorDetails);
-          }
-          
-          if (displayId === 'display-1') {
-            expectedUrl = getRendererUrl('displays/display-1/display_window.html');
-          } else {
-            expectedUrl = getRendererUrl('display_window.html');
-          }
-        }
-        
-        // 获取当前窗口的URL
-        const currentUrl = existingWin.webContents.getURL();
-        console.log(`[main] switch-display: 当前窗口URL: ${currentUrl}`);
-        console.log(`[main] switch-display: 期望URL: ${expectedUrl}`);
-        console.log(`[main] switch-display: 显示端配置:`, displayConfig ? {
-          id: displayConfig.id,
-          name: displayConfig.name,
-          source: displayConfig.source,
-          url: displayConfig.url
-        } : '未找到配置');
-        
-        // 检查第三方显示器是否被错误识别为默认显示器
-        if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
-          const expectedThirdPartyUrl = displayConfig.url.trim();
-          // 如果期望的是第三方URL，但当前URL是默认的display_window.html，说明识别失败
-          if (currentUrl && currentUrl.includes('display_window.html') && expectedThirdPartyUrl && !expectedThirdPartyUrl.includes('display_window.html')) {
-            const errorDetails = {
-              displayId: displayId,
-              name: displayConfig.name,
-              source: displayConfig.source,
-              url: displayConfig.url,
-              expectedUrl: expectedThirdPartyUrl,
-              actualUrl: currentUrl,
-              reason: '第三方显示器被错误识别为默认显示器，URL不匹配',
-              config: displayConfig
-            };
-            showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 被错误识别为默认显示器`, errorDetails);
-          }
-        }
-        
-        // 比较URL，如果不一致则需要重新加载
-        if (expectedUrl && currentUrl !== expectedUrl) {
-          needReload = true;
-          console.log(`[main] switch-display: URL不一致，需要重新加载 (${currentUrl} -> ${expectedUrl})`);
-        } else if (expectedUrl && currentUrl === expectedUrl) {
-          console.log(`[main] switch-display: URL一致，但检查是否需要强制重新加载`);
-          // 如果配置了自定义URL，即使URL相同也重新加载（确保使用最新配置）
-          if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) {
-            console.log(`[main] switch-display: 检测到自定义URL配置，强制重新加载以确保使用最新配置`);
-            needReload = true;
-          }
-        }
-        
-        if (needReload) {
-          // 需要重新加载，关闭旧窗口并创建新窗口
-          console.log(`[main] 显示端 ${displayId} 配置已更改，重新加载窗口`);
-          try {
-            existingWin.close();
-            displayWindows.delete(displayId);
-          } catch (e) {
-            console.warn(`[main] 关闭显示窗口 ${displayId} 失败:`, e);
-          }
-        } else {
-          // 配置未更改，直接聚焦并调整尺寸
-          if (typeof width === 'number' && typeof height === 'number') {
-            existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
-          }
-          existingWin.focus();
-          console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦 (URL: ${currentUrl})`);
-          
-          // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
-          forceReapplyMicaEffect();
-          
-          // 即使 URL 相同，也发送一个消息通知显示端切换（确保数据同步）
-          try {
-            const jsCode = `
-              (function() {
-                try {
-                  // 发送一个切换通知，让显示端知道当前应该显示哪个显示端的数据
-                  if (typeof BroadcastChannel !== 'undefined') {
-                    const bc = new BroadcastChannel('metro_pids_v3');
-                    bc.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' });
-                    bc.close();
-                  }
-                  if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
-                    window.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' }, '*');
-                  }
-                  return true;
-                } catch(e) {
-                  console.error('[Display] 发送切换通知失败:', e);
-                  return false;
-                }
-              })();
-            `;
-            existingWin.webContents.executeJavaScript(jsCode).catch(e => {
-              console.warn(`[main] 向显示端 ${displayId} 发送切换通知失败:`, e);
-            });
-          } catch (e) {
-            console.warn(`[main] 执行切换通知脚本失败 (${displayId}):`, e);
-          }
-          
-          return true;
-        }
-      } catch (e) {
-        console.warn(`[main] 处理显示窗口 ${displayId} 失败:`, e);
-      }
-    }
-    
-    // 关闭所有现有的显示窗口（除了目标显示端）
-    const windowsToClose = [];
-    for (const [id, win] of displayWindows.entries()) {
-      if (id !== displayId && win && !win.isDestroyed()) {
-        windowsToClose.push({ id, win });
-      }
-    }
-    
-    // 关闭窗口（关闭操作可能会影响主窗口的模糊效果）
-    for (const { id, win } of windowsToClose) {
-      try {
-        win.close();
-      } catch (e) {
-        console.warn(`[main] 关闭显示窗口 ${id} 失败:`, e);
-      }
-    }
-    
-    // 清理已关闭的窗口引用
-    for (const [id, win] of displayWindows.entries()) {
-      if (win && win.isDestroyed()) {
-        displayWindows.delete(id);
-      }
-    }
-    
-    // 如果关闭了窗口，立即强制重新应用主窗口的模糊效果（防止因关闭窗口导致模糊消失）
-    if (windowsToClose.length > 0) {
-      console.log(`[main] switch-display: 已关闭 ${windowsToClose.length} 个其他显示窗口，立即重新应用主窗口模糊效果`);
-      forceReapplyMicaEffect();
-    }
-    
-    // 创建新的显示窗口（如果不存在或需要重新加载）
-    createDisplayWindow(width, height, displayId);
-
-    // 创建新窗口后，强制重新应用主窗口的模糊效果（防止因创建窗口导致模糊消失）
-    forceReapplyMicaEffect();
-    
-    return true;
-  });
+  ipcMain.handle('switch-display', async (event, displayId, width, height) => switchDisplay(displayId, width, height, { reason: 'ipc' }));
 
   // 暴露 IPC 供渲染层同步设置到主进程
   ipcMain.handle('settings/sync', async (event, settings) => {
@@ -1548,6 +1935,25 @@ function createWindow() {
             stopApiServer();
           }
         }
+
+        // WebSocket Bridge 开关/端口变化时重启
+        const oldEnableWs = oldSettings.enableWebSocketBridge || false;
+        const newEnableWs = settings.enableWebSocketBridge || false;
+        const oldWsPort = parseInt(oldSettings.wsPort || 9400, 10);
+        const newWsPort = parseInt(settings.wsPort || 9400, 10);
+
+        if (oldEnableWs !== newEnableWs) {
+          if (newEnableWs) {
+            console.log('[main] 用户启用了 WebSocket Bridge，端口:', newWsPort);
+            startWebSocketBridge(newWsPort);
+          } else {
+            console.log('[main] 用户禁用了 WebSocket Bridge');
+            stopWebSocketBridge();
+          }
+        } else if (newEnableWs && oldWsPort !== newWsPort) {
+          console.log('[main] WebSocket Bridge 端口变更，重启:', newWsPort);
+          startWebSocketBridge(newWsPort);
+        }
         
         return { ok: true };
       }
@@ -1586,6 +1992,27 @@ function createWindow() {
       return result;
     } catch (e) {
       console.error('[main] 编辑显示端失败:', e);
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  // 获取局域网 IPv4 地址列表（用于设置页显示）
+  ipcMain.handle('network/lan-ips', async () => {
+    try {
+      const nets = os.networkInterfaces();
+      const ips = [];
+      for (const key of Object.keys(nets)) {
+        const list = nets[key] || [];
+        for (const item of list) {
+          if (!item || item.internal) continue;
+          if (item.family === 'IPv4' || item.family === 4) {
+            ips.push(item.address);
+          }
+        }
+      }
+      return { ok: true, ips };
+    } catch (e) {
+      console.warn('[main] 获取局域网 IP 失败:', e);
       return { ok: false, error: String(e.message || e) };
     }
   });
@@ -2019,6 +2446,12 @@ function createWindow() {
       recordingState.isRecording = true;
       recordingState.displayId = displayId;
       recordingState.options = safeOptions;
+<<<<<<< Updated upstream
+=======
+      recordingState.outputPath = outputPath;
+      recordingState.audioMixEnabled = safeOptions.vehicleAudioEnabled !== false;
+      recordingState.audioEvents = [];
+>>>>>>> Stashed changes
       recordingState.offscreenWin = offscreenWin;
       recordingState.ffmpegProcess = ffmpegProcess;
       recordingState.startTime = Date.now();
@@ -2078,6 +2511,10 @@ function createWindow() {
       let framesWritten = 0;
       let captureErrorCount = 0;
       let lastStderrLine = '';
+<<<<<<< Updated upstream
+=======
+      let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
+>>>>>>> Stashed changes
       let firstFrameWatchdog = setTimeout(() => {
         try {
           if (recordingState.isRecording && recordingState.ffmpegProcess === ffmpegProcess) {
@@ -2094,12 +2531,40 @@ function createWindow() {
       const frameInterval = 1000 / (safeOptions.fps || 30);
       recordingState.captureTimer = setInterval(async () => {
         if (!recordingState.isRecording || !offscreenWin || offscreenWin.isDestroyed()) return;
+<<<<<<< Updated upstream
         try {
           const image = await offscreenWin.webContents.capturePage();
           const bitmap = image.toBitmap();
           if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
             ffmpegProcess.stdin.write(bitmap);
             framesWritten += 1;
+=======
+        
+        // 帧同步：如果前一个 capturePage 还在进行中，跳过本次帧，避免帧堆积导致花屏
+        if (isCapturing) {
+          console.warn('[main] 跳过帧：前一个 capturePage 尚未完成');
+          return;
+        }
+        
+        isCapturing = true;
+        const captureStartTime = Date.now();
+        
+        try {
+          // 添加超时机制：如果 capturePage 耗时过长（超过帧间隔的 1.5 倍），跳过该帧
+          const captureTimeout = frameInterval * 1.5;
+          const capturePromise = offscreenWin.webContents.capturePage();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('抓帧超时')), captureTimeout)
+          );
+          
+          const image = await Promise.race([capturePromise, timeoutPromise]);
+          const bitmap = image.toBitmap();
+          
+          if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+            ffmpegProcess.stdin.write(bitmap);
+            framesWritten += 1;
+            captureErrorCount = 0; // 成功时重置错误计数
+>>>>>>> Stashed changes
             if (firstFrameWatchdog) {
               clearTimeout(firstFrameWatchdog);
               firstFrameWatchdog = null;
@@ -2107,6 +2572,15 @@ function createWindow() {
           } else {
             stopRecording({ error: 'FFmpeg 输入流已关闭，无法写入视频帧' });
           }
+<<<<<<< Updated upstream
+=======
+          
+          // 记录抓帧耗时，如果过长则警告
+          const captureDuration = Date.now() - captureStartTime;
+          if (captureDuration > frameInterval) {
+            console.warn(`[main] 抓帧耗时 ${captureDuration}ms，超过帧间隔 ${frameInterval}ms`);
+          }
+>>>>>>> Stashed changes
         } catch (e) {
           console.error('[main] 抓帧失败:', e);
           captureErrorCount += 1;
@@ -2114,6 +2588,11 @@ function createWindow() {
           if (captureErrorCount >= 5) {
             stopRecording({ error: `抓帧失败（已连续 ${captureErrorCount} 次）：${String(e)}` });
           }
+<<<<<<< Updated upstream
+=======
+        } finally {
+          isCapturing = false;
+>>>>>>> Stashed changes
         }
       }, frameInterval);
 
@@ -2171,7 +2650,11 @@ function createWindow() {
   });
 
   // 停止录制
+<<<<<<< Updated upstream
   function stopRecording({ error = null, completed = false } = {}) {
+=======
+  async function stopRecording({ error = null, completed = false } = {}) {
+>>>>>>> Stashed changes
     if (!recordingState.isRecording) return;
 
     // 清除所有定时器
@@ -2201,9 +2684,23 @@ function createWindow() {
     // 清理状态
     const wasRecording = recordingState.isRecording;
     const lastElapsed = recordingState.elapsed;
+<<<<<<< Updated upstream
     recordingState.isRecording = false;
     recordingState.displayId = null;
     recordingState.options = null;
+=======
+    const outputPath = recordingState.outputPath;
+    const audioMixEnabled = recordingState.audioMixEnabled === true;
+    const audioEvents = Array.isArray(recordingState.audioEvents) ? [...recordingState.audioEvents] : [];
+    let finalError = error ? String(error) : null;
+
+    recordingState.isRecording = false;
+    recordingState.displayId = null;
+    recordingState.options = null;
+    recordingState.outputPath = null;
+    recordingState.audioMixEnabled = false;
+    recordingState.audioEvents = [];
+>>>>>>> Stashed changes
     recordingState.offscreenWin = null;
     recordingState.ffmpegProcess = null;
     recordingState.startTime = null;
@@ -2212,25 +2709,75 @@ function createWindow() {
     recordingState.elapsed = 0;
     recordingState.remaining = null;
 
+<<<<<<< Updated upstream
+=======
+    if (!finalError && completed && audioMixEnabled && outputPath && audioEvents.length > 0) {
+      try {
+        const muxResult = await muxStationAudioTimelineToVideo({ inputVideoPath: outputPath, audioEvents });
+        if (!muxResult?.ok) {
+          finalError = `视频录制完成，但音轨封装失败：${String(muxResult?.error || '未知错误')}`;
+          console.warn('[main] 录制音轨封装失败:', muxResult?.error || '未知错误');
+        }
+      } catch (e) {
+        finalError = `视频录制完成，但音轨封装失败：${String(e)}`;
+        console.warn('[main] 录制音轨封装异常:', e);
+      }
+    }
+
+>>>>>>> Stashed changes
     // 发送停止/错误事件（让前端退出录制态；仅完成时发送 100%）
     if (wasRecording && mainWin && !mainWin.isDestroyed()) {
       mainWin.webContents.send('recording-progress', {
         isRecording: false,
         completed: !!completed,
+<<<<<<< Updated upstream
         error: error ? String(error) : null,
         progress: completed ? 100 : null,
         elapsed: lastElapsed,
         remaining: completed ? 0 : null,
         duration: recordingState.duration
+=======
+        error: finalError,
+        progress: completed ? 100 : null,
+        elapsed: lastElapsed,
+        remaining: completed ? 0 : null,
+        duration: recordingState.duration,
+        outputPath: outputPath || null
+>>>>>>> Stashed changes
       });
     }
   }
 
   ipcMain.handle('recording/stop', async () => {
+<<<<<<< Updated upstream
     stopRecording({ completed: true });
     return { ok: true };
   });
 
+=======
+    await stopRecording({ completed: true });
+    return { ok: true };
+  });
+
+  ipcMain.handle('recording/add-audio-event', async (event, payload) => {
+    try {
+      if (!recordingState.isRecording || !recordingState.audioMixEnabled) {
+        return { ok: true, ignored: true };
+      }
+      const normalized = normalizeRecordingAudioEvent(payload);
+      if (!normalized) return { ok: false, error: '无效音频事件' };
+      if (!Array.isArray(recordingState.audioEvents)) recordingState.audioEvents = [];
+      recordingState.audioEvents.push(normalized);
+      if (recordingState.audioEvents.length > 1024) {
+        recordingState.audioEvents = recordingState.audioEvents.slice(-1024);
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+>>>>>>> Stashed changes
   ipcMain.handle('recording/status', async () => {
     return {
       ok: true,
@@ -2532,6 +3079,10 @@ function createWindow() {
     let captureErrorCount = 0;
     let lastStderrLine = '';
     let closedCode = null;
+<<<<<<< Updated upstream
+=======
+    let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
+>>>>>>> Stashed changes
 
     const startTs = Date.now();
     const recordObj = { offscreenWin, ffmpegProcess, captureTimer: null, stepTimer: null, startTs, framesWritten: 0, lastStderrLine: '' };
@@ -2571,16 +3122,53 @@ function createWindow() {
     recordObj.captureTimer = setInterval(async () => {
       if (parallelRecordingState.abort || !parallelRecordingState.isRecording) return;
       if (!offscreenWin || offscreenWin.isDestroyed()) return;
+<<<<<<< Updated upstream
       try {
         const image = await offscreenWin.webContents.capturePage();
         const bitmap = image.toBitmap();
+=======
+      
+      // 帧同步：如果前一个 capturePage 还在进行中，跳过本次帧，避免帧堆积导致花屏
+      if (isCapturing) {
+        console.warn(`[main] 片段 #${segmentIndex} 跳过帧：前一个 capturePage 尚未完成`);
+        return;
+      }
+      
+      isCapturing = true;
+      const captureStartTime = Date.now();
+      
+      try {
+        // 添加超时机制：如果 capturePage 耗时过长（超过帧间隔的 1.5 倍），跳过该帧
+        const captureTimeout = frameInterval * 1.5;
+        const capturePromise = offscreenWin.webContents.capturePage();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('抓帧超时')), captureTimeout)
+        );
+        
+        const image = await Promise.race([capturePromise, timeoutPromise]);
+        const bitmap = image.toBitmap();
+        
+>>>>>>> Stashed changes
         if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
           ffmpegProcess.stdin.write(bitmap);
           framesWritten += 1;
           recordObj.framesWritten = framesWritten;
+<<<<<<< Updated upstream
           if (framesWritten === 1) {
             try { clearTimeout(firstFrameWatchdog); } catch (e) {}
           }
+=======
+          captureErrorCount = 0; // 成功时重置错误计数
+          if (framesWritten === 1) {
+            try { clearTimeout(firstFrameWatchdog); } catch (e) {}
+          }
+          
+          // 记录抓帧耗时，如果过长则警告
+          const captureDuration = Date.now() - captureStartTime;
+          if (captureDuration > frameInterval) {
+            console.warn(`[main] 片段 #${segmentIndex} 抓帧耗时 ${captureDuration}ms，超过帧间隔 ${frameInterval}ms`);
+          }
+>>>>>>> Stashed changes
         } else {
           // FFmpeg 已正常或提前结束，输入流被关闭。
           // 此时不再将其视为致命错误，而是停止该段的抓帧，后续由等待 FFmpeg 退出的逻辑判断是否成功。
@@ -2593,6 +3181,11 @@ function createWindow() {
         if (captureErrorCount >= 5) {
           stopParallelRecording({ error: `片段 #${segmentIndex} 抓帧失败（连续 ${captureErrorCount} 次）：${String(e)}` });
         }
+<<<<<<< Updated upstream
+=======
+      } finally {
+        isCapturing = false;
+>>>>>>> Stashed changes
       }
     }, frameInterval);
 
@@ -2870,7 +3463,7 @@ function createWindow() {
         win.setVibrancy(enable ? 'fullscreen-ui' : 'none');
       }
       if (process.platform === 'win32' && typeof win.setBackgroundMaterial === 'function') {
-        win.setBackgroundMaterial(enable ? 'acrylic' : 'mica');
+        win.setBackgroundMaterial(enable ? 'acrylic' : 'none');
       }
       return { ok: true };
     } catch (err) {
@@ -2949,39 +3542,45 @@ function createWindow() {
   // 主窗口模糊开关（通过 mica-electron 控制，而非 CSS）
   ipcMain.handle('effects/main-blur', (event, enable) => {
     MAIN_BLUR_ENABLED = !!enable;
-    const win = mainWin;
-    if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' };
+
+    const windows = [mainWin, lineManagerWin].filter((win) => win && !win.isDestroyed());
+    if (!windows.length) return { ok: false, error: 'no-window' };
+
     try {
-      // 关闭模糊：尽量退回无材质/透明
-      if (!MAIN_BLUR_ENABLED) {
-        if (process.platform === 'win32') {
-          if (typeof win.setBackgroundMaterial === 'function') {
-            win.setBackgroundMaterial('none');
+      for (const win of windows) {
+        // 关闭模糊：退回无材质，避免深色模式下 Mica 残留
+        if (!MAIN_BLUR_ENABLED) {
+          if (process.platform === 'win32') {
+            if (typeof win.setBackgroundMaterial === 'function') {
+              win.setBackgroundMaterial('none');
+            }
+            if (typeof win.setBackgroundColor === 'function') {
+              win.setBackgroundColor('#00000000');
+            }
+          } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+            win.setVibrancy('none');
           }
-          // 保持透明背景
+          continue;
+        }
+
+        // 开启模糊：根据平台恢复 Mica（Windows 11），不再在 Windows 10 上主动调用 Acrylic
+        if (process.platform === 'win32') {
           if (typeof win.setBackgroundColor === 'function') {
             win.setBackgroundColor('#00000000');
           }
+          if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
+            win.setMicaAcrylicEffect();
+          } else {
+            // 2026-02: 由于 mica-electron 在 Windows 10 上兼容性较差，这里不再主动调用 setAcrylic 或背景材质
+            console.log('[effects/main-blur] ⚠️ 非 Windows 11 平台，跳过 Acrylic / backgroundMaterial');
+          }
         } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
-          win.setVibrancy('none');
+          win.setVibrancy('fullscreen-ui');
+        } else {
+          // no-op
         }
-        return { ok: true };
       }
 
-      // 开启模糊：根据平台恢复 Mica（Windows 11），不再在 Windows 10 上主动调用 Acrylic
-      if (process.platform === 'win32') {
-        if (typeof win.setBackgroundColor === 'function') {
-          win.setBackgroundColor('#00000000');
-        }
-        if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
-          win.setMicaAcrylicEffect();
-        } else {
-          // 2026-02: 由于 mica-electron 在 Windows 10 上兼容性较差，这里不再主动调用 setAcrylic 或背景材质
-          console.log('[effects/main-blur] ⚠️ 非 Windows 11 平台，跳过 Acrylic / backgroundMaterial');
-        }
-      } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
-        win.setVibrancy('fullscreen-ui');
-      }
       return { ok: true };
     } catch (err) {
       console.warn('[effects/main-blur] toggle failed:', err);
@@ -3191,7 +3790,7 @@ function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height:
       preload: getPreloadPath(),
       nodeIntegration: false,
       contextIsolation: true,
-      backgroundThrottling: false, // 确保背景也能正常渲染
+      backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
       transparent: true // 启用透明背景
     }
   };
@@ -3527,83 +4126,40 @@ ipcMain.handle('ui/close-panel', async (event) => {
 
 // ==================== BrowserView 管理结束 ====================
 
-// 辅助：默认线路文件目录位于 userData/lines/默认
+// 辅助：线路文件目录为 userData/lines 或其下用户添加的子文件夹（不再使用“默认”内置文件夹）
 function getLinesDir(dir) {
   if (dir && typeof dir === 'string' && dir.length > 0) return dir;
-  // 获取当前活动的文件夹
-  const currentFolder = store ? (store.get('linesCurrentFolder') || 'default') : 'default';
   const folders = store ? (store.get('linesFolders') || {}) : {};
-  if (folders[currentFolder]) {
+  const currentFolder = store ? store.get('linesCurrentFolder') : null;
+  if (currentFolder && folders[currentFolder]) {
     return folders[currentFolder].path;
   }
-  // 如果默认文件夹不存在，使用默认路径（lines/默认）
-  const defaultPath = path.join(app.getPath('userData'), 'lines', '默认');
-  // 确保物理目录存在
+  // 无当前文件夹时使用 userData/lines 根目录（仅保证目录存在）
+  const baseLines = path.join(app.getPath('userData'), 'lines');
   try {
-    if (!fs.existsSync(defaultPath)) {
-      fs.mkdirSync(defaultPath, { recursive: true });
+    if (!fs.existsSync(baseLines)) {
+      fs.mkdirSync(baseLines, { recursive: true });
     }
   } catch (e) {
-    console.warn('[getLinesDir] 创建默认线路目录失败:', e);
+    console.warn('[getLinesDir] 创建 lines 目录失败:', e);
   }
-  // 确保默认文件夹被添加到列表中
-  if (store) {
-    const currentFolders = store.get('linesFolders') || {};
-    if (!currentFolders.default) {
-      currentFolders.default = { name: '默认', path: defaultPath };
-      store.set('linesFolders', currentFolders);
-      if (!store.get('linesCurrentFolder')) {
-        store.set('linesCurrentFolder', 'default');
-      }
-    }
-  }
-  return defaultPath;
+  return baseLines;
 }
 
-// 获取所有文件夹配置
+// 获取所有文件夹配置（不再自动添加“默认”文件夹）
 function getLinesFolders() {
-  if (!store) {
-    const defaultPath = path.join(app.getPath('userData'), 'lines', '默认');
-    // 确保物理目录存在
-    try {
-      if (!fs.existsSync(defaultPath)) {
-        fs.mkdirSync(defaultPath, { recursive: true });
-      }
-    } catch (e) {
-      console.warn('[getLinesFolders] (no-store) 创建默认线路目录失败:', e);
-    }
-    return {
-      default: {
-        name: '默认',
-        path: defaultPath
-      }
-    };
-  }
-  const folders = store.get('linesFolders') || {};
-  // 确保有默认文件夹
-  if (!folders.default) {
-    const defaultPath = path.join(app.getPath('userData'), 'lines', '默认');
-    // 确保物理目录存在
-    try {
-      if (!fs.existsSync(defaultPath)) {
-        fs.mkdirSync(defaultPath, { recursive: true });
-      }
-    } catch (e) {
-      console.warn('[getLinesFolders] 创建默认线路目录失败:', e);
-    }
-    folders.default = {
-      name: '默认',
-      path: defaultPath
-    };
-    store.set('linesFolders', folders);
-  }
-  return folders;
+  if (!store) return {};
+  return store.get('linesFolders') || {};
 }
 
-// 获取当前活动的文件夹ID
+// 获取当前活动的文件夹ID（无则返回 null）
 function getCurrentLinesFolder() {
-  if (!store) return 'default';
-  return store.get('linesCurrentFolder') || 'default';
+  if (!store) return null;
+  const current = store.get('linesCurrentFolder');
+  const folders = store.get('linesFolders') || {};
+  if (current && folders[current]) return current;
+  const firstId = Object.keys(folders)[0];
+  return firstId || null;
 }
 
 async function ensureDir(dir) {
@@ -3614,95 +4170,331 @@ async function ensureDir(dir) {
   }
 }
 
-// 初始化预设线路文件：从 preset-lines 文件夹复制到默认文件夹
-async function initPresetLinesFromSource() {
+// Windows 下将目录标记为隐藏（静默失败）
+async function hideDirOnWindows(dir) {
+  if (process.platform !== 'win32' || !dir) return;
+  try { await fsPromises.access(dir); } catch (e) { return; }
   try {
-    // 获取应用目录下的 preset-lines 文件夹路径
-    // 打包后使用 app.getAppPath()，开发环境使用 __dirname
-    // asarUnpack 会将 preset-lines 解包到 app.asar.unpacked 中
-    let presetLinesDir;
-    if (app.isPackaged) {
-      // 打包后，优先检查 app.asar.unpacked/preset-lines（解包目录）
-      const appPath = app.getAppPath();
-      const unpackedDir = path.join(path.dirname(appPath), 'app.asar.unpacked', 'preset-lines');
-      if (fs.existsSync(unpackedDir)) {
-        presetLinesDir = unpackedDir;
-      } else {
-        // 如果解包目录不存在，尝试从 asar 中读取
-        presetLinesDir = path.join(appPath, 'preset-lines');
-      }
-    } else {
-      // 开发环境
-      presetLinesDir = path.join(__dirname, 'preset-lines');
+    await new Promise((resolve) => {
+      const ps = spawn('attrib', ['+h', dir], { windowsHide: true });
+      ps.on('error', () => resolve());
+      ps.on('exit', () => resolve());
+    });
+  } catch (e) { /* ignore */ }
+}
+
+// 延时工具（用于重试）
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function cleanupUnlocked(dir, targetBase, keepPath) {
+  if (!dir || !targetBase) return;
+  try {
+    const entries = await fsPromises.readdir(dir);
+    const pattern = new RegExp('^' + escapeRegex(targetBase) + '\\.unlocked-\\d+$');
+    for (const name of entries) {
+      if (!pattern.test(name)) continue;
+      const full = path.join(dir, name);
+      if (keepPath && path.resolve(full) === path.resolve(keepPath)) continue;
+      try { await fsPromises.rm(full, { force: true }); } catch (e) { /* ignore */ }
     }
-    
-    // 检查 preset-lines 文件夹是否存在
-    try {
-      await fsPromises.access(presetLinesDir);
-    } catch (e) {
-      // 文件夹不存在，跳过初始化
-      console.log('[initPresetLines] preset-lines 文件夹不存在，跳过初始化');
-      return;
-    }
-    
-    // 获取默认文件夹路径（lines/默认）
-    const defaultLinesDir = path.join(app.getPath('userData'), 'lines', '默认');
-    await ensureDir(defaultLinesDir);
-    
-    // 确保默认文件夹在配置中
-    if (store) {
-      const folders = store.get('linesFolders') || {};
-      if (!folders.default) {
-        folders.default = { name: '默认', path: defaultLinesDir };
-        store.set('linesFolders', folders);
-      }
-    }
-    
-    // 读取 preset-lines 文件夹中的所有 JSON 文件
-    const files = await fsPromises.readdir(presetLinesDir);
-    const jsonFiles = files.filter(f => f.endsWith('.json'));
-    
-    if (jsonFiles.length === 0) {
-      console.log('[initPresetLines] preset-lines 文件夹中没有 JSON 文件');
-      return;
-    }
-    
-    // 复制每个文件到默认文件夹（仅当目标文件不存在时）
-    let copiedCount = 0;
-    for (const filename of jsonFiles) {
+  } catch (e) { /* ignore */ }
+}
+
+// 扫描目录清理残留的 .unlocked-* 副本（若同名主文件存在或副本过期）
+async function sweepUnlockedDir(dir) {
+  if (!dir) return;
+  try {
+    const entries = await fsPromises.readdir(dir);
+    for (const name of entries) {
+      if (!/\.unlocked-\d+$/.test(name)) continue;
+      const full = path.join(dir, name);
+      const base = name.replace(/\.unlocked-\d+$/, '');
+      const basePath = path.join(dir, base);
+      let removeAlt = false;
+      let promoteAlt = false;
+      let altStat = null;
+      let baseStat = null;
+      try { altStat = await fsPromises.stat(full); } catch (e) { continue; }
+
       try {
-        const sourcePath = path.join(presetLinesDir, filename);
-        const targetPath = path.join(defaultLinesDir, filename);
-        
-        // 检查目标文件是否已存在
-        try {
-          await fsPromises.access(targetPath);
-          // 文件已存在，跳过
-          continue;
-        } catch (e) {
-          // 文件不存在，复制文件
-          const content = await fsPromises.readFile(sourcePath, 'utf8');
-          await fsPromises.writeFile(targetPath, content, 'utf8');
-          copiedCount++;
-          console.log(`[initPresetLines] 已复制预设线路文件: ${filename}`);
+        baseStat = await fsPromises.stat(basePath);
+        // 主文件存在：若 unlocked 更新且体积不比主文件小太多，则尝试回写；否则清理旧副本
+        if (altStat && baseStat) {
+          const newer = altStat.mtimeMs > baseStat.mtimeMs + 500; // 略大于 0.5s 视为更新
+          const sizeOk = altStat.size >= Math.max(1, baseStat.size * 0.8); // 避免零字节或明显更小
+          if (newer && sizeOk) {
+            promoteAlt = true;
+          } else {
+            // 副本更旧或明显不完整，直接清理
+            removeAlt = true;
+          }
         }
       } catch (e) {
-        console.warn(`[initPresetLines] 复制文件 ${filename} 失败:`, e);
+        // 主文件不存在：如果副本较新或未过期，尝试恢复为主文件
+        const altAgeOk = altStat && (Date.now() - altStat.mtimeMs < 24 * 60 * 60 * 1000);
+        if (altAgeOk && altStat.size > 0) {
+          promoteAlt = true;
+        } else {
+          removeAlt = true;
+        }
+      }
+
+      if (promoteAlt) {
+        try {
+          await replaceFile(full, basePath);
+          continue; // 成功回写后无需再删
+        } catch (e) {
+          // 回写失败则不要删除，留待下次
+        }
+      }
+
+      if (!promoteAlt) {
+        // 仅在判定清理或过期时删除
+        if (!baseStat && altStat && Date.now() - altStat.mtimeMs > 6 * 60 * 60 * 1000) removeAlt = true;
+      }
+
+      if (removeAlt) {
+        try { await fsPromises.rm(full, { force: true }); } catch (e) { /* ignore */ }
       }
     }
-    
-    if (copiedCount > 0) {
-      console.log(`[initPresetLines] 初始化完成，共复制 ${copiedCount} 个预设线路文件`);
-    } else {
-      console.log('[initPresetLines] 所有预设线路文件已存在，跳过复制');
-    }
-  } catch (e) {
-    console.warn('[initPresetLines] 初始化预设线路文件失败:', e);
+  } catch (e) { /* ignore */ }
+}
+
+// 扫描已配置的线路目录，清理残留 unlocked 副本
+async function cleanupAllUnlockedFolders() {
+  const dirs = new Set();
+  try {
+    const folders = getLinesFolders();
+    Object.values(folders || {}).forEach((f) => {
+      if (f && f.path) dirs.add(path.normalize(f.path));
+    });
+  } catch (e) { /* ignore */ }
+  for (const d of dirs) {
+    await sweepUnlockedDir(d);
   }
 }
 
+// 安全替换文件：多次重试，优先 rename，其次删除旧文件后 rename，最后写覆盖；失败落到备用文件后再尝试回写目标；最终清理旧 unlocked 副本
+async function replaceFile(tmp, outPath) {
+  const maxAttempts = 8;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fsPromises.rename(tmp, outPath);
+      await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+      return outPath;
+    } catch (e1) {
+      lastErr = e1;
+      try { await fsPromises.rm(outPath, { force: true }); } catch (e) { /* ignore */ }
+      try {
+        await fsPromises.rename(tmp, outPath);
+        await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+        return outPath;
+      } catch (e2) {
+        lastErr = e2;
+        try {
+          const buf = await fsPromises.readFile(tmp);
+          await fsPromises.writeFile(outPath, buf);
+          await fsPromises.rm(tmp, { force: true });
+          await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+          return outPath;
+        } catch (e3) {
+          lastErr = e3;
+          if (attempt < maxAttempts) await delay(200 + attempt * 100);
+        }
+      }
+    }
+  }
+  const altPath = outPath + '.unlocked-' + Date.now();
+  try {
+    const buf = await fsPromises.readFile(tmp);
+    await fsPromises.writeFile(altPath, buf);
+    await fsPromises.rm(tmp, { force: true });
+  } catch (e4) {
+    throw lastErr || e4 || new Error('replaceFile failed');
+  }
+  // 备用落盘后，再尝试将其回写目标若锁已释放
+  for (let retry = 1; retry <= 5; retry++) {
+    await delay(300 + retry * 150);
+    try {
+      await fsPromises.rm(outPath, { force: true });
+    } catch (e) { /* ignore */ }
+    try {
+      await fsPromises.rename(altPath, outPath);
+      await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+      return outPath;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), altPath);
+  return altPath;
+}
 
-// 查找 JSON 文件的辅助函数（recursive 参数控制是否递归查找子文件夹）
+// 写入到临时文件后使用 replaceFile 原子替换，降低被占用/半写入风险
+async function writeSafe(outPath, data, options) {
+  const tmp = outPath + '.tmp';
+  await ensureDir(path.dirname(outPath));
+  try {
+    await fsPromises.writeFile(tmp, data, options);
+    return await replaceFile(tmp, outPath);
+  } catch (e) {
+    try { await fsPromises.rm(tmp, { force: true }); } catch (e2) { /* ignore */ }
+    throw e;
+  }
+}
+
+function isFileBusyLikeError(err) {
+  if (!err) return false;
+  const code = String(err.code || '').toUpperCase();
+  const msg = String(err && (err.message || err) || '').toLowerCase();
+  return (
+    code === 'EBUSY' ||
+    code === 'EPERM' ||
+    code === 'EACCES' ||
+    msg.includes('ebusy') ||
+    msg.includes('resource busy') ||
+    msg.includes('used by another process') ||
+    msg.includes('being used by another process')
+  );
+}
+
+function toFriendlySaveError(err, targetPath) {
+  if (isFileBusyLikeError(err)) {
+    const name = targetPath ? path.basename(targetPath) : '目标文件';
+    return `文件被占用：${name}。请关闭正在使用该文件的软件后重试。`;
+  }
+  return String(err);
+}
+
+async function zipjsWrite(entries, outPath) {
+  const tmp = outPath + '.tmp';
+  await ensureDir(path.dirname(outPath));
+  if (ZipWriter && BlobWriter && Uint8ArrayReader && TextReader) {
+    try {
+      const writer = new ZipWriter(new BlobWriter('application/zip'));
+      for (const ent of entries) {
+        if (!ent || !ent.name) continue;
+        if (ent.type === 'string') {
+          await writer.add(ent.name, new TextReader(ent.content || ''));
+        } else if (ent.type === 'file') {
+          const buf = await fsPromises.readFile(ent.path);
+          await writer.add(ent.name, new Uint8ArrayReader(new Uint8Array(buf)));
+        }
+      }
+      const blob = await writer.close();
+      const ab = await blob.arrayBuffer();
+      await fsPromises.writeFile(tmp, Buffer.from(ab));
+      return await replaceFile(tmp, outPath);
+    } catch (e) {
+      try { await fsPromises.rm(tmp, { force: true }); } catch (e2) { /* ignore */ }
+      console.warn('[zipjsWrite] zip.js failed, will fallback', e);
+    }
+  }
+  if (!archiver) {
+    try { archiver = require('archiver'); } catch (e) { /* ignore */ }
+  }
+  if (!archiver) throw new Error('missing-archiver');
+  await new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(tmp);
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    output.on('close', resolve);
+    output.on('error', reject);
+    archive.on('error', reject);
+    archive.pipe(output);
+    for (const ent of entries) {
+      if (!ent || !ent.name) continue;
+      if (ent.type === 'string') {
+        archive.append(ent.content || '', { name: ent.name });
+      } else if (ent.type === 'file') {
+        archive.file(ent.path, { name: ent.name });
+      }
+    }
+    archive.finalize();
+  });
+  return await replaceFile(tmp, outPath);
+}
+
+async function zipjsExtract(zipPath, destDir) {
+  const buffer = await fsPromises.readFile(zipPath);
+  if (ZipReader && BlobReader && Uint8ArrayWriter) {
+    const reader = new ZipReader(new BlobReader(new Blob([buffer])));
+    try {
+      const entries = await reader.getEntries();
+      for (const ent of entries) {
+        const rel = (ent.filename || ent.name || '').replace(/^\/+/, '');
+        if (!rel) continue;
+        const target = path.join(destDir, rel.split('/').join(path.sep));
+        const resolved = path.resolve(target);
+        const root = path.resolve(destDir);
+        if (resolved !== root && !resolved.startsWith(root + path.sep)) continue;
+        if (ent.directory) {
+          await ensureDir(resolved);
+          continue;
+        }
+        await ensureDir(path.dirname(resolved));
+        const data = await ent.getData(new Uint8ArrayWriter());
+        await fsPromises.writeFile(resolved, Buffer.from(data));
+      }
+      await reader.close();
+      return true;
+    } catch (e) {
+      try { await reader.close(); } catch (e2) { /* ignore */ }
+      console.warn('[zipjsExtract] zip.js failed, will fallback', e);
+    }
+  }
+  if (!extractZip) {
+    try { extractZip = require('extract-zip'); } catch (e) { /* ignore */ }
+  }
+  if (!extractZip) throw new Error('extract-zip not available');
+  await extractZip(zipPath, { dir: destDir });
+  return true;
+}
+
+// MPL 临时解压缓存，避免重复解压并支持音频播放/再次打包
+const mplExtractCache = new Map();
+async function ensureMplExtracted(mplPath) {
+  if (!mplPath) return null;
+  const normalized = path.normalize(mplPath);
+  try {
+    const stat = await fsPromises.stat(normalized);
+    const cached = mplExtractCache.get(normalized);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.dir) {
+      try {
+        await fsPromises.access(cached.dir);
+        return cached;
+      } catch (e) {
+        // fall through to re-extract
+      }
+    }
+    const base = path.join(app.getPath('temp'), 'metro-pids-mpl-cache');
+    await ensureDir(base);
+    if (cached && cached.dir) {
+      try { await fsPromises.rm(cached.dir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    }
+    const safeName = path.basename(normalized).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tempExtractDir = path.join(base, `${safeName}_${Date.now().toString(36)}`);
+    await zipjsExtract(normalized, tempExtractDir);
+    const res = { dir: tempExtractDir, mtimeMs: stat.mtimeMs };
+    mplExtractCache.set(normalized, res);
+    return res;
+  } catch (e) {
+    console.warn('[lines] 无法解压 MPL 用于缓存:', e);
+    return null;
+  }
+}
+
+app.on('will-quit', () => {
+  for (const v of mplExtractCache.values()) {
+    if (v && v.dir) {
+      fsPromises.rm(v.dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+});
+
+// 查找 JSON 和 MPL 文件的辅助函数（recursive 参数控制是否递归查找子文件夹）
 async function findJsonFiles(dir, baseDir = null, recursive = false) {
   if (!baseDir) baseDir = dir;
   const out = [];
@@ -3711,25 +4503,58 @@ async function findJsonFiles(dir, baseDir = null, recursive = false) {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        const lowerName = entry.name.toLowerCase();
+        if (lowerName === 'audio' || entry.name.startsWith('.')) continue; // 跳过音频目录/隐藏目录
         // 如果启用递归，递归查找子文件夹
         if (recursive) {
           const subFiles = await findJsonFiles(fullPath, baseDir, recursive);
           out.push(...subFiles);
         }
         // 如果不递归，跳过子文件夹
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.json')) {
-        try {
-          const stat = await fsPromises.stat(fullPath);
-          const txt = await fsPromises.readFile(fullPath, 'utf8');
-          let json = null;
-          try { json = JSON.parse(txt); } catch (e) { json = null; }
-          const version = json && json.meta && json.meta.version ? json.meta.version : null;
-          // 计算相对路径作为文件名（相对于 baseDir）
-          const relativePath = path.relative(baseDir, fullPath);
-          const nameWithoutExt = relativePath.replace(/\.json$/i, '').replace(/\\/g, '/');
-          out.push({ name: nameWithoutExt, version, mtime: stat.mtimeMs, fullPath });
-        } catch (e) {
-          // 出错则跳过该文件
+      } else if (entry.isFile()) {
+        const lowerName = entry.name.toLowerCase();
+        const isJson = lowerName.endsWith('.json');
+        const isMpl = lowerName.endsWith('.mpl');
+        if (isJson || isMpl) {
+          try {
+            const stat = await fsPromises.stat(fullPath);
+            let json = null;
+            let version = null;
+            if (isJson) {
+              // JSON 文件：直接读取
+              const txt = await fsPromises.readFile(fullPath, 'utf8');
+              try { json = JSON.parse(txt); } catch (e) { json = null; }
+              if (json && json.meta && json.meta.version) version = json.meta.version;
+            } else if (isMpl) {
+              // MPL 文件：解压到缓存目录后读取 line.json（只取元数据）
+              try {
+                const extracted = await ensureMplExtracted(fullPath);
+                if (!extracted || !extracted.dir) continue;
+                const lineJsonPath = path.join(extracted.dir, 'line.json');
+                try {
+                  const txt = await fsPromises.readFile(lineJsonPath, 'utf8');
+                  json = JSON.parse(txt);
+                  if (json && json.meta && json.meta.version) version = json.meta.version;
+                } catch (e) {
+                  const files = await fsPromises.readdir(extracted.dir);
+                  const jsonFile = files.find((f) => f.toLowerCase().endsWith('.json'));
+                  if (jsonFile) {
+                    const txt = await fsPromises.readFile(path.join(extracted.dir, jsonFile), 'utf8');
+                    json = JSON.parse(txt);
+                    if (json && json.meta && json.meta.version) version = json.meta.version;
+                  }
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            // 计算相对路径作为文件名（相对于 baseDir）
+            const relativePath = path.relative(baseDir, fullPath);
+            const nameWithoutExt = relativePath.replace(/\.(json|mpl)$/i, '').replace(/\\/g, '/');
+            out.push({ name: nameWithoutExt, version, mtime: stat.mtimeMs, fullPath, isMpl: isMpl });
+          } catch (e) {
+            // 出错则跳过该文件
+          }
         }
       }
     }
@@ -3790,59 +4615,312 @@ ipcMain.handle('lines/read', async (event, filename, dir) => {
   }
   // 如果 filename 包含路径分隔符，说明是子文件夹中的文件
   let fp;
+  let isMplFile = false;
   if (filename.includes('/') || filename.includes('\\')) {
     // 相对路径，直接拼接
     fp = path.join(base, filename);
-    if (!fp.endsWith('.json')) fp += '.json';
+    if (fp.toLowerCase().endsWith('.mpl')) {
+      isMplFile = true;
+    } else if (!fp.endsWith('.json') && !fp.toLowerCase().endsWith('.mpl')) {
+      // 尝试 .json 和 .mpl
+      const jsonPath = fp + '.json';
+      const mplPath = fp + '.mpl';
+      try {
+        await fsPromises.access(jsonPath);
+        fp = jsonPath;
+      } catch {
+        try {
+          await fsPromises.access(mplPath);
+          fp = mplPath;
+          isMplFile = true;
+        } catch {
+          fp = jsonPath; // 默认尝试 .json
+        }
+      }
+    }
   } else {
-    // 简单文件名
-    const name = filename.endsWith('.json') ? filename : `${filename}.json`;
-    fp = path.join(base, name);
+    // 简单文件名：尝试 .json 和 .mpl
+    const jsonPath = path.join(base, filename.endsWith('.json') ? filename : `${filename}.json`);
+    const mplPath = path.join(base, filename.toLowerCase().endsWith('.mpl') ? filename : `${filename}.mpl`);
+    try {
+      await fsPromises.access(jsonPath);
+      fp = jsonPath;
+    } catch {
+      try {
+        await fsPromises.access(mplPath);
+        fp = mplPath;
+        isMplFile = true;
+      } catch {
+        fp = jsonPath; // 默认尝试 .json
+      }
+    }
   }
   try {
-    const txt = await fsPromises.readFile(fp, 'utf8');
-    return { ok: true, content: JSON.parse(txt) };
+    if (isMplFile || fp.toLowerCase().endsWith('.mpl')) {
+      // MPL 文件：解压后读取 line.json
+      const extracted = await ensureMplExtracted(fp);
+      if (!extracted || !extracted.dir) return { ok: false, error: 'extract-failed' };
+      const lineJsonPath = path.join(extracted.dir, 'line.json');
+      let txt;
+      try {
+        txt = await fsPromises.readFile(lineJsonPath, 'utf8');
+      } catch (e) {
+        // 如果 line.json 不存在，尝试查找其他 JSON 文件
+        const files = await fsPromises.readdir(extracted.dir);
+        const jsonFile = files.find((f) => f.toLowerCase().endsWith('.json'));
+        if (jsonFile) {
+          txt = await fsPromises.readFile(path.join(extracted.dir, jsonFile), 'utf8');
+        } else {
+          throw new Error('No JSON file found in MPL archive');
+        }
+      }
+      const content = JSON.parse(txt);
+      return { ok: true, content, lineDir: extracted.dir, jsonPath: lineJsonPath };
+    } else {
+      // JSON 文件：直接读取
+      const txt = await fsPromises.readFile(fp, 'utf8');
+      return { ok: true, content: JSON.parse(txt) };
+    }
   } catch (err) {
-    return { ok: false, error: String(err) };
+    return { ok: false, error: toFriendlySaveError(err, fp) };
   }
 });
 
-// 保存线路文件，附带简单版本处理（支持子文件夹路径）
-ipcMain.handle('lines/save', async (event, filename, contentObj, dir) => {
+// 保存线路文件，附带简单版本处理（支持子文件夹路径）；支持 .json 与 .mpl（.mpl 写入 zip 包）
+ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLinePath) => {
   const base = getLinesDir(dir);
   await ensureDir(base);
-  // 如果 filename 包含路径分隔符，说明要保存到子文件夹
+  const lower = filename.toLowerCase();
+  const wantsMpl = lower.endsWith('.mpl');
   let fp;
   if (filename.includes('/') || filename.includes('\\')) {
-    // 相对路径，直接拼接
     fp = path.join(base, filename);
-    if (!fp.endsWith('.json')) fp += '.json';
-    // 确保父目录存在
+    if (!fp.endsWith('.json') && !fp.toLowerCase().endsWith('.mpl')) fp += wantsMpl ? '.mpl' : '.json';
     await ensureDir(path.dirname(fp));
   } else {
-    // 简单文件名
-    const name = filename.endsWith('.json') ? filename : `${filename}.json`;
+    const name = (filename.endsWith('.json') || filename.toLowerCase().endsWith('.mpl')) ? filename : (wantsMpl ? `${filename}.mpl` : `${filename}.json`);
     fp = path.join(base, name);
   }
+  const isMpl = fp.toLowerCase().endsWith('.mpl');
   try {
-    let existing = null;
-    try {
-      const t = await fsPromises.readFile(fp, 'utf8');
-      existing = JSON.parse(t);
-    } catch (e) {
-      existing = null;
-    }
-    const existingVer = existing && existing.meta && existing.meta.version ? existing.meta.version : 0;
     if (!contentObj.meta) contentObj.meta = {};
-    const incomingVer = contentObj.meta.version ? contentObj.meta.version : 0;
-    if (incomingVer <= existingVer) {
-      contentObj.meta.version = existingVer + 1; // 版本递增
+    if (!isMpl) {
+      let existing = null;
+      try {
+        const t = await fsPromises.readFile(fp, 'utf8');
+        existing = JSON.parse(t);
+      } catch (e) {
+        existing = null;
+      }
+      const existingVer = existing && existing.meta && existing.meta.version ? existing.meta.version : 0;
+      const incomingVer = contentObj.meta.version ? contentObj.meta.version : 0;
+      if (incomingVer <= existingVer) {
+        contentObj.meta.version = existingVer + 1;
+      }
+      await writeSafe(fp, JSON.stringify(contentObj, null, 2), 'utf8');
+      return { ok: true, path: fp };
     }
-    // 写入文件
-    await fsPromises.writeFile(fp, JSON.stringify(contentObj, null, 2), 'utf8');
-    return { ok: true, path: fp };
+    // .mpl：写入 zip（包含 line.json 和音频文件）
+    // 保存 .mpl 前，删除同名的 .json 文件（如果存在）
+    const jsonPath = fp.replace(/\.mpl$/i, '.json');
+    try {
+      await fsPromises.access(jsonPath);
+      await fsPromises.unlink(jsonPath);
+    } catch (e) {
+      // 文件不存在或删除失败，忽略
+    }
+    if (!archiver) {
+      try { archiver = require('archiver'); } catch (e) { /* retry */ }
+    }
+    if (!archiver) return { ok: false, error: 'missing-archiver' };
+    const version = contentObj.meta.version || 1;
+    contentObj.meta.version = version;
+    // 确定音频来源目录：目标文件所在目录、传入目录、原线路目录、MPL 解压缓存
+    const audioSourceDirs = new Set();
+    const fileDir = path.dirname(fp);
+    if (fileDir) audioSourceDirs.add(path.normalize(fileDir));
+    if (dir && typeof dir === 'string' && dir.trim()) {
+      const norm = path.normalize(dir.trim());
+      audioSourceDirs.add(path.isAbsolute(norm) ? norm : path.resolve(norm));
+    }
+    const normalizedSourceLinePaths = [];
+    const sourcePathList = Array.isArray(sourceLinePath)
+      ? sourceLinePath
+      : (sourceLinePath ? [sourceLinePath] : []);
+    for (const rawSource of sourcePathList) {
+      if (!rawSource || typeof rawSource !== 'string' || !rawSource.trim()) continue;
+      let normalizedSourceLinePath = null;
+      const s = path.normalize(rawSource.trim());
+      normalizedSourceLinePath = path.isAbsolute(s) ? s : path.resolve(s);
+      const lower = normalizedSourceLinePath.toLowerCase();
+      const hasKnownExt = lower.endsWith('.mpl') || lower.endsWith('.json');
+      if (!hasKnownExt) {
+        const mplCandidate = normalizedSourceLinePath + '.mpl';
+        const jsonCandidate = normalizedSourceLinePath + '.json';
+        try {
+          await fsPromises.access(mplCandidate);
+          normalizedSourceLinePath = mplCandidate;
+        } catch {
+          try {
+            await fsPromises.access(jsonCandidate);
+            normalizedSourceLinePath = jsonCandidate;
+          } catch {
+            // 保持原值，后续仍可使用其目录作为音频来源
+          }
+        }
+      }
+      normalizedSourceLinePaths.push(normalizedSourceLinePath);
+      const sourceDir = path.dirname(normalizedSourceLinePath);
+      if (sourceDir) audioSourceDirs.add(sourceDir);
+    }
+    const extracted = isMpl ? await ensureMplExtracted(fp) : null;
+    if (extracted && extracted.dir) audioSourceDirs.add(extracted.dir);
+    for (const sourcePath of normalizedSourceLinePaths) {
+      if (sourcePath && sourcePath.toLowerCase().endsWith('.mpl')) {
+        const sourceExtracted = await ensureMplExtracted(sourcePath);
+        if (sourceExtracted && sourceExtracted.dir) audioSourceDirs.add(sourceExtracted.dir);
+      }
+    }
+    const sourceDirs = Array.from(audioSourceDirs);
+    const fallbackSourceDirs = new Set(sourceDirs);
+    try {
+      const folders = getLinesFolders();
+      Object.values(folders || {}).forEach((f) => {
+        const p = f && f.path;
+        if (p && typeof p === 'string' && p.trim()) fallbackSourceDirs.add(path.normalize(p.trim()));
+      });
+    } catch (e) { /* ignore */ }
+    try {
+      fallbackSourceDirs.add(path.join(app.getPath('userData'), 'lines'));
+    } catch (e) { /* ignore */ }
+    const fallbackDirs = Array.from(fallbackSourceDirs);
+    // 收集音频路径（统一逻辑：包含站点音频 + 通用音频）
+    const relPaths = collectAudioRelPaths(contentObj);
+    const entries = [{ type: 'string', name: 'line.json', content: JSON.stringify(contentObj, null, 2) }];
+    const addedSet = new Set();
+    const addOne = (fullPath, nameInZip) => {
+      if (!nameInZip || addedSet.has(nameInZip)) return;
+      entries.push({ type: 'file', path: fullPath, name: nameInZip });
+      addedSet.add(nameInZip);
+    };
+    if (sourceDirs.length > 0 && relPaths.size > 0) {
+      for (const rel of relPaths) {
+        const relNorm = rel.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^(\.\.\\|\.\.\/)+/, '');
+        if (!relNorm || relNorm === 'audio' || relNorm.endsWith('/')) continue;
+        const relNormalized = relNorm.split('/').join(path.sep);
+        let resolved = false;
+        for (const baseDir of sourceDirs) {
+          let full = path.join(baseDir, relNormalized);
+          let nameInZip = relNorm;
+          try {
+            await fsPromises.access(full);
+            addOne(full, nameInZip);
+            resolved = true;
+            break;
+          } catch (e) {
+            // try fallbacks
+          }
+          if (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized)) {
+            full = path.normalize(relNormalized);
+            try {
+              await fsPromises.access(full);
+              const r = path.relative(baseDir, full);
+              if (r && !r.startsWith('..')) nameInZip = r.replace(/\\/g, '/');
+              addOne(full, nameInZip);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          } else {
+            const withRootBase = path.join(baseDir, path.basename(relNormalized));
+            try {
+              await fsPromises.access(withRootBase);
+              full = withRootBase;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const rootRef = path.basename(relNormalized).replace(/\\/g, '/');
+              addOne(full, originalRef || rootRef);
+              if (originalRef !== rootRef) addOne(full, rootRef);
+              resolved = true;
+              break;
+            } catch (eRoot) { /* continue */ }
+            const withAudio = path.join(baseDir, 'audio', path.basename(relNormalized));
+            try {
+              await fsPromises.access(withAudio);
+              full = withAudio;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', path.basename(relNormalized)).replace(/\\/g, '/');
+              addOne(full, originalRef || audioRef);
+              if (originalRef !== audioRef) addOne(full, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) {
+              const withAudioSubdir = path.join(baseDir, 'audio', relNormalized);
+              try {
+                await fsPromises.access(withAudioSubdir);
+                full = withAudioSubdir;
+                const originalRef = relNorm.replace(/\\/g, '/');
+                const audioRef = path.join('audio', relNormalized).replace(/\\/g, '/');
+                addOne(full, originalRef || audioRef);
+                if (originalRef !== audioRef) addOne(full, audioRef);
+                resolved = true;
+                break;
+              } catch (e3) { /* try next dir */ }
+            }
+          }
+        }
+        if (!resolved) {
+          const baseNameOnly = path.basename(relNormalized);
+          for (const fb of fallbackDirs) {
+            const c1 = path.join(fb, baseNameOnly);
+            try {
+              await fsPromises.access(c1);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              addOne(c1, originalRef || baseNameOnly);
+              if (originalRef !== baseNameOnly) addOne(c1, baseNameOnly.replace(/\\/g, '/'));
+              resolved = true;
+              break;
+            } catch (e) { /* continue */ }
+            const c2 = path.join(fb, 'audio', baseNameOnly);
+            try {
+              await fsPromises.access(c2);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', baseNameOnly).replace(/\\/g, '/');
+              addOne(c2, originalRef || audioRef);
+              if (originalRef !== audioRef) addOne(c2, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          }
+        }
+        if (!resolved && (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized))) {
+          const abs = path.normalize(relNormalized);
+          try {
+            await fsPromises.access(abs);
+            const r = sourceDirs.length ? path.relative(sourceDirs[0], abs) : null;
+            const nameInZip = (r && !r.startsWith('..')) ? r.replace(/\\/g, '/') : path.basename(abs);
+            addOne(abs, nameInZip);
+          } catch (e) { /* ignore */ }
+        }
+      }
+    }
+    if (sourceDirs.length > 0) {
+      for (const baseDir of sourceDirs) {
+        const audioDir = path.join(baseDir, 'audio');
+        try {
+          const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+          for (const ent of entries) {
+            if (!ent.isFile()) continue;
+            const full = path.join(audioDir, ent.name);
+            const nameInZip = path.join('audio', ent.name).replace(/\\/g, '/');
+            addOne(full, nameInZip);
+          }
+        } catch (e) { /* 无 audio 目录或不可读 */ }
+      }
+    }
+    console.log(`[lines/save] 保存 .mpl: sourceLinePaths=${normalizedSourceLinePaths.join(';') || 'null'}, sourceDirs=${sourceDirs.join(';')}, 音频引用数=${relPaths.size}, 实际写入数=${addedSet.size}, 文件=${fp}`);
+    const finalPath = await zipjsWrite(entries, fp);
+    return { ok: true, path: finalPath || fp };
   } catch (err) {
-    return { ok: false, error: String(err) };
+    return { ok: false, error: toFriendlySaveError(err, filePath) };
   }
 });
 
@@ -3854,15 +4932,83 @@ ipcMain.handle('lines/delete', async (event, filename, dir) => {
   if (filename.includes('/') || filename.includes('\\')) {
     // 相对路径，直接拼接
     fp = path.join(base, filename);
-    if (!fp.endsWith('.json')) fp += '.json';
+    if (!fp.endsWith('.json') && !fp.toLowerCase().endsWith('.mpl')) {
+      // 尝试 .json 和 .mpl
+      const jsonPath = fp + '.json';
+      const mplPath = fp + '.mpl';
+      try {
+        await fsPromises.access(jsonPath);
+        fp = jsonPath;
+      } catch {
+        try {
+          await fsPromises.access(mplPath);
+          fp = mplPath;
+        } catch {
+          fp = jsonPath; // 默认尝试 .json
+        }
+      }
+    }
   } else {
-    // 简单文件名
-    const name = filename.endsWith('.json') ? filename : `${filename}.json`;
-    fp = path.join(base, name);
+    // 简单文件名：尝试 .json 和 .mpl
+    const jsonPath = path.join(base, filename.endsWith('.json') ? filename : `${filename}.json`);
+    const mplPath = path.join(base, filename.toLowerCase().endsWith('.mpl') ? filename : `${filename}.mpl`);
+    try {
+      await fsPromises.access(jsonPath);
+      fp = jsonPath;
+    } catch {
+      try {
+        await fsPromises.access(mplPath);
+        fp = mplPath;
+      } catch {
+        fp = jsonPath; // 默认尝试 .json
+      }
+    }
   }
+
+  // 删除前清理 MPL 缓存，避免占用句柄
+  const clearMplCache = async (target) => {
+    try {
+      const norm = path.normalize(target);
+      const cached = mplExtractCache.get(norm);
+      if (cached && cached.dir) {
+        mplExtractCache.delete(norm);
+        try { await fsPromises.rm(cached.dir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  const safeUnlink = async (target) => {
+    let lastErr = null;
+    for (let i = 0; i < 3; i++) {
+      try {
+        await fsPromises.unlink(target);
+        return true;
+      } catch (e) {
+        lastErr = e;
+        if (e && (e.code === 'EBUSY' || e.code === 'EPERM')) {
+          await new Promise(r => setTimeout(r, 150));
+          continue;
+        }
+        break;
+      }
+    }
+    // 最后一搏：使用 rm(force)
+    try {
+      await fsPromises.rm(target, { force: true });
+      return true;
+    } catch (e) {
+      lastErr = e;
+    }
+    return lastErr ? lastErr : new Error('unlink failed');
+  };
+
   try {
-    await fsPromises.unlink(fp);
-    return { ok: true };
+    if (fp.toLowerCase().endsWith('.mpl')) {
+      await clearMplCache(fp);
+    }
+    const res = await safeUnlink(fp);
+    if (res === true) return { ok: true };
+    return { ok: false, error: String(res) };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
@@ -3876,6 +5022,524 @@ ipcMain.handle('lines/openFolder', async (event, dir) => {
     const r = await shell.openPath(base);
     if (r && r.length) return { ok: false, error: r };
     return { ok: true, path: base };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 根据线路文件路径获取其所在目录（用于车站音频 resolve/copy）
+ipcMain.handle('lines/getLineDir', async (event, lineFilePath) => {
+  if (!lineFilePath || typeof lineFilePath !== 'string') return { ok: false, error: 'invalid-path' };
+  const normalized = path.normalize(lineFilePath);
+  if (!path.isAbsolute(normalized)) return { ok: false, error: 'path-must-be-absolute' };
+  try {
+    const dir = path.dirname(normalized);
+    return { ok: true, dir };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 将外部音频文件复制到线路目录的 audio 子目录，返回相对路径（如 audio/xxx.mp3）
+// 相同 MD5 不重复复制，直接返回已有路径
+ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, sourceFilePath) => {
+  if (!sourceFilePath || typeof sourceFilePath !== 'string') return { ok: false, error: 'invalid-source' };
+  let lineDir = null;
+  const raw = lineDirOrLineFilePath;
+  if (raw != null && typeof raw === 'string' && raw.trim()) {
+    const s = raw.trim();
+    if (s.endsWith('.json') || s.includes(path.sep) || s.includes('/')) {
+      lineDir = path.dirname(path.normalize(s));
+    } else {
+      lineDir = path.normalize(s);
+    }
+  }
+  // 无有效目录时使用默认线路目录（支持按钮添加与拖拽添加）
+  if (!lineDir || typeof lineDir !== 'string' || !lineDir.trim()) {
+    try {
+      lineDir = getLinesDir(null);
+    } catch (e) {
+      return { ok: false, error: 'no-line-dir' };
+    }
+  }
+  // 统一使用 nested 布局：音频文件放在 audio/ 子目录
+  const audioDir = path.join(path.normalize(lineDir), 'audio');
+  await ensureDir(audioDir);
+  await hideDirOnWindows(audioDir); // 创建后标记为隐藏，避免在线路管理器中显示
+  const hashCachePath = path.join(audioDir, '.audio-hashes.json');
+  let sourceMd5 = '';
+  try {
+    const buf = await fsPromises.readFile(sourceFilePath);
+    sourceMd5 = crypto.createHash('md5').update(buf).digest('hex');
+  } catch (e) {
+    return { ok: false, error: 'read-source-failed' };
+  }
+  let cache = {};
+  try {
+    const raw = await fsPromises.readFile(hashCachePath, 'utf8');
+    cache = JSON.parse(raw);
+  } catch (e) { /* no cache or invalid */ }
+  for (const [rel, storedMd5] of Object.entries(cache)) {
+    if (storedMd5 === sourceMd5) {
+      const full = path.join(lineDir, rel.replace(/\//g, path.sep));
+      try {
+        await fsPromises.access(full);
+        return { ok: true, relativePath: rel };
+      } catch (e) { /* file removed, continue */ }
+    }
+  }
+  const baseName = path.basename(sourceFilePath);
+  const safeName = baseName.replace(/[<>:"/\\|?*]/g, '_').trim() || 'audio';
+  let destPath = path.join(audioDir, safeName);
+  let relPath = path.join('audio', safeName);
+  if (path.sep !== '/') relPath = relPath.split(path.sep).join('/');
+  let exists = false;
+  try { await fsPromises.access(destPath); exists = true; } catch (e) { /* not exists */ }
+  if (exists) {
+    const ext = path.extname(safeName);
+    const nameNoExt = path.basename(safeName, ext);
+    for (let i = 1; i < 1000; i++) {
+      const nextName = nameNoExt + '_' + i + ext;
+      destPath = path.join(audioDir, nextName);
+      relPath = path.join('audio', nextName);
+      if (path.sep !== '/') relPath = relPath.split(path.sep).join('/');
+      try { await fsPromises.access(destPath); } catch (e) { break; }
+    }
+  }
+  try {
+    await fsPromises.copyFile(sourceFilePath, destPath);
+    const newBuf = await fsPromises.readFile(destPath);
+    const newMd5 = crypto.createHash('md5').update(newBuf).digest('hex');
+    cache[relPath] = newMd5;
+    await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
+    return { ok: true, relativePath: relPath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 解析线路目录下的音频相对路径为绝对路径，并返回可播放的 local-audio 协议 URL（避免 file:// 被禁止加载）
+// lineFilePath 可以是线路文件路径或线路目录路径
+ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePath) => {
+  if (!lineFilePath || !relativePath || typeof relativePath !== 'string') return { ok: false, error: 'invalid-args' };
+  const normalized = path.normalize(lineFilePath);
+  const relSafe = relativePath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^(\.\.\/|\.\.\\)+/, '');
+  const isMpl = normalized.toLowerCase().endsWith('.mpl');
+  const lineDir = (normalized.endsWith('.json') || isMpl) ? path.dirname(normalized) : normalized;
+  let playableDir = lineDir;
+  if (isMpl) {
+    const extracted = await ensureMplExtracted(normalized);
+    if (extracted && extracted.dir) playableDir = extracted.dir;
+  }
+  const fullPath = path.join(playableDir, relSafe.split('/').join(path.sep));
+  try {
+    await fsPromises.access(fullPath);
+    const playableUrl = 'local-audio://file/' + encodeURIComponent(fullPath);
+    return { ok: true, path: fullPath, playableUrl };
+  } catch (e) {
+    return { ok: false, error: 'file-not-found' };
+  }
+});
+
+// 收集线路数据中引用的音频相对路径（含通用音频）
+function collectAudioRelPaths(lineData) {
+  const relPaths = new Set();
+  const addPath = (p) => {
+    if (!p || typeof p !== 'string') return;
+    const norm = p.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^\.+\//, '');
+    if (!norm) return;
+    relPaths.add(norm);
+  };
+  const addBucket = (bucket) => {
+    if (!bucket || typeof bucket !== 'object') return;
+    const list = Array.isArray(bucket.list) ? bucket.list : [];
+    for (const item of list) addPath(item && (item.path || item.src || item.filePath));
+    // 兼容旧版字段
+    const legacyKeys = ['welcome', 'depart', 'arrive', 'end'];
+    for (const k of legacyKeys) {
+      const arr = bucket[k];
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) addPath(item && (item.path || item.src || item.filePath));
+    }
+  };
+  const stations = lineData && Array.isArray(lineData.stations) ? lineData.stations : [];
+  for (const st of stations) {
+    const sa = st && st.stationAudio;
+    if (!sa || typeof sa !== 'object') continue;
+    for (const dirName of ['up', 'down']) {
+      addBucket(sa[dirName]);
+    }
+  }
+  const common = lineData && lineData.meta && lineData.meta.commonAudio;
+  if (common && typeof common === 'object') {
+    addBucket(common.up);
+    addBucket(common.down);
+    if (Array.isArray(common.list)) {
+      for (const item of common.list) addPath(item && (item.path || item.src || item.filePath));
+    }
+  }
+  return relPaths;
+}
+
+// 清理线路目录下 audio 子目录中未被引用的音频文件；默认在保存/关闭时使用
+ipcMain.handle('lines/cleanupAudioDir', async (event, lineData, lineFilePath, options) => {
+  try {
+    const relPaths = collectAudioRelPaths(lineData || {});
+    const normalizedPath = (lineFilePath && typeof lineFilePath === 'string') ? path.normalize(lineFilePath.trim()) : null;
+    let lineDir = normalizedPath ? path.dirname(normalizedPath) : null;
+    if (!lineDir && typeof getLinesDir === 'function') lineDir = getLinesDir(null);
+    if (!lineDir) return { ok: false, error: 'no-line-dir' };
+    const audioDir = path.join(lineDir, 'audio');
+    let stat = null;
+    try { stat = await fsPromises.stat(audioDir); } catch (e) { return { ok: true, removed: 0, skipped: 'no-audio-dir' }; }
+    if (!stat.isDirectory()) return { ok: false, error: 'audio-dir-not-directory' };
+
+    const isMpl = normalizedPath ? normalizedPath.toLowerCase().endsWith('.mpl') : false;
+    let hasJsonSibling = false;
+    if (isMpl) {
+      const jsonSibling = normalizedPath.replace(/\.mpl$/i, '.json');
+      try { await fsPromises.access(jsonSibling); hasJsonSibling = true; } catch (e) { /* ignore */ }
+    }
+    const aggressive = isMpl && !hasJsonSibling && (!options || options.removeAllForMpl !== false);
+    let removed = 0;
+    let kept = 0;
+
+    if (aggressive) {
+      const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+      for (const ent of entries) {
+        const full = path.join(audioDir, ent.name);
+        try { await fsPromises.rm(full, { recursive: true, force: true }); removed++; } catch (e) { /* ignore */ }
+      }
+      return { ok: true, removed, kept, mode: 'aggressive' };
+    }
+
+    const allowed = new Set();
+    const addAllowed = (p) => {
+      if (!p) return;
+      const norm = p.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (!norm) return;
+      allowed.add(norm);
+      if (norm.startsWith('audio/')) allowed.add(norm.slice('audio/'.length));
+      allowed.add(path.basename(norm));
+    };
+    relPaths.forEach((p) => addAllowed(p));
+
+    const walk = async (dir) => {
+      const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          await walk(full);
+          continue;
+        }
+        const relFromAudio = path.relative(audioDir, full).split(path.sep).join('/');
+        const withPrefix = ('audio/' + relFromAudio).replace(/\\/g, '/');
+        const base = path.basename(relFromAudio);
+        const shouldKeep = allowed.has(relFromAudio) || allowed.has(withPrefix) || allowed.has(base);
+        if (shouldKeep) { kept++; continue; }
+        try { await fsPromises.unlink(full); removed++; } catch (e) { /* ignore */ }
+      }
+    };
+    await walk(audioDir);
+    return { ok: true, removed, kept, mode: 'prune' };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 仅禁止把 zip 保存到主进程脚本所在目录（如 out\main），避免误写到 main.js；lines 下任意子文件夹（如 lines\123）允许保存
+function getSafeZipSaveDir() {
+  return path.join(app.getPath('userData'), 'lines');
+}
+function isPathUnderMainScriptDir(p) {
+  if (!p || typeof p !== 'string') return false;
+  const n = path.resolve(path.normalize(p));
+  const mainDir = path.resolve(__dirname);
+  const sep = path.sep;
+  return n === mainDir || n.startsWith(mainDir + sep);
+}
+// 路径是否在 userData 下（AppData/Roaming/Metro-PIDS）；在此目录下的保存不应被重定向到默认文件夹
+function isPathUnderUserData(p) {
+  if (!p || typeof p !== 'string') return false;
+  try {
+    const n = path.resolve(path.normalize(p));
+    const userData = path.resolve(app.getPath('userData'));
+    const sep = path.sep;
+    return n === userData || n.startsWith(userData + sep);
+  } catch (e) {
+    return false;
+  }
+}
+// 从线路数据得到用于导出的文件名（不含扩展名），避免使用 main/main.js 等脚本名
+function getExportBasenameFromLineData(lineData) {
+  const raw = (lineData.meta && lineData.meta.lineName) ? String(lineData.meta.lineName).replace(/<[^>]+>/g, '').trim() : '';
+  const cleaned = raw.replace(/[<>:"/\\|?*]/g, '').trim().replace(/\s+/g, ' ');
+  const name = cleaned || 'line';
+  if (/^main(\.js)?$/i.test(name)) return 'line';
+  return name.length > 255 ? name.substring(0, 255) : name;
+}
+
+// 将线路 + 所有引用音频打包为 zip；lineFilePath 可选，无则仅打包 line.json
+// 参数：event, lineData, lineFilePath, targetZipPath, audioSourceDir（与 preload 传参一致）
+ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZipPath, audioSourceDir) => {
+  if (!archiver) {
+    try { archiver = require('archiver'); } catch (e) { /* retry once */ }
+    if (!archiver) return { ok: false, error: 'missing-archiver' };
+  }
+  if (!lineData || typeof lineData !== 'object') return { ok: false, error: 'missing-line-data' };
+  // 音频来源目录：与 resolveAudioPath 一致，优先用 line.json 所在目录，保证从该目录下 audio/ 找文件
+  let lineDir = null;
+  if (lineFilePath && typeof lineFilePath === 'string' && lineFilePath.trim().length > 0) {
+    lineDir = path.dirname(path.normalize(lineFilePath.trim()));
+  }
+  if (!lineDir && audioSourceDir && typeof audioSourceDir === 'string' && audioSourceDir.trim().length > 0) {
+    lineDir = path.normalize(audioSourceDir.trim());
+    if (!path.isAbsolute(lineDir)) lineDir = path.resolve(lineDir);
+  }
+  if (!lineDir && targetZipPath && typeof targetZipPath === 'string' && targetZipPath.trim().length > 0) {
+    lineDir = path.dirname(path.normalize(targetZipPath.trim()));
+  }
+  if (!lineDir && typeof getLinesDir === 'function') {
+    try { lineDir = getLinesDir(null); } catch (e) { /* ignore */ }
+  }
+  if (lineDir && !path.isAbsolute(lineDir)) lineDir = path.resolve(lineDir);
+  const extractedForMpl = (lineFilePath && String(lineFilePath).toLowerCase().endsWith('.mpl')) ? await ensureMplExtracted(lineFilePath) : null;
+  const relPaths = collectAudioRelPaths(lineData);
+  // 从哪里打开保存到哪里：若前端传入明确的绝对目标路径，直接使用；仅在路径位于脚本目录且不在 userData 下时才重定向
+  const safeZipDir = getSafeZipSaveDir();
+  let filePath = null;
+  const rawTarget = (targetZipPath && typeof targetZipPath === 'string') ? targetZipPath.trim() : '';
+  const isExplicitAbsolute = rawTarget.length > 0 && (path.isAbsolute(rawTarget) || rawTarget.startsWith('/') || /^[A-Za-z]:[\\/]/.test(rawTarget));
+
+  if (isExplicitAbsolute) {
+    filePath = path.normalize(rawTarget);
+    // 仅当路径在脚本目录下且不在 userData 下时才重定向（避免把 userData\lines\123\xxx.mpl 误重定向到 lines\xxx.mpl）
+    if (isPathUnderMainScriptDir(filePath) && !isPathUnderUserData(filePath)) {
+      filePath = path.join(safeZipDir, getExportBasenameFromLineData(lineData) + '.mpl');
+    }
+  } else if (rawTarget.length > 0) {
+    // 相对路径：用 preferredSaveDir 或 getLinesDir 拼出绝对路径
+    let preferredSaveDir = null;
+    if (audioSourceDir && typeof audioSourceDir === 'string' && audioSourceDir.trim().length > 0) {
+      const n = path.normalize(audioSourceDir.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = n;
+    }
+    if (!preferredSaveDir && lineFilePath && typeof lineFilePath === 'string' && lineFilePath.trim().length > 0) {
+      const n = path.normalize(lineFilePath.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = path.dirname(n);
+    }
+    const baseDir = preferredSaveDir || (typeof getLinesDir === 'function' ? getLinesDir(null) : app.getPath('userData'));
+    filePath = path.join(baseDir, rawTarget);
+    if (isPathUnderMainScriptDir(filePath) && !isPathUnderUserData(filePath)) {
+      filePath = path.join(safeZipDir, getExportBasenameFromLineData(lineData) + '.mpl');
+    }
+  }
+
+  if (!filePath) {
+    // 无显式目标路径时：优先用 lineFilePath 或 audioSourceDir 所在目录保存（从哪里打开就从哪里保存）
+    const defaultFileName = getExportBasenameFromLineData(lineData) + '.mpl';
+    let preferredSaveDir = null;
+    if (lineFilePath && typeof lineFilePath === 'string' && lineFilePath.trim().length > 0) {
+      const n = path.normalize(lineFilePath.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = path.dirname(n);
+    }
+    if (!preferredSaveDir && audioSourceDir && typeof audioSourceDir === 'string' && audioSourceDir.trim().length > 0) {
+      const n = path.normalize(audioSourceDir.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = n;
+    }
+    if (preferredSaveDir && isPathUnderUserData(preferredSaveDir)) {
+      filePath = path.join(preferredSaveDir, defaultFileName);
+    }
+    if (!filePath) {
+      const win = require('electron').BrowserWindow.fromWebContents(event.sender) || mainWin;
+      let defaultDir = preferredSaveDir || (typeof getLinesDir === 'function' ? getLinesDir(null) : null) || app.getPath('userData');
+      if (defaultDir && isPathUnderMainScriptDir(defaultDir) && !isPathUnderUserData(defaultDir)) defaultDir = safeZipDir;
+      const defaultPath = path.join(defaultDir || app.getPath('userData'), defaultFileName);
+      const { filePath: chosen } = await dialog.showSaveDialog(win, {
+        title: '保存线路压缩包',
+        defaultPath,
+        filters: [{ name: 'Metro-PIDS 线路包', extensions: ['mpl'] }, { name: 'ZIP', extensions: ['zip'] }]
+      });
+      filePath = chosen;
+      if (filePath && isPathUnderMainScriptDir(filePath) && !isPathUnderUserData(filePath)) {
+        filePath = path.join(safeZipDir, defaultFileName);
+      }
+    }
+  }
+  if (!filePath) return { ok: false, error: 'cancelled' };
+  // 确保文件扩展名是 .mpl，但如果已经是 .mpl 结尾则不再添加
+  // 同时处理可能的 .js.mpl 或 .js.zip 情况：如果文件名以这些结尾，移除 .js 部分
+  if (filePath.toLowerCase().endsWith('.js.mpl')) {
+    filePath = filePath.slice(0, -7) + '.mpl';
+  } else if (filePath.toLowerCase().endsWith('.js.zip')) {
+    filePath = filePath.slice(0, -7) + '.mpl';
+  } else if (!filePath.toLowerCase().endsWith('.mpl') && !filePath.toLowerCase().endsWith('.zip')) {
+    filePath = filePath + (filePath.endsWith('.') ? 'mpl' : '.mpl');
+  } else if (filePath.toLowerCase().endsWith('.zip')) {
+    // 如果用户选择了 .zip 扩展名，也允许（向后兼容），但建议使用 .mpl
+    // 保持原样，不强制转换
+  }
+  try {
+    const entries = [{ type: 'string', name: 'line.json', content: JSON.stringify(lineData, null, 2) }];
+    const addedInZip = new Set();
+    const addFileToZip = (fullPath, nameInZip) => {
+      if (!nameInZip || addedInZip.has(nameInZip)) return;
+      entries.push({ type: 'file', path: fullPath, name: nameInZip });
+      addedInZip.add(nameInZip);
+    };
+    const audioDirs = new Set();
+    if (lineDir) audioDirs.add(lineDir);
+    if (extractedForMpl && extractedForMpl.dir) audioDirs.add(extractedForMpl.dir);
+    const audioDirList = Array.from(audioDirs);
+    const fallbackAudioDirs = new Set(audioDirList);
+    try {
+      const folders = getLinesFolders();
+      Object.values(folders || {}).forEach((f) => {
+        const p = f && f.path;
+        if (p && typeof p === 'string' && p.trim()) fallbackAudioDirs.add(path.normalize(p.trim()));
+      });
+    } catch (e) { /* ignore */ }
+    try {
+      fallbackAudioDirs.add(path.join(app.getPath('userData'), 'lines'));
+    } catch (e) { /* ignore */ }
+    const fallbackDirs = Array.from(fallbackAudioDirs);
+    if (audioDirList.length) {
+      for (const rel of relPaths) {
+        const relNorm = rel.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (!relNorm || relNorm === 'audio' || relNorm.endsWith('/')) continue;
+        const relNormalized = relNorm.split('/').join(path.sep);
+        let resolved = false;
+        for (const baseDir of audioDirList) {
+          let full = path.join(baseDir, relNormalized);
+          let nameInZip = relNorm;
+          try {
+            await fsPromises.access(full);
+            addFileToZip(full, nameInZip);
+            resolved = true;
+            break;
+          } catch (e) { /* try fallbacks */ }
+          if (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized)) {
+            full = path.normalize(relNormalized);
+            try {
+              await fsPromises.access(full);
+              const r = path.relative(baseDir, full);
+              if (r && !r.startsWith('..')) nameInZip = r.replace(/\\/g, '/');
+              addFileToZip(full, nameInZip);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          } else {
+            const withRootBase = path.join(baseDir, path.basename(relNormalized));
+            try {
+              await fsPromises.access(withRootBase);
+              full = withRootBase;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const rootRef = path.basename(relNormalized).replace(/\\/g, '/');
+              addFileToZip(full, originalRef || rootRef);
+              if (originalRef !== rootRef) addFileToZip(full, rootRef);
+              resolved = true;
+              break;
+            } catch (eRoot) { /* continue */ }
+            const withAudio = path.join(baseDir, 'audio', path.basename(relNormalized));
+            try {
+              await fsPromises.access(withAudio);
+              full = withAudio;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', path.basename(relNormalized)).replace(/\\/g, '/');
+              addFileToZip(full, originalRef || audioRef);
+              if (originalRef !== audioRef) addFileToZip(full, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) {
+              const withAudioSubdir = path.join(baseDir, 'audio', relNormalized);
+              try {
+                await fsPromises.access(withAudioSubdir);
+                full = withAudioSubdir;
+                const originalRef = relNorm.replace(/\\/g, '/');
+                const audioRef = path.join('audio', relNormalized).replace(/\\/g, '/');
+                addFileToZip(full, originalRef || audioRef);
+                if (originalRef !== audioRef) addFileToZip(full, audioRef);
+                resolved = true;
+                break;
+              } catch (e3) { /* keep trying */ }
+            }
+          }
+        }
+        if (!resolved) {
+          const baseNameOnly = path.basename(relNormalized);
+          for (const fb of fallbackDirs) {
+            const c1 = path.join(fb, baseNameOnly);
+            try {
+              await fsPromises.access(c1);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              addFileToZip(c1, originalRef || baseNameOnly);
+              if (originalRef !== baseNameOnly) addFileToZip(c1, baseNameOnly.replace(/\\/g, '/'));
+              resolved = true;
+              break;
+            } catch (e) { /* continue */ }
+            const c2 = path.join(fb, 'audio', baseNameOnly);
+            try {
+              await fsPromises.access(c2);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', baseNameOnly).replace(/\\/g, '/');
+              addFileToZip(c2, originalRef || audioRef);
+              if (originalRef !== audioRef) addFileToZip(c2, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          }
+        }
+        if (!resolved && (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized))) {
+          const abs = path.normalize(relNormalized);
+          try {
+            await fsPromises.access(abs);
+            const r = audioDirList.length ? path.relative(audioDirList[0], abs) : null;
+            const nameInZip = (r && !r.startsWith('..')) ? r.replace(/\\/g, '/') : path.basename(abs);
+            addFileToZip(abs, nameInZip);
+          } catch (e) { /* ignore */ }
+        }
+      }
+      for (const baseDir of audioDirList) {
+        const audioDir = path.join(baseDir, 'audio');
+        try {
+          const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+          for (const ent of entries) {
+            if (!ent.isFile()) continue;
+            const full = path.join(audioDir, ent.name);
+            const nameInZip = path.join('audio', ent.name).replace(/\\/g, '/');
+            addFileToZip(full, nameInZip);
+          }
+        } catch (e) {
+          // 无 audio 目录或不可读，忽略
+        }
+      }
+    }
+    console.log(`[lines/saveAsZip] 打包 .mpl: lineFilePath=${lineFilePath || 'null'}, audioSourceDir=${audioSourceDir || 'null'}, sourceDirs=${audioDirList.join(';')}, 音频引用数=${relPaths.size}, 实际写入数=${addedInZip.size}, 文件=${filePath}`);
+    const finalPath = await zipjsWrite(entries, filePath);
+    return { ok: true, path: finalPath || filePath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 从 zip 解压到临时目录，返回目录路径供前端读取 line.json
+ipcMain.handle('lines/extractZipToTemp', async (event, zipPath) => {
+  if (!zipPath) return { ok: false, error: 'missing-path' };
+  const tempBase = path.join(app.getPath('temp'), 'metro-pids-import');
+  await ensureDir(tempBase);
+  const extractDir = path.join(tempBase, `import_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  try {
+    await zipjsExtract(zipPath, extractDir);
+    const lineJsonPath = path.join(extractDir, 'line.json');
+    try {
+      await fsPromises.access(lineJsonPath);
+    } catch (e) {
+      const files = await fsPromises.readdir(extractDir);
+      const jsonFile = files.find((f) => f.toLowerCase().endsWith('.json'));
+      if (jsonFile) return { ok: true, dir: extractDir, jsonName: jsonFile, archivePath: zipPath };
+      return { ok: false, error: 'no-json-in-zip' };
+    }
+    return { ok: true, dir: extractDir, jsonName: 'line.json', archivePath: zipPath };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
@@ -4024,10 +5688,6 @@ ipcMain.handle('lines/folders/add', async (event, folderName) => {
 // 支持通过路径或ID来删除文件夹（优先使用路径）
 ipcMain.handle('lines/folders/remove', async (event, folderPathOrId) => {
   try {
-    if (folderPathOrId === 'default') {
-      return { ok: false, error: '不能删除默认文件夹' };
-    }
-    
     console.log(`[main] 删除文件夹，参数: ${folderPathOrId}`);
     const folders = getLinesFolders();
     
@@ -4045,7 +5705,6 @@ ipcMain.handle('lines/folders/remove', async (event, folderPathOrId) => {
       
       // 在配置中查找匹配的路径
       for (const [id, folder] of Object.entries(folders)) {
-        if (id === 'default') continue;
         const normalizedFolderPath = path.normalize(folder.path);
         if (normalizedFolderPath === normalizedPath) {
           targetFolderId = id;
@@ -4101,13 +5760,12 @@ ipcMain.handle('lines/folders/remove', async (event, folderPathOrId) => {
       return { ok: true };
     }
     
-    // 如果删除的是当前文件夹，切换到默认文件夹
-    if (targetFolderId) {
+    // 如果删除的是当前文件夹，切换到剩余的第一个文件夹
+    if (targetFolderId && store) {
       const current = getCurrentLinesFolder();
       if (current === targetFolderId) {
-        if (store) {
-          store.set('linesCurrentFolder', 'default');
-        }
+        const remaining = Object.keys(folders).filter(id => id !== targetFolderId);
+        store.set('linesCurrentFolder', remaining[0] || null);
       }
     }
     
@@ -4246,7 +5904,7 @@ ipcMain.handle('shortturns/save', async (event, presetName, presetData) => {
   }
   const fp = path.join(base, sanitized + '.json');
   try {
-    await fsPromises.writeFile(fp, JSON.stringify(presetData, null, 2), 'utf8');
+    await writeSafe(fp, JSON.stringify(presetData, null, 2), 'utf8');
     return { ok: true, path: fp };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -4845,7 +6503,7 @@ ipcMain.handle('app/get-device-id', async () => {
         
         // 保存到文件系统
         try {
-          await fsPromises.writeFile(deviceIdFilePath, deviceId, 'utf8');
+          await writeSafe(deviceIdFilePath, deviceId, 'utf8');
           console.log('[main] 设备ID已保存到文件系统');
         } catch (e) {
           console.warn('[main] 保存设备ID到文件系统失败:', e);
@@ -5699,7 +7357,33 @@ app.whenReady().then(async () => {
   console.log('[main] 是否打包:', app.isPackaged);
   console.log('[main] __dirname:', __dirname);
   console.log('[main] 日志文件位置:', logger ? logger.transports.file.getFile().path : 'N/A');
-  
+
+  // 注册本地音频协议，避免 file:// 被禁止加载导致无法播放
+  try {
+    protocol.registerFileProtocol('local-audio', (request, callback) => {
+      try {
+        const prefix = 'local-audio://file/';
+        const url = request.url;
+        if (!url.startsWith(prefix)) {
+          return callback({ error: -2 });
+        }
+        const encoded = url.slice(prefix.length).replace(/\?.*$/, '');
+        const fullPath = decodeURIComponent(encoded);
+        const normalized = path.normalize(fullPath);
+        if (!path.isAbsolute(normalized)) {
+          return callback({ error: -2 });
+        }
+        callback({ path: normalized });
+      } catch (e) {
+        callback({ error: -1 });
+      }
+    }, (err) => {
+      if (err) console.error('[main] local-audio protocol 注册失败:', err);
+    });
+  } catch (e) {
+    console.warn('[main] local-audio protocol 注册异常:', e);
+  }
+
   // 在 Windows 上，尝试显示控制台窗口以便调试（仅打包后）
   if (app.isPackaged && process.platform === 'win32') {
     try {
@@ -5710,14 +7394,11 @@ app.whenReady().then(async () => {
       // 忽略错误
     }
   }
-  
-  // 初始化预设线路文件（从 preset-lines 复制到默认文件夹）
-  try {
-    await initPresetLinesFromSource();
-  } catch (e) {
-    console.warn('[main] 初始化预设线路文件失败:', e);
-    console.warn('[main] 错误堆栈:', e.stack);
-  }
+
+  // 启动后异步清理残留的 .unlocked-* 副本（避免旧失败写入遗留）
+  setTimeout(() => {
+    cleanupAllUnlockedFolders().catch((e) => console.warn('[main] cleanupAllUnlockedFolders 失败:', e));
+  }, 2000);
   
   // 在创建窗口之前检查并安装待安装的更新
   // 如果有待安装的更新，会自动安装并重启，不会创建窗口
@@ -5816,12 +7497,25 @@ app.whenReady().then(async () => {
   try {
     const currentSettings = store ? store.get('settings', {}) : {};
     const shouldEnableApiServer = currentSettings.enableApiServer === true;
+    const shouldEnableWsBridge = currentSettings.enableWebSocketBridge === true
+      || currentSettings.enableApiServer === true
+      || process.env.PIDS_WS_ENABLE === '1'
+      || process.env.ENABLE_WS_BRIDGE === '1';
+    const wsPortSetting = currentSettings.wsPort || currentSettings.wsPortOverride || null;
     
     if (shouldEnableApiServer && displayApiServer) {
       console.log('[main] 检测到用户已启用 API 服务器，正在启动...');
       startApiServer();
     } else {
       console.log('[main] API 服务器未启用（默认使用 BroadcastChannel 通信）');
+    }
+
+    if (shouldEnableWsBridge) {
+      console.log('[main] 启用局域网 WebSocket Bridge...');
+      startWebSocketBridge(wsPortSetting);
+    } else {
+      stopWebSocketBridge();
+      console.log('[main] WebSocket Bridge 未启用');
     }
   } catch (e) {
     console.warn('[main] 读取 API 服务器设置失败，使用默认值（未启用）:', e);
@@ -6126,6 +7820,7 @@ function closeAllWindows() {
 // 应用程序退出前处理：确保所有窗口都已关闭
 app.on('before-quit', (event) => {
   console.log('[main] before-quit 事件触发');
+  stopWebSocketBridge();
   // 如果还有窗口未关闭，先关闭所有窗口
   const allWindows = BrowserWindow.getAllWindows();
   if (allWindows.length > 0) {
@@ -7210,7 +8905,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         contextIsolation: true,
         nodeIntegration: false,
         zoomFactor: 1.0,
-        backgroundThrottling: false,
+        backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
         offscreen: false,
         enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
       }
@@ -7233,7 +8928,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         nodeIntegration: false,
         zoomFactor: 1.0,
         // 显示端：确保在后台也保持刷新，并启用 2D Canvas GPU 光栅化
-        backgroundThrottling: false,
+        backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
         offscreen: false,
         enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
       }
@@ -7272,7 +8967,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         // 禁用自动缩放，使用CSS transform来控制缩放
         zoomFactor: 1.0,
         // 显示端：确保在后台也保持刷新，并启用 2D Canvas GPU 光栅化
-        backgroundThrottling: false,
+        backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
         offscreen: false,
         // 允许高DPI支持 + 2D Canvas GPU 加速
         enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
@@ -7805,7 +9500,7 @@ function createLineManagerWindow() {
   });
 
   // 应用 Mica 模糊效果（与主窗口相同，仅在 Windows 11 上启用 Mica）
-  if (isWindows && lineManagerWin && MicaBrowserWindow !== BrowserWindow) {
+  if (isWindows && lineManagerWin && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
     try {
       // 设置主题
       if (IS_WINDOWS_11) {
@@ -7831,6 +9526,21 @@ function createLineManagerWindow() {
     }
   }
 
+  // 模糊关闭时，确保线路管理器窗口也关闭原生材质
+  if (isWindows && lineManagerWin && !MAIN_BLUR_ENABLED) {
+    try {
+      if (typeof lineManagerWin.setBackgroundMaterial === 'function') {
+        lineManagerWin.setBackgroundMaterial('none');
+      }
+      if (typeof lineManagerWin.setBackgroundColor === 'function') {
+        lineManagerWin.setBackgroundColor('#00000000');
+      }
+      console.log('[LineManagerWindow] 模糊关闭，已禁用原生材质');
+    } catch (e) {
+      console.warn('[LineManagerWindow] 禁用原生材质失败:', e);
+    }
+  }
+
   const lineManagerPath = getRendererUrl('line_manager_window.html');
   lineManagerWin.loadURL(lineManagerPath);
 
@@ -7843,7 +9553,7 @@ function createLineManagerWindow() {
         setTimeout(() => {
           if (lineManagerWin && !lineManagerWin.isDestroyed()) {
             try {
-              if (IS_WINDOWS_11 && typeof lineManagerWin.setMicaAcrylicEffect === 'function') {
+              if (MAIN_BLUR_ENABLED && IS_WINDOWS_11 && typeof lineManagerWin.setMicaAcrylicEffect === 'function') {
                 lineManagerWin.setBackgroundColor('#00000000');
                 lineManagerWin.setMicaAcrylicEffect();
                 console.log('[LineManagerWindow] ✅ 重新应用 Mica Acrylic 效果');
@@ -7936,15 +9646,22 @@ function createDevWindow() {
   });
 }
 
-// 处理线路管理器的线路切换请求
-ipcMain.handle('line-manager/switch-line', async (event, lineName) => {
+// 处理线路管理器的线路切换请求（options 可含 target、folderPath，folderPath 用于主窗口从正确目录刷新以得到正确的 currentFilePath）
+ipcMain.handle('line-manager/switch-line', async (event, lineName, options) => {
   try {
-    // 通知主窗口切换线路，同时传递 target 信息（如果有）
+    const folderPath = (options && typeof options === 'object' && options.folderPath) ? options.folderPath : null;
+    if (folderPath && typeof folderPath === 'string' && store) {
+      const folders = getLinesFolders();
+      const normalizedPath = path.normalize(folderPath);
+      const matchedId = Object.keys(folders).find((id) => folders[id] && path.normalize(folders[id].path) === normalizedPath);
+      if (matchedId) {
+        store.set('linesCurrentFolder', matchedId);
+      }
+    }
     if (mainWin && !mainWin.isDestroyed()) {
-      mainWin.webContents.send('switch-line-request', lineName, throughOperationTarget);
+      mainWin.webContents.send('switch-line-request', lineName, throughOperationTarget, folderPath);
       const target = throughOperationTarget;
       throughOperationTarget = null;
-      // 不自动关闭线路管理器，方便用户确认主窗口已切换后再手动关闭
       return { ok: true, target: target };
     }
     return { ok: false, error: '主窗口不存在' };

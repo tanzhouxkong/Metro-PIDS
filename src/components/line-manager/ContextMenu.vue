@@ -102,13 +102,13 @@ export default {
 .lmcm{
   position: fixed;
   z-index: 10000;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: none;
-  border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  padding: 6px;
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
+  border: 1px solid rgba(255,255,255,0.45);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  padding: 8px;
 }
 .lmcm-item{
   height: 34px;
@@ -151,15 +151,17 @@ export default {
 
 /* 深色模式 */
 html.dark .lmcm{
-  background: rgba(28, 28, 30, 0.95);
-  border: none;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  background: rgba(28, 28, 32, 0.62);
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.34), 0 0 0 1px rgba(255,255,255,0.06);
 }
 html.dark .lmcm-item{
   color: var(--text);
 }
 html.dark .lmcm-item:hover{
-  background: rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.10);
 }
 html.dark .lmcm-item.danger{
   color: var(--btn-red-bg);

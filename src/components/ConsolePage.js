@@ -5,10 +5,16 @@ import { useFileIO } from '../composables/useFileIO.js'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useSettings } from '../composables/useSettings.js'
+import { useStationAudio } from '../composables/useStationAudio.js'
 import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
+=======
+import { DEFAULT_SETTINGS } from '../utils/defaults.js'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
+>>>>>>> Stashed changes
 =======
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
@@ -25,7 +31,46 @@ export default {
     const { uiState } = useUIState()
     const fileIO = useFileIO(pidsState)
     const { settings, saveSettings } = useSettings()
+<<<<<<< Updated upstream
     const { t } = useI18n()
+=======
+    const { playArrive, playDepart } = useStationAudio(pidsState)
+    const { t } = useI18n()
+
+    const playAfterToggle = (prevIdx) => {
+        if (recordingState?.value?.isRecording) return;
+        if (settings.vehicleAudioEnabled === false) return;
+        const idx = Number.isInteger(pidsState.rt?.idx) ? pidsState.rt.idx : prevIdx;
+        if (idx == null) return;
+        if (pidsState.rt?.state === 0) playArrive(idx);
+        else playDepart(idx);
+    };
+
+    const controllerNextWithAudio = async () => {
+        const prevIdx = Number.isInteger(pidsState.rt?.idx) ? pidsState.rt.idx : 0;
+        await controllerNext();
+        playAfterToggle(prevIdx);
+    };
+
+    if (!pidsState.appData || typeof pidsState.appData !== 'object') {
+        pidsState.appData = { meta: {}, stations: [] }
+    }
+    if (!pidsState.appData.meta || typeof pidsState.appData.meta !== 'object') {
+        pidsState.appData.meta = {}
+    }
+    if (!Array.isArray(pidsState.appData.stations)) {
+        pidsState.appData.stations = []
+    }
+    if (!pidsState.store || typeof pidsState.store !== 'object') {
+        pidsState.store = { list: [pidsState.appData], cur: 0 }
+    }
+    if (!Array.isArray(pidsState.store.list)) {
+        pidsState.store.list = [pidsState.appData]
+    }
+    if (typeof pidsState.store.cur !== 'number') {
+        pidsState.store.cur = 0
+    }
+>>>>>>> Stashed changes
     
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
@@ -233,6 +278,7 @@ export default {
     // 贯通线路设置
     const throughLineSegments = ref([]);
     const lineStationsMap = ref({});
+    const throughLineDataMap = ref({});
     const lineSelectorTarget = ref(null);
     
     // 初始化throughLineSegments响应式数据
@@ -296,9 +342,10 @@ export default {
     }
     
     // 加载线路的站点列表
-    async function loadLineStations(lineName, segmentIndex) {
+    async function loadLineStations(lineName, segmentIndex, folderPath = null) {
         if (!lineName) {
             lineStationsMap.value[segmentIndex] = [];
+            throughLineDataMap.value[segmentIndex] = null;
             return;
         }
         
@@ -313,16 +360,31 @@ export default {
         
         if (line && line.stations) {
             lineStationsMap.value[segmentIndex] = line.stations;
+            throughLineDataMap.value[segmentIndex] = line;
         } else {
-            await fileIO.refreshLinesFromFolder(true);
-            const lineAfterRefresh = pidsState.store.list.find(l => {
-                return cleanName(l.meta?.lineName) === cleanName(lineName) || l.meta?.lineName === lineName;
-            });
-            if (lineAfterRefresh && lineAfterRefresh.stations) {
-                lineStationsMap.value[segmentIndex] = lineAfterRefresh.stations;
-            } else {
-                lineStationsMap.value[segmentIndex] = [];
+            let loadedStations = null;
+            let loadedLineData = null;
+            if (folderPath && window.electronAPI?.lines?.list && window.electronAPI?.lines?.read) {
+                try {
+                    const items = await window.electronAPI.lines.list(folderPath);
+                    if (Array.isArray(items) && items.length > 0) {
+                        for (const item of items) {
+                            const readRes = await window.electronAPI.lines.read(item.name, folderPath);
+                            const lineData = (readRes && readRes.ok) ? readRes.content : null;
+                            const candidateName = cleanName(lineData?.meta?.lineName);
+                            if (candidateName && (candidateName === cleanName(lineName) || lineData?.meta?.lineName === lineName)) {
+                                loadedStations = Array.isArray(lineData?.stations) ? lineData.stations : [];
+                                loadedLineData = lineData || null;
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[贯通线路] 按文件夹读取线路站点失败:', e);
+                }
             }
+            lineStationsMap.value[segmentIndex] = loadedStations || [];
+            throughLineDataMap.value[segmentIndex] = loadedLineData;
         }
     }
     
@@ -415,7 +477,7 @@ export default {
     }
     
     // 处理从线路管理器返回的线路选择
-    async function handleLineSelectedForThroughOperation(lineName, targetFromIPC) {
+    async function handleLineSelectedForThroughOperation(lineName, targetFromIPC, folderPath = null) {
         const meta = pidsState.appData.meta || {};
         const target = targetFromIPC || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
         
@@ -433,7 +495,7 @@ export default {
                     meta.throughLineSegments.push({ lineName: '', throughStationName: '' });
                 }
                 meta.throughLineSegments[segmentIndex].lineName = lineName;
-                await loadLineStations(lineName, segmentIndex);
+                await loadLineStations(lineName, segmentIndex, folderPath);
             }
         }
         
@@ -543,15 +605,93 @@ export default {
     
     async function applyThroughOperation() {
         const meta = pidsState.appData.meta || {};
+        const cleanText = (text) => {
+            if (text === null || text === undefined) return '';
+            return String(text).replace(/<[^>]+>([^<]*)<\/[^>]+>/g, '$1').trim();
+        };
+        const normalizeForCompare = (text) => cleanText(text).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+        const getSegmentLineName = (seg) => {
+            if (!seg || typeof seg !== 'object') return '';
+            return cleanText(
+                seg.lineName ||
+                seg.line ||
+                seg.line_name ||
+                seg.sourceLineName ||
+                seg.name ||
+                ''
+            );
+        };
+        const getSegmentThroughStationName = (seg) => {
+            if (!seg || typeof seg !== 'object') return '';
+            return cleanText(
+                seg.throughStationName ||
+                seg.throughStation ||
+                seg.transferStationName ||
+                seg.interchangeStationName ||
+                seg.joinStationName ||
+                ''
+            );
+        };
+        const getStationDisplayName = (station) => {
+            if (!station) return '';
+            if (typeof station === 'string') return cleanText(station);
+            return cleanText(
+                station.name ||
+                station.stationName ||
+                station.zh ||
+                station.cn ||
+                station.displayName ||
+                ''
+            );
+        };
+        const findLineByName = (lineName, storeList) => {
+            const target = normalizeForCompare(lineName);
+            if (!target) return null;
+            return storeList.find((line) => {
+                const candidate = normalizeForCompare(line && line.meta ? line.meta.lineName : '');
+                return candidate && candidate === target;
+            }) || null;
+        };
+        const detectThroughStationBetweenLines = (currentLineName, nextLineName, storeList) => {
+            const currentLine = findLineByName(currentLineName, storeList);
+            const nextLine = findLineByName(nextLineName, storeList);
+            if (!currentLine || !nextLine) return '';
+            const currentStations = Array.isArray(currentLine.stations) ? currentLine.stations : [];
+            const nextStations = Array.isArray(nextLine.stations) ? nextLine.stations : [];
+            if (!currentStations.length || !nextStations.length) return '';
+
+            const nextNameSet = new Set();
+            nextStations.forEach((station) => {
+                const normalized = normalizeForCompare(getStationDisplayName(station));
+                if (normalized) nextNameSet.add(normalized);
+            });
+
+            for (const station of currentStations) {
+                const displayName = getStationDisplayName(station);
+                const normalized = normalizeForCompare(displayName);
+                if (normalized && nextNameSet.has(normalized)) {
+                    return displayName;
+                }
+            }
+            return '';
+        };
+
         // 使用界面显示的 throughLineSegments 作为数据源，避免线路切换或刷新导致 meta 与界面不同步
-        const segments = (throughLineSegments.value && throughLineSegments.value.length > 0)
+        const rawSegments = (throughLineSegments.value && throughLineSegments.value.length > 0)
             ? throughLineSegments.value
             : (meta.throughLineSegments || []);
+
+        const segments = rawSegments.map((segment, index) => ({
+            ...(segment || {}),
+            __segmentIndex: index,
+            lineName: getSegmentLineName(segment),
+            throughStationName: getSegmentThroughStationName(segment)
+        }));
+
         // 先同步到 meta，确保数据一致
-        if (segments !== meta.throughLineSegments) {
-            meta.throughLineSegments = [...segments];
-            saveCfg();
-        }
+        meta.throughLineSegments = [...segments];
+        throughLineSegments.value = [...segments];
+        saveCfg();
         
         // 只处理连续的有线路名称的段（从第一段开始，连续的有线路名称的段）
         const validSegments = [];
@@ -568,6 +708,25 @@ export default {
             await showMsg('至少需要选择2条线路才能进行贯通');
             return;
         }
+
+        const storeList = pidsState.store?.list || [];
+        if (!storeList || storeList.length === 0) {
+            await showMsg('无法获取线路列表，请刷新线路数据');
+            return;
+        }
+
+        for (let i = 0; i < validSegments.length - 1; i++) {
+            if (!validSegments[i].throughStationName || !validSegments[i].throughStationName.trim()) {
+                const detected = detectThroughStationBetweenLines(validSegments[i].lineName, validSegments[i + 1].lineName, storeList);
+                if (detected) {
+                    validSegments[i].throughStationName = detected;
+                }
+            }
+        }
+
+        meta.throughLineSegments = [...segments];
+        throughLineSegments.value = [...segments];
+        saveCfg();
         
         // 检查每两段之间的贯通站点
         for (let i = 0; i < validSegments.length - 1; i++) {
@@ -578,13 +737,19 @@ export default {
         }
         
         try {
-            const storeList = pidsState.store?.list || [];
-            if (!storeList || storeList.length === 0) {
-                await showMsg('无法获取线路列表，请刷新线路数据');
-                return;
+            const effectiveStoreList = Array.isArray(storeList) ? [...storeList] : [];
+            for (const seg of validSegments) {
+                const segIdx = typeof seg.__segmentIndex === 'number' ? seg.__segmentIndex : -1;
+                if (segIdx < 0) continue;
+                const cachedLine = throughLineDataMap.value[segIdx];
+                if (!cachedLine || !cachedLine.meta || !cachedLine.meta.lineName) continue;
+                const exists = findLineByName(seg.lineName, effectiveStoreList);
+                if (!exists) {
+                    effectiveStoreList.push(cachedLine);
+                }
             }
-            
-            const mergedData = mergeThroughLines(pidsState.appData, storeList, {
+
+            const mergedData = mergeThroughLines(pidsState.appData, effectiveStoreList, {
                 throughLineSegments: validSegments
             });
             
@@ -635,13 +800,29 @@ export default {
                 }
                 return;
             }
+
+            // 收集贯通来源线路路径（用于另存时补齐音频来源）
+            const sourcePathSet = new Set();
+            const linePathMap = pidsState.lineNameToFilePath || {};
+            const cleanName = (name) => (name && String(name).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim()) || '';
+            for (const seg of validSegments) {
+                const rawName = seg && seg.lineName ? String(seg.lineName) : '';
+                const pureName = cleanName(rawName);
+                const p = linePathMap[rawName] || linePathMap[pureName] || seg?.filePath || seg?.lineFilePath || null;
+                if (p && String(p).trim()) sourcePathSet.add(String(p).trim());
+            }
+            if (pidsState.currentFilePath && String(pidsState.currentFilePath).trim()) {
+                sourcePathSet.add(String(pidsState.currentFilePath).trim());
+            }
+            const sourceLinePaths = Array.from(sourcePathSet);
             
             // 将贯通线路数据存储到 localStorage，供线路管理器读取
             localStorage.setItem('pendingThroughLineData', JSON.stringify({
                 lineData: serializableData,
                 lineName: mergedLineName,
                 cleanLineName: cleanLineName,
-                validSegments: validSegments
+                validSegments: validSegments,
+                sourceLinePaths
             }));
             
             // 设置保存模式标记（必须在打开窗口之前设置）
@@ -670,7 +851,15 @@ export default {
                         
                         // 刷新线路列表（从保存的文件夹）
                         if (result.folderPath) {
+                            const prevAppData = pidsState.appData;
+                            const prevStoreCur = pidsState.store?.cur;
                             await fileIO.refreshLinesFromFolder(true, result.folderPath);
+                            if (!pidsState.appData && prevAppData) {
+                                pidsState.appData = prevAppData;
+                                if (pidsState.store && typeof prevStoreCur === 'number') {
+                                    pidsState.store.cur = prevStoreCur;
+                                }
+                            }
                         }
                         
                         // 获取文件夹名称用于显示
@@ -1191,11 +1380,10 @@ export default {
         sync();
     }
     
-    // 通过线路名称切换线路
-    async function switchLineByName(lineName) {
-        console.log('[ConsolePage] switchLineByName 被调用, lineName:', lineName);
-        // 先刷新“当前文件夹”的线路列表
-        await fileIO.refreshLinesFromFolder(true);
+    // 通过线路名称切换线路（folderPath 可选，来自线路管理器时传入，确保从正确目录刷新以得到正确的 currentFilePath）
+    async function switchLineByName(lineName, folderPath = null) {
+        console.log('[ConsolePage] switchLineByName 被调用, lineName:', lineName, 'folderPath:', folderPath);
+        await fileIO.refreshLinesFromFolder(true, folderPath);
         
         // 查找线路（移除颜色标记后比较）
         const cleanName = (name) => {
@@ -1305,25 +1493,20 @@ export default {
     }
     
     // 处理线路切换请求
-    async function handleSwitchLineRequest(lineName, target) {
-        console.log('[ConsolePage] handleSwitchLineRequest 被调用, lineName:', lineName, 'target:', target);
+    async function handleSwitchLineRequest(lineName, target, folderPath = null) {
+        console.log('[ConsolePage] handleSwitchLineRequest 被调用, lineName:', lineName, 'target:', target, 'folderPath:', folderPath);
         const throughTarget = target || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
-        console.log('[ConsolePage] handleSwitchLineRequest throughTarget:', throughTarget, 'lineSelectorTarget.value:', lineSelectorTarget.value, 'localStorage:', localStorage.getItem('throughOperationSelectorTarget'));
         
         const isThroughOperation = throughTarget === 'lineA' || 
                                    throughTarget === 'lineB' || 
                                    (typeof throughTarget === 'number') ||
                                    (throughTarget && throughTarget.startsWith('segment-'));
         
-        console.log('[ConsolePage] handleSwitchLineRequest isThroughOperation:', isThroughOperation);
-        
         if (isThroughOperation) {
-            console.log('[ConsolePage] handleSwitchLineRequest 处理贯通线路选择');
-            await handleLineSelectedForThroughOperation(lineName, throughTarget);
+            await handleLineSelectedForThroughOperation(lineName, throughTarget, folderPath);
             return;
         } else {
-            console.log('[ConsolePage] handleSwitchLineRequest 处理普通线路切换');
-            await switchLineByName(lineName);
+            await switchLineByName(lineName, folderPath);
         }
     }
     
@@ -1367,6 +1550,16 @@ export default {
                     }
                     if (progress.isRecording === false) {
                         // 主进程已停止（可能是完成、用户停止或异常），本地立刻退出录制态并清理计时器
+<<<<<<< Updated upstream
+=======
+                        try {
+                            if (typeof window !== 'undefined') {
+                                window.__disableStationAudioDuringRecording = false;
+                                window.__recordingAudioCaptureEnabled = false;
+                                window.__recordingAudioStartAt = 0;
+                            }
+                        } catch (e) {}
+>>>>>>> Stashed changes
                         recordingState.value.isRecording = false;
                         recordingState.value.progress = 0;
                         recordingState.value.nextIn = 0;
@@ -1395,8 +1588,8 @@ export default {
         
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onSwitchLineRequest) {
             try {
-                window.electronAPI.onSwitchLineRequest(async (lineName, target) => {
-                    await handleSwitchLineRequest(lineName, target);
+                window.electronAPI.onSwitchLineRequest(async (lineName, target, folderPath) => {
+                    await handleSwitchLineRequest(lineName, target, folderPath);
                 });
             } catch (e) {
                 console.warn('无法设置线路切换监听:', e);
@@ -1406,8 +1599,8 @@ export default {
         if (typeof window !== 'undefined' && (!window.electronAPI || !window.electronAPI.onSwitchLineRequest)) {
             const messageHandler = async (event) => {
                 if (event.data && event.data.type === 'switch-line-request') {
-                    const { lineName, target } = event.data;
-                    await handleSwitchLineRequest(lineName, target);
+                    const { lineName, target, folderPath } = event.data;
+                    await handleSwitchLineRequest(lineName, target, folderPath);
                 }
             };
             window.addEventListener('message', messageHandler);
@@ -1445,10 +1638,24 @@ export default {
     
     // 组件卸载时清理录制监听
     onBeforeUnmount(() => {
+<<<<<<< Updated upstream
+=======
+        try {
+            if (typeof window !== 'undefined') {
+                window.__disableStationAudioDuringRecording = false;
+                window.__recordingAudioCaptureEnabled = false;
+                window.__recordingAudioStartAt = 0;
+            }
+        } catch (e) {}
+>>>>>>> Stashed changes
         if (recordingProgressUnsubscribe) {
             recordingProgressUnsubscribe();
             recordingProgressUnsubscribe = null;
         }
+<<<<<<< Updated upstream
+=======
+        stopLineManagerSaveWatcher();
+>>>>>>> Stashed changes
     });
     
     // 监听线路切换，自动加载预设列表
@@ -1486,7 +1693,31 @@ export default {
         return false;
     }
 
-    const autoplay = useAutoplay(controllerNext, shouldStop)
+    watch(
+        () => settings.vehicleAudioEnabled,
+        async (enabled) => {
+            if (!recordingState.value.isRecording) return;
+            const allow = enabled !== false;
+            try {
+                if (typeof window !== 'undefined') {
+                    window.__disableStationAudioDuringRecording = !allow;
+                    window.__recordingAudioCaptureEnabled = !!allow;
+                    if (allow && (!window.__recordingAudioStartAt || Number(window.__recordingAudioStartAt) <= 0)) {
+                        window.__recordingAudioStartAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    }
+                }
+            } catch (e) {}
+            if (!allow) {
+                try {
+                    if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') {
+                        await window.__stopStationAudio();
+                    }
+                } catch (e) {}
+            }
+        }
+    )
+
+    const autoplay = useAutoplay(controllerNextWithAudio, shouldStop)
     const { isPlaying, isPaused, nextIn, start, stop, togglePause } = autoplay
 
     // 开启自动播放时确保当前选中的显示器已打开
@@ -1562,6 +1793,154 @@ export default {
         }
     }
 
+<<<<<<< Updated upstream
+=======
+    let lineManagerSaveWatcher = null;
+
+    const stopLineManagerSaveWatcher = () => {
+        if (lineManagerSaveWatcher) {
+            clearInterval(lineManagerSaveWatcher);
+            lineManagerSaveWatcher = null;
+        }
+    };
+
+    function cachePendingLineSave(payload) {
+        try {
+            localStorage.setItem('pendingLineSaveData', JSON.stringify(payload));
+            localStorage.setItem('lineManagerSaveMode', payload.mode || 'line');
+            localStorage.removeItem('lineManagerSaveResult');
+        } catch (e) {
+            console.warn('[线路管理器] 无法写入本地缓存:', e);
+        }
+    }
+
+    function startLineManagerSaveWatcher(requestId, payload, mode) {
+        stopLineManagerSaveWatcher();
+        const timeout = Date.now() + 30000;
+
+        lineManagerSaveWatcher = setInterval(async () => {
+            if (Date.now() > timeout) {
+                stopLineManagerSaveWatcher();
+                return;
+            }
+
+            const raw = localStorage.getItem('lineManagerSaveResult');
+            if (!raw) return;
+
+            let result;
+            try {
+                result = JSON.parse(raw);
+            } catch (e) {
+                console.warn('[线路管理器] 保存结果解析失败:', e);
+                stopLineManagerSaveWatcher();
+                return;
+            }
+
+            if (result.requestId && result.requestId !== requestId) {
+                return;
+            }
+
+            stopLineManagerSaveWatcher();
+            localStorage.removeItem('lineManagerSaveResult');
+            localStorage.removeItem('pendingLineSaveData');
+            localStorage.removeItem('lineManagerSaveMode');
+
+            if (result && result.success) {
+                const dirPart = (p) => {
+                    if (!p || typeof p !== 'string') return null;
+                    const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+                    return idx >= 0 ? p.substring(0, idx + 1) : null;
+                };
+
+                const cleanName = payload.cleanLineName || payload.lineName || '';
+
+                if (result.folderId) {
+                    pidsState.currentFolderId = result.folderId;
+                }
+                if (result.filePath) {
+                    pidsState.currentFilePath = result.filePath;
+                    if (cleanName) {
+                        pidsState.lineNameToFilePath[cleanName] = result.filePath;
+                    }
+                    const dir = dirPart(result.filePath);
+                    if (dir) pidsState.lastKnownSaveDir = dir;
+                } else if (result.folderPath) {
+                    const dir = dirPart(result.folderPath);
+                    if (dir) pidsState.lastKnownSaveDir = dir;
+                }
+
+                if (result.folderPath) {
+                    try {
+                        await fileIO.refreshLinesFromFolder(true, result.folderPath);
+                    } catch (e) {
+                        console.warn('[线路管理器] 刷新线路列表失败:', e);
+                    }
+                }
+
+                try { saveCfg(); } catch (e) {}
+                try { sync(); } catch (e) {}
+
+                try {
+                    const { showNotification } = await import('../utils/notificationService.js');
+                    const folderLabel = result.folderName || result.folderId || '';
+                    const targetLabel = folderLabel ? ` -> ${folderLabel}` : '';
+                    const modeLabel = mode === 'zip' ? '保存为压缩包' : '保存当前线路';
+                    showNotification('保存成功', `${modeLabel}：${payload.lineName || cleanName}${targetLabel}`);
+                } catch (e) {}
+            } else {
+                const errMsg = (result && result.error) ? String(result.error) : '未知错误';
+                const isCancelled = !!(result && result.cancelled) || errMsg === 'window-closed' || errMsg === 'cancelled';
+                if (isCancelled) {
+                    await showMsg('已取消保存', '提示');
+                } else {
+                    await showMsg('保存失败：' + errMsg, '错误');
+                }
+            }
+        }, 400);
+    }
+
+    async function openLineManagerForSave(mode = 'line') {
+        const cur = pidsState.appData;
+        const lineName = cur && cur.meta ? (cur.meta.lineName || '') : '';
+        if (!cur || !cur.meta || !lineName) {
+            await showMsg('当前线路数据无效，无法保存');
+            return;
+        }
+
+        let serializable;
+        try {
+            serializable = JSON.parse(JSON.stringify(cur));
+        } catch (e) {
+            await showMsg('保存失败：线路数据无法序列化');
+            return;
+        }
+
+        const cleanLineName = lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+        const requestId = Date.now();
+        const payload = {
+            mode,
+            lineName,
+            cleanLineName,
+            lineData: serializable,
+            currentFilePath: pidsState.currentFilePath || null,
+            currentFolderId: pidsState.currentFolderId || null,
+            lastKnownSaveDir: pidsState.lastKnownSaveDir || null,
+            requestId,
+            ts: Date.now()
+        };
+
+        cachePendingLineSave(payload);
+
+        if (window.electronAPI && window.electronAPI.openLineManager) {
+            await window.electronAPI.openLineManager();
+        } else {
+            openLineManagerWindow();
+        }
+
+        startLineManagerSaveWatcher(requestId, payload, mode);
+    }
+
+>>>>>>> Stashed changes
     // ========== 视频录制相关 ==========
     const recordingState = ref({
         isRecording: false,
@@ -1780,13 +2159,32 @@ export default {
             const enableParallel = !!recordingState.value.parallelEnabled;
             recordingState.value.mode = enableParallel ? 'parallel' : 'single';
             recordingState.value.isRecording = true;
+<<<<<<< Updated upstream
+=======
+            const vehicleAudioEnabled = settings.vehicleAudioEnabled !== false;
+            try {
+                if (typeof window !== 'undefined') {
+                    window.__disableStationAudioDuringRecording = !vehicleAudioEnabled;
+                    window.__recordingAudioCaptureEnabled = !!vehicleAudioEnabled;
+                    window.__recordingAudioStartAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                }
+            } catch (e) {}
+            if (!vehicleAudioEnabled) {
+                try { if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') await window.__stopStationAudio(); } catch (e) {}
+            }
+>>>>>>> Stashed changes
             const options = {
                 encoder: recordingState.value.encoder,
                 codec: recordingState.value.codec,
                 container: recordingState.value.container,
                 bitrate: safeBitrate,     // Mbps
                 fps: recordingState.value.fps,
+<<<<<<< Updated upstream
                 intervalSec: safeInterval
+=======
+                intervalSec: safeInterval,
+                vehicleAudioEnabled: vehicleAudioEnabled
+>>>>>>> Stashed changes
             };
 
             let result;
@@ -1855,7 +2253,11 @@ export default {
                         recordingState.value.progress = Math.min(100, Math.max(0, (passed / interval) * 100));
 
                         if (recordingState.value.nextIn <= 0) {
+<<<<<<< Updated upstream
                             try { await controllerNext(); } catch (e) {}
+=======
+                            try { await controllerNextWithAudio(); } catch (e) {}
+>>>>>>> Stashed changes
                             recordingState.value.nextIn = interval;
                             recordingState.value.progress = 0;
                         }
@@ -1866,10 +2268,30 @@ export default {
                 }
             } else {
                 recordingState.value.isRecording = false;
+<<<<<<< Updated upstream
+=======
+                try {
+                    if (typeof window !== 'undefined') {
+                        window.__disableStationAudioDuringRecording = false;
+                        window.__recordingAudioCaptureEnabled = false;
+                        window.__recordingAudioStartAt = 0;
+                    }
+                } catch (e) {}
+>>>>>>> Stashed changes
                 await showMsg(result?.error || t('console.recordingError'));
             }
         } catch (e) {
             recordingState.value.isRecording = false;
+<<<<<<< Updated upstream
+=======
+            try {
+                if (typeof window !== 'undefined') {
+                    window.__disableStationAudioDuringRecording = false;
+                    window.__recordingAudioCaptureEnabled = false;
+                    window.__recordingAudioStartAt = 0;
+                }
+            } catch (e2) {}
+>>>>>>> Stashed changes
             console.error('开始录制失败:', e);
             await showMsg(t('console.recordingError') + ': ' + String(e));
         }
@@ -1886,6 +2308,16 @@ export default {
                 : await window.electronAPI.recording.stopRecording();
             if (result && result.ok) {
                 recordingState.value.isRecording = false;
+<<<<<<< Updated upstream
+=======
+                try {
+                    if (typeof window !== 'undefined') {
+                        window.__disableStationAudioDuringRecording = false;
+                        window.__recordingAudioCaptureEnabled = false;
+                        window.__recordingAudioStartAt = 0;
+                    }
+                } catch (e) {}
+>>>>>>> Stashed changes
                 recordingState.value.progress = 0;
                 recordingState.value.nextIn = 0;
                 recordingState.value.totalSteps = 0;
@@ -1901,6 +2333,17 @@ export default {
             console.error('停止录制失败:', e);
         }
 
+<<<<<<< Updated upstream
+=======
+        try {
+            if (typeof window !== 'undefined') {
+                window.__disableStationAudioDuringRecording = false;
+                window.__recordingAudioCaptureEnabled = false;
+                window.__recordingAudioStartAt = 0;
+            }
+        } catch (e) {}
+
+>>>>>>> Stashed changes
         try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
         recordingStepTimer = null;
     }
@@ -1955,6 +2398,7 @@ export default {
         stopWithUnlock,
         togglePause,
         openLineManagerWindow,
+        openLineManagerForSave,
         saveCfg,
         saveCfgAndPersistSilent,
         changeServiceMode,
@@ -1996,8 +2440,11 @@ export default {
         setRoundedCorner,
         clearMicaLogs,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         t
 =======
+=======
+>>>>>>> Stashed changes
         t,
         // 录制相关
         recordingState,
@@ -2012,6 +2459,9 @@ export default {
         toggleRecording,
         openRecordingFolder,
         loadAvailableEncoders
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     }
   },
@@ -2037,16 +2487,21 @@ export default {
               <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
           </div>
           
-          <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
-          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+          <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 -->
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
                   <i class="fas fa-folder-open" style="font-size:18px;"></i> {{ t('console.openManager') }}
               </button>
+<<<<<<< Updated upstream
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
                   <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
               </button>
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
                   <i class="fas fa-trash-alt" style="font-size:18px;"></i> {{ t('console.resetData') }}
+=======
+              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
+                  <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
+>>>>>>> Stashed changes
               </button>
           </div>
           </div>
@@ -2067,7 +2522,7 @@ export default {
             
             <input v-model="pidsState.appData.meta.lineName" placeholder="线路名称" @input="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:12px; background:var(--input-bg); color:var(--text);">
             
-            <div style="display:flex; gap:12px; margin-bottom:12px;">
+            <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
                 <div style="position:relative; width:60px; height:42px;">
                     <input 
                         v-if="!hasElectronAPI"
@@ -2083,6 +2538,7 @@ export default {
                         @click="pickColor"
                     ></div>
                 </div>
+<<<<<<< Updated upstream
                 <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <option value="loop">{{ t('console.loopLine') }}</option>
                     <option value="linear">{{ t('console.singleLine') }}</option>
@@ -2099,6 +2555,82 @@ export default {
                     <option value="down">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</option>
                 </template>
             </select>
+=======
+                <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1; align-items:center;">
+                    <button class="btn" :style="{
+                        height:'44px',
+                        padding:'10px 18px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.mode==='loop' ? '#10b981' : 'var(--input-bg)',
+                        color: pidsState.appData.meta.mode==='loop' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.mode==='loop' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
+                        fontWeight:'800',
+                        minWidth:'110px'
+                    }" @click="pidsState.appData.meta.mode='loop'; saveCfg()">{{ t('console.loopLine') }}</button>
+                    <button class="btn" :style="{
+                        height:'44px',
+                        padding:'10px 18px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.mode==='linear' ? '#1e90ff' : 'var(--input-bg)',
+                        color: pidsState.appData.meta.mode==='linear' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.mode==='linear' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
+                        fontWeight:'800',
+                        minWidth:'110px'
+                    }" @click="pidsState.appData.meta.mode='linear'; saveCfg()">{{ t('console.singleLine') }}</button>
+
+                    <template v-if="pidsState.appData.meta.mode === 'loop'">
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='outer' ? '#5F27CD' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='outer' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='outer' ? '0 6px 14px rgba(95,39,205,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'120px'
+                        }" @click="pidsState.appData.meta.dirType='outer'; saveCfg()">{{ t('console.outerLoop') }}</button>
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='inner' ? '#ffa502' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='inner' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='inner' ? '0 6px 14px rgba(255,165,2,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'120px'
+                        }" @click="pidsState.appData.meta.dirType='inner'; saveCfg()">{{ t('console.innerLoop') }}</button>
+                    </template>
+                    <template v-else>
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='up' ? '#1e90ff' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='up' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='up' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'180px'
+                        }" @click="pidsState.appData.meta.dirType='up'; saveCfg()">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</button>
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='down' ? '#10b981' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='down' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='down' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'180px'
+                        }" @click="pidsState.appData.meta.dirType='down'; saveCfg()">{{ t('console.dirLabelDown') || t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</button>
+                    </template>
+                </div>
+            </div>
+>>>>>>> Stashed changes
 
             <div style="margin-bottom:16px;">
                 <div style="font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ t('console.serviceMode') }}</div>
@@ -2145,6 +2677,7 @@ export default {
             <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.shortTurn') }}</div>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
@@ -2175,6 +2708,33 @@ export default {
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+=======
+
+            <div
+                v-if="pidsState.appData?.meta?.autoShortTurn"
+                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
+            >
+                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
+                    <i class="fas fa-magic" style="margin-right:6px;"></i>
+                    已启用自动短交路
+                </div>
+                <div style="color:var(--muted);">
+                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button
+                        class="btn"
+                        @click="unlockAutoShortTurn()"
+                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
+                    >
+                        转为手动设置
+                    </button>
+                </div>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
+                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+>>>>>>> Stashed changes
 =======
 
             <div
@@ -2208,6 +2768,7 @@ export default {
                     style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
                 >
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
@@ -2215,6 +2776,8 @@ export default {
 >>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                     <option :value="-1">无</option>
@@ -2226,8 +2789,11 @@ export default {
                 <label style="color:var(--muted);">{{ t('console.shortTurnEnd') }}</label>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                 <select
@@ -2236,10 +2802,13 @@ export default {
                     style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
                 >
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                      <option :value="-1">无</option>
@@ -2250,10 +2819,13 @@ export default {
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px;">
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                 <button
@@ -2269,10 +2841,13 @@ export default {
                     style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;"
                 >{{ t('console.shortTurnApply') }}</button>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2498,6 +3073,7 @@ export default {
             <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
               <div style="font-size:13px; color:var(--muted); font-weight:bold;">{{ t('console.recordingParallelTitle') }}</div>
               <div style="display:flex; align-items:center; gap:10px;">
+<<<<<<< Updated upstream
                 <label style="position:relative; display:inline-block; width:52px; height:28px;">
                   <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
                   <span style="position: absolute; cursor: pointer; inset: 0px; background-color: rgb(204, 204, 204); transition: 0.4s; border-radius: 24px;"
@@ -2507,6 +3083,23 @@ export default {
                       position:'absolute', content:'', height:'22px', width:'22px', left:'3px', bottom:'3px',
                       backgroundColor:'white', transition:'0.4s', borderRadius:'50%',
                       transform: recordingState.parallelEnabled ? 'translateX(24px)' : 'translateX(0)'
+=======
+                <label style="position:relative; display:inline-block; width:44px; height:24px;">
+                  <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
+                  <span style="position: absolute; cursor: pointer; inset: 0px; background-color: #ccc; transition: background-color 0.3s, box-shadow 0.2s; border-radius: 24px;"
+                    :style="{ 
+                      backgroundColor: recordingState.parallelEnabled ? 'var(--accent)' : '#ccc', 
+                      boxShadow: recordingState.parallelEnabled ? '0 2px 8px rgba(22, 119, 255, 0.35)' : 'none',
+                      cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', 
+                      opacity: recordingState.isRecording ? 0.6 : 1 
+                    }"
+                  ></span>
+                  <span :style="{
+                      position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px',
+                      backgroundColor:'white', transition:'transform 0.3s', borderRadius:'50%',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                      transform: recordingState.parallelEnabled ? 'translateX(20px)' : 'translateX(0)'
+>>>>>>> Stashed changes
                     }"></span>
                 </label>
               </div>

@@ -5,6 +5,7 @@
   <title>Metro-PIDS 云控管理后台</title>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
   <meta name="application-name" content="Metro-PIDS 云控管理后台" />
@@ -17,6 +18,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+=======
+  <meta name="application-name" content="Metro-PIDS 云控管理后台" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+>>>>>>> Stashed changes
   
   <style>
     /* =========================================
@@ -442,19 +450,32 @@
             </div>
             <div class="table-container">
               <table id="runtime-table">
+<<<<<<< Updated upstream
                 <thead><tr><th>线路名称</th><th>站点数量</th><th>操作</th></tr></thead>
                 <tbody id="runtime-tbody"><tr><td colspan="3" class="empty-state">点击"刷新列表"加载数据</td></tr></tbody>
+=======
+                <thead><tr><th>线路名称</th><th>站点数量</th><th>文件大小</th><th>操作</th></tr></thead>
+                <tbody id="runtime-tbody"><tr><td colspan="4" class="empty-state">点击"刷新列表"加载数据</td></tr></tbody>
+>>>>>>> Stashed changes
               </table>
             </div>
           </div>
           <div class="card">
             <h2><i class="fas fa-edit"></i> 云控线路编辑</h2>
             <div style="background:var(--bg-active); padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; border:1px solid var(--border-color); color:var(--text-secondary);">
+<<<<<<< Updated upstream
               <strong>💡 使用说明：</strong> 选择 JSON 文件上传，系统会自动读取线路数据。支持一次选择多个文件批量上传。
             </div>
             <div class="field">
               <label>选择 JSON 文件</label>
               <input type="file" id="runtime-line-file-input" accept=".json" multiple />
+=======
+              <strong>💡 使用说明：</strong> 选择 JSON 或 MPL 文件上传，系统会自动读取线路数据。支持一次选择多个文件批量上传。
+            </div>
+            <div class="field">
+              <label>选择 JSON / MPL 文件</label>
+              <input type="file" id="runtime-line-file-input" accept=".json,.mpl,.zip" multiple />
+>>>>>>> Stashed changes
               <div id="runtime-files-list" style="margin-top:8px; display:none;"><ul id="runtime-files-items" style="font-size:12px; color:var(--text-secondary); padding-left:20px;"></ul></div>
             </div>
             <div class="btn-group">
@@ -774,7 +795,12 @@
               </div>
             </div>
             <div class="btn-group">
+<<<<<<< Updated upstream
               <button class="btn btn-secondary" id="btn-download-records">下载 CSV</button>
+=======
+              <button class="btn btn-secondary" id="btn-download-records" title="导出全部访问记录，不应用「排除的设备ID」">下载全量 CSV</button>
+              <button class="btn btn-secondary" id="btn-download-records-filtered" title="导出与当前页面一致的记录（已排除指定设备）">下载当前视图 CSV</button>
+>>>>>>> Stashed changes
               <button class="btn btn-secondary" id="btn-migrate-kv-to-d1" style="display:none;">KV迁移</button>
             </div>
           </div>
@@ -890,9 +916,12 @@
         <div class="field"><label>名称</label><input type="text" id="holiday-edit-name" /></div>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
         <div class="field">
@@ -911,9 +940,12 @@
           </select>
         </div>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
         <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -984,6 +1016,24 @@
       </div>
     </div>
   </div>
+<<<<<<< Updated upstream
+=======
+
+  <div class="modal" id="runtime-upload-detail-modal">
+    <div class="modal-content" style="max-width:920px;">
+      <div class="modal-header">
+        <h3>上传音频明细</h3>
+        <button class="close-btn" id="runtime-upload-detail-close">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:60vh; overflow:auto;">
+        <div id="runtime-upload-detail-body" style="font-size:13px; color:var(--text-secondary);"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="runtime-upload-detail-ok">关闭</button>
+      </div>
+    </div>
+  </div>
+>>>>>>> Stashed changes
   <script>
     // 侧边栏切换（含移动端抽屉）
     function initSidebarNavigation() {
@@ -1143,11 +1193,17 @@
         headers['Authorization'] = `Bearer ${config.token}`;
       }
       
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined
-      });
+      let response;
+      try {
+        response = await fetch(url, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined
+        });
+      } catch (e) {
+        const msg = (e && e.message) ? e.message : '网络请求失败';
+        throw new Error(`请求失败（可能是 CORS/反向代理拦截/域名未指向最新 Worker）：${msg}`);
+      }
       
       const text = await response.text();
       let data;
@@ -1176,6 +1232,52 @@
       if (s == null) return '';
       const t = String(s);
       return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function normalizeRuntimeLineName(name) {
+      if (name == null || typeof name !== 'string') return '';
+      const s = String(name).trim();
+      if (!s) return '';
+      try {
+        return s.normalize('NFC');
+      } catch {
+        return s;
+      }
+    }
+
+    function formatBytes(bytes) {
+      const b = Number(bytes);
+      if (!Number.isFinite(b) || b < 0) return '-';
+      if (b < 1024) return `${b} B`;
+      if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+      return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function splitCloudAudioFilesBySize(cloudAudioFiles, maxBytes = 4 * 1024 * 1024) {
+      const entries = Object.entries(cloudAudioFiles || {}).filter(([k, v]) => typeof k === 'string' && k && typeof v === 'string' && v);
+      const chunks = [];
+      let current = {};
+
+      const byteLen = (obj) => new TextEncoder().encode(JSON.stringify(obj)).byteLength;
+
+      for (const [pathKey, dataUrl] of entries) {
+        current[pathKey] = dataUrl;
+        if (byteLen(current) <= maxBytes) continue;
+
+        delete current[pathKey];
+        if (Object.keys(current).length === 0) {
+          throw new Error(`单个音频过大，无法分片上传：${pathKey}`);
+        }
+        chunks.push(current);
+        current = { [pathKey]: dataUrl };
+
+        if (byteLen(current) > maxBytes) {
+          throw new Error(`单个音频超过分片大小限制：${pathKey}`);
+        }
+      }
+
+      if (Object.keys(current).length > 0) chunks.push(current);
+      return chunks;
     }
     
     // 标签页切换
@@ -1290,24 +1392,29 @@
     // 运控线路功能
     document.getElementById('btn-list-runtime').addEventListener('click', async () => {
       const tbody = document.getElementById('runtime-tbody');
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state"><div class="loading"></div> 加载中...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><div class="loading"></div> 加载中...</td></tr>';
       
       try {
         const data = await callApi('GET', '/runtime/lines');
         const lines = data.lines || [];
+        const lineSizes = data.lineSizes && typeof data.lineSizes === 'object' ? data.lineSizes : {};
         
         if (lines.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="3" class="empty-state"><i class="fas fa-inbox"></i><div>暂无数据</div></td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><i class="fas fa-inbox"></i><div>暂无数据</div></td></tr>';
           return;
         }
         
         tbody.innerHTML = lines.map(line => {
           const lineName = line.meta?.lineName || '未知';
           const stationCount = line.stations?.length || 0;
+          const normName = normalizeRuntimeLineName(lineName);
+          const sizeBytes = lineSizes[normName];
+          const sizeText = formatBytes(sizeBytes);
           return `
             <tr>
               <td><strong>${lineName}</strong></td>
               <td><span class="badge badge-info">${stationCount} 个站点</span></td>
+              <td><span class="badge">${sizeText}</span></td>
               <td>
                 <button class="btn btn-secondary btn-small" onclick="loadRuntimeLine('${lineName}')">
                   <i class="fas fa-edit"></i> 编辑
@@ -1320,13 +1427,318 @@
           `;
         }).join('');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="3" class="empty-state"><i class="fas fa-exclamation-triangle"></i><div>加载失败：${e.message}</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-state"><i class="fas fa-exclamation-triangle"></i><div>加载失败：${e.message}</div></td></tr>`;
       }
     });
     
     // 运控线路文件管理 & 站点可视化编辑
     let runtimeFiles = [];
     let runtimeStations = [];
+    let lastRuntimeUploadDetails = [];
+
+    function isPlainObject(value) {
+      return value != null && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function tryParseJsonText(text) {
+      if (typeof text !== 'string') return null;
+      const trimmed = text.trim();
+      if (!trimmed) return null;
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return null;
+      }
+    }
+
+    function hasLineShape(value) {
+      return !!(value && isPlainObject(value.meta) && typeof value.meta.lineName === 'string' && value.meta.lineName.trim() && Array.isArray(value.stations));
+    }
+
+    function openRuntimeUploadDetailModal() {
+      const modal = document.getElementById('runtime-upload-detail-modal');
+      const body = document.getElementById('runtime-upload-detail-body');
+      if (!modal || !body) return;
+
+      if (!Array.isArray(lastRuntimeUploadDetails) || lastRuntimeUploadDetails.length === 0) {
+        body.innerHTML = '<div class="empty-state">暂无可展示的上传明细</div>';
+        modal.classList.add('active');
+        return;
+      }
+
+      const rows = [];
+      for (const item of lastRuntimeUploadDetails) {
+        const sourceFile = escapeHtml(item.sourceFile || '-');
+        const lineName = escapeHtml(item.lineName || '-');
+        const embeddedCount = Number(item.embeddedCount || 0);
+        const embeddedBytes = Number(item.embeddedBytes || 0);
+        const uploadedBytes = Number(item.uploadedBytes || 0);
+        const audios = Array.isArray(item.audios) ? item.audios : [];
+
+        const audioListHtml = audios.length
+          ? `<ul style="margin:8px 0 0; padding-left:18px;">${audios.map((a) => {
+              const p = escapeHtml(a.path || '-');
+              const s = formatBytes(a.bytes || 0);
+              return `<li><code>${p}</code> <span style="color:var(--text-secondary);">(${s})</span></li>`;
+            }).join('')}</ul>`
+          : '<div style="margin-top:8px; color:var(--text-secondary);">无内嵌音频</div>';
+
+        rows.push(`
+          <div style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+            <div><strong>源文件：</strong><code>${sourceFile}</code></div>
+            <div style="margin-top:4px;"><strong>线路：</strong>${lineName}</div>
+            <div style="margin-top:4px;"><strong>内嵌音频：</strong>${embeddedCount} 个，约 ${formatBytes(embeddedBytes)}</div>
+            <div style="margin-top:4px;"><strong>上传体积：</strong>${formatBytes(uploadedBytes)}</div>
+            ${audioListHtml}
+          </div>
+        `);
+      }
+
+      body.innerHTML = rows.join('');
+      modal.classList.add('active');
+    }
+
+    function closeRuntimeUploadDetailModal() {
+      const modal = document.getElementById('runtime-upload-detail-modal');
+      if (!modal) return;
+      modal.classList.remove('active');
+    }
+
+    function extractRuntimeLineData(payload) {
+      if (!payload) return null;
+      const queue = [payload];
+      const visited = new Set();
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (current == null) continue;
+
+        if (typeof current === 'string') {
+          const parsed = tryParseJsonText(current);
+          if (parsed) queue.push(parsed);
+          continue;
+        }
+
+        if (!isPlainObject(current)) continue;
+        if (visited.has(current)) continue;
+        visited.add(current);
+
+        if (hasLineShape(current)) return current;
+
+        for (const key of ['line', 'lineData', 'appData', 'data', 'content', 'payload', 'json', 'lineJson', 'line_json']) {
+          if (current[key] != null) queue.push(current[key]);
+        }
+
+        if (isPlainObject(current.files)) {
+          const files = current.files;
+          if (files['line.json'] != null) queue.push(files['line.json']);
+          if (files.lineJson != null) queue.push(files.lineJson);
+          if (files.line_json != null) queue.push(files.line_json);
+        }
+
+        if (Array.isArray(current.entries)) {
+          for (const ent of current.entries) {
+            if (!isPlainObject(ent)) continue;
+            const name = String(ent.name || ent.filename || '').toLowerCase();
+            if (name === 'line.json') {
+              if (ent.content != null) queue.push(ent.content);
+              if (ent.data != null) queue.push(ent.data);
+              if (ent.text != null) queue.push(ent.text);
+              if (ent.json != null) queue.push(ent.json);
+            }
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function collectAudioPathsFromLine(line) {
+      const out = new Set();
+      const normalizeAudioPath = (p) => String(p || '')
+        .replace(/\\/g, '/')
+        .replace(/^\.\//, '')
+        .replace(/^\/+/, '');
+
+      const pushPath = (p) => {
+        if (typeof p !== 'string') return;
+        const n = normalizeAudioPath(p);
+        if (!n) return;
+        out.add(n);
+        out.add(n.toLowerCase());
+      };
+
+      const walkList = (list) => {
+        if (!Array.isArray(list)) return;
+        for (const item of list) {
+          if (!item) continue;
+          if (typeof item === 'string') {
+            pushPath(item);
+            continue;
+          }
+          if (typeof item === 'object') {
+            if (typeof item.path === 'string') pushPath(item.path);
+            if (typeof item.name === 'string' && /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|webm|wma|amr|ape)$/i.test(item.name)) {
+              pushPath(item.name);
+            }
+          }
+        }
+      };
+
+      const walkBucket = (bucket) => {
+        if (!bucket || typeof bucket !== 'object') return;
+        if (Array.isArray(bucket.list)) walkList(bucket.list);
+        walkList(bucket.welcome);
+        walkList(bucket.arrive);
+        walkList(bucket.depart);
+        walkList(bucket.end);
+      };
+
+      const stations = Array.isArray(line?.stations) ? line.stations : [];
+      for (const st of stations) {
+        const sa = st?.stationAudio;
+        if (!sa || typeof sa !== 'object') continue;
+        walkBucket(sa.up || {});
+        walkBucket(sa.down || {});
+      }
+
+      const common = line?.meta?.commonAudio;
+      if (common && typeof common === 'object') {
+        walkBucket(common.up || {});
+        walkBucket(common.down || {});
+        walkList(common.list);
+      }
+
+      return out;
+    }
+
+    async function parseRuntimeLineFile(file) {
+      if (!file) throw new Error('文件不存在');
+      const lowerName = String(file.name || '').toLowerCase();
+
+      const normalizeAudioPath = (p) => String(p || '')
+        .replace(/\\/g, '/')
+        .replace(/^\.\//, '')
+        .replace(/^\/+/, '');
+
+      const getMimeByExt = (name) => {
+        const n = String(name || '').toLowerCase();
+        if (n.endsWith('.mp3')) return 'audio/mpeg';
+        if (n.endsWith('.wav')) return 'audio/wav';
+        if (n.endsWith('.ogg')) return 'audio/ogg';
+        if (n.endsWith('.m4a')) return 'audio/mp4';
+        if (n.endsWith('.aac')) return 'audio/aac';
+        if (n.endsWith('.flac')) return 'audio/flac';
+        if (n.endsWith('.opus')) return 'audio/opus';
+        if (n.endsWith('.wma')) return 'audio/x-ms-wma';
+        if (n.endsWith('.amr')) return 'audio/amr';
+        if (n.endsWith('.ape')) return 'audio/ape';
+        if (n.endsWith('.weba') || n.endsWith('.webm')) return 'audio/webm';
+        return 'application/octet-stream';
+      };
+
+      const isAudioFileName = (name) => {
+        const n = String(name || '').toLowerCase();
+        return /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|webm)$/i.test(n);
+      };
+
+      // JSON 文件直接解析
+      if (lowerName.endsWith('.json')) {
+        const text = await file.text();
+        const json = tryParseJsonText(text);
+        if (!json) throw new Error(`文件 ${file.name} 不是有效 JSON`);
+        const line = extractRuntimeLineData(json);
+        if (!line) throw new Error(`文件 ${file.name} 中未找到有效线路数据`);
+        return { line, embeddedAudioList: [], embeddedAudioBytes: 0 };
+      }
+
+      // MPL/ZIP：读取包内 line.json（或第一个 json）
+      if (lowerName.endsWith('.mpl') || lowerName.endsWith('.zip')) {
+        if (typeof JSZip === 'undefined') {
+          throw new Error('缺少 JSZip，无法解析 MPL 文件');
+        }
+        const ab = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(ab);
+        const names = Object.keys(zip.files || {});
+        if (!names.length) throw new Error(`文件 ${file.name} 为空压缩包`);
+
+        let target = names.find(n => n && !zip.files[n].dir && n.toLowerCase() === 'line.json');
+        if (!target) {
+          target = names.find(n => n && !zip.files[n].dir && n.toLowerCase().endsWith('.json'));
+        }
+        if (!target) {
+          throw new Error(`文件 ${file.name} 中未找到 JSON（line.json）`);
+        }
+
+        const text = await zip.files[target].async('string');
+        const parsed = tryParseJsonText(text);
+        if (!parsed) {
+          throw new Error(`文件 ${file.name} 的 ${target} 不是有效 JSON`);
+        }
+        const line = extractRuntimeLineData(parsed);
+        if (!line) throw new Error(`文件 ${file.name} 的 ${target} 中未找到有效线路数据`);
+
+        const referencedAudio = collectAudioPathsFromLine(line);
+
+        // 提取压缩包内音频并内嵌：
+        // 1) 常见音频后缀
+        // 2) 位于 audio/ 或 mp/ 目录（即使后缀不标准）
+        // 3) 被 line.json 中路径引用（大小写不敏感）
+        const audioEntries = names.filter((n) => {
+          if (!n || zip.files[n].dir) return false;
+          const normalized = normalizeAudioPath(n).toLowerCase();
+          if (normalized === 'line.json') return false;
+          if (isAudioFileName(normalized)) return true;
+          if (/^audio[^/]*\//i.test(normalized) || /^mp[^/]*\//i.test(normalized)) return true;
+          if (referencedAudio.has(normalized)) return true;
+
+          const noAudioPrefix = normalized.replace(/^audio[^/]*\//i, '');
+          const noMpPrefix = normalized.replace(/^mp[^/]*\//i, '');
+          if (referencedAudio.has(noAudioPrefix) || referencedAudio.has(noMpPrefix)) return true;
+
+          const base = normalized.split('/').pop() || '';
+          if (base && (referencedAudio.has(base) || referencedAudio.has(`audio/${base}`) || referencedAudio.has(`mp/${base}`))) return true;
+          return false;
+        });
+
+        if (audioEntries.length > 0) {
+          const cloudAudioFiles = {};
+          let cloudAudioBytes = 0;
+          const embeddedAudioList = [];
+          for (const entryName of audioEntries) {
+            const normalizedPath = normalizeAudioPath(entryName);
+            try {
+              const base64 = await zip.files[entryName].async('base64');
+              if (!base64) continue;
+              const mime = getMimeByExt(normalizedPath);
+              const dataUrl = `data:${mime};base64,${base64}`;
+              const sizeBytes = Math.floor((base64.length * 3) / 4);
+              cloudAudioFiles[normalizedPath] = dataUrl;
+              cloudAudioBytes += sizeBytes;
+              embeddedAudioList.push({ path: normalizedPath, bytes: sizeBytes });
+            } catch (e) {
+              console.warn('[runtime-upload] 提取音频失败:', entryName, e);
+            }
+          }
+
+          if (!line.meta || typeof line.meta !== 'object') line.meta = {};
+          line.meta.cloudAudioFiles = cloudAudioFiles;
+          line.meta.cloudAudioCount = Object.keys(cloudAudioFiles).length;
+          line.meta.cloudAudioBytes = cloudAudioBytes;
+          line.meta.cloudAudioSource = 'embedded';
+
+          return {
+            line,
+            embeddedAudioList,
+            embeddedAudioBytes: cloudAudioBytes
+          };
+        }
+
+        return { line, embeddedAudioList: [], embeddedAudioBytes: 0 };
+      }
+
+      throw new Error(`不支持的文件类型：${file.name}`);
+    }
     
     // 处理文件选择
     document.getElementById('runtime-line-file-input').addEventListener('change', async (e) => {
@@ -1357,32 +1769,26 @@
     // 解析并上传文件
     document.getElementById('btn-parse-runtime-files').addEventListener('click', async () => {
       if (runtimeFiles.length === 0) {
-        showStatus('runtime-status', '请先选择 JSON 文件', 'error');
+        showStatus('runtime-status', '请先选择 JSON 或 MPL 文件', 'error');
         return;
       }
       
       let successCount = 0;
       let failCount = 0;
+      let totalEmbeddedAudio = 0;
+      let totalEmbeddedAudioBytes = 0;
+      let totalUploadedBytes = 0;
       const errors = [];
+      lastRuntimeUploadDetails = [];
       
       showStatus('runtime-status', `正在处理 ${runtimeFiles.length} 个文件...`, 'info');
-      
-      // 与 Worker 一致的线路名规范化，保证同一条线路始终覆盖同一 key
-      function normalizeRuntimeLineName(name) {
-        if (name == null || typeof name !== 'string') return '';
-        const s = String(name).trim();
-        if (!s) return '';
-        try {
-          return s.normalize('NFC');
-        } catch {
-          return s;
-        }
-      }
 
       for (const file of runtimeFiles) {
         try {
-          const text = await file.text();
-          const json = JSON.parse(text);
+          const parsed = await parseRuntimeLineFile(file);
+          const json = parsed && parsed.line ? parsed.line : parsed;
+          const embeddedAudioList = parsed && Array.isArray(parsed.embeddedAudioList) ? parsed.embeddedAudioList : [];
+          const parsedEmbeddedAudioBytes = Number(parsed?.embeddedAudioBytes || 0);
           
           // 验证 JSON 格式
           if (!json.meta || !json.meta.lineName) {
@@ -1398,10 +1804,66 @@
             throw new Error(`文件 ${file.name} 的 meta.lineName 为空`);
           }
           json.meta.lineName = lineName;
-          
-          // 上传到服务器（规范化后的名称保证覆盖老版本）
-          await callApi('PUT', `/runtime/lines/${encodeURIComponent(lineName)}`, json);
+
+          const payloadBytes = new TextEncoder().encode(JSON.stringify(json)).byteLength;
+          let resp;
+
+          // 大 payload：先分片上传音频，再提交精简线路，避免单次请求体过大（被边缘层拦截）
+          if (payloadBytes > 8 * 1024 * 1024 && json?.meta?.cloudAudioFiles && typeof json.meta.cloudAudioFiles === 'object') {
+            const cloudAudioFiles = json.meta.cloudAudioFiles;
+            const shards = splitCloudAudioFilesBySize(cloudAudioFiles, 4 * 1024 * 1024);
+            const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const shardKeys = [];
+
+            for (let i = 0; i < shards.length; i++) {
+              const shardResp = await callApi('POST', '/runtime/lines/upload-shard', {
+                lineName,
+                uploadId,
+                index: i,
+                audioFiles: shards[i]
+              });
+              if (!shardResp?.ok || !shardResp?.shardKey) {
+                throw new Error(`音频分片上传失败（${i + 1}/${shards.length}）`);
+              }
+              shardKeys.push(shardResp.shardKey);
+            }
+
+            const slimLine = JSON.parse(JSON.stringify(json));
+            if (!slimLine.meta || typeof slimLine.meta !== 'object') slimLine.meta = {};
+            delete slimLine.meta.cloudAudioFiles;
+            slimLine.meta.cloudAudioShardKeys = shardKeys;
+            slimLine.meta.cloudAudioShardCount = shardKeys.length;
+            slimLine.meta.cloudAudioSource = 'embedded';
+
+            resp = await callApi('PUT', '/runtime/lines', slimLine);
+          } else {
+            // 常规上传
+            resp = await callApi('PUT', '/runtime/lines', json);
+          }
+
           successCount++;
+          const embeddedCount = Number(json?.meta?.cloudAudioCount || embeddedAudioList.length || 0);
+          const embeddedBytes = Number(json?.meta?.cloudAudioBytes || parsedEmbeddedAudioBytes || 0);
+          totalEmbeddedAudio += embeddedCount;
+          totalEmbeddedAudioBytes += embeddedBytes;
+          const uploadedBytes = Number(resp?.sizeBytes);
+          const finalUploadedBytes = Number.isFinite(uploadedBytes) && uploadedBytes >= 0
+            ? uploadedBytes
+            : new TextEncoder().encode(JSON.stringify(json)).byteLength;
+          if (Number.isFinite(uploadedBytes) && uploadedBytes >= 0) {
+            totalUploadedBytes += uploadedBytes;
+          } else {
+            totalUploadedBytes += new TextEncoder().encode(JSON.stringify(json)).byteLength;
+          }
+
+          lastRuntimeUploadDetails.push({
+            sourceFile: file.name,
+            lineName,
+            embeddedCount,
+            embeddedBytes,
+            uploadedBytes: finalUploadedBytes,
+            audios: embeddedAudioList
+          });
           
           // 如果只有一个文件，自动填充到预览区域并加载可视化编辑器
           if (runtimeFiles.length === 1) {
@@ -1418,7 +1880,13 @@
       
       // 显示结果
       if (failCount === 0) {
-        showStatus('runtime-status', `✅ 成功上传 ${successCount} 条运控线路！`, 'success');
+        const canShowDetails = lastRuntimeUploadDetails.some((d) => Number(d?.embeddedCount || 0) > 0);
+        const detailsBtn = canShowDetails ? ` <button type="button" id="btn-runtime-upload-details" style="margin-left:8px; padding:2px 8px; font-size:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-card); color:var(--text); cursor:pointer;">查看音频明细</button>` : '';
+        showStatus('runtime-status', `✅ 成功上传 ${successCount} 条运控线路，内嵌音频 ${totalEmbeddedAudio} 个（约 ${formatBytes(totalEmbeddedAudioBytes)}），总大小 ${formatBytes(totalUploadedBytes)}${detailsBtn}`, 'success');
+        if (canShowDetails) {
+          const btn = document.getElementById('btn-runtime-upload-details');
+          if (btn) btn.addEventListener('click', openRuntimeUploadDetailModal);
+        }
         // 清空文件选择
         document.getElementById('runtime-line-file-input').value = '';
         document.getElementById('runtime-files-list').style.display = 'none';
@@ -1427,9 +1895,26 @@
         document.getElementById('btn-list-runtime').click();
       } else {
         const errorMsg = errors.join('; ');
-        showStatus('runtime-status', `⚠️ 成功 ${successCount} 条，失败 ${failCount} 条。错误：${errorMsg}`, 'warn');
+        const canShowDetails = lastRuntimeUploadDetails.some((d) => Number(d?.embeddedCount || 0) > 0);
+        const detailsBtn = canShowDetails ? ` <button type="button" id="btn-runtime-upload-details" style="margin-left:8px; padding:2px 8px; font-size:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-card); color:var(--text); cursor:pointer;">查看音频明细</button>` : '';
+        showStatus('runtime-status', `⚠️ 成功 ${successCount} 条（内嵌音频 ${totalEmbeddedAudio} 个，约 ${formatBytes(totalEmbeddedAudioBytes)}，总大小 ${formatBytes(totalUploadedBytes)}），失败 ${failCount} 条。错误：${errorMsg}${detailsBtn}`, 'warn');
+        if (canShowDetails) {
+          const btn = document.getElementById('btn-runtime-upload-details');
+          if (btn) btn.addEventListener('click', openRuntimeUploadDetailModal);
+        }
       }
     });
+
+    const runtimeUploadDetailCloseBtn = document.getElementById('runtime-upload-detail-close');
+    if (runtimeUploadDetailCloseBtn) runtimeUploadDetailCloseBtn.addEventListener('click', closeRuntimeUploadDetailModal);
+    const runtimeUploadDetailOkBtn = document.getElementById('runtime-upload-detail-ok');
+    if (runtimeUploadDetailOkBtn) runtimeUploadDetailOkBtn.addEventListener('click', closeRuntimeUploadDetailModal);
+    const runtimeUploadDetailModal = document.getElementById('runtime-upload-detail-modal');
+    if (runtimeUploadDetailModal) {
+      runtimeUploadDetailModal.addEventListener('click', (e) => {
+        if (e.target === runtimeUploadDetailModal) closeRuntimeUploadDetailModal();
+      });
+    }
     
     let runtimeEditingIndex = -1;
 
@@ -1834,7 +2319,7 @@
         if (!json.meta) json.meta = {};
         json.meta.lineName = lineName;
         
-        await callApi('PUT', `/runtime/lines/${encodeURIComponent(lineName)}`, json);
+        await callApi('PUT', '/runtime/lines', json);
         showStatus('runtime-status', '上传成功', 'success');
         document.getElementById('btn-list-runtime').click();
       } catch (e) {
@@ -3480,6 +3965,7 @@
           if (device.deviceId) {
             byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           }
           // 按设备统计访问数量
           if (device.deviceId) {
@@ -3488,6 +3974,8 @@
           // 按设备统计访问数量
           if (device.deviceId) {
             byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
           }
@@ -4287,77 +4775,83 @@
       return merged;
     }
     
-    // 下载访问记录
+    // 生成统计 CSV 的通用函数（records 与 summary 需一致：全量或已过滤）
+    function buildStatsCsv(records, summary, dataScopeNote) {
+      const csvLines = [];
+      if (dataScopeNote) {
+        csvLines.push('=== 说明 ===');
+        csvLines.push(`"${dataScopeNote}"`);
+        csvLines.push('');
+      }
+      csvLines.push('=== 统计摘要 ===');
+      csvLines.push(`总访问次数,${summary.total}`);
+      csvLines.push(`独立设备数,${summary.uniqueDevices}`);
+      csvLines.push('');
+      csvLines.push('=== 按国家/地区统计 ===');
+      csvLines.push('国家/地区,访问次数');
+      Object.entries(summary.byCountry || {}).forEach(([country, count]) => {
+        csvLines.push(`"${country}",${count}`);
+      });
+      csvLines.push('');
+      csvLines.push('=== 按版本统计 ===');
+      csvLines.push('版本,访问次数');
+      Object.entries(summary.byVersion || {}).forEach(([version, count]) => {
+        csvLines.push(`"${version}",${count}`);
+      });
+      csvLines.push('');
+      csvLines.push('=== 按操作系统统计 ===');
+      csvLines.push('操作系统,访问次数');
+      Object.entries(summary.byOS || {}).forEach(([os, count]) => {
+        csvLines.push(`"${String(os).replace(/"/g, '""')}",${count}`);
+      });
+      csvLines.push('');
+      csvLines.push('=== 按设备统计 ===');
+      csvLines.push('设备ID,访问次数');
+      Object.entries(summary.byDevice || {}).forEach(([deviceId, count]) => {
+        csvLines.push(`"${deviceId}",${count}`);
+      });
+      csvLines.push('');
+      csvLines.push('=== 详细访问记录 ===');
+      csvLines.push('时间,国家/地区,城市,系统版本,版本,设备ID,IP地址');
+      records.forEach(r => {
+        const t = r.ts ? new Date(r.ts).toISOString() : '';
+        const row = [
+          t,
+          r.country || '',
+          r.city || '',
+          r.os || '',
+          r.version || '',
+          r.deviceId || 'unknown',
+          r.ip || ''
+        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+        csvLines.push(row);
+      });
+      return csvLines.join('\n');
+    }
+
+    // 下载全量访问记录（不应用「排除的设备ID」，与页面显示无关）
     document.getElementById('btn-download-records').addEventListener('click', async () => {
       const cfg = getConfig();
       if (!cfg.apiBase) {
         alert('请先设置 API 地址');
         return;
       }
-      
       try {
-        // 获取所有记录
         const data = await callApi('GET', '/stats');
         const allRecords = data.all || data.recent || [];
-        
         if (allRecords.length === 0) {
           alert('暂无访问记录');
           return;
         }
-        
-        // 准备所有数据（包含统计信息和记录）
-        const statsData = {
-          summary: {
-            total: data.total || 0,
-            uniqueDevices: data.uniqueDevices || 0,
-            byCountry: data.byCountry || {},
-            byVersion: data.byVersion || {},
-            byOS: data.byOS || {},
-            byDevice: data.byDevice || {}
-          },
-          records: allRecords
+        const summary = {
+          total: data.total || 0,
+          uniqueDevices: data.uniqueDevices || 0,
+          byCountry: data.byCountry || {},
+          byVersion: data.byVersion || {},
+          byOS: data.byOS || {},
+          byDevice: data.byDevice || {}
         };
-        
-        // 转换为 CSV 格式（包含统计信息和记录）
-        const csvLines = [];
-        csvLines.push('=== 统计摘要 ===');
-        csvLines.push(`总访问次数,${statsData.summary.total}`);
-        csvLines.push(`独立设备数,${statsData.summary.uniqueDevices}`);
-        csvLines.push('');
-        csvLines.push('=== 按国家/地区统计 ===');
-        csvLines.push('国家/地区,访问次数');
-        Object.entries(statsData.summary.byCountry).forEach(([country, count]) => {
-          csvLines.push(`"${country}",${count}`);
-        });
-        csvLines.push('');
-        csvLines.push('=== 按版本统计 ===');
-        csvLines.push('版本,访问次数');
-        Object.entries(statsData.summary.byVersion).forEach(([version, count]) => {
-          csvLines.push(`"${version}",${count}`);
-        });
-        csvLines.push('');
-        csvLines.push('=== 按设备统计 ===');
-        csvLines.push('设备ID,访问次数');
-        Object.entries(statsData.summary.byDevice).forEach(([deviceId, count]) => {
-          csvLines.push(`"${deviceId}",${count}`);
-        });
-        csvLines.push('');
-        csvLines.push('=== 详细访问记录 ===');
-        csvLines.push('时间,国家/地区,城市,版本,设备ID,IP地址');
-        allRecords.forEach(r => {
-          const t = r.ts ? new Date(r.ts).toISOString() : '';
-          const row = [
-            t,
-            r.country || '',
-            r.city || '',
-            r.version || '',
-            r.deviceId || 'unknown',
-            r.ip || ''
-          ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
-          csvLines.push(row);
-        });
-        
-        const csv = csvLines.join('\n');
+        const csv = buildStatsCsv(allRecords, summary, '本导出为全量数据，未应用「排除的设备ID」过滤');
         const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -4367,8 +4861,68 @@
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
-        
-        alert(`已下载所有数据（${allRecords.length} 条访问记录 + 统计摘要）`);
+        alert(`已下载全量数据（${allRecords.length} 条访问记录 + 统计摘要）`);
+      } catch (e) {
+        alert('下载失败：' + e.message);
+      }
+    });
+
+    // 下载当前视图（已应用「排除的设备ID」过滤，与页面显示一致）
+    document.getElementById('btn-download-records-filtered').addEventListener('click', async () => {
+      const cfg = getConfig();
+      if (!cfg.apiBase) {
+        alert('请先设置 API 地址');
+        return;
+      }
+      try {
+        const data = await callApi('GET', '/stats');
+        const rawRecords = data.all || data.recent || [];
+        const excludeText = (document.getElementById('stat-excluded-devices')?.value || '').trim();
+        const excludedIds = new Set(excludeText.split(/\s+/).map(s => s.trim()).filter(Boolean));
+        const allRecords = excludedIds.size
+          ? rawRecords.filter(r => !r.deviceId || !excludedIds.has(r.deviceId))
+          : rawRecords;
+        if (allRecords.length === 0) {
+          alert('当前视图无记录（可能全部被排除）');
+          return;
+        }
+        // 按过滤后的记录重新计算摘要
+        const byCountry = {};
+        const byVersion = {};
+        const byOS = {};
+        const byDevice = {};
+        const deviceSet = new Set();
+        allRecords.forEach(r => {
+          if (r.country) byCountry[r.country] = (byCountry[r.country] || 0) + 1;
+          if (r.version) byVersion[r.version] = (byVersion[r.version] || 0) + 1;
+          if (r.os) {
+            const n = (r.os || '').replace(/\s*\([^)]*\)\s*$/, '').trim() || 'unknown';
+            byOS[n] = (byOS[n] || 0) + 1;
+          }
+          if (r.deviceId) {
+            byDevice[r.deviceId] = (byDevice[r.deviceId] || 0) + 1;
+            deviceSet.add(r.deviceId);
+          }
+        });
+        const summary = {
+          total: allRecords.length,
+          uniqueDevices: deviceSet.size,
+          byCountry,
+          byVersion,
+          byOS,
+          byDevice
+        };
+        const csv = buildStatsCsv(allRecords, summary, '本导出为当前视图（已应用「排除的设备ID」过滤）');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `metro-pids-filtered-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        alert(`已下载当前视图（${allRecords.length} 条记录 + 统计摘要）`);
       } catch (e) {
         alert('下载失败：' + e.message);
       }

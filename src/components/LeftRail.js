@@ -611,17 +611,21 @@ export default {
         // 监听 localStorage 变化，以便在快速点击5次后实时更新
         const setupLocalStorageListener = () => {
             if (typeof window === 'undefined' || !window.addEventListener) return;
+            let cachedIsPackaged = null;
+            let storageHandler = null;
             
             // 监听 storage 事件（跨标签页/窗口）
-            window.addEventListener('storage', async (e) => {
+            storageHandler = async (e) => {
                 if (e.key === 'metro_pids_dev_button_enabled' && e.newValue === 'true') {
                     // 只有在打包环境中才响应这个事件（开发环境应该始终显示）
                     try {
-                        let isPackaged = true;
-                        if (window.electronAPI && typeof window.electronAPI.isPackaged === 'function') {
-                            isPackaged = await window.electronAPI.isPackaged();
+                        if (cachedIsPackaged === null) {
+                            cachedIsPackaged = true;
+                            if (window.electronAPI && typeof window.electronAPI.isPackaged === 'function') {
+                                cachedIsPackaged = await window.electronAPI.isPackaged();
+                            }
                         }
-                        if (isPackaged) {
+                        if (cachedIsPackaged) {
                             shouldShowDevButton.value = true;
                             console.log('[LeftRail] 通过 storage 事件检测到开发者按钮已启用（打包环境）');
                         }
@@ -629,19 +633,26 @@ export default {
                         console.error('[LeftRail] 检查打包状态失败:', err);
                     }
                 }
-            });
+            };
+            window.addEventListener('storage', storageHandler);
             
             // 定期检查（仅用于开发环境，打包环境不检查）
             const checkInterval = setInterval(async () => {
+                if (document && document.hidden) return;
                 if (typeof window !== 'undefined' && window.localStorage) {
                     // 先检查是否是打包环境
-                    let isPackaged = true;
+                    let isPackaged = cachedIsPackaged;
                     try {
-                        if (window.electronAPI && typeof window.electronAPI.isPackaged === 'function') {
-                            isPackaged = await window.electronAPI.isPackaged();
+                        if (isPackaged === null) {
+                            isPackaged = true;
+                            if (window.electronAPI && typeof window.electronAPI.isPackaged === 'function') {
+                                isPackaged = await window.electronAPI.isPackaged();
+                            }
+                            cachedIsPackaged = isPackaged;
                         }
                     } catch (e) {
                         console.error('[LeftRail] 检查打包状态失败:', e);
+                        if (isPackaged === null) isPackaged = true;
                     }
                     
                     // 打包环境：检查 localStorage 中是否有启用标记
@@ -663,11 +674,15 @@ export default {
                     }
                     // 开发环境下，shouldShowDevButton 已经在 checkDevButtonVisibility 中设置为 true，不需要额外检查
                 }
-            }, 500); // 每500ms检查一次
+            }, 2000); // 降低轮询频率，减少空转占用
             
             // 返回清理函数
             return () => {
                 clearInterval(checkInterval);
+                if (storageHandler) {
+                    window.removeEventListener('storage', storageHandler);
+                    storageHandler = null;
+                }
             };
         };
 

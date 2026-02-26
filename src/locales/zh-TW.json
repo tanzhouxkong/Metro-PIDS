@@ -11,6 +11,14 @@
     "languageHint": "選擇介面語言，優先使用此設定，其次跟隨系統。",
     "languageLabel": "介面語言"
   },
+<<<<<<< Updated upstream
+=======
+  "audio": {
+    "title": "車輛音頻",
+    "enableVehicle": "啟用車輛音頻",
+    "enableVehicleHint": "開啟後，進站/出站以及「下一步」切換會播放車站音頻；關閉後不播放。"
+  },
+>>>>>>> Stashed changes
   "settings": {
     "appearance": "外觀",
     "themeMode": "主題模式",
@@ -22,6 +30,7 @@
   "display": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "顯示端管理 (Display Management)",
 =======
 <<<<<<< HEAD
@@ -29,6 +38,9 @@
 =======
     "title": "顯示端管理 (Display Management)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "顯示端管理",
 >>>>>>> Stashed changes
 =======
     "title": "顯示端管理",
@@ -45,6 +57,7 @@
   "api": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "API 伺服器 (API Server)",
 =======
 <<<<<<< HEAD
@@ -52,6 +65,9 @@
 =======
     "title": "API 伺服器 (API Server)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "API 伺服器",
 >>>>>>> Stashed changes
 =======
     "title": "API 伺服器",
@@ -64,14 +80,18 @@
   "keys": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     "title": "快捷鍵",
     "nextState": "進站/離站",
     "prevStation": "上一站",
     "nextStation": "下一站",
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
@@ -82,6 +102,8 @@
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -99,6 +121,13 @@
     "qqGroupName": "Metro-PIDS 交流群",
     "githubIssue": "GitHub Issue：",
     "githubIssueDesc": "提交問題或建議",
+<<<<<<< Updated upstream
+=======
+        "audioSelectFiles": "選擇音訊檔",
+        "audioAddBlank": "新增空槽",
+        "audioHotkey": "快捷鍵",
+        "audioCommonPlaceholder": "通用音訊",
+>>>>>>> Stashed changes
     "update": {
       "checking": "檢查中...",
       "error": "錯誤：{error}",
@@ -123,16 +152,26 @@
     "currentLine": "目前線路",
     "openManager": "開啟管理器",
     "saveCurrentLine": "儲存目前線路",
+<<<<<<< Updated upstream
     "resetData": "重設資料",
     "serviceMode": "營運模式",
     "currentMode": "目前模式",
 <<<<<<< Updated upstream
     "singleLine": "單線 (Linear)",
 =======
+=======
+    "saveAsZip": "儲存為壓縮包",
+    "resetData": "重設資料",
+    "serviceMode": "營運模式",
+    "currentMode": "目前模式",
+>>>>>>> Stashed changes
     "singleLine": "單線",
     "loopLine": "環線",
     "outerLoop": "外環 (逆時針)",
     "innerLoop": "內環 (順時針)",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "dirLabel": "上行",
     "modeNormal": "普通",
@@ -184,8 +223,11 @@
     "throughLineLabel": "線路",    "autoplayTitle": "自動播放",
     "autoplayEnable": "自動播放",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "autoplayInterval": "啟用間隔:"
 =======
+=======
+>>>>>>> Stashed changes
     "autoplayInterval": "啟用間隔:",
     "recordingTitle": "影片錄製",
     "recordingDisplay": "顯示端",
@@ -232,6 +274,9 @@
       "recordingStageSegmentsDone": "分段錄製完成",
       "recordingStageConcatStart": "正在拼接片段",
       "recordingOpenFolder": "打開資料夾"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   },
   "lineManager": {
@@ -254,10 +299,18 @@
     "rename": "重新命名",
 
     "ctxFolderOpen": "開啟資料夾",
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "重新整理",
+>>>>>>> Stashed changes
     "ctxFolderNewFolder": "新建資料夾",
     "ctxNewFolder": "新建資料夾",
     "ctxCopy": "複製",
     "ctxPaste": "貼上",
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "開啟檔案所在位置",
+>>>>>>> Stashed changes
     "ctxRename": "重新命名",
     "ctxOpenFolder": "開啟資料夾",
     "ctxDelete": "刪除",
@@ -298,7 +351,13 @@
     "searchResultHint": "嘗試其他關鍵詞，或搜尋資料夾名稱",
     "locate": "定位",
     "savingToPrefix": "目前將儲存到：",
+<<<<<<< Updated upstream
     "throughSaveButton": "儲存貫通線路"
+=======
+    "throughSaveButton": "儲存貫通線路",
+    "saveLineButton": "儲存當前線路",
+    "saveZipButton": "儲存為壓縮包"
+>>>>>>> Stashed changes
   },
   "consoleButtons": {
     "arrive": "進站",
@@ -342,6 +401,7 @@
     "expressSkip": "跳過",
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "xferSectionTitle": "換乘線路",
     "xferSectionHint": "右鍵操作",
     "xferEmpty": "暫無換乘，右鍵可新增或貼上",
@@ -357,6 +417,47 @@
     "xferSectionTitle": "換乘路線",
     "xferSectionHint": "右鍵操作",
     "xferEmpty": "暫無換乘，右鍵可添加或粘貼",
+=======
+    "xferSectionTitle": "換乘路線",
+    "audioSectionTitle": "車站音頻",
+    "xferSectionHint": "右鍵操作",
+    "xferEmpty": "暫無換乘，右鍵可添加或粘貼",
+    "audioWelcomeTitle": "首站歡迎音頻",
+    "audioDepartTitle": "出站音頻",
+    "audioArriveTitle": "進站音頻",
+    "audioEndTitle": "終點站結束音頻",
+    "audioEmpty": "暫無音頻，右鍵可添加或粘貼",
+    "audioDropToAdd": "拖拽音頻到此處添加",
+    "audioSeparateDirection": "上下行分開",
+    "directionUp": "上行",
+    "directionDown": "下行",
+    "audioAdd": "添加",
+    "audioAddTo": "添加至",
+    "audioAddNeedElectron": "添加音頻需在 Electron 桌面環境中使用",
+    "audioAddNeedSaveLine": "請先保存線路後再添加音頻",
+    "audioAddCopyFailed": "複製音頻文件失敗",
+    "audioPlay": "播放",
+    "audioRename": "重命名",
+    "audioRenamePlaceholder": "音頻顯示名稱",
+    "audioDelete": "刪除",
+    "audioCopy": "複製",
+    "audioCut": "剪下",
+    "audioPaste": "粘貼",
+    "audioModeArrive": "進站使用",
+    "audioModeDepart": "出站使用",
+    "audioModeShortTurn": "短交路使用",
+    "audioModeExpress": "大站車使用",
+    "audioModeDirect": "直達車使用",
+    "audioDisabledInNormal": "普通模式下禁用",
+    "audioModeQuick": "模式捷徑",
+    "audioDynamicMenu": "動態音頻",
+    "audioDynamicAdd": "添加佔位符",
+    "audioDynamicName": "動態音頻",
+    "audioStartPlaceholder": "始發站音頻",
+    "audioTerminalPlaceholder": "終到站音頻",
+    "audioApplyToAllStations": "選中的文件應用到所有站",
+    "audioSelectHint": "支援 Ctrl 多選、Shift 連選",
+>>>>>>> Stashed changes
     "xferUnnamed": "未命名",
     "xferExitBadge": "出站換乘",
     "xferSuspendedBadge": "暫緩開通",
@@ -365,6 +466,9 @@
     "menuEditName": "編輯名稱",
     "menuCopy": "複製",
     "menuPaste": "粘貼",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "menuPickColor": "選擇顏色",
     "menuExitTransfer": "出站換乘",
@@ -372,6 +476,7 @@
     "menuSuspendedOff": "暫緩開通",
     "menuDelete": "刪除",
     "menuCopyAll": "複製全部",
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
     "menuAddXfer": "新增換乘",
 
@@ -382,6 +487,8 @@
     "btnConfirm": "確定",
     "btnSave": "儲存"
 =======
+=======
+>>>>>>> Stashed changes
     "menuAddXfer": "添加換乘",
 
     "xferNameDialogTitle": "編輯路線名稱",
@@ -444,6 +551,9 @@
     "down": "下行",
     "outer": "外環",
     "inner": "內環"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   }
 }

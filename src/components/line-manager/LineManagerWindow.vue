@@ -1,6 +1,10 @@
 <script>
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick, Teleport, Transition } from 'vue'
+=======
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
+>>>>>>> Stashed changes
 import { useI18n } from 'vue-i18n'
 import LineManagerDialog from '../LineManagerDialog.js'
 import LineManagerTopbar from '../LineManagerTopbar.js'
@@ -13,8 +17,6 @@ function stripColorMarkup(text) {
   if (!text || typeof text !== 'string') return ''
   return text.replace(/<[^>]+>([^<]*)<\/[^>]+>/g, '$1').replace(/<[^>]+>/g, '')
 }
-
-// 解析颜色标记（仅用于显示）
 function parseColorMarkup(text) {
   if (!text || typeof text !== 'string') return text
   const regex = /<([^>]+)>([^<]*)<\/>/g
@@ -51,7 +53,7 @@ export default {
   setup() {
     const { t } = useI18n()
     const folders = ref([])
-    const currentFolderId = ref('default')
+    const currentFolderId = ref(null)
     const currentLines = ref([])
     const loading = ref(false)
     const selectedFolderId = ref(null)
@@ -71,6 +73,8 @@ export default {
 
     const isSavingThroughLine = ref(false)
     const pendingThroughLineInfo = ref(null)
+    const isSavingLine = ref(false)
+    const pendingLineSaveData = ref(null)
 
     // 云控线路
     const runtimeLines = ref([])
@@ -93,8 +97,9 @@ export default {
           return
         }
 
+
         const pendingData = JSON.parse(pendingDataStr)
-        const { lineData, lineName, cleanLineName, validSegments } = pendingData
+        const { lineData, lineName, cleanLineName, validSegments, sourceLinePaths } = pendingData
 
         console.log('[线路管理器] 贯通线路信息:', {
           lineName,
@@ -110,9 +115,9 @@ export default {
 
         await nextTick()
 
-        // 可用文件夹：排除默认和云控
+        // 可用文件夹：排除云控
         const availableFolders = folders.value.filter(
-          (f) => f.id !== 'default' && f.name !== '默认' && f.id !== CLOUD_FOLDER_ID && !f.isRuntime
+          (f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime
         )
 
         console.log('[线路管理器] 可用文件夹数量:', availableFolders.length)
@@ -128,6 +133,10 @@ export default {
           if (!folderName || !folderName.trim()) {
             isSavingThroughLine.value = false
             pendingThroughLineInfo.value = null
+            try {
+              localStorage.removeItem('pendingThroughLineData')
+              localStorage.removeItem('throughOperationSelectorTarget')
+            } catch (e) {}
             localStorage.setItem(
               'throughLineSaveResult',
               JSON.stringify({ success: false, error: 'cancelled' })
@@ -141,7 +150,7 @@ export default {
             await loadFolders()
             const newFolder = folders.value.find((f) => f.id === addRes.folderId)
             if (newFolder) {
-              await doSaveThroughLine(lineData, cleanLineName, newFolder)
+              await doSaveThroughLine(lineData, cleanLineName, newFolder, sourceLinePaths)
             } else {
               localStorage.setItem(
                 'throughLineSaveResult',
@@ -170,10 +179,14 @@ export default {
           lineName
         )
         if (selectedFolder) {
-          await doSaveThroughLine(lineData, cleanLineName, selectedFolder)
+          await doSaveThroughLine(lineData, cleanLineName, selectedFolder, sourceLinePaths)
         } else {
           isSavingThroughLine.value = false
           pendingThroughLineInfo.value = null
+          try {
+            localStorage.removeItem('pendingThroughLineData')
+            localStorage.removeItem('throughOperationSelectorTarget')
+          } catch (e) {}
           localStorage.setItem(
             'throughLineSaveResult',
             JSON.stringify({ success: false, error: 'cancelled' })
@@ -184,6 +197,10 @@ export default {
         console.error('保存贯通线路失败:', e)
         isSavingThroughLine.value = false
         pendingThroughLineInfo.value = null
+        try {
+          localStorage.removeItem('pendingThroughLineData')
+          localStorage.removeItem('throughOperationSelectorTarget')
+        } catch (e2) {}
         localStorage.setItem(
           'throughLineSaveResult',
           JSON.stringify({ success: false, error: e.message || e })
@@ -192,9 +209,13 @@ export default {
       }
     }
 
-    async function doSaveThroughLine(lineData, cleanLineName, folder) {
+    async function doSaveThroughLine(lineData, cleanLineName, folder, sourceLinePaths = null) {
       try {
+<<<<<<< Updated upstream
         if (folder.id === 'default' || folder.name === t('lineManagerWindow.defaultFolder') || folder.id === CLOUD_FOLDER_ID) {
+=======
+        if (folder.id === CLOUD_FOLDER_ID) {
+>>>>>>> Stashed changes
           if (window.__lineManagerDialog) {
             await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotSaveToDefaultOrCloudFolder'), '提示')
           }
@@ -202,12 +223,21 @@ export default {
         }
 
         const safeName = (cleanLineName || t('lineManagerWindow.throughLine')).replace(/[<>:"/\\|?*]/g, '').trim()
+<<<<<<< Updated upstream
         const targetFileName = (safeName || 'through-line') + '.json'
         const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path)
+=======
+        const targetFileName = (safeName || 'through-line') + '.mpl'
+        const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path, sourceLinePaths)
+>>>>>>> Stashed changes
 
         if (saveRes && saveRes.ok) {
           isSavingThroughLine.value = false
           pendingThroughLineInfo.value = null
+          try {
+            localStorage.removeItem('pendingThroughLineData')
+            localStorage.removeItem('throughOperationSelectorTarget')
+          } catch (e) {}
           localStorage.setItem(
             'throughLineSaveResult',
             JSON.stringify({
@@ -229,6 +259,10 @@ export default {
         } else {
           isSavingThroughLine.value = false
           pendingThroughLineInfo.value = null
+          try {
+            localStorage.removeItem('pendingThroughLineData')
+            localStorage.removeItem('throughOperationSelectorTarget')
+          } catch (e) {}
           localStorage.setItem(
             'throughLineSaveResult',
             JSON.stringify({
@@ -240,6 +274,10 @@ export default {
         }
       } catch (e) {
         console.error('执行保存失败:', e)
+        try {
+          localStorage.removeItem('pendingThroughLineData')
+          localStorage.removeItem('throughOperationSelectorTarget')
+        } catch (e2) {}
         localStorage.setItem(
           'throughLineSaveResult',
           JSON.stringify({ success: false, error: e.message || e })
@@ -253,11 +291,11 @@ export default {
       return new Promise((resolve) => {
         const dialog = document.createElement('div')
         dialog.style.cssText =
-          'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:21000; background:rgba(0,0,0,0.6); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); animation:fadeIn 0.3s ease;'
+          'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:21000; background:rgba(0, 0, 0, 0.18); backdrop-filter:blur(8px) saturate(130%); -webkit-backdrop-filter:blur(8px) saturate(130%); animation:fadeIn 0.3s ease;'
 
         const dialogContent = document.createElement('div')
         dialogContent.style.cssText =
-          'background:var(--card, #ffffff); border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;'
+          'background:rgba(255, 255, 255, 0.85); backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%); border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;'
 
         const header = document.createElement('div')
         header.style.cssText =
@@ -366,9 +404,9 @@ export default {
             segmentCount: validSegments ? validSegments.length : 0
           }
           await nextTick()
-          // 保存贯通线路时不打开默认文件夹：自动选中第一个可用文件夹（非默认、非云控）
+          // 保存贯通线路时自动选中第一个可用文件夹（非云控）
           const availableFolders = folders.value.filter(
-            (f) => f.id !== 'default' && f.id !== CLOUD_FOLDER_ID && f.name !== '默认' && !f.isRuntime
+            (f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime
           )
           if (availableFolders.length > 0) {
             const first = availableFolders[0]
@@ -379,6 +417,36 @@ export default {
         } catch (e) {
           console.error('[线路管理器] checkSaveThroughLineMode 解析失败:', e)
         }
+      }
+    }
+
+    // 检查是否有普通线路的保存请求（通过 localStorage 传递）
+    async function checkPendingLineSaveMode() {
+      if (isSavingThroughLine.value) return
+      const mode = localStorage.getItem('lineManagerSaveMode')
+      const pending = localStorage.getItem('pendingLineSaveData')
+      if (!mode || !pending) return
+      try {
+        const data = JSON.parse(pending)
+        pendingLineSaveData.value = data
+        isSavingLine.value = true
+        await nextTick()
+
+        const availableFolders = folders.value.filter((f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime)
+        let target = null
+        if (data.currentFolderId) {
+          target = availableFolders.find((f) => f.id === data.currentFolderId) || null
+        }
+        if (!target && availableFolders.length > 0) {
+          target = availableFolders[0]
+        }
+        if (target) {
+          currentFolderId.value = target.id
+          selectedFolderId.value = target.id
+          await loadLinesFromFolder(target.id)
+        }
+      } catch (e) {
+        console.error('[线路管理器] checkPendingLineSaveMode 解析失败:', e)
       }
     }
     function getStationInfo(lineData) {
@@ -464,24 +532,28 @@ export default {
 
     async function loadFolders() {
       if (!hasFoldersAPI.value) {
-        // 非 Electron 环境：默认文件夹 + 云控虚拟文件夹
+        // 非 Electron 环境：仅云控虚拟文件夹
         folders.value = [
+<<<<<<< Updated upstream
           { id: 'default', name: t('lineManagerWindow.defaultFolder'), path: '', isCurrent: true },
+=======
+>>>>>>> Stashed changes
           { id: CLOUD_FOLDER_ID, name: t('lineManagerWindow.cloudLinesFolder'), path: null, isRuntime: true }
         ]
-        currentFolderId.value = 'default'
-        selectedFolderId.value = 'default'
+        currentFolderId.value = CLOUD_FOLDER_ID
+        selectedFolderId.value = CLOUD_FOLDER_ID
         return
       }
       try {
         const res = await window.electronAPI.lines.folders.list()
         if (res && res.ok && res.folders) {
           folders.value = res.folders
-          currentFolderId.value = res.current || 'default'
+          const firstId = res.folders.length > 0 ? res.folders[0].id : null
+          currentFolderId.value = res.current || firstId
           selectedFolderId.value = currentFolderId.value
           // 追加云控虚拟文件夹
           folders.value.push({ id: CLOUD_FOLDER_ID, name: '云控线路', path: null, isRuntime: true })
-          await loadLinesFromFolder(currentFolderId.value)
+          if (currentFolderId.value) await loadLinesFromFolder(currentFolderId.value)
         }
       } catch (e) {
         console.error('加载文件夹列表失败:', e)
@@ -618,6 +690,33 @@ export default {
       }
     }
 
+    // 手动刷新资源管理器（文件夹 + 当前列表 + 搜索数据）
+    async function refreshExplorer() {
+      try {
+        const activeId = selectedFolderId.value || currentFolderId.value
+        await loadFolders()
+
+        const targetFolder = activeId && folders.value.find((f) => f.id === activeId)
+        if (targetFolder) {
+          selectedFolderId.value = activeId
+          if (!currentFolderId.value) currentFolderId.value = activeId
+          if (activeId === CLOUD_FOLDER_ID) {
+            await loadRuntimeLines()
+          } else {
+            await loadLinesFromFolder(activeId)
+          }
+        } else if (currentFolderId.value) {
+          await loadLinesFromFolder(currentFolderId.value)
+        }
+
+        if (isSearchActive.value) {
+          await loadAllLinesWithFolders()
+        }
+      } catch (e) {
+        console.error('刷新资源管理器失败:', e)
+      }
+    }
+
     async function selectFolder(folderId) {
       selectedFolderId.value = folderId
       selectedLine.value = null
@@ -664,7 +763,11 @@ export default {
         if (window.electronAPI && window.electronAPI.switchRuntimeLine) {
           const result = await window.electronAPI.switchRuntimeLine(payload)
           if (result && result.ok) {
-            // 不自动关闭线路管理器，方便用户确认主窗口已应用后再手动关闭
+            if (window.electronAPI?.closeWindow) {
+              await window.electronAPI.closeWindow()
+            } else {
+              window.close()
+            }
           } else if (result && result.error && window.__lineManagerDialog) {
             await window.__lineManagerDialog.alert(t('lineManagerWindow.applicationFailed') + result.error, '错误')
           }
@@ -717,10 +820,14 @@ export default {
     }
 
     async function deleteFolder(folderId, folderName, folderPath) {
-      // 完全对齐备份逻辑：默认文件夹不可删，使用 lines.folders.remove(path||id)
       if (!window.__lineManagerDialog) return
+<<<<<<< Updated upstream
       if (folderId === 'default') {
         await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotDeleteDefaultFolder'), '提示')
+=======
+      if (folderId === CLOUD_FOLDER_ID) {
+        await window.__lineManagerDialog.alert('云控线路文件夹不可删除。', '提示')
+>>>>>>> Stashed changes
         return
       }
       const confirmed = await window.__lineManagerDialog.confirm(
@@ -868,11 +975,18 @@ export default {
         await applyRuntimeLine(line.data)
         return
       }
+      const folderId = selectedFolderId.value || currentFolderId.value
+      const folder = folders.value.find((f) => f.id === folderId)
+      const folderPath = folder?.path ?? null
       if (window.electronAPI?.switchLine) {
         try {
-          const result = await window.electronAPI.switchLine(line.name)
+          const result = await window.electronAPI.switchLine(line.name, { folderPath })
           if (result && result.ok) {
-            // 不自动关闭线路管理器，方便用户确认主窗口已切换后再手动关闭
+            if (window.electronAPI?.closeWindow) {
+              await window.electronAPI.closeWindow()
+            } else {
+              window.close()
+            }
           }
         } catch (e) {
           console.error('打开线路失败:', e)
@@ -883,7 +997,7 @@ export default {
         const lineName = line.name
         localStorage.setItem('lineManagerSelectedLine', lineName)
         if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ type: 'switch-line-request', lineName }, '*')
+          window.opener.postMessage({ type: 'switch-line-request', lineName, folderPath }, '*')
         }
         window.dispatchEvent(
           new StorageEvent('storage', {
@@ -892,6 +1006,26 @@ export default {
           })
         )
         window.close()
+      }
+    }
+
+    async function openLineFile(line) {
+      closeLineContextMenu()
+      if (!line || line.isRuntime) return
+      const folderId = selectedFolderId.value || currentFolderId.value
+      const folder = folders.value.find((f) => f.id === folderId)
+      const folderPath = folder?.path ?? null
+      if (!folderPath) return
+      try {
+        const res = await window.electronAPI?.lines?.openFolder?.(folderPath)
+        if (!res || !res.ok) {
+          if (window.__lineManagerDialog)
+            await window.__lineManagerDialog.alert(res?.error || t('lineManagerWindow.failedToOpenFolder'), '错误')
+        }
+      } catch (e) {
+        console.error('打开线路文件所在文件夹失败:', e)
+        if (window.__lineManagerDialog)
+          await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToOpenFolder') + '：' + (e.message || e), '错误')
       }
     }
 
@@ -917,17 +1051,33 @@ export default {
         
         // 检查新文件名是否已存在
         const listRes = await window.electronAPI.lines.list(folderPath)
+<<<<<<< Updated upstream
         const existingNames = (listRes || []).map((it) => it.name.replace(/\.json$/, ''))
         const newNameTrimmed = newName.trim().replace(/\.json$/, '')
+=======
+        const existingNames = (listRes || []).map((it) => it.name.replace(/\.(json|mpl)$/i, ''))
+        const newNameTrimmed = newName.trim().replace(/\.(json|mpl)$/i, '')
+>>>>>>> Stashed changes
         if (existingNames.includes(newNameTrimmed)) {
           await window.__lineManagerDialog.alert(t('lineManager.lineNameExists'), t('console.error'))
           return
         }
         
+<<<<<<< Updated upstream
         const newFileName = newNameTrimmed + '.json'
         
         // 保存为新文件名
         const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath)
+=======
+        // 保持原文件的扩展名（.json 或 .mpl）
+        const oldExt = oldFileName.toLowerCase().endsWith('.mpl') ? '.mpl' : '.json'
+        const newFileName = newNameTrimmed + oldExt
+        
+        // 保存为新文件名
+        const sep = folderPath && folderPath.includes('\\') ? '\\' : '/'
+        const sourceLinePath = folderPath ? ((folderPath.endsWith(sep) ? folderPath : folderPath + sep) + oldFileName) : null
+        const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath, sourceLinePath)
+>>>>>>> Stashed changes
         if (!(saveRes && saveRes.ok)) {
           await window.__lineManagerDialog.alert(saveRes?.error || t('lineManager.saveNewFileError'), t('console.error'))
           return
@@ -957,21 +1107,23 @@ export default {
       return baseName + ' - 副本 (' + n + ')'
     }
 
-    /** 同目录下生成不重复的线路文件名：xxx、xxx - 副本、xxx - 副本 (2)（不含 .json，与 list 返回的 name 一致） */
+    /** 同目录下生成不重复的线路文件名：xxx、xxx - 副本、xxx - 副本 (2)（不含扩展名，与 list 返回的 name 一致） */
     function getUniqueLineFileName(existingFileNames, baseFileName) {
-      const base = baseFileName && baseFileName.endsWith('.json') ? baseFileName.slice(0, -5) : (baseFileName || '')
-      const toName = (b) => (b.endsWith('.json') ? b.slice(0, -5) : b)
+      // 提取基础名称和扩展名
+      const base = baseFileName ? baseFileName.replace(/\.(json|mpl)$/i, '') : ''
+      const ext = baseFileName && baseFileName.toLowerCase().endsWith('.mpl') ? '.mpl' : '.json'
+      const toName = (b) => b.replace(/\.(json|mpl)$/i, '')
       const names = new Set((existingFileNames || []).map(toName))
-      if (!names.has(base)) return base + '.json'
-      if (!names.has(base + ' - 副本')) return base + ' - 副本.json'
+      if (!names.has(base)) return base + ext
+      if (!names.has(base + ' - 副本')) return base + ' - 副本' + ext
       let n = 2
       while (names.has(base + ' - 副本 (' + n + ')')) n++
-      return base + ' - 副本 (' + n + ').json'
+      return base + ' - 副本 (' + n + ')' + ext
     }
 
     async function copyFolder(folder) {
       closeContextMenu()
-      if (!folder || folder.id === 'default' || folder.id === CLOUD_FOLDER_ID) return
+      if (!folder || folder.id === CLOUD_FOLDER_ID) return
       clipboard.value = {
         type: 'copy',
         line: null,
@@ -1004,7 +1156,9 @@ export default {
           if (!fname) continue
           const readRes = await api.read(fname, sourcePath)
           if (readRes && readRes.ok && readRes.content) {
-            await api.save(fname, readRes.content, newPath)
+            const sep = sourcePath && sourcePath.includes('\\') ? '\\' : '/'
+            const sourceLinePath = sourcePath ? ((sourcePath.endsWith(sep) ? sourcePath : sourcePath + sep) + fname) : null
+            await api.save(fname, readRes.content, newPath, sourceLinePath)
           }
         }
         await loadFolders()
@@ -1022,6 +1176,76 @@ export default {
       const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
       clipboard.value = { type: 'copy', line, folder: null, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
     }
+
+    async function duplicateRuntimeLine(line) {
+      closeLineContextMenu()
+      try {
+        const dlg = window.__lineManagerDialog || null
+        const alertFn = async (msg, title = '提示') => {
+          if (dlg && typeof dlg.alert === 'function') return await dlg.alert(msg, title)
+          return await dialogService.alert(msg, title)
+        }
+        const confirmFn = async (msg, title = '确认') => {
+          if (dlg && typeof dlg.confirm === 'function') return await dlg.confirm(msg, title)
+          return await dialogService.confirm(msg, title)
+        }
+        const promptFn = async (msg, defVal = '', title = '输入') => {
+          if (dlg && typeof dlg.prompt === 'function') return await dlg.prompt(msg, defVal, title)
+          return await dialogService.prompt(msg, defVal, title)
+        }
+
+        const sourceName = String(line?.name || line?.data?.meta?.lineName || '').trim()
+        if (!sourceName) {
+          await alertFn('无法识别要复制的云控线路名称', '错误')
+          return
+        }
+
+        const inputName = await promptFn('请输入复制后的线路名称', `${sourceName}-副本`, '复制云控线路')
+        if (inputName == null) return
+
+        const targetName = String(inputName || '').trim()
+        if (!targetName) {
+          await alertFn('线路名称不能为空', '提示')
+          return
+        }
+
+        const existed = currentLines.value.some((it) => String(it?.name || '').trim() === targetName)
+        if (existed) {
+          const ok = await confirmFn(`线路「${targetName}」已存在，是否覆盖？`, '确认覆盖')
+          if (!ok) return
+        }
+
+        let sourceLineData = line?.data || null
+        try {
+          const full = await cloudConfig.getRuntimeLine(sourceName)
+          if (full?.ok && full?.data) sourceLineData = full.data
+          else if (full?.line) sourceLineData = full.line
+        } catch (e) {
+          console.warn('[LineManagerWindow] 复制云控线路时获取完整线路失败，回退使用当前数据:', e)
+        }
+
+        const cloned = JSON.parse(JSON.stringify(sourceLineData || {}))
+        if (!cloned.meta || typeof cloned.meta !== 'object') cloned.meta = {}
+        cloned.meta.lineName = targetName
+
+        const save = await cloudConfig.updateRuntimeLine(targetName, cloned)
+        if (!save?.ok) {
+          throw new Error(save?.error || '复制失败')
+        }
+
+        await loadLinesFromFolder(CLOUD_FOLDER_ID)
+        await alertFn(`已复制云控线路：${sourceName} → ${targetName}`, '成功')
+      } catch (e) {
+        console.error('复制云控线路失败:', e)
+        const dlg = window.__lineManagerDialog || null
+        if (dlg && typeof dlg.alert === 'function') {
+          await dlg.alert('复制云控线路失败：' + (e.message || e), '错误')
+        } else {
+          await dialogService.alert('复制云控线路失败：' + (e.message || e), '错误')
+        }
+      }
+    }
+
     async function cutLine(line) {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
@@ -1074,7 +1298,7 @@ export default {
           await window.__lineManagerDialog.alert('线路名称无效', '错误')
           return
         }
-        const fileName = cleanName + '.json'
+        const fileName = cleanName + '.mpl'
 
         const saveRes = await window.electronAPI.lines.save(fileName, newLine, folder.path)
         if (saveRes && saveRes.ok) {
@@ -1138,7 +1362,11 @@ export default {
           const existingNames = (listRes || []).map((it) => it.name)
           targetFileName = getUniqueLineFileName(existingNames, sourceFileName)
         }
-        const saveRes = await window.electronAPI.lines.save(targetFileName, readRes.content, targetFolderPath)
+        const sep = sourceFolderPath && sourceFolderPath.includes('\\') ? '\\' : '/'
+        const sourceLinePath = sourceFolderPath
+          ? ((sourceFolderPath.endsWith(sep) ? sourceFolderPath : sourceFolderPath + sep) + sourceFileName)
+          : null
+        const saveRes = await window.electronAPI.lines.save(targetFileName, readRes.content, targetFolderPath, sourceLinePath)
         if (!(saveRes && saveRes.ok)) {
           if (window.__lineManagerDialog)
             await window.__lineManagerDialog.alert(saveRes?.error || '写入目标失败', '错误')
@@ -1167,6 +1395,128 @@ export default {
       }
     }
 
+    // 保存当前线路或压缩包（从主面板触发，线路管理器内选择目标文件夹后点击底栏保存）
+    async function handleSavePendingLine() {
+      const pendingStr = localStorage.getItem('pendingLineSaveData')
+      if (!pendingStr) {
+        if (window.__lineManagerDialog) {
+          await window.__lineManagerDialog.alert('未找到待保存的线路数据', '提示')
+        }
+        return
+      }
+
+      try {
+        const pending = JSON.parse(pendingStr)
+        const availableFolders = folders.value.filter((f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime)
+        const activeId = selectedFolderId.value ?? currentFolderId.value
+        let folder = folders.value.find((f) => f.id === activeId && f.id !== CLOUD_FOLDER_ID && !f.isRuntime) || null
+        if (!folder && availableFolders.length > 0) folder = availableFolders[0]
+
+        if (!folder) {
+          if (window.__lineManagerDialog)
+            await window.__lineManagerDialog.alert('当前没有可用的文件夹，请先新建一个文件夹', '提示')
+          return
+        }
+
+        const safeName = ((pending.cleanLineName || pending.lineName || t('lineManagerWindow.unnamedLine')) + '')
+          .replace(/[<>:"/\\|?*]/g, '')
+          .trim() || 'line'
+        const fileName = safeName.toLowerCase().endsWith('.mpl') ? safeName : `${safeName}.mpl`
+        const sep = folder.path && folder.path.includes('\\') ? '\\' : '/'
+        const targetPath = folder.path
+          ? (folder.path.endsWith(sep) ? folder.path : folder.path + sep) + fileName
+          : fileName
+
+        let saveRes = null
+        if (pending.mode === 'zip') {
+          if (!(window.electronAPI?.lines?.saveAsZip)) {
+            if (window.__lineManagerDialog)
+              await window.__lineManagerDialog.alert('当前环境不支持导出压缩包', '提示')
+            return
+          }
+          let audioDir = pending.audioSourceDir || null
+          if (!audioDir && pending.currentFilePath) {
+            const idx = Math.max(pending.currentFilePath.lastIndexOf('/'), pending.currentFilePath.lastIndexOf('\\'))
+            if (idx >= 0) audioDir = pending.currentFilePath.substring(0, idx)
+          }
+          if (!audioDir) audioDir = folder.path
+          saveRes = await window.electronAPI.lines.saveAsZip(
+            pending.lineData,
+            pending.currentFilePath || null,
+            targetPath,
+            audioDir
+          )
+        } else {
+          if (!(window.electronAPI?.lines?.save)) {
+            if (window.__lineManagerDialog)
+              await window.__lineManagerDialog.alert('当前环境不支持保存线路', '提示')
+            return
+          }
+          saveRes = await window.electronAPI.lines.save(fileName, pending.lineData, folder.path, pending.currentFilePath || null)
+        }
+
+        if (saveRes && saveRes.ok) {
+          isSavingLine.value = false
+          pendingLineSaveData.value = null
+          try {
+            localStorage.removeItem('pendingLineSaveData')
+            localStorage.removeItem('lineManagerSaveMode')
+          } catch (e) {}
+
+          localStorage.setItem(
+            'lineManagerSaveResult',
+            JSON.stringify({
+              success: true,
+              mode: pending.mode,
+              folderId: folder.id,
+              folderName: folder.name,
+              folderPath: folder.path,
+              filePath: saveRes.path || targetPath,
+              requestId: pending.requestId || null
+            })
+          )
+
+          await loadLinesFromFolder(folder.id)
+          if (window.electronAPI?.closeWindow) {
+            await new Promise((resolve) => setTimeout(resolve, 120))
+            await window.electronAPI.closeWindow()
+          }
+        } else {
+          const err = (saveRes && saveRes.error) || 'unknown'
+          isSavingLine.value = false
+          pendingLineSaveData.value = null
+          try {
+            localStorage.removeItem('pendingLineSaveData')
+            localStorage.removeItem('lineManagerSaveMode')
+          } catch (e) {}
+          try {
+            localStorage.setItem(
+              'lineManagerSaveResult',
+              JSON.stringify({ success: false, error: err, mode: pending.mode, requestId: pending.requestId || null })
+            )
+          } catch (e) {}
+          if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('保存失败：' + err, '错误')
+          if (window.electronAPI?.closeWindow) await window.electronAPI.closeWindow()
+        }
+      } catch (e) {
+        console.error('[线路管理器] handleSavePendingLine 失败:', e)
+        isSavingLine.value = false
+        pendingLineSaveData.value = null
+        try {
+          localStorage.removeItem('pendingLineSaveData')
+          localStorage.removeItem('lineManagerSaveMode')
+        } catch (e3) {}
+        try {
+          localStorage.setItem(
+            'lineManagerSaveResult',
+            JSON.stringify({ success: false, error: e.message || e, requestId: null })
+          )
+        } catch (e2) {}
+        if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('保存失败：' + (e.message || e), '错误')
+        if (window.electronAPI?.closeWindow) await window.electronAPI.closeWindow()
+      }
+    }
+
     // 保存贯通线路：保存到当前选中的文件夹，不使用弹窗选择
     async function handleSaveThroughLine() {
       const pendingDataStr = localStorage.getItem('pendingThroughLineData')
@@ -1179,18 +1529,18 @@ export default {
         const pendingData = JSON.parse(pendingDataStr)
         const { lineData, lineName, cleanLineName } = pendingData
         const availableFolders = folders.value.filter(
-          (f) => f.id !== 'default' && f.name !== '默认' && f.id !== CLOUD_FOLDER_ID && !f.isRuntime
+          (f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime
         )
         const activeId = selectedFolderId.value ?? currentFolderId.value
         let folder = folders.value.find((f) => f.id === activeId)
-        if (!folder || folder.id === 'default' || folder.id === CLOUD_FOLDER_ID || folder.isRuntime)
+        if (!folder || folder.id === CLOUD_FOLDER_ID || folder.isRuntime)
           folder = availableFolders[0]
         if (!folder) {
           if (window.__lineManagerDialog)
             await window.__lineManagerDialog.alert('当前没有可用的文件夹，请先新建一个文件夹', '提示')
           return
         }
-        await doSaveThroughLine(lineData, cleanLineName, folder)
+        await doSaveThroughLine(lineData, cleanLineName, folder, pendingData.sourceLinePaths || null)
       } catch (e) {
         console.error('[线路管理器] handleSaveThroughLine 失败:', e)
         if (window.__lineManagerDialog)
@@ -1198,17 +1548,74 @@ export default {
       }
     }
 
+    function cancelPendingLineSaveOnClose() {
+      const pendingStr = localStorage.getItem('pendingLineSaveData')
+      const mode = localStorage.getItem('lineManagerSaveMode')
+      if (!pendingStr || !mode) return
+
+      let pending = null
+      try {
+        pending = JSON.parse(pendingStr)
+      } catch (e) {}
+
+      isSavingLine.value = false
+      pendingLineSaveData.value = null
+      try {
+        localStorage.removeItem('pendingLineSaveData')
+        localStorage.removeItem('lineManagerSaveMode')
+      } catch (e) {}
+
+      try {
+        localStorage.setItem(
+          'lineManagerSaveResult',
+          JSON.stringify({
+            success: false,
+            cancelled: true,
+            error: 'window-closed',
+            mode: pending?.mode || mode,
+            requestId: pending?.requestId || null
+          })
+        )
+      } catch (e) {}
+    }
+
+    function handleWindowBeforeUnload() {
+      cancelPendingLineSaveOnClose()
+    }
+
     onMounted(async () => {
+      window.addEventListener('beforeunload', handleWindowBeforeUnload)
       await loadFolders()
       await nextTick()
       await checkSaveThroughLineMode()
+      await checkPendingLineSaveMode()
+    })
+
+    onBeforeUnmount(() => {
+      window.removeEventListener('beforeunload', handleWindowBeforeUnload)
+      if (isSavingThroughLine.value) {
+        try {
+          localStorage.removeItem('pendingThroughLineData')
+          localStorage.removeItem('throughOperationSelectorTarget')
+        } catch (e) {}
+      }
+      cancelPendingLineSaveOnClose()
     })
 
     const activeFolderId = computed(() => selectedFolderId.value || currentFolderId.value)
     const isCloudFolderActive = computed(() => activeFolderId.value === CLOUD_FOLDER_ID)
-    const isDefaultFolderActive = computed(() => activeFolderId.value === 'default')
 
     const isSearchActive = computed(() => (searchQuery.value || '').trim().length > 0)
+
+    const bottomBarActionLabel = computed(() => {
+      if (isSavingThroughLine.value) return t('lineManager.throughSaveButton')
+      if (isSavingLine.value) {
+        return (pendingLineSaveData.value && pendingLineSaveData.value.mode === 'zip')
+          ? t('lineManager.saveZipButton')
+          : t('lineManager.saveLineButton')
+      }
+      return ''
+    })
 
     // 搜索过滤后的线路列表：无关键词时显示当前文件夹；有关键词时搜索所有文件夹
     const filteredLines = computed(() => {
@@ -1304,6 +1711,9 @@ export default {
       clipboard,
       isSavingThroughLine,
       pendingThroughLineInfo,
+      isSavingLine,
+      pendingLineSaveData,
+      refreshExplorer,
       runtimeLoading,
       selectFolder,
       locateToFolder,
@@ -1321,23 +1731,33 @@ export default {
       showLineContextMenu,
       closeLineContextMenu,
       openLine,
+      openLineFile,
       renameLine,
       copyLine,
+      duplicateRuntimeLine,
       cutLine,
       pasteLine,
       createNewLine,
       closeWindow,
       handleSaveThroughLine,
+      handleSavePendingLine,
       buildLineColor,
+      bottomBarActionLabel,
 
       folderMenuItems: computed(() => {
-        const canDelete = contextMenu.value.folderId && contextMenu.value.folderId !== 'default'
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
-        const isDefault = contextMenu.value.folderId === 'default'
-        const canCopyFolder = contextMenu.value.folderId && !isCloud && !isDefault
+        const canDelete = contextMenu.value.folderId && contextMenu.value.folderId !== CLOUD_FOLDER_ID
+        const canCopyFolder = contextMenu.value.folderId && !isCloud
         return [
+<<<<<<< Updated upstream
           { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
           { type: 'sep' },
+=======
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
+          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          { type: 'sep' },
+>>>>>>> Stashed changes
           { label: t('lineManager.ctxCopy'), icon: 'fas fa-copy', action: 'copyFolder', disabled: !canCopyFolder },
           { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'pasteFolder', disabled: !clipboard.value.folder },
           { type: 'sep' },
@@ -1345,7 +1765,7 @@ export default {
             label: t('lineManager.ctxRename'),
             icon: 'fas fa-edit',
             action: 'renameFolder',
-            disabled: !contextMenu.value.folderId || isCloud || isDefault
+            disabled: !contextMenu.value.folderId || isCloud
           },
           {
             label: t('lineManager.ctxOpenFolder'),
@@ -1353,7 +1773,11 @@ export default {
             action: 'openFolder',
             disabled: !contextMenu.value.folderId || isCloud
           },
+<<<<<<< Updated upstream
           ...(canDelete && !isCloud && !isDefault
+=======
+          ...(canDelete && !isCloud
+>>>>>>> Stashed changes
             ? [{ type: 'sep' }, { label: t('lineManager.ctxDelete'), icon: 'fas fa-trash', action: 'deleteFolder', danger: true }]
             : [])
         ]
@@ -1361,20 +1785,28 @@ export default {
       sidebarNewMenuItems: computed(() => {
         const canPaste = clipboard.value.folder || clipboard.value.type
         return [
+<<<<<<< Updated upstream
+=======
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
+>>>>>>> Stashed changes
           { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: false }] : [])
         ]
       }),
       linesNewMenuItems: computed(() => {
         const canPaste = clipboard.value.type || clipboard.value.folder
-        const pasteDisabled = isCloudFolderActive.value || isDefaultFolderActive.value || !canPaste
+        const pasteDisabled = isCloudFolderActive.value || !canPaste
         return [
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
           {
             label: t('lineManager.ctxNewLine'),
             icon: 'fas fa-plus',
             action: 'createNewLine',
-            disabled: isCloudFolderActive.value || isDefaultFolderActive.value
+            disabled: isCloudFolderActive.value
           },
+<<<<<<< Updated upstream
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
         ]
       }),
@@ -1421,16 +1853,74 @@ export default {
           disabled: isCloudFolderActive.value || isDefaultFolderActive.value
         }
       ]),
+=======
+          { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: isCloudFolderActive.value },
+          ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
+        ]
+      }),
+      lineMenuItems: computed(() => {
+        const selectedLine = lineContextMenu.value.line
+        const isRuntimeLine = !!selectedLine?.isRuntime
+        return [
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
+          {
+            label: t('lineManager.ctxNewLine'),
+            icon: 'fas fa-plus',
+            action: 'createNewLine',
+            disabled: isCloudFolderActive.value
+          },
+          { type: 'sep' },
+          { label: t('lineManager.ctxOpen'), icon: 'fas fa-folder-open', action: 'openLine' },
+          {
+            label: t('lineManager.ctxOpenFile'),
+            icon: 'fas fa-file-alt',
+            action: 'openFile',
+            disabled: isCloudFolderActive.value || isRuntimeLine
+          },
+          {
+            label: t('lineManager.ctxRename'),
+            icon: 'fas fa-edit',
+            action: 'renameLine',
+            disabled: isCloudFolderActive.value
+          },
+          { type: 'sep' },
+          {
+            label: t('lineManager.ctxCopy'),
+            icon: 'fas fa-copy',
+            action: 'copyLine',
+            disabled: false
+          },
+          {
+            label: t('lineManager.ctxCut'),
+            icon: 'fas fa-cut',
+            action: 'cutLine',
+            disabled: isCloudFolderActive.value
+          },
+          {
+            label: t('lineManager.ctxPaste'),
+            icon: 'fas fa-paste',
+            action: 'pasteLine',
+            disabled: isCloudFolderActive.value || !clipboard.value.type
+          },
+          { type: 'sep' },
+          {
+            label: t('lineManager.ctxDelete'),
+            icon: 'fas fa-trash',
+            action: 'deleteLine',
+            danger: true,
+            disabled: isCloudFolderActive.value
+          }
+        ]
+      }),
+>>>>>>> Stashed changes
       async onFolderMenuSelect(it) {
+          if (it.action === 'refresh') return await refreshExplorer()
         if (!it) return
+        if (it.action === 'refresh') return await refreshExplorer()
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
-        const isDefault = contextMenu.value.folderId === 'default'
         if (isCloud && ['createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
           await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
-          return
-        }
-        if (isDefault && ['createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
-          await dialogService.alert('默认文件夹为只读，无法在此新建或编辑。', '提示')
           return
         }
         if (it.action === 'addFolder') return await addFolder()
@@ -1447,6 +1937,7 @@ export default {
       },
       async onSidebarNewMenuSelect(it) {
         if (!it) return
+        if (it.action === 'refresh') return await refreshExplorer()
         if (it.action === 'addFolder') return await addFolder()
         if (it.action === 'paste') {
           if (clipboard.value.folder) return await pasteFolder()
@@ -1455,17 +1946,26 @@ export default {
       },
       async onLinesNewMenuSelect(it) {
         if (!it) return
-        if (isCloudFolderActive.value && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
+        if (it.action === 'refresh') return await refreshExplorer()
+
+        const targetFolderId = selectedFolderId.value || currentFolderId.value
+        const isCloudTarget = targetFolderId === CLOUD_FOLDER_ID
+
+        if (isCloudTarget && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
           await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
           return
         }
-        if (isDefaultFolderActive.value && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
-          await dialogService.alert('默认文件夹为只读，无法在此新建或编辑。', '提示')
-          return
-        }
+
+        if (targetFolderId) selectedFolderId.value = targetFolderId
+
         if (it.action === 'addFolder') return await addFolder()
         if (it.action === 'createNewLine') return await createNewLine()
+        if (it.action === 'openFolder') {
+          if (targetFolderId) return await openFolderInExplorer(targetFolderId)
+          return
+        }
         if (it.action === 'paste') {
+          if (!targetFolderId) return
           if (clipboard.value.folder) return await pasteFolder()
           if (clipboard.value.line) return await pasteLine()
         }
@@ -1473,21 +1973,25 @@ export default {
       async onLineMenuSelect(it) {
         if (!it) return
         const line = lineContextMenu.value.line
-        // 云控线路：只允许“打开”
-        if (isCloudFolderActive.value && it.action !== 'openLine') {
-          await dialogService.alert('云控线路只支持应用，不支持在此新建、复制或删除。', '提示')
-          return
-        }
-        // 默认文件夹：只读，只允许“打开”和“复制”
-        if (isDefaultFolderActive.value && it.action !== 'openLine' && it.action !== 'copyLine') {
-          await dialogService.alert('默认文件夹为只读，只支持打开、复制线路。', '提示')
+        if (it.action === 'refresh') return await refreshExplorer()
+        // 云控线路：允许“打开”“复制”，其它编辑操作禁用
+        if (isCloudFolderActive.value && !['openLine', 'copyLine'].includes(it.action)) {
+          await dialogService.alert('云控线路仅支持应用和复制，不支持在此新建、剪切、粘贴或删除。', '提示')
           return
         }
         if (it.action === 'addFolder') return await addFolder()
+        if (it.action === 'openFolder') {
+          if (selectedFolderId.value) return await openFolderInExplorer(selectedFolderId.value)
+          return
+        }
         if (it.action === 'createNewLine') return await createNewLine()
         if (it.action === 'openLine') return await openLine(line)
+        if (it.action === 'openFile') return await openLineFile(line)
         if (it.action === 'renameLine') return await renameLine(line)
-        if (it.action === 'copyLine') return await copyLine(line)
+        if (it.action === 'copyLine') {
+          if (line?.isRuntime) return await duplicateRuntimeLine(line)
+          return await copyLine(line)
+        }
         if (it.action === 'cutLine') return await cutLine(line)
         if (it.action === 'pasteLine') return await pasteLine()
         if (it.action === 'deleteLine') return await deleteLine(line)
@@ -1500,8 +2004,8 @@ export default {
 <template>
   <div class="lmw-root">
     <LineManagerTopbar>
-      <div v-if="folders.length > 0 && selectedFolderId" class="lmw-titlebar-search">
-        <div class="lmw-search-inner">
+      <div v-if="folders.length > 0 && selectedFolderId" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
+        <div class="lmw-search-inner" style="flex:1;">
           <i class="fas fa-search lmw-search-icon"></i>
           <input
             v-model="searchQuery"
@@ -1551,9 +2055,9 @@ export default {
             class="lmw-folder"
             :class="{
               active: selectedFolderId === folder.id,
-              disabled: isSavingThroughLine && (folder.id === 'default' || folder.id === 'runtime-cloud')
+              disabled: isSavingThroughLine && folder.id === 'runtime-cloud'
             }"
-            @click="(isSavingThroughLine && (folder.id === 'default' || folder.id === 'runtime-cloud')) ? null : selectFolder(folder.id)"
+            @click="(isSavingThroughLine && folder.id === 'runtime-cloud') ? null : selectFolder(folder.id)"
             @contextmenu.prevent.stop="showContextMenu($event, folder)"
           >
             <i class="fas fa-folder" />
@@ -1615,14 +2119,26 @@ export default {
         </div>
 
         <!-- 底部操作栏：仅在保存贯通线路时显示，橙色「保存贯通线路」按钮 -->
-        <div v-if="isSavingThroughLine" class="lmw-bottom-bar">
+        <div v-if="isSavingThroughLine || isSavingLine" class="lmw-bottom-bar">
           <div class="lmw-bottom-bar-left">
+<<<<<<< Updated upstream
             <span class="lmw-bottom-bar-muted">{{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}</span>
+=======
+            <span class="lmw-bottom-bar-muted">
+              {{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}
+              <template v-if="isSavingLine && pendingLineSaveData && pendingLineSaveData.lineName"> · {{ pendingLineSaveData.lineName }}</template>
+              <template v-else-if="isSavingThroughLine && pendingThroughLineInfo && pendingThroughLineInfo.lineName"> · {{ pendingThroughLineInfo.lineName }}</template>
+            </span>
+>>>>>>> Stashed changes
           </div>
           <div class="lmw-bottom-bar-right">
-            <button type="button" class="lmw-btn lmw-btn-through" @click="handleSaveThroughLine">
+            <button type="button" class="lmw-btn lmw-btn-through" @click="isSavingThroughLine ? handleSaveThroughLine() : handleSavePendingLine()">
               <i class="fas fa-save"></i>
+<<<<<<< Updated upstream
               <span>{{ t('lineManager.throughSaveButton') }}</span>
+=======
+              <span>{{ bottomBarActionLabel }}</span>
+>>>>>>> Stashed changes
             </button>
           </div>
         </div>

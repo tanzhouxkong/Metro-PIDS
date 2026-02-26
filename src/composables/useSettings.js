@@ -130,6 +130,9 @@ export function useSettings() {
                 if (settings.blurEnabled === undefined) settings.blurEnabled = DEFAULT_SETTINGS.blurEnabled;
                 if (settings.lineNameMerge === undefined) settings.lineNameMerge = DEFAULT_SETTINGS.lineNameMerge;
                 if (settings.enableApiServer === undefined) settings.enableApiServer = DEFAULT_SETTINGS.enableApiServer;
+                if (settings.enableWebSocketBridge === undefined) settings.enableWebSocketBridge = DEFAULT_SETTINGS.enableWebSocketBridge;
+                if (settings.wsPort === undefined) settings.wsPort = DEFAULT_SETTINGS.wsPort;
+                if (settings.vehicleAudioEnabled === undefined) settings.vehicleAudioEnabled = DEFAULT_SETTINGS.vehicleAudioEnabled !== false;
             }
             // 新安装（无 s）或升级后都统一确保显示器1、2、3存在，避免卡片不显示
             ensureDisplayStructure();

@@ -10,6 +10,7 @@
 !macroend
 
 !macro customUnInstall
+<<<<<<< Updated upstream
   ; 防止卸载时程序仍在运行
   Push $0
 
@@ -28,4 +29,8 @@
 
   done_check_app:
     Pop $0
+=======
+  ; 以前这里会检测 Metro-PIDS 是否正在运行，导致卸载时可能卡住
+  ; 现在不再做强制检测，直接允许卸载（交给系统处理正在运行的进程）
+>>>>>>> Stashed changes
 !macroend

@@ -52,6 +52,60 @@ export function applyThroughOperation(appData, storeList, options = null) {
     if (!name) return '';
     return cleanStationName(name);
   };
+  const isAbsoluteLikePath = (p) => {
+    if (!p || typeof p !== 'string') return false;
+    return /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\') || p.startsWith('/') || /^https?:\/\//i.test(p);
+  };
+  const toAlphaLabel = (index) => {
+    let n = Number(index) + 1;
+    let out = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      out = String.fromCharCode(65 + rem) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out || 'A';
+  };
+  const buildSegmentAudioPrefix = (segmentIndex) => `audio${toAlphaLabel(segmentIndex)}`;
+  const remapAudioPathForSegment = (originalPath, segmentPrefix) => {
+    if (!originalPath || typeof originalPath !== 'string') return originalPath;
+    const p = originalPath.trim();
+    if (!p || isAbsoluteLikePath(p)) return originalPath;
+    const normalized = p.replace(/\\/g, '/').replace(/^\/+/, '');
+    const noAudioPrefix = normalized.startsWith('audio/') ? normalized.slice('audio/'.length) : normalized;
+    if (!noAudioPrefix) return originalPath;
+    return `${segmentPrefix}/${noAudioPrefix}`;
+  };
+  const remapAudioItemForSegment = (item, segmentPrefix) => {
+    if (!item) return item;
+    if (typeof item === 'string') return remapAudioPathForSegment(item, segmentPrefix);
+    if (typeof item === 'object') {
+      const cloned = { ...item };
+      if (typeof cloned.path === 'string') cloned.path = remapAudioPathForSegment(cloned.path, segmentPrefix);
+      return cloned;
+    }
+    return item;
+  };
+  const remapStationAudioForSegment = (station, segmentPrefix) => {
+    if (!station || typeof station !== 'object') return station;
+    const out = JSON.parse(JSON.stringify(station));
+    const sa = out.stationAudio;
+    if (!sa || typeof sa !== 'object') return out;
+    const remapDirList = (dirObj) => {
+      if (!dirObj || typeof dirObj !== 'object') return;
+      if (Array.isArray(dirObj.list)) {
+        dirObj.list = dirObj.list.map((it) => remapAudioItemForSegment(it, segmentPrefix));
+      }
+      const legacyKeys = ['welcome', 'depart', 'arrive', 'end'];
+      for (const key of legacyKeys) {
+        if (!Array.isArray(dirObj[key])) continue;
+        dirObj[key] = dirObj[key].map((it) => remapAudioItemForSegment(it, segmentPrefix));
+      }
+    };
+    remapDirList(sa.up);
+    remapDirList(sa.down);
+    return out;
+  };
   
   // 查找所有线路
   const lines = [];
@@ -102,7 +156,11 @@ export function applyThroughOperation(appData, storeList, options = null) {
         }
       }
       
-      mergedStations = [...line.stations.slice(0, endIdx + 1)];
+      const segmentPrefix = buildSegmentAudioPrefix(i);
+      const firstStations = line.stations
+        .slice(0, endIdx + 1)
+        .map((st) => remapStationAudioForSegment(st, segmentPrefix));
+      mergedStations = [...firstStations];
       const segmentEndIdx = mergedStations.length - 1;
       
       // 记录颜色范围
@@ -149,7 +207,10 @@ export function applyThroughOperation(appData, storeList, options = null) {
       }
       
       // 添加当前段的站点
-      const segmentStations = line.stations.slice(startIdx, endIdx + 1);
+      const segmentPrefix = buildSegmentAudioPrefix(i);
+      const segmentStations = line.stations
+        .slice(startIdx, endIdx + 1)
+        .map((st) => remapStationAudioForSegment(st, segmentPrefix));
       const segmentStartIdx = mergedStations.length;
       mergedStations = [...mergedStations, ...segmentStations];
       const segmentEndIdx = mergedStations.length - 1;

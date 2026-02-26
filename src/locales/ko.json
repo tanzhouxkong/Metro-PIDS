@@ -11,6 +11,14 @@
     "languageHint": "인터페이스 언어를 선택합니다. 이 설정이 우선 적용되며, 미설정 시 시스템 언어를 따릅니다.",
     "languageLabel": "인터페이스 언어"
   },
+<<<<<<< Updated upstream
+=======
+  "audio": {
+    "title": "차량 오디오",
+    "enableVehicle": "차량 오디오 사용",
+    "enableVehicleHint": "켜면 도착/출발 및 '다음 단계' 전환 시 역 오디오를 재생합니다. 끄면 재생하지 않습니다."
+  },
+>>>>>>> Stashed changes
   "settings": {
     "appearance": "모양",
     "themeMode": "테마 모드",
@@ -88,6 +96,10 @@
     "outerLoop": "바깥 루프 (반시계 방향)",
     "innerLoop": "안쪽 루프 (시계 방향)",
     "dirLabel": "상행",
+<<<<<<< Updated upstream
+=======
+    "dirLabelDown": "하행",
+>>>>>>> Stashed changes
     "modeNormal": "보통",
     "modeExpress": "급행",
     "modeDirect": "직통",
@@ -203,10 +215,18 @@
     "open": "Open",
     "rename": "Rename",
     "ctxFolderOpen": "Open Folder",
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "새로 고침",
+>>>>>>> Stashed changes
     "ctxFolderNewFolder": "New Folder",
     "ctxNewFolder": "New Folder",
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "파일 위치 열기",
+>>>>>>> Stashed changes
     "ctxRename": "Rename",
     "ctxOpenFolder": "Open Folder",
     "ctxDelete": "Delete",
@@ -242,7 +262,13 @@
     "searchResultHint": "Try other keywords or search by folder name",
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
+<<<<<<< Updated upstream
     "throughSaveButton": "Save Through Line"
+=======
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
+>>>>>>> Stashed changes
   },
   "consoleButtons": {
     "arrive": "Arrive",
@@ -299,7 +325,19 @@
     "xferNamePlaceholder": "Line name/number",
     "btnCancel": "Cancel",
     "btnConfirm": "OK",
+<<<<<<< Updated upstream
     "btnSave": "Save"
+=======
+    "btnSave": "Save",
+    "audioRename": "이름 바꾸기",
+    "audioRenamePlaceholder": "오디오 표시 이름",
+    "audioModeQuick": "모드 바로가기",
+    "audioDynamicMenu": "동적 오디오",
+    "audioDynamicAdd": "플레이스홀더 추가",
+    "audioDynamicName": "동적 오디오",
+    "audioStartPlaceholder": "시발역 오디오",
+    "audioTerminalPlaceholder": "종착역 오디오"
+>>>>>>> Stashed changes
   },
   "colorPicker": {
     "title": "색상 선택",

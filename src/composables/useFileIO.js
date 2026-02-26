@@ -45,6 +45,27 @@ function sanitizeFilename(filename) {
     return cleaned;
 }
 
+const normalizeLineNameForPath = (n) => (n ? String(n).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim() : '');
+
+const persistLinePathInfo = (state) => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        const map = {};
+        if (state.lineNameToFilePath && typeof state.lineNameToFilePath === 'object') {
+            Object.entries(state.lineNameToFilePath).forEach(([k, v]) => {
+                if (!v || typeof v !== 'string') return;
+                map[k] = v;
+                const clean = normalizeLineNameForPath(k);
+                if (clean && clean !== k && !map[clean]) map[clean] = v;
+            });
+        }
+        const payload = { currentFilePath: state.currentFilePath || null, map };
+        localStorage.setItem('pids_line_path_map_v1', JSON.stringify(payload));
+    } catch (e) {
+        console.warn('[useFileIO] Failed to persist line path info', e);
+    }
+};
+
 export function useFileIO(state) {
     
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
@@ -64,6 +85,32 @@ export function useFileIO(state) {
             // 添加折返位置和大站停靠的默认值
             if (!('turnback' in s)) s.turnback = false;
             if (!('expressStop' in s)) s.expressStop = false;
+            // 车站音频：统一为新版单列表 list；旧版 welcome/depart/arrive/end 会合并为 list 并移除旧字段，保存的 JSON 只含 list
+            if (!s.stationAudio || typeof s.stationAudio !== 'object') {
+                s.stationAudio = {
+                    separateDirection: true,
+                    up: { list: [] },
+                    down: { list: [] }
+                };
+            } else {
+                const toListOnly = (d) => {
+                    if (!d || typeof d !== 'object') return { list: [] };
+                    const w = Array.isArray(d.welcome) ? d.welcome : [];
+                    const dep = Array.isArray(d.depart) ? d.depart : [];
+                    const arr = Array.isArray(d.arrive) ? d.arrive : [];
+                    const e = Array.isArray(d.end) ? d.end : [];
+                    if (Array.isArray(d.list)) {
+                        delete d.welcome; delete d.depart; delete d.arrive; delete d.end;
+                        return d;
+                    }
+                    return { list: [...w, ...dep, ...arr, ...e] };
+                };
+                if (!s.stationAudio.up || typeof s.stationAudio.up !== 'object') s.stationAudio.up = { list: [] };
+                else s.stationAudio.up = toListOnly(s.stationAudio.up);
+                if (!s.stationAudio.down || typeof s.stationAudio.down !== 'object') s.stationAudio.down = { list: [] };
+                else s.stationAudio.down = toListOnly(s.stationAudio.down);
+                if (typeof s.stationAudio.separateDirection !== 'boolean') s.stationAudio.separateDirection = true;
+            }
             return s;
         });
         if (!line.meta.lineName) line.meta.lineName = '线路';
@@ -71,13 +118,48 @@ export function useFileIO(state) {
         if (!('termIdx' in line.meta)) line.meta.termIdx = -1;
         // 确保 serviceMode 存在
         if (!('serviceMode' in line.meta)) line.meta.serviceMode = 'normal';
+        if (!line.meta.commonAudio || typeof line.meta.commonAudio !== 'object') {
+            line.meta.commonAudio = { separateDirection: true, up: { list: [] }, down: { list: [] } };
+        } else {
+            const ca = line.meta.commonAudio;
+            const toList = (d) => {
+                if (!d || typeof d !== 'object') return { list: [] };
+                if (Array.isArray(d.list)) return { list: d.list };
+                const w = Array.isArray(d.welcome) ? d.welcome : [];
+                const dep = Array.isArray(d.depart) ? d.depart : [];
+                const arr = Array.isArray(d.arrive) ? d.arrive : [];
+                const e = Array.isArray(d.end) ? d.end : [];
+                return { list: [...w, ...dep, ...arr, ...e] };
+            };
+            if (Array.isArray(ca.list)) {
+                line.meta.commonAudio = { separateDirection: false, up: { list: ca.list }, down: { list: [] } };
+            } else {
+                line.meta.commonAudio = {
+                    separateDirection: ca.separateDirection !== false,
+                    up: toList(ca.up),
+                    down: toList(ca.down)
+                };
+            }
+        }
+        // 兼容旧文件：无 schemaVersion 视为 1
+        if (typeof line.meta.schemaVersion !== 'number') line.meta.schemaVersion = 1;
+        // 移除 audioLayout 字段（如果存在），统一使用 nested 布局（audio/ 子目录）
+        if ('audioLayout' in line.meta) {
+            delete line.meta.audioLayout;
+        }
         return line;
     }
+
+    /** 当前保存使用的 schema 版本（新版本逻辑与格式） */
+    const SAVE_SCHEMA_VERSION = 2;
+    // 串行化保存，避免并发静默保存导致同一路径写入/重命名冲突
+    let saveQueue = Promise.resolve();
 
     /**
      * @param {{ silent?: boolean }} [options] - silent: true 时不显示保存成功提示（如站点编辑保存时）
      */
     async function saveCurrentLine(options) {
+        const task = async () => {
         const silent = options && options.silent === true;
         if (!state || !state.store || !state.store.list) return;
         const cur = state.store.list[state.store.cur];
@@ -88,7 +170,8 @@ export function useFileIO(state) {
         
         // 清理线路名称（移除HTML标签）用于生成文件名
         const cleanLineName = cur.meta.lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
-        const expectedFileName = sanitizeFilename(cleanLineName) + '.json';
+        // 默认保存为 .mpl 线路包（内含音频），不再生成单独的 .json
+        const expectedFileName = sanitizeFilename(cleanLineName) + '.mpl';
         
         // 调试信息
         console.log('[saveCurrentLine] 开始保存:', {
@@ -100,6 +183,16 @@ export function useFileIO(state) {
         
         // 确定保存路径：优先使用 currentFilePath（如果它是完整路径）
         let filePath;
+        const getDirPart = (p) => {
+            if (!p || typeof p !== 'string') return null;
+            const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+            return idx >= 0 ? p.substring(0, idx + 1) : null;
+        };
+        let lastKnownSaveDir = state.lastKnownSaveDir || null;
+        if (state.currentFilePath) {
+            const dir = getDirPart(state.currentFilePath);
+            if (dir) lastKnownSaveDir = dir;
+        }
         
         // 获取当前文件夹路径（用于构建完整保存路径，作为后备方案）
         let currentFolderPath = null;
@@ -156,7 +249,7 @@ export function useFileIO(state) {
                     filePath = normalizedPath + expectedFileName;
                     console.log('[saveCurrentLine] 只有文件名，使用当前文件夹，构建 filePath:', filePath);
                 } else {
-                    // 没有当前文件夹路径，使用文件名（会保存到默认文件夹）
+                    // 没有当前文件夹路径，仅使用文件名（由保存接口决定目标目录）
                     filePath = expectedFileName;
                     console.log('[saveCurrentLine] 只有文件名且无当前文件夹，使用文件名:', filePath);
                 }
@@ -168,17 +261,32 @@ export function useFileIO(state) {
                 const normalizedPath = currentFolderPath.endsWith(separator) ? currentFolderPath : currentFolderPath + separator;
                 filePath = normalizedPath + expectedFileName;
                 console.log('[saveCurrentLine] 无 currentFilePath，使用当前文件夹，构建 filePath:', filePath);
+            } else if (lastKnownSaveDir) {
+                const separator = lastKnownSaveDir.includes('\\') ? '\\' : '/';
+                const normalizedPath = lastKnownSaveDir.endsWith(separator) ? lastKnownSaveDir : lastKnownSaveDir + separator;
+                filePath = normalizedPath + expectedFileName;
+                console.log('[saveCurrentLine] 无 currentFilePath，但有上次保存目录，沿用:', filePath);
             } else {
-                // 如果找不到当前文件夹路径，使用线路名称生成新路径（会保存到默认文件夹）
+                // 如果找不到当前文件夹路径，使用线路名称生成新路径（由保存接口决定目标目录）
                 filePath = expectedFileName;
                 console.log('[saveCurrentLine] 无 currentFilePath 且无当前文件夹，使用文件名:', filePath);
             }
+        }
+
+        // 兜底：如果仍然只有文件名且有上次保存目录，补全目录
+        if (filePath && !filePath.includes('/') && !filePath.includes('\\') && lastKnownSaveDir) {
+            const separator = lastKnownSaveDir.includes('\\') ? '\\' : '/';
+            const normalizedPath = lastKnownSaveDir.endsWith(separator) ? lastKnownSaveDir : lastKnownSaveDir + separator;
+            filePath = normalizedPath + filePath;
+            console.log('[saveCurrentLine] 兜底补全目录:', filePath);
         }
         
         if (window.electronAPI && window.electronAPI.lines && typeof window.electronAPI.lines.save === 'function') {
             try {
                 const normalized = normalizeLine(JSON.parse(JSON.stringify(cur)));
-                
+                normalized.meta = normalized.meta || {};
+                normalized.meta.schemaVersion = SAVE_SCHEMA_VERSION;
+
                 // 处理文件路径：如果 filePath 是完整路径，需要分离文件夹路径和文件名
                 let saveFileName = filePath;
                 let saveDir = null;
@@ -221,14 +329,18 @@ export function useFileIO(state) {
                     saveDir,
                     lineName: cleanLineName
                 });
+
+                const sourceLinePath = state.currentFilePath || null;
                 
                 // 调用保存接口：如果 saveDir 存在，传文件夹路径；否则传 null（使用当前文件夹）
-                const res = await window.electronAPI.lines.save(saveFileName, normalized, saveDir);
+                const res = await window.electronAPI.lines.save(saveFileName, normalized, saveDir, sourceLinePath);
                 
                 console.log('[saveCurrentLine] 保存结果:', res);
                 if (res && res.ok) {
                     // 更新当前文件路径为实际保存的路径
                     state.currentFilePath = res.path || filePath;
+                    const dirFromRes = getDirPart(state.currentFilePath);
+                    if (dirFromRes) state.lastKnownSaveDir = dirFromRes;
                     // 静默保存（如站点编辑）时不显示保存成功提示
                     if (!silent) {
                         const cleanLineName = cur.meta.lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
@@ -236,6 +348,12 @@ export function useFileIO(state) {
                             '保存成功',
                             `线路 "${cleanLineName}" 已保存\n${res.path || filePath}`
                         );
+                    }
+                    // 保存后自动清理线路目录下未引用的音频（保留 .mpl 内部打包的文件）
+                    if (window.electronAPI?.lines?.cleanupAudioDir) {
+                        const savedPath = res.path || state.currentFilePath || filePath;
+                        window.electronAPI.lines.cleanupAudioDir(normalized, savedPath, { removeAllForMpl: true })
+                            .catch((e) => console.warn('[saveCurrentLine] cleanupAudioDir failed', e));
                     }
                 } else {
                     await showMsg('保存失败: ' + (res && res.error), '保存失败');
@@ -247,6 +365,11 @@ export function useFileIO(state) {
         }
         if (silent) return;
         await showMsg('无法保存：未检测到宿主文件保存接口。请先使用"打开文件夹"选择一个线路文件夹，再保存。', '保存失败');
+        };
+        // 将保存串行排队，防止同一时间双重调用导致 .tmp 重命名失败
+        const p = saveQueue.then(task).catch((e) => { console.warn('[saveCurrentLine] queued save failed', e); });
+        saveQueue = p.then(() => {});
+        return p;
     }
 
     async function openLinesFolder() {
@@ -278,14 +401,13 @@ export function useFileIO(state) {
             }
         }
         
-        // 如果有文件夹路径，使用它；否则使用默认行为
+        // 如果有文件夹路径，使用它；否则让用户选择文件夹
         if (folderPath && window.electronAPI.lines.folders && window.electronAPI.lines.folders.open) {
             const res = await window.electronAPI.lines.folders.open(folderPath);
             if (!res || !res.ok) {
                 await showMsg('打开失败: ' + (res && res.error || '未知错误'));
             }
         } else if (window.electronAPI.lines.openFolder) {
-            // 后备方案：使用默认文件夹
             const res = await window.electronAPI.lines.openFolder();
             if (!res || !res.ok) {
                 await showMsg('打开失败: ' + (res && res.error || '未知错误'));
@@ -303,7 +425,23 @@ export function useFileIO(state) {
             return;
         }
         try {
-            const items = await window.electronAPI.lines.list(dir || undefined);
+            // 确定列表目录：优先传入的 dir，否则当前文件夹路径，否则从 currentFilePath 推导（避免从错误目录刷新导致路径被覆盖）
+            let folderPath = dir;
+            if (!folderPath && state.currentFolderId && state.folders && Array.isArray(state.folders)) {
+                const currentFolder = state.folders.find(f => f.id === state.currentFolderId);
+                if (currentFolder && currentFolder.path) {
+                    folderPath = currentFolder.path;
+                }
+            }
+            if (!folderPath && state.currentFilePath && typeof state.currentFilePath === 'string') {
+                const trimmed = state.currentFilePath.trim();
+                const isAbsolute = /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('/') || trimmed.startsWith('\\\\');
+                if (isAbsolute) {
+                    const lastSep = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+                    if (lastSep > 0) folderPath = trimmed.substring(0, lastSep);
+                }
+            }
+            const items = await window.electronAPI.lines.list(folderPath || undefined);
             if (!Array.isArray(items) || items.length === 0) {
                 // 如果是切换文件夹后的静默刷新，不显示提示
                 if (!silent) await showMsg('未发现已保存的线路文件');
@@ -315,14 +453,6 @@ export function useFileIO(state) {
             }
             const detected = [];
             const filePathMap = new Map(); // 用于映射线路名称到文件路径
-            // 确定文件夹路径：优先使用传入的 dir，否则使用当前文件夹路径
-            let folderPath = dir;
-            if (!folderPath && state.currentFolderId && state.folders && Array.isArray(state.folders)) {
-                const currentFolder = state.folders.find(f => f.id === state.currentFolderId);
-                if (currentFolder && currentFolder.path) {
-                    folderPath = currentFolder.path;
-                }
-            }
             // 构建完整路径的辅助函数
             const buildFullPath = (fileName) => {
                 if (!fileName) return fileName;
@@ -341,15 +471,18 @@ export function useFileIO(state) {
             };
             for (const it of items) {
                 try {
-                    const res = await window.electronAPI.lines.read(it.name, dir || undefined);
+                    const res = await window.electronAPI.lines.read(it.name, folderPath || undefined);
                     if (res && res.ok && res.content) {
                         const d = res.content;
                         if (d && d.meta && Array.isArray(d.stations)) {
                             const normalized = normalizeLine(d);
                             detected.push(normalized);
-                            // 保存线路名称到文件路径的映射（存储完整路径）
+                            // 保存线路名称到文件路径的映射（优先使用主进程返回的 fullPath，其次使用本地构建的完整路径）
                             if (normalized.meta && normalized.meta.lineName) {
-                                const fullPath = buildFullPath(it.name);
+                                // it.fullPath 由主进程的 findJsonFiles 返回，通常是绝对路径
+                                const fullPath = (it.fullPath && typeof it.fullPath === 'string' && it.fullPath.trim())
+                                    ? it.fullPath
+                                    : buildFullPath(it.name);
                                 filePathMap.set(normalized.meta.lineName, fullPath);
                             }
                         }
@@ -391,33 +524,33 @@ export function useFileIO(state) {
             
             state.rt = { idx: 0, state: 0 };
             
-            // 更新线路名称到文件路径的映射
+            // 更新线路名称到文件路径的映射（同时用原始名和去色名做 key，便于后续用任一种查找）
+            const cleanLineName = (name) => (name && String(name).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim()) || '';
             filePathMap.forEach((filePath, lineName) => {
                 state.lineNameToFilePath[lineName] = filePath;
+                const clean = cleanLineName(lineName);
+                if (clean && clean !== lineName) state.lineNameToFilePath[clean] = filePath;
             });
-            
+
             // 更新当前文件的路径信息
             if (state.appData && state.appData.meta && state.appData.meta.lineName) {
-                const filePath = state.lineNameToFilePath[state.appData.meta.lineName];
+                const name = state.appData.meta.lineName;
+                const filePath = state.lineNameToFilePath[name] || state.lineNameToFilePath[cleanLineName(name)];
                 if (filePath) {
                     state.currentFilePath = filePath;
-                    console.log('[refreshLinesFromFolder] 设置 currentFilePath:', {
-                        lineName: state.appData.meta.lineName,
-                        filePath: state.currentFilePath,
-                        folderPath: folderPath,
-                        dir: dir
-                    });
                 } else {
-                    // 如果没有找到路径，清空 currentFilePath，保存时会使用当前文件夹路径
                     state.currentFilePath = null;
-                    console.log('[refreshLinesFromFolder] 未找到文件路径，清空 currentFilePath:', {
-                        lineName: state.appData.meta.lineName
-                    });
+                    console.log('[refreshLinesFromFolder] 未找到文件路径，清空 currentFilePath:', { lineName: name });
                 }
             } else {
                 state.currentFilePath = null;
                 console.log('[refreshLinesFromFolder] 无 appData 或 lineName，清空 currentFilePath');
             }
+<<<<<<< Updated upstream
+=======
+
+            persistLinePathInfo(state);
+>>>>>>> Stashed changes
             
             // 若可用则触发同步，否则依赖响应式更新
             if (typeof window.sync === 'function') window.sync();
@@ -436,7 +569,8 @@ export function useFileIO(state) {
             const res = await window.electronAPI.lines.folders.list();
             if (res && res.ok && res.folders) {
                 state.folders = res.folders;
-                state.currentFolderId = res.current || 'default';
+                const firstId = (res.folders && res.folders[0]) ? res.folders[0].id : null;
+                state.currentFolderId = res.current || firstId;
             }
         } catch (e) {
             console.error('加载文件夹列表失败:', e);
@@ -530,60 +664,9 @@ export function useFileIO(state) {
         }
     }
 
+    // 重置线路功能已取消（不再恢复预设线路或默认文件夹）
     async function resetData() {
-        if (await askUser("【警告】这将清空所有线路数据并恢复出厂设置，确定吗？")) {
-            // 先强制恢复所有预设线路文件
-            try {
-                await initDefaultLines(true);
-            } catch (e) {
-                console.warn('恢复预设线路文件失败:', e);
-            }
-            // 清除本地存储
-            localStorage.removeItem('pids_global_store_v1');
-            
-            // 重新加载默认线路数据（不重启应用）
-            try {
-                // 从预设线路文件夹重新加载线路列表
-                await refreshLinesFromFolder(true);
-                
-                // 如果刷新后没有线路，尝试从默认常量初始化
-                if (!state.store.list || state.store.list.length === 0) {
-                    // 导入默认常量
-                    const { DEF, DEF_LINE_16, DEF_JINAN_BUS, DEF_JINAN_METRO_1, DEF_JINAN_METRO_2, DEF_JINAN_METRO_3, DEF_JINAN_METRO_4, DEF_JINAN_METRO_6, DEF_JINAN_METRO_8, DEF_JINAN_METRO_4_8, DEF_JINAN_YUNBA } = await import('../utils/defaults.js');
-                    // 重置 state
-                    state.store.list = [
-                        JSON.parse(JSON.stringify(DEF)),
-                        JSON.parse(JSON.stringify(DEF_LINE_16)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_BUS)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_1)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_2)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_3)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_4)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_6)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_8)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_METRO_4_8)),
-                        JSON.parse(JSON.stringify(DEF_JINAN_YUNBA))
-                    ];
-                    state.store.cur = 0;
-                    state.appData = state.store.list[0] || null;
-                }
-                
-                // 重置运行时状态
-                state.rt = { idx: 0, state: 0 };
-                state.currentFilePath = null;
-                state.lineNameToFilePath = {};
-                
-                // 触发同步更新
-                if (typeof window.sync === 'function') {
-                    window.sync();
-                }
-                
-                await showMsg('线路数据已重置为出厂设置');
-            } catch (e) {
-                console.error('重置数据失败:', e);
-                await showMsg('重置数据失败: ' + (e && e.message));
-            }
-        }
+        await showMsg('重置线路功能已取消，请使用线路管理器管理线路。', '提示');
     }
 
     // 计算数据的 MD5 哈希值（用于比较线路是否相同）
@@ -618,151 +701,24 @@ export function useFileIO(state) {
         }
     }
 
-    // 初始化预设线路文件（仅在文件不存在时创建，或文件内容不同时更新）
-    // forceRestore: 当为 true 时，即使当前 state 为空也会从预设文件或默认常量写入
-    async function initDefaultLines(forceRestore = false) {
-        if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
-            return; // 非 Electron 环境，跳过
-        }
-        
-        try {
-            // 固定写入到“默认”文件夹（物理路径为 userData/lines/默认）
-            let targetDirPath = null;
-            try {
-                const foldersRes = await window.electronAPI.lines.folders.list();
-                if (foldersRes && foldersRes.ok && Array.isArray(foldersRes.folders)) {
-                    const def =
-                        foldersRes.folders.find(f => f.id === 'default') ||
-                        foldersRes.folders.find(f => f.name === '默认');
-                    if (def && def.path) {
-                        targetDirPath = def.path;
-                    }
-                }
-            } catch (e) {
-                console.warn('获取默认线路文件夹失败:', e);
-            }
-            // safety：如果没拿到路径，退回 null，让主进程按当前配置推断，但正常情况下会拿到默认文件夹路径
-            
-            // 从 state.store.list 或默认常量获取预设线路数据
-            const defaultLines = [];
-            const lineNameToFilename = {
-                '上海地铁2号线': '上海地铁2号线.json',
-                '上海地铁16号线': '上海地铁16号线.json',
-                'K101': 'K101.json',
-                '济南地铁1号线': '济南地铁1号线.json',
-                '济南地铁2号线': '济南地铁2号线.json',
-                '济南地铁3号线': '济南地铁3号线.json',
-                '济南地铁4号线': '济南地铁4号线.json',
-                '济南地铁6号线': '济南地铁6号线.json',
-                '济南地铁8号线': '济南地铁8号线.json',
-                '济南地铁4号线 - 济南地铁8号线 (贯通)': '济南地铁4号线 - 济南地铁8号线 (贯通).json',
-                '高新云巴': '高新云巴.json',
-                '济阳线': '济阳线.json'
-            };
-            const presetFilenames = Object.values(lineNameToFilename);
-            
-            // 优先从 state.store.list 获取（如果可用）
-            if (state && state.store && state.store.list && state.store.list.length > 0) {
-                // 从 store.list 中提取预设线路
-                for (const line of state.store.list) {
-                    if (line && line.meta && line.meta.lineName) {
-                        // 移除颜色标记获取纯线路名称
-                        const cleanName = line.meta.lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
-                        const filename = lineNameToFilename[cleanName] || lineNameToFilename[line.meta.lineName];
-                        if (filename) {
-                            defaultLines.push({ data: line, filename });
-                        }
-                    }
-                }
-            }
-            
-            // 其次从应用内置的 /preset-lines 目录读取（保持与打包资源一致）
-            if (defaultLines.length === 0 || forceRestore) {
-                for (const filename of presetFilenames) {
-                    try {
-                        const res = await fetch(`./preset-lines/${encodeURIComponent(filename)}`);
-                        if (res && res.ok) {
-                            const data = await res.json();
-                            defaultLines.push({ data, filename });
-                        }
-                    } catch (e) {
-                        console.warn(`读取预设线路文件 ${filename} 失败:`, e);
-                    }
-                }
-            }
-            
-            // 如果从 state 和 preset-lines 中都没有获取到数据（例如极端情况），尝试从默认常量导入
-            if (defaultLines.length === 0 && forceRestore) {
-                try {
-                    // 动态导入默认线路常量（避免循环依赖）
-                    const { DEF, DEF_LINE_16, DEF_JINAN_BUS, DEF_JINAN_METRO_1, DEF_JINAN_METRO_2, DEF_JINAN_METRO_3, DEF_JINAN_METRO_4, DEF_JINAN_METRO_6, DEF_JINAN_METRO_8, DEF_JINAN_METRO_4_8, DEF_JINAN_YUNBA } = await import('../utils/defaults.js');
-                    defaultLines.push(
-                        { data: JSON.parse(JSON.stringify(DEF)), filename: '上海地铁2号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_LINE_16)), filename: '上海地铁16号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_BUS)), filename: 'K101.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_1)), filename: '济南地铁1号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_2)), filename: '济南地铁2号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_3)), filename: '济南地铁3号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_4)), filename: '济南地铁4号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_6)), filename: '济南地铁6号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_8)), filename: '济南地铁8号线.json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_METRO_4_8)), filename: '济南地铁4号线 - 济南地铁8号线 (贯通).json' },
-                        { data: JSON.parse(JSON.stringify(DEF_JINAN_YUNBA)), filename: '高新云巴.json' }
-                    );
-                } catch (e) {
-                    console.warn('从默认常量导入预设线路失败:', e);
-                }
-            }
-            
-            // 如果没有获取到任何数据，跳过初始化
-            if (defaultLines.length === 0) {
-                return;
-            }
-            
-            // 保存所有预设线路到“默认”文件夹（仅当文件不存在或内容不同时）
-            for (const { data, filename } of defaultLines) {
-                try {
-                    // 检查文件是否已存在（在默认文件夹中）
-                    const existing = await window.electronAPI.lines.read(filename, targetDirPath);
-                    if (existing && existing.ok && existing.content) {
-                        // 文件已存在，比较内容是否相同
-                        const normalized = normalizeLine(JSON.parse(JSON.stringify(data)));
-                        const isSame = await compareLines(existing.content, normalized);
-                        if (isSame) {
-                            // 内容相同，跳过
-                            continue;
-                        }
-                        // 内容不同，继续保存（更新文件）
-                    }
-                    
-                    // 文件不存在或内容不同，保存到默认文件夹
-                    const normalized = normalizeLine(JSON.parse(JSON.stringify(data)));
-                    await window.electronAPI.lines.save(filename, normalized, targetDirPath);
-                } catch (e) {
-                    // 忽略单个文件的保存错误，继续处理下一个
-                    console.warn(`初始化预设线路 ${filename} 失败:`, e);
-                }
-            }
-        } catch (e) {
-            console.warn('初始化预设线路文件失败:', e);
-        }
+    // 内置预设线路功能已取消（不再复制或恢复预设到默认文件夹）
+    async function initDefaultLines() {
+        // no-op
     }
 
     // 让用户选择文件夹（用于保存新线路）
     async function selectFolderForSave() {
         if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
-            // 非 Electron 环境，返回默认文件夹
-            return { id: 'default', path: null };
+            return null;
         }
         
         try {
             const res = await window.electronAPI.lines.folders.list();
             if (!res || !res.ok || !Array.isArray(res.folders) || res.folders.length === 0) {
-                return { id: 'default', path: null };
+                return null;
             }
             
-            // 过滤掉"默认"文件夹
-            const folders = res.folders.filter(f => f.id !== 'default' && f.name !== '默认');
+            const folders = res.folders.slice();
             
             // 如果没有其他文件夹，让用户创建新文件夹
             if (folders.length === 0) {
@@ -928,13 +884,142 @@ export function useFileIO(state) {
             });
         } catch (e) {
             console.error('选择文件夹失败:', e);
-            await showMsg('选择文件夹失败，将使用默认文件夹: ' + (e.message || e), '错误');
+            await showMsg('选择文件夹失败: ' + (e.message || e), '错误');
             return null;
+        }
+    }
+
+    async function saveCurrentLineAsZip() {
+        if (!state || !state.store || !state.store.list) return;
+        const cur = state.store.list[state.store.cur];
+        if (!cur || !cur.meta || !cur.meta.lineName) {
+            await showMsg('当前线路数据无效，无法保存为压缩包');
+            return;
+        }
+        if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.saveAsZip)) {
+            await showMsg('当前环境不支持保存为压缩包');
+            return;
+        }
+        const lineData = normalizeLine(JSON.parse(JSON.stringify(cur)));
+        if (!lineData || typeof lineData !== 'object' || !lineData.meta) {
+            await showMsg('当前线路数据无效，无法导出');
+            return;
+        }
+        const cleanLineName = (cur.meta.lineName || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+        let baseName = sanitizeFilename(cleanLineName);
+        if (!baseName || /^main(\.js)?$/i.test(baseName)) baseName = 'line';
+        const expectedZipName = baseName + '.mpl';
+        // 优先使用 lineNameToFilePath 中当前线路的路径（从哪里加载就从哪里保存，避免 currentFilePath 被错误覆盖）
+        const rawLineName = cur.meta.lineName;
+        const pathFromMap = (rawLineName && state.lineNameToFilePath && (state.lineNameToFilePath[rawLineName] || state.lineNameToFilePath[cleanLineName])) || null;
+        const effectiveLineFilePath = (pathFromMap && pathFromMap.trim()) || state.currentFilePath || null;
+        const lastKnownSaveDir = state.lastKnownSaveDir || null;
+
+        let currentFolderPath = null;
+        if (state.currentFolderId && state.folders && Array.isArray(state.folders)) {
+            const currentFolder = state.folders.find(f => f.id === state.currentFolderId);
+            if (currentFolder && currentFolder.path) currentFolderPath = currentFolder.path;
+        }
+        let targetZipPath = null;
+        if (effectiveLineFilePath) {
+            const lastSlash = Math.max(effectiveLineFilePath.lastIndexOf('/'), effectiveLineFilePath.lastIndexOf('\\'));
+            const isAbsolute = /^[A-Za-z]:[\\/]/.test(effectiveLineFilePath) || effectiveLineFilePath.startsWith('/') || effectiveLineFilePath.startsWith('\\\\');
+            if (lastSlash >= 0 && isAbsolute) {
+                targetZipPath = effectiveLineFilePath.substring(0, lastSlash + 1) + expectedZipName;
+            } else if (currentFolderPath) {
+                const sep = currentFolderPath.includes('\\') ? '\\' : '/';
+                targetZipPath = (currentFolderPath.endsWith(sep) ? currentFolderPath : currentFolderPath + sep) + expectedZipName;
+            }
+        }
+        if (!targetZipPath && currentFolderPath) {
+            const sep = currentFolderPath.includes('\\') ? '\\' : '/';
+            targetZipPath = (currentFolderPath.endsWith(sep) ? currentFolderPath : currentFolderPath + sep) + expectedZipName;
+        }
+        if (!targetZipPath && lastKnownSaveDir) {
+            const sep = lastKnownSaveDir.includes('\\') ? '\\' : '/';
+            targetZipPath = (lastKnownSaveDir.endsWith(sep) ? lastKnownSaveDir : lastKnownSaveDir + sep) + expectedZipName;
+        }
+        if (!targetZipPath) {
+            // 使用相对文件名，主进程会落在当前线路目录，避免弹出系统保存对话框
+            targetZipPath = expectedZipName;
+        }
+        if (targetZipPath && !targetZipPath.match(/^[A-Za-z]:[\\/]/) && !targetZipPath.startsWith('/') && !targetZipPath.startsWith('\\\\') && effectiveLineFilePath) {
+            const lastSlash = Math.max(effectiveLineFilePath.lastIndexOf('/'), effectiveLineFilePath.lastIndexOf('\\'));
+            if (lastSlash >= 0) targetZipPath = effectiveLineFilePath.substring(0, lastSlash + 1) + expectedZipName;
+        }
+        const lineFilePath = effectiveLineFilePath;
+        const lastSlash = effectiveLineFilePath ? Math.max(effectiveLineFilePath.lastIndexOf('/'), effectiveLineFilePath.lastIndexOf('\\')) : -1;
+        const audioSourceDir = effectiveLineFilePath && lastSlash >= 0
+            ? effectiveLineFilePath.substring(0, lastSlash)
+            : (currentFolderPath || null);
+        if (pathFromMap && pathFromMap !== state.currentFilePath) {
+            state.currentFilePath = pathFromMap;
+        }
+        try {
+            const res = await window.electronAPI.lines.saveAsZip(lineData, lineFilePath, targetZipPath, audioSourceDir);
+            if (res && res.ok && res.path) {
+                const name = (cur.meta.lineName || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+                showNotification('导出成功', `线路 "${name}" 已导出为压缩包\n${res.path}`);
+            } else {
+                if (res && res.error !== 'cancelled') {
+                    const msg = res.error === 'missing-archiver'
+                        ? '导出功能需要 archiver 模块，请运行 npm install 安装依赖后重试'
+                        : res.error === 'missing-line-data'
+                            ? '线路数据未正确传递，请重试'
+                            : '导出失败: ' + (res.error || '未知错误');
+                    await showMsg(msg, '导出失败');
+                }
+            }
+        } catch (e) {
+            await showMsg('导出失败: ' + (e && e.message), '导出失败');
+        }
+    }
+
+    async function loadLineFromZip() {
+        if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.extractZipToTemp)) {
+            await showMsg('当前环境不支持从压缩包加载');
+            return;
+        }
+        const openRes = await window.electronAPI.showOpenDialog({
+            filters: [{ name: 'Metro-PIDS 线路包', extensions: ['mpl'] }, { name: 'ZIP', extensions: ['zip'] }],
+            properties: ['openFile']
+        });
+        if (openRes.canceled || !openRes.filePaths || !openRes.filePaths[0]) return;
+        const zipPath = openRes.filePaths[0];
+        try {
+            const extractRes = await window.electronAPI.lines.extractZipToTemp(zipPath);
+            if (!extractRes || !extractRes.ok || !extractRes.dir) {
+                await showMsg('解压失败: ' + (extractRes && extractRes.error || '未知错误'), '加载失败');
+                return;
+            }
+            const readRes = await window.electronAPI.lines.read(extractRes.jsonName, extractRes.dir);
+            if (!readRes || !readRes.ok || !readRes.content) {
+                await showMsg('读取线路文件失败', '加载失败');
+                return;
+            }
+            const normalized = normalizeLine(readRes.content);
+            state.store.list = [normalized];
+            state.store.cur = 0;
+            state.appData = normalized;
+            const canonicalPath = extractRes.archivePath || zipPath;
+            state.currentFilePath = canonicalPath;
+            if (normalized.meta && normalized.meta.lineName) {
+                state.lineNameToFilePath[normalized.meta.lineName] = canonicalPath;
+            }
+            state.rt = { idx: 0, state: 0 };
+            persistLinePathInfo(state);
+            if (typeof window.sync === 'function') window.sync();
+            const name = (normalized.meta && normalized.meta.lineName || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+            showNotification('加载成功', `已从压缩包加载线路 "${name}"`);
+        } catch (e) {
+            await showMsg('加载失败: ' + (e && e.message), '加载失败');
         }
     }
 
     return {
         saveCurrentLine,
+        saveCurrentLineAsZip,
+        loadLineFromZip,
         openLinesFolder,
         refreshLinesFromFolder,
         resetData,
@@ -995,23 +1080,20 @@ export function managePresetLinesWithCloud(state, cloudLines) {
                 return { ok: true, synced: 0 };
             }
             
-            // 获取预设文件夹ID（用于保存文件）
+            // 获取预设文件夹ID（用于保存文件）：优先“预设”文件夹，否则使用第一个文件夹
             let presetFolderId = null;
             let presetFolderPath = null;
             if (window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders) {
                 try {
                     const folders = await window.electronAPI.lines.folders.list();
-                    if (folders && folders.ok && folders.folders) {
-                        // 优先查找"预设"文件夹
+                    if (folders && folders.ok && folders.folders && folders.folders.length > 0) {
                         const presetFolder = folders.folders.find(f => f.name === '预设');
-                        presetFolderId = presetFolder ? presetFolder.id : (folders.folders.find(f => f.name === '默认' || f.id === 'default')?.id || 'default');
-                        presetFolderPath = presetFolder ? presetFolder.path : (folders.folders.find(f => f.name === '默认' || f.id === 'default')?.path || null);
-                    } else {
-                        presetFolderId = 'default';
+                        const first = folders.folders[0];
+                        presetFolderId = (presetFolder || first).id;
+                        presetFolderPath = (presetFolder || first).path;
                     }
                 } catch (e) {
                     console.warn('获取预设文件夹失败:', e);
-                    presetFolderId = 'default';
                 }
             }
             

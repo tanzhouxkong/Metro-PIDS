@@ -17,6 +17,8 @@ const state = reactive({
   folders: [] // 文件夹列表
 });
 
+const cleanLineName = (n) => (n ? String(n).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim() : '');
+
 function loadSafe() {
     try {
         const saved = localStorage.getItem('pids_global_store_v1');
@@ -51,6 +53,34 @@ function loadSafe() {
     }
     if (state.store.cur < 0 || state.store.cur >= state.store.list.length) state.store.cur = 0;
     state.appData = state.store.list[state.store.cur];
+
+    // 恢复文件路径映射，确保启动时能解析音频路径
+    if (typeof localStorage !== 'undefined') {
+        try {
+            const raw = localStorage.getItem('pids_line_path_map_v1');
+            state.lineNameToFilePath = {};
+            state.currentFilePath = null;
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    const map = parsed.map && typeof parsed.map === 'object' ? parsed.map : {};
+                    state.lineNameToFilePath = map;
+                    if (typeof parsed.currentFilePath === 'string' && parsed.currentFilePath.trim()) {
+                        state.currentFilePath = parsed.currentFilePath.trim();
+                    }
+                }
+            }
+        } catch (e) {
+            state.lineNameToFilePath = {};
+            state.currentFilePath = null;
+        }
+
+        if (!state.currentFilePath && state.appData && state.appData.meta && state.appData.meta.lineName) {
+            const rawName = state.appData.meta.lineName;
+            const pathFromMap = state.lineNameToFilePath[rawName] || state.lineNameToFilePath[cleanLineName(rawName)];
+            if (pathFromMap) state.currentFilePath = pathFromMap;
+        }
+    }
 }
 
 // 初始化加载

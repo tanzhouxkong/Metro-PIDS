@@ -24,6 +24,21 @@ export function createDisplaySdk(options = {}) {
   const targetOrigin = options.targetOrigin || '*';
   let bc = null;
   let usingBC = false;
+  // WebSocket 可选：用于跨设备同步（局域网）
+  const preferWs = options.enableWebSocket !== false;
+  const resolveWsUrl = () => {
+    if (options.wsUrl) return options.wsUrl;
+    if (typeof window === 'undefined') return null;
+    const host = options.wsHost || window.location.hostname || 'localhost';
+    const port = options.wsPort || 9400;
+    const proto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+    return `${proto}//${host}:${port}`;
+  };
+  const wsUrl = preferWs ? resolveWsUrl() : null;
+  const wsRetryMs = typeof options.wsRetryMs === 'number' ? options.wsRetryMs : 1600;
+  let ws = null;
+  let wsReady = false;
+  let wsRetryTimer = null;
 
   if (typeof BroadcastChannel !== 'undefined') {
     try {
@@ -35,8 +50,22 @@ export function createDisplaySdk(options = {}) {
     }
   }
 
+  const sendViaWs = (msg) => {
+    if (!ws || !wsReady) return false;
+    try {
+      ws.send(JSON.stringify(msg));
+      return true;
+    } catch (err) {
+      console.warn('displaySdk: ws send failed', err);
+      return false;
+    }
+  };
+
   const post = (msg) => {
     try {
+      if (sendViaWs(msg)) {
+        return true;
+      }
       if (usingBC && bc) {
         bc.postMessage(msg);
         return true;
@@ -122,6 +151,60 @@ export function createDisplaySdk(options = {}) {
     });
   };
 
+  const scheduleWsReconnect = () => {
+    if (!wsUrl || wsRetryTimer) return;
+    wsRetryTimer = setTimeout(() => {
+      wsRetryTimer = null;
+      connectWebSocket();
+    }, wsRetryMs);
+  };
+
+  const connectWebSocket = () => {
+    if (!wsUrl) return;
+    try {
+      if (ws) {
+        ws.removeEventListener('message', handleIncoming);
+        try { ws.close(); } catch (e) {}
+      }
+    } catch (e) {}
+
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (e) {
+      console.warn('displaySdk: WebSocket 创建失败:', e);
+      scheduleWsReconnect();
+      return;
+    }
+
+    wsReady = false;
+    ws.addEventListener('open', () => {
+      wsReady = true;
+      try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
+    });
+
+    ws.addEventListener('message', (event) => {
+      if (!event) return;
+      const payload = event.data;
+      try {
+        const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        handleIncoming(parsed);
+      } catch (e) {
+        handleIncoming(event);
+      }
+    });
+
+    ws.addEventListener('close', () => {
+      wsReady = false;
+      scheduleWsReconnect();
+    });
+
+    ws.addEventListener('error', () => {
+      wsReady = false;
+      try { ws.close(); } catch (e) {}
+      scheduleWsReconnect();
+    });
+  };
+
   const onMessage = (fn) => {
     if (typeof fn !== 'function') return () => {};
     listeners.add(fn);
@@ -135,11 +218,23 @@ export function createDisplaySdk(options = {}) {
   if (typeof window !== 'undefined') {
     window.addEventListener('message', handleIncoming);
   }
+  if (wsUrl) {
+    connectWebSocket();
+  }
 
   const close = () => {
     if (usingBC && bc) {
       try { bc.close(); } catch (e) {}
       bc = null;
+    }
+    if (wsRetryTimer) {
+      clearTimeout(wsRetryTimer);
+      wsRetryTimer = null;
+    }
+    if (ws) {
+      try { ws.close(); } catch (e) {}
+      ws = null;
+      wsReady = false;
     }
     if (typeof window !== 'undefined') {
       try { window.removeEventListener('message', handleIncoming); } catch (e) {}

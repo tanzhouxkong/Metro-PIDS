@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>显示端切换面板</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
+    :root {
+      --bg: radial-gradient(circle at 20% 20%, #0d1b2a, #0b1320 45%, #070d16);
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --accent: #49d6ff;
+      --accent-2: #5ef0c3;
+      --text: #e8f0ff;
+      --muted: #9cb2c9;
+      --danger: #ff7b7b;
+      --success: #7be0a5;
+      --card-gap: 14px;
+      --radius: 14px;
+      font-family: 'Space Grotesk', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+      color: var(--text);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: 32px 18px;
+    }
+    .wrap {
+      width: min(1200px, 100%);
+      display: grid;
+      grid-template-columns: 3fr 2fr;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: 0 12px 50px rgba(0,0,0,0.35);
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin: 0 0 12px;
+      letter-spacing: 0.02em;
+      font-size: 26px;
+    }
+    .subtitle { color: var(--muted); margin-bottom: 14px; }
+    .conn-row { display: grid; grid-template-columns: 1.2fr 0.7fr auto; gap: 10px; align-items: center; margin-bottom: 12px; }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+    }
+    input:focus { outline: 1px solid var(--accent); }
+    button {
+      cursor: pointer;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #041018;
+      background: linear-gradient(120deg, var(--accent), var(--accent-2));
+      box-shadow: 0 10px 30px rgba(73, 214, 255, 0.35);
+    }
+    button.secondary { background: rgba(255,255,255,0.08); color: var(--text); box-shadow: none; border: 1px solid rgba(255,255,255,0.15); }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 13px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 6px rgba(255,255,255,0.04); }
+    .dot.ok { background: var(--success); }
+    .dot.bad { background: var(--danger); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--card-gap); }
+    .card {
+      border-radius: var(--radius);
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      position: relative;
+      overflow: hidden;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 17px; }
+    .card p { margin: 0 0 10px; color: var(--muted); font-size: 13px; min-height: 38px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pill.active { color: var(--text); border-color: rgba(73,214,255,0.5); background: rgba(73,214,255,0.08); }
+    .card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+    .log {
+      height: 300px;
+      overflow: auto;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.35);
+      padding: 12px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .tip { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    @media (max-width: 920px) {
+      .wrap { grid-template-columns: 1fr; }
+      .log { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <h1>显示端切换面板</h1>
+      <div class="subtitle">通过局域网 WebSocket Bridge (默认端口 9400) 切换显示端，页面保持不跳转。</div>
+      <div class="conn-row">
+        <div>
+          <label for="host">桥接地址</label>
+          <input id="host" placeholder="192.168.x.x" />
+        </div>
+        <div>
+          <label for="port">端口</label>
+          <input id="port" type="number" min="1" max="65535" value="9400" />
+        </div>
+        <div style="display:flex; gap:8px; align-items:flex-end;">
+          <button id="connect-btn">连接</button>
+          <button id="disconnect-btn" class="secondary">断开</button>
+        </div>
+      </div>
+      <div class="status" id="status">
+        <span class="dot" id="dot"></span>
+        <span id="status-text">未连接</span>
+      </div>
+      <div class="tip">提示：确保在主控机设置中开启“WebSocket Bridge”，并确认端口未被占用。</div>
+      <div style="margin-top:16px;">
+        <div class="cards" id="cards"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h1>事件</h1>
+      <div class="log" id="log"></div>
+      <div class="tip">收到 DISPLAY_SWITCHED / ACK 会在此显示，方便确认切换是否成功。</div>
+    </section>
+  </div>
+
+  <script>
+    const els = {
+      host: document.getElementById('host'),
+      port: document.getElementById('port'),
+      connect: document.getElementById('connect-btn'),
+      disconnect: document.getElementById('disconnect-btn'),
+      status: document.getElementById('status'),
+      dot: document.getElementById('dot'),
+      statusText: document.getElementById('status-text'),
+      cards: document.getElementById('cards'),
+      log: document.getElementById('log')
+    };
+
+    const state = {
+      ws: null,
+      connected: false,
+      displays: [],
+      currentDisplayId: null,
+      lastAck: null
+    };
+
+    function logLine(text) {
+      const time = new Date().toLocaleTimeString();
+      els.log.innerText = `[${time}] ${text}\n` + els.log.innerText;
+    }
+
+    function setStatus(ok, text) {
+      state.connected = ok;
+      els.dot.classList.toggle('ok', ok);
+      els.dot.classList.toggle('bad', !ok && text);
+      els.statusText.textContent = text || (ok ? '已连接' : '未连接');
+    }
+
+    function renderCards() {
+      els.cards.innerHTML = '';
+      if (!state.displays.length) {
+        els.cards.innerHTML = '<div class="tip">未找到显示器配置，检查 displays/config.json</div>';
+        return;
+      }
+      state.displays.forEach((d) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const active = state.currentDisplayId === d.id;
+        card.innerHTML = `
+          <div class="pill ${active ? 'active' : ''}">${active ? '当前显示端' : '可切换'}</div>
+          <h3>${d.name || d.id}</h3>
+          <p>${d.description || '未提供描述'}</p>
+          <footer>
+            <span class="pill">${d.source || 'builtin'} · ${d.id}</span>
+            <button data-id="${d.id}">切换到此</button>
+          </footer>
+        `;
+        const btn = card.querySelector('button');
+        btn.addEventListener('click', () => sendSwitch(d.id));
+        els.cards.appendChild(card);
+      });
+    }
+
+    async function loadDisplays() {
+      try {
+        const res = await fetch('../displays/config.json');
+        const json = await res.json();
+        state.displays = Object.values(json.displays || {});
+        state.currentDisplayId = json.displayDefaults?.currentDisplayId || null;
+        renderCards();
+      } catch (e) {
+        logLine('读取 displays/config.json 失败: ' + e.message);
+      }
+    }
+
+    function resolveWsUrl() {
+      const host = (els.host.value || window.location.hostname || 'localhost').trim();
+      const port = (els.port.value || '9400').trim();
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${host}:${port}`;
+    }
+
+    function connectWs() {
+      const url = resolveWsUrl();
+      if (state.ws) {
+        try { state.ws.close(); } catch (_) {}
+      }
+      logLine('连接到 WebSocket: ' + url);
+      const ws = new WebSocket(url);
+      state.ws = ws;
+      setStatus(false, '连接中...');
+
+      ws.addEventListener('open', () => {
+        setStatus(true, '已连接');
+        logLine('WebSocket 已连接');
+        try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (_) {}
+      });
+
+      ws.addEventListener('message', (event) => {
+        let msg = null;
+        try {
+          msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        } catch (_) {
+          msg = event.data;
+        }
+        if (!msg) return;
+        if (msg.t === 'DISPLAY_SWITCHED') {
+          state.currentDisplayId = msg.displayId;
+          renderCards();
+          logLine('切换事件: ' + msg.displayId);
+          return;
+        }
+        if (msg.t === 'SWITCH_DISPLAY_ACK') {
+          if (msg.ok) {
+            state.currentDisplayId = msg.displayId;
+            renderCards();
+            logLine('切换成功: ' + msg.displayId);
+          } else {
+            logLine('切换失败: ' + (msg.displayId || '未知'));
+          }
+          return;
+        }
+        if (msg.t === 'SYNC' && msg.r && msg.r.currentDisplayId) {
+          state.currentDisplayId = msg.r.currentDisplayId;
+          renderCards();
+          return;
+        }
+      });
+
+      ws.addEventListener('close', () => {
+        setStatus(false, '已断开');
+        logLine('WebSocket 已断开');
+      });
+      ws.addEventListener('error', (e) => {
+        setStatus(false, '连接异常');
+        logLine('WebSocket 错误: ' + (e.message || ''));
+      });
+    }
+
+    function disconnectWs() {
+      if (state.ws) {
+        try { state.ws.close(); } catch (_) {}
+        state.ws = null;
+      }
+      setStatus(false, '已手动断开');
+    }
+
+    function sendSwitch(displayId) {
+      if (!displayId) return;
+      if (!state.ws || state.ws.readyState !== 1) {
+        logLine('尚未连接 WebSocket，无法发送指令');
+        return;
+      }
+      const payload = { t: 'SWITCH_DISPLAY', displayId };
+      try {
+        state.ws.send(JSON.stringify(payload));
+        logLine('请求切换到 ' + displayId);
+      } catch (e) {
+        logLine('发送切换指令失败: ' + e.message);
+      }
+    }
+
+    els.connect.addEventListener('click', connectWs);
+    els.disconnect.addEventListener('click', disconnectWs);
+
+    // 初始化默认主机
+    els.host.value = window.location.hostname || '';
+    loadDisplays();
+  </script>
+</body>
+</html>

@@ -1,9 +1,11 @@
-import { useUIState } from '../composables/useUIState.js'
+﻿import { useUIState } from '../composables/useUIState.js'
 import { useAutoplay } from '../composables/useAutoplay.js'
 import { useFileIO } from '../composables/useFileIO.js'
 import { usePidsState } from '../composables/usePidsState.js'
 import { useController } from '../composables/useController.js'
 import { useSettings } from '../composables/useSettings.js'
+import { useCloudConfig, CLOUD_API_BASE } from '../composables/useCloudConfig.js'
+import { useStationAudio } from '../composables/useStationAudio.js'
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 import dialogService from '../utils/dialogService.js'
 import { showNotification } from '../utils/notificationService.js'
@@ -22,6 +24,23 @@ export default {
     const { uiState, closePanel } = useUIState()
         const { state: pidsState, sync: syncState } = usePidsState()
         const { next: controllerNext, sync, getStep } = useController()
+        const { settings, saveSettings } = useSettings()
+        const cloudConfig = useCloudConfig(CLOUD_API_BASE)
+        const { playArrive, playDepart } = useStationAudio(pidsState)
+
+        const playAfterToggle = (prevIdx) => {
+            if (settings.vehicleAudioEnabled === false) return;
+            const idx = Number.isInteger(pidsState.rt?.idx) ? pidsState.rt.idx : prevIdx;
+            if (idx == null) return;
+            if (pidsState.rt?.state === 0) playArrive(idx);
+            else playDepart(idx);
+        };
+
+        const controllerNextWithAudio = async () => {
+            const prevIdx = Number.isInteger(pidsState.rt?.idx) ? pidsState.rt.idx : 0;
+            await controllerNext();
+            playAfterToggle(prevIdx);
+        };
 
 
         // shouldStop：到达终点站时停止自动播放
@@ -52,10 +71,37 @@ export default {
             return false;
         }
 
-        const autoplay = useAutoplay(controllerNext, shouldStop)
+        const autoplay = useAutoplay(controllerNextWithAudio, shouldStop)
         const { isPlaying, isPaused, nextIn, start, stop, togglePause } = autoplay
     const fileIO = useFileIO(pidsState)
-    const { settings, saveSettings } = useSettings()
+
+    // 国际化：当前语言（简体 / 繁体 / 英文）
+    const currentLocale = ref(i18n.global.locale.value || 'zh-CN')
+
+    const languageOptions = langs
+
+    // 语言切换：同时更新全局 i18n + 应用自身的简/繁配置（供显示端 3 使用）
+    const changeLanguage = () => {
+      const lang = currentLocale.value || 'zh-CN'
+      // 1) vue-i18n 全局语言
+      setLocale(lang)
+
+      // 2) Metro-PIDS 自身设置：映射为 hkLang (sc / tc)，供 HKDisplay.vue 使用
+      try {
+        if (lang === 'zh-CN') {
+          settings.hkLang = 'sc'
+        } else if (lang === 'zh-TW') {
+          settings.hkLang = 'tc'
+        } else {
+          // 英文暂时保持简体为基础
+          settings.hkLang = 'sc'
+        }
+        // 持久化到 pids_settings_v1，并同步到主进程 / 显示端
+        saveSettings()
+      } catch (e) {
+        console.warn('[SlidePanel] 切换语言时更新 settings.hkLang 失败:', e)
+      }
+    }
 
     // 国际化：当前语言（简体 / 繁体 / 英文）
     const currentLocale = ref(i18n.global.locale.value || 'zh-CN')
@@ -93,6 +139,35 @@ export default {
     const hasElectronAPI = computed(() => {
       return typeof window !== 'undefined' && window.electronAPI && window.electronAPI.startColorPick;
     });
+
+        // 局域网 IP / 端口展示（用于 WebSocket Bridge / HTTP API 文案）
+        const lanIps = ref([])
+        const lanIpsResolved = computed(() => {
+            if (lanIps.value && lanIps.value.length > 0) return lanIps.value
+            if (typeof window !== 'undefined' && window.location) {
+                return [window.location.hostname || 'localhost']
+            }
+            return ['localhost']
+        })
+        const wsPortDisplay = computed(() => settings.wsPort || 9400)
+        const apiPortDisplay = 9001
+
+        const loadLanIps = async () => {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getLanIPs) {
+                    const res = await window.electronAPI.getLanIPs()
+                    if (res && res.ok && Array.isArray(res.ips)) {
+                        lanIps.value = res.ips
+                        return
+                    }
+                }
+            } catch (e) {
+                console.warn('[SlidePanel] 获取局域网 IP 失败:', e)
+            }
+            if (typeof window !== 'undefined' && window.location) {
+                lanIps.value = [window.location.hostname || 'localhost']
+            }
+        }
     
     // 颜色选择器
     const showColorPicker = ref(false);
@@ -182,10 +257,9 @@ export default {
         sync();
     }
 
-    // 通过线路名称切换线路
-    async function switchLineByName(lineName) {
-        // 先刷新线路列表
-        await fileIO.refreshLinesFromFolder(true);
+    // 通过线路名称切换线路（folderPath 可选，来自线路管理器时传入，确保从正确目录刷新以得到正确的 currentFilePath）
+    async function switchLineByName(lineName, folderPath = null) {
+        await fileIO.refreshLinesFromFolder(true, folderPath);
         
         // 查找线路（移除颜色标记后比较）
         const cleanName = (name) => {
@@ -286,7 +360,7 @@ export default {
     }
     
     // 处理从线路管理器返回的线路选择
-    async function handleLineSelectedForThroughOperation(lineName, targetFromIPC) {
+    async function handleLineSelectedForThroughOperation(lineName, targetFromIPC, folderPath = null) {
         const meta = pidsState.appData.meta || {};
         // 优先使用 IPC 传递的 target，否则使用本地存储的
         const target = targetFromIPC || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
@@ -330,7 +404,7 @@ export default {
             }
             // 加载该线路的站点列表
             if (segmentIndex >= 0) {
-                await loadLineStations(lineName, segmentIndex);
+                await loadLineStations(lineName, segmentIndex, folderPath);
             }
         } else if (typeof target === 'number' || (target && target.startsWith('segment-'))) {
             // 新格式：target 是线路段索引
@@ -346,7 +420,7 @@ export default {
                 }
                 meta.throughLineSegments[segmentIndex].lineName = lineName;
                 // 加载该线路的站点列表
-                await loadLineStations(lineName, segmentIndex);
+                await loadLineStations(lineName, segmentIndex, folderPath);
             }
         } else {
             console.warn('[贯通线路] 无效的 target:', target);
@@ -376,7 +450,7 @@ export default {
     }
     
     // 加载线路的站点列表
-    async function loadLineStations(lineName, segmentIndex) {
+    async function loadLineStations(lineName, segmentIndex, folderPath = null) {
         if (!lineName) {
             lineStationsMap.value[segmentIndex] = [];
             return;
@@ -394,16 +468,27 @@ export default {
         if (line && line.stations) {
             lineStationsMap.value[segmentIndex] = line.stations;
         } else {
-            // 如果没找到，尝试刷新一次
-            await fileIO.refreshLinesFromFolder(true);
-            const lineAfterRefresh = pidsState.store.list.find(l => {
-                return cleanName(l.meta?.lineName) === cleanName(lineName) || l.meta?.lineName === lineName;
-            });
-            if (lineAfterRefresh && lineAfterRefresh.stations) {
-                lineStationsMap.value[segmentIndex] = lineAfterRefresh.stations;
-            } else {
-                lineStationsMap.value[segmentIndex] = [];
+            // 不刷新全局线路列表，避免把正在编辑的贯通配置冲掉；改为按目标文件夹直读
+            let loadedStations = null;
+            if (folderPath && window.electronAPI?.lines?.list && window.electronAPI?.lines?.read) {
+                try {
+                    const items = await window.electronAPI.lines.list(folderPath);
+                    if (Array.isArray(items) && items.length > 0) {
+                        for (const item of items) {
+                            const readRes = await window.electronAPI.lines.read(item.name, folderPath);
+                            const lineData = (readRes && readRes.ok) ? readRes.content : null;
+                            const candidateName = cleanName(lineData?.meta?.lineName);
+                            if (candidateName && (candidateName === cleanName(lineName) || lineData?.meta?.lineName === lineName)) {
+                                loadedStations = Array.isArray(lineData?.stations) ? lineData.stations : [];
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[贯通线路] 按文件夹读取线路站点失败:', e);
+                }
             }
+            lineStationsMap.value[segmentIndex] = loadedStations || [];
         }
     }
     
@@ -823,15 +908,90 @@ export default {
     async function applyThroughOperation() {
         const meta = pidsState.appData.meta || {};
         const throughDirection = meta.throughDirection;
+        const cleanText = (text) => {
+            if (text === null || text === undefined) return '';
+            return String(text).replace(/<[^>]+>([^<]*)<\/[^>]+>/g, '$1').trim();
+        };
+        const normalizeForCompare = (text) => cleanText(text).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+        const getSegmentLineName = (seg) => {
+            if (!seg || typeof seg !== 'object') return '';
+            return cleanText(
+                seg.lineName ||
+                seg.line ||
+                seg.line_name ||
+                seg.sourceLineName ||
+                seg.name ||
+                ''
+            );
+        };
+        const getSegmentThroughStationName = (seg) => {
+            if (!seg || typeof seg !== 'object') return '';
+            return cleanText(
+                seg.throughStationName ||
+                seg.throughStation ||
+                seg.transferStationName ||
+                seg.interchangeStationName ||
+                seg.joinStationName ||
+                ''
+            );
+        };
+        const getStationDisplayName = (station) => {
+            if (!station) return '';
+            if (typeof station === 'string') return cleanText(station);
+            return cleanText(
+                station.name ||
+                station.stationName ||
+                station.zh ||
+                station.cn ||
+                station.displayName ||
+                ''
+            );
+        };
+        const findLineByName = (lineName, storeList) => {
+            const target = normalizeForCompare(lineName);
+            if (!target) return null;
+            return storeList.find((line) => {
+                const candidate = normalizeForCompare(line && line.meta ? line.meta.lineName : '');
+                return candidate && candidate === target;
+            }) || null;
+        };
+        const detectThroughStationBetweenLines = (currentLineName, nextLineName, storeList) => {
+            const currentLine = findLineByName(currentLineName, storeList);
+            const nextLine = findLineByName(nextLineName, storeList);
+            if (!currentLine || !nextLine) return '';
+            const currentStations = Array.isArray(currentLine.stations) ? currentLine.stations : [];
+            const nextStations = Array.isArray(nextLine.stations) ? nextLine.stations : [];
+            if (!currentStations.length || !nextStations.length) return '';
+
+            const nextNameSet = new Set();
+            nextStations.forEach((station) => {
+                const normalized = normalizeForCompare(getStationDisplayName(station));
+                if (normalized) nextNameSet.add(normalized);
+            });
+
+            for (const station of currentStations) {
+                const displayName = getStationDisplayName(station);
+                const normalized = normalizeForCompare(displayName);
+                if (normalized && nextNameSet.has(normalized)) {
+                    return displayName;
+                }
+            }
+            return '';
+        };
+
         // 使用界面显示的 throughLineSegments 作为数据源，避免线路切换或刷新导致 meta 与界面不同步
-        const segments = (throughLineSegments.value && throughLineSegments.value.length > 0)
+        const rawSegments = (throughLineSegments.value && throughLineSegments.value.length > 0)
             ? throughLineSegments.value
             : (meta.throughLineSegments || []);
+        const segments = rawSegments.map((segment) => ({
+            ...(segment || {}),
+            lineName: getSegmentLineName(segment),
+            throughStationName: getSegmentThroughStationName(segment)
+        }));
         // 先同步到 meta，确保数据一致
-        if (segments !== meta.throughLineSegments) {
-            meta.throughLineSegments = [...segments];
-            saveCfg();
-        }
+        meta.throughLineSegments = [...segments];
+        throughLineSegments.value = [...segments];
+        saveCfg();
         
         // 检查是否有足够的线路段
         if (!segments || segments.length < 2) {
@@ -847,14 +1007,6 @@ export default {
             }
         }
         
-        // 检查贯通站点是否都已检测到（除了最后一段）
-        for (let i = 0; i < segments.length - 1; i++) {
-            if (!segments[i].throughStationName) {
-                await showMsg(`第${i + 1}段和第${i + 2}段之间未找到贯通站点，请确保这两条线路有重名站点`);
-                return;
-            }
-        }
-        
         if (!throughDirection) {
             await showMsg('请选择贯通方向');
             return;
@@ -866,6 +1018,23 @@ export default {
             if (!storeList || storeList.length === 0) {
                 await showMsg('无法获取线路列表，请刷新线路数据');
                 return;
+            }
+
+            for (let i = 0; i < segments.length - 1; i++) {
+                if (!segments[i].throughStationName || !segments[i].throughStationName.trim()) {
+                    const detected = detectThroughStationBetweenLines(segments[i].lineName, segments[i + 1].lineName, storeList);
+                    if (detected) segments[i].throughStationName = detected;
+                }
+            }
+            meta.throughLineSegments = [...segments];
+            throughLineSegments.value = [...segments];
+            saveCfg();
+
+            for (let i = 0; i < segments.length - 1; i++) {
+                if (!segments[i].throughStationName || !segments[i].throughStationName.trim()) {
+                    await showMsg(`第${i + 1}段和第${i + 2}段之间未找到贯通站点，请确保这两条线路有重名站点`);
+                    return;
+                }
             }
             
             // 合并多条线路（创建一个新的合并线路）
@@ -1339,10 +1508,10 @@ export default {
     }
 
     // 处理线路切换请求（统一处理 Electron 和网页环境）
-    async function handleSwitchLineRequest(lineName, target) {
+    async function handleSwitchLineRequest(lineName, target, folderPath = null) {
         // 检查是否是为贯通线路选择（优先使用传递的 target，否则使用 localStorage）
         const throughTarget = target || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
-        console.log('[线路切换] 收到线路切换请求:', lineName, 'target:', throughTarget);
+        console.log('[线路切换] 收到线路切换请求:', lineName, 'target:', throughTarget, 'folderPath:', folderPath);
         
         // 检查是否是为贯通线路选择（支持旧格式 'lineA'/'lineB' 和新格式 'segment-0'/'segment-1' 或数字）
         const isThroughOperation = throughTarget === 'lineA' || 
@@ -1352,12 +1521,12 @@ export default {
         
         if (isThroughOperation) {
             console.log('[贯通线路] 处理贯通线路选择');
-            await handleLineSelectedForThroughOperation(lineName, throughTarget);
+            await handleLineSelectedForThroughOperation(lineName, throughTarget, folderPath);
             // 重要：处理完贯通线路选择后，不要切换当前显示的线路
             return; // 提前返回，避免执行 switchLineByName
         } else {
             console.log('[线路切换] 处理普通线路切换');
-            await switchLineByName(lineName);
+            await switchLineByName(lineName, folderPath);
         }
     }
 
@@ -1371,12 +1540,46 @@ export default {
             return;
         }
         try {
-            pidsState.appData = JSON.parse(JSON.stringify(lineData));
+            let effectiveLineData = lineData;
+            const lineName = String(lineData.meta.lineName || '').trim();
+            const hasCloudMap = !!(lineData.meta && lineData.meta.cloudAudioFiles && typeof lineData.meta.cloudAudioFiles === 'object' && Object.keys(lineData.meta.cloudAudioFiles).length > 0);
+
+            if (!hasCloudMap && lineName) {
+                try {
+                    const full = await cloudConfig.getRuntimeLine(lineName);
+                    const fetched = full?.data || full?.line || null;
+                    const fetchedHasCloudMap = !!(fetched?.meta?.cloudAudioFiles && typeof fetched.meta.cloudAudioFiles === 'object' && Object.keys(fetched.meta.cloudAudioFiles).length > 0);
+                    if (fetched && fetchedHasCloudMap) {
+                        effectiveLineData = fetched;
+                    }
+                } catch (e) {
+                    console.warn('[云控线路] 补拉完整线路失败，继续使用当前数据:', e);
+                }
+            }
+
+            pidsState.appData = JSON.parse(JSON.stringify(effectiveLineData));
             pidsState.rt = { idx: 0, state: 0 };
             pidsState.currentFilePath = null;
+
+            try {
+                const cloudMap = effectiveLineData?.meta?.cloudAudioFiles;
+                const audioKeys = cloudMap && typeof cloudMap === 'object' ? Object.keys(cloudMap) : [];
+                const source = effectiveLineData?.meta?.cloudAudioSource || 'unknown';
+                const shardCount = Number(effectiveLineData?.meta?.cloudAudioShardCount || 0);
+                console.log('[云控线路] 音频加载状态:', {
+                    lineName: effectiveLineData?.meta?.lineName || lineName,
+                    cloudAudioCount: audioKeys.length,
+                    cloudAudioSource: source,
+                    cloudAudioShardCount: shardCount,
+                    sampleAudioPaths: audioKeys.slice(0, 8)
+                });
+            } catch (e) {
+                console.warn('[云控线路] 打印音频加载日志失败:', e);
+            }
+
             saveCfg();
             sync();
-            console.log('[云控线路] 已成功应用云控线路:', lineData.meta.lineName);
+            console.log('[云控线路] 已成功应用云控线路:', effectiveLineData?.meta?.lineName || lineData.meta.lineName);
         } catch (e) {
             console.error('[云控线路] 应用失败:', e);
         }
@@ -1387,8 +1590,8 @@ export default {
         // Electron 环境：通过 IPC 监听
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onSwitchLineRequest) {
             try {
-                window.electronAPI.onSwitchLineRequest(async (lineName, target) => {
-                    await handleSwitchLineRequest(lineName, target);
+                window.electronAPI.onSwitchLineRequest(async (lineName, target, folderPath) => {
+                    await handleSwitchLineRequest(lineName, target, folderPath);
                 });
             } catch (e) {
                 console.warn('无法设置线路切换监听:', e);
@@ -1403,6 +1606,9 @@ export default {
                 }
             }
         }
+
+        // 加载局域网 IP，便于设置页展示
+        loadLanIps();
         
         // 网页环境：监听 postMessage 和 storage 事件
         if (typeof window !== 'undefined' && (!window.electronAPI || !window.electronAPI.onSwitchLineRequest)) {
@@ -1410,8 +1616,8 @@ export default {
             const messageHandler = async (event) => {
                 // 安全检查：只接受来自同源的消息
                 if (event.data && event.data.type === 'switch-line-request') {
-                    const { lineName, target } = event.data;
-                    await handleSwitchLineRequest(lineName, target);
+                    const { lineName, target, folderPath } = event.data;
+                    await handleSwitchLineRequest(lineName, target, folderPath);
                 } else if (event.data && event.data.type === 'switch-runtime-line') {
                     // 处理运控线路切换
                     const { lineData } = event.data;
@@ -1457,6 +1663,7 @@ export default {
             
             // 定期检查 localStorage（作为备用方案，因为 storage 事件可能在某些情况下不触发）
             const checkInterval = setInterval(() => {
+                if (document && document.hidden) return;
                 const lineName = localStorage.getItem('lineManagerSelectedLine');
                 if (lineName) {
                     // 检查是否是运控线路
@@ -1484,7 +1691,7 @@ export default {
                         localStorage.removeItem('lineManagerSelectedTarget');
                     }
                 }
-            }, 500);
+            }, 2000);
             
             // 保存清理函数
             cleanupWebListeners = () => {
@@ -1545,6 +1752,161 @@ export default {
             const url = 'line_manager_window.html';
             window.open(url, '_blank', 'width=900,height=600');
         }
+    }
+
+<<<<<<< Updated upstream
+    const keyMapDisplay = computed(() => ({
+        arrdep: { label: i18n.global.t('keys.nextState') },
+        prev: { label: i18n.global.t('keys.prevStation') },
+        next: { label: i18n.global.t('keys.nextStation') }
+    }));
+=======
+    let lineManagerSaveWatcher = null;
+
+    const stopLineManagerSaveWatcher = () => {
+        if (lineManagerSaveWatcher) {
+            clearInterval(lineManagerSaveWatcher);
+            lineManagerSaveWatcher = null;
+        }
+    };
+>>>>>>> Stashed changes
+
+    function cachePendingLineSave(payload) {
+        try {
+            localStorage.setItem('pendingLineSaveData', JSON.stringify(payload));
+            localStorage.setItem('lineManagerSaveMode', payload.mode || 'line');
+            localStorage.removeItem('lineManagerSaveResult');
+        } catch (e) {
+            console.warn('[线路管理器] 无法写入本地缓存:', e);
+        }
+    }
+
+    function startLineManagerSaveWatcher(requestId, payload, mode) {
+        stopLineManagerSaveWatcher();
+        const timeout = Date.now() + 30000;
+
+        lineManagerSaveWatcher = setInterval(async () => {
+            if (Date.now() > timeout) {
+                stopLineManagerSaveWatcher();
+                localStorage.removeItem('lineManagerSaveResult');
+                localStorage.removeItem('pendingLineSaveData');
+                localStorage.removeItem('lineManagerSaveMode');
+                return;
+            }
+            const raw = localStorage.getItem('lineManagerSaveResult');
+            if (!raw) return;
+
+            let result;
+            try {
+                result = JSON.parse(raw);
+            } catch (e) {
+                console.warn('[线路管理器] 保存结果解析失败:', e);
+                stopLineManagerSaveWatcher();
+                return;
+            }
+
+            if (result.requestId && result.requestId !== requestId) {
+                return;
+            }
+
+            stopLineManagerSaveWatcher();
+            localStorage.removeItem('lineManagerSaveResult');
+            localStorage.removeItem('pendingLineSaveData');
+            localStorage.removeItem('lineManagerSaveMode');
+
+            if (result && result.success) {
+                const dirPart = (p) => {
+                    if (!p || typeof p !== 'string') return null;
+                    const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+                    return idx >= 0 ? p.substring(0, idx + 1) : null;
+                };
+
+                const cleanName = payload.cleanLineName || payload.lineName || '';
+
+                if (result.folderId) {
+                    pidsState.currentFolderId = result.folderId;
+                }
+                if (result.filePath) {
+                    pidsState.currentFilePath = result.filePath;
+                    if (cleanName) {
+                        pidsState.lineNameToFilePath[cleanName] = result.filePath;
+                    }
+                    const dir = dirPart(result.filePath);
+                    if (dir) pidsState.lastKnownSaveDir = dir;
+                } else if (result.folderPath) {
+                    const dir = dirPart(result.folderPath);
+                    if (dir) pidsState.lastKnownSaveDir = dir;
+                }
+
+                if (result.folderPath) {
+                    try {
+                        await fileIO.refreshLinesFromFolder(true, result.folderPath);
+                    } catch (e) {
+                        console.warn('[线路管理器] 刷新线路列表失败:', e);
+                    }
+                }
+
+                try { saveCfg(); } catch (e) {}
+                try { sync(); } catch (e) {}
+
+                try {
+                    const { showNotification } = await import('../utils/notificationService.js');
+                    const folderLabel = result.folderName || result.folderId || '';
+                    const targetLabel = folderLabel ? ` -> ${folderLabel}` : '';
+                    const modeLabel = mode === 'zip' ? '保存为压缩包' : '保存当前线路';
+                    showNotification('保存成功', `${modeLabel}：${payload.lineName || cleanName}${targetLabel}`);
+                } catch (e) {}
+            } else {
+                const errMsg = (result && result.error) ? String(result.error) : '未知错误';
+                const isCancelled = !!(result && result.cancelled) || errMsg === 'window-closed' || errMsg === 'cancelled';
+                if (isCancelled) {
+                    await showMsg('已取消保存', '提示');
+                } else {
+                    await showMsg('保存失败：' + errMsg, '错误');
+                }
+            }
+        }, 400);
+    }
+
+    async function openLineManagerForSave(mode = 'line') {
+        const cur = pidsState.appData;
+        const lineName = cur && cur.meta ? (cur.meta.lineName || '') : '';
+        if (!cur || !cur.meta || !lineName) {
+            await showMsg('当前线路数据无效，无法保存');
+            return;
+        }
+
+        let serializable;
+        try {
+            serializable = JSON.parse(JSON.stringify(cur));
+        } catch (e) {
+            await showMsg('保存失败：线路数据无法序列化');
+            return;
+        }
+
+        const cleanLineName = lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+        const requestId = Date.now();
+        const payload = {
+            mode,
+            lineName,
+            cleanLineName,
+            lineData: serializable,
+            currentFilePath: pidsState.currentFilePath || null,
+            currentFolderId: pidsState.currentFolderId || null,
+            lastKnownSaveDir: pidsState.lastKnownSaveDir || null,
+            requestId,
+            ts: Date.now()
+        };
+
+        cachePendingLineSave(payload);
+
+        if (window.electronAPI && window.electronAPI.openLineManager) {
+            await window.electronAPI.openLineManager();
+        } else {
+            await openLineManagerWindow();
+        }
+
+        startLineManagerSaveWatcher(requestId, payload, mode);
     }
 
     const keyMapDisplay = computed(() => ({
@@ -2343,10 +2705,13 @@ export default {
             displayId: '', name: '', source: 'builtin', url: '', description: '',
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
             // 仅显示器1使用的选项：线路名合并 / C 型开关
@@ -2355,10 +2720,13 @@ export default {
             wallpaperDataUrl: '',
             wallpaperOpacity: 0.35,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2454,8 +2822,11 @@ export default {
                 : 'linear';
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
             if (displayId === 'display-1') {
@@ -2467,8 +2838,11 @@ export default {
                 displayEdit.wallpaperOpacity = 0.35;
             }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2521,10 +2895,13 @@ export default {
                         lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
@@ -2532,10 +2909,13 @@ export default {
                         wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
                         wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2582,10 +2962,13 @@ export default {
                 lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
@@ -2593,10 +2976,13 @@ export default {
                 wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
                 wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2898,8 +3284,11 @@ export default {
                         }
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                             // 显示器1：壁纸
@@ -2913,8 +3302,11 @@ export default {
                                 }
                             }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -3212,6 +3604,7 @@ export default {
                 cleanupWebListeners();
                 cleanupWebListeners = null;
             }
+            stopLineManagerSaveWatcher();
         });
 
         return {
@@ -3235,7 +3628,12 @@ export default {
             showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             presetContextMenu, showPresetContextMenu, closePresetContextMenu, applyPresetFromMenu, deletePresetFromMenu, sharePresetOffline, importPresetFromShareCode, generateShareId,
+<<<<<<< Updated upstream
             openLineManagerWindow,
+=======
+            openLineManagerWindow, openLineManagerForSave,
+            lanIpsResolved, loadLanIps, wsPortDisplay, apiPortDisplay,
+>>>>>>> Stashed changes
             // 显示端管理方法
             currentDisplay, currentDisplayId, displayState, selectDisplay, 
             draggedDisplayId, dragOverDisplayId,
@@ -3278,16 +3676,21 @@ export default {
                 <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
             </div>
             
-            <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 重置数据 -->
-            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+            <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 / 压缩包 -->
+            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
                 <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
                     <i class="fas fa-folder-open" style="font-size:18px;"></i> 打开管理器
                 </button>
-                <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
+                <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
                     <i class="fas fa-save" style="font-size:18px;"></i> 保存当前线路
                 </button>
-                <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
-                    <i class="fas fa-trash-alt" style="font-size:18px;"></i> 重置数据
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                <button class="btn" style="height:56px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px; background:#9b59b6; color:white; border:none; border-radius:10px; font-size:12px; gap:4px; box-shadow:0 4px 12px rgba(155,89,182,0.3);" @click="openLineManagerForSave('zip')">
+                    <i class="fas fa-file-archive" style="font-size:16px;"></i> 保存为压缩包
+                </button>
+                <button class="btn" style="height:56px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px; background:#3498db; color:white; border:none; border-radius:10px; font-size:12px; gap:4px; box-shadow:0 4px 12px rgba(52,152,219,0.3);" @click="fileIO.loadLineFromZip()">
+                    <i class="fas fa-file-import" style="font-size:16px;"></i> 从压缩包加载
                 </button>
             </div>
         </div>
@@ -3379,6 +3782,7 @@ export default {
             <div style="color:#4A90E2; font-weight:bold; margin-bottom:16px; font-size:15px;">
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               {{ $t('preferences.language') }} (Language)
 =======
 <<<<<<< HEAD
@@ -3386,6 +3790,9 @@ export default {
 =======
               {{ $t('preferences.language') }} (Language)
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+              {{ $t('preferences.language') }}
 >>>>>>> Stashed changes
 =======
               {{ $t('preferences.language') }}
@@ -3406,6 +3813,37 @@ export default {
             </div>
         </div>
 
+<<<<<<< Updated upstream
+=======
+                <!-- Vehicle Audio -->
+                <div class="card" style="border-left: 6px solid #FF6B6B; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+                        <div style="color:#FF6B6B; font-weight:bold; margin-bottom:16px; font-size:15px;">
+                            {{ $t('audio.title') }}
+                        </div>
+                        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+                            <div style="flex:1;">
+                                <div style="color:var(--text); font-size:14px; font-weight:bold;">{{ $t('audio.enableVehicle') }}</div>
+                                <div style="color:var(--muted); font-size:12px; line-height:1.5; margin-top:6px;">
+                                    {{ $t('audio.enableVehicleHint') }}
+                                </div>
+                            </div>
+                            <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
+                                    <input type="checkbox" v-model="settings.vehicleAudioEnabled" @change="saveSettings()" style="opacity:0; width:0; height:0;">
+                                    <span :style="{
+                                            position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
+                                            backgroundColor: settings.vehicleAudioEnabled !== false ? 'var(--accent)' : '#ccc', 
+                                            transition:'.4s', borderRadius:'24px'
+                                    }"></span>
+                                    <span :style="{
+                                            position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
+                                            backgroundColor:'white', transition:'.4s', borderRadius:'50%',
+                                            transform: settings.vehicleAudioEnabled !== false ? 'translateX(20px)' : 'translateX(0)'
+                                    }"></span>
+                            </label>
+                        </div>
+                </div>
+
+>>>>>>> Stashed changes
         <!-- Display Management -->
         <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('display.title') }}</div>
@@ -3507,10 +3945,84 @@ export default {
                     }"></span>
                 </label>
             </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <div style="flex:1;">
+                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">局域网同步（WebSocket Bridge）</div>
+                    <div style="font-size:12px; color:var(--muted); line-height:1.5;">
+                        远端浏览器/盒子通过 WebSocket 同步站点和命令，适合多屏联动。
+                    </div>
+                </div>
+                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; margin-left:16px; flex-shrink:0;">
+                    <input type="checkbox" v-model="settings.enableWebSocketBridge" @change="saveSettings()" style="opacity:0; width:0; height:0;">
+                    <span :style="{
+                        position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
+                        backgroundColor: settings.enableWebSocketBridge ? 'var(--accent)' : '#ccc', 
+                        transition:'.4s', borderRadius:'24px'
+                    }"></span>
+                    <span :style="{
+                        position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
+                        backgroundColor:'white', transition:'.4s', borderRadius:'50%',
+                        transform: settings.enableWebSocketBridge ? 'translateX(20px)' : 'translateX(0)'
+                    }"></span>
+                </label>
+            </div>
             
             <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.12); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.25); line-height:1.6;">
                 <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
                 {{ $t('api.tip3') }}
+<<<<<<< Updated upstream
+=======
+            </div>
+        </div>
+
+        <!-- LAN WebSocket Bridge -->
+        <div class="card" style="border-left: 6px solid #27ae60; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+            <div style="color:#27ae60; font-weight:bold; margin-bottom:16px; font-size:15px;">局域网同步（WebSocket Bridge）</div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <div style="flex:1;">
+                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">启用/禁用</div>
+                    <div style="font-size:12px; color:var(--muted); line-height:1.5;">
+                        远端浏览器/盒子通过 WebSocket 同步站点和命令，适合多屏联动。
+                    </div>
+                </div>
+                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; margin-left:16px; flex-shrink:0;">
+                    <input type="checkbox" v-model="settings.enableWebSocketBridge" @change="saveSettings()" style="opacity:0; width:0; height:0;">
+                    <span :style="{
+                        position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
+                        backgroundColor: settings.enableWebSocketBridge ? 'var(--accent)' : '#ccc', 
+                        transition:'.4s', borderRadius:'24px'
+                    }"></span>
+                    <span :style="{
+                        position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
+                        backgroundColor:'white', transition:'.4s', borderRadius:'50%',
+                        transform: settings.enableWebSocketBridge ? 'translateX(20px)' : 'translateX(0)'
+                    }"></span>
+                </label>
+            </div>
+
+            <div style="margin-top:8px; display:flex; flex-direction:column; gap:10px; font-size:12px; color:var(--muted);">
+                <div style="color:var(--text); font-weight:bold;">本机 IP</div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span v-for="ip in lanIpsResolved" :key="ip" style="background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25); color:var(--text);">{{ ip }}</span>
+                    <button class="btn" style="padding:4px 8px; background:var(--btn-gray-bg); color:var(--text);" @click="loadLanIps()"><i class="fas fa-sync"></i> 刷新</button>
+                </div>
+
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <span style="color:var(--text); font-weight:bold;">WebSocket 端口</span>
+                    <input type="number" min="1" max="65535" v-model.number="settings.wsPort" @change="saveSettings()" style="width:96px; padding:6px 8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                    <span style="color:var(--muted);">连接地址：</span>
+                    <span v-for="ip in lanIpsResolved" :key="ip + '-ws'" style="color:var(--text); background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25);">ws://{{ ip }}:{{ wsPortDisplay }}</span>
+                </div>
+
+                <div style="color:var(--muted); line-height:1.6;">
+                    要正常同步，显示端网页需通过 http:// 或 https:// 打开。常用示例：
+                    <br>· 远程切换控制页：http://{{ lanIpsResolved[0] }}:5173/examples/display-switcher.html
+                    <br>· 第三方显示模板：http://{{ lanIpsResolved[0] }}:5173/examples/third-party-display-template.html
+                    <br>浏览器页面里会自动连到上面的 ws 地址。
+                </div>
+>>>>>>> Stashed changes
             </div>
         </div>
 
@@ -3690,6 +4202,7 @@ export default {
                         </template>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
 =======
 <<<<<<< HEAD
@@ -3697,6 +4210,9 @@ export default {
 =======
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+                        <!-- 显示器1：线路名合并 / C 型开关 -->
 >>>>>>> Stashed changes
 =======
                         <!-- 显示器1：线路名合并 / C 型开关 -->
@@ -3959,33 +4475,33 @@ export default {
                 position: 'fixed',
                 left: displayContextMenu.x + 'px',
                 top: displayContextMenu.y + 'px',
-                background: 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(224, 224, 224, 0.8)',
-                borderRadius: '8px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                background: 'rgba(255, 255, 255, 0.68)',
+                backdropFilter: 'blur(18px) saturate(150%) contrast(1.05)',
+                WebkitBackdropFilter: 'blur(18px) saturate(150%) contrast(1.05)',
+                border: '1px solid rgba(255, 255, 255, 0.45)',
+                borderRadius: '12px',
+                boxShadow: '0 8px 30px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04)',
                 zIndex: 9999,
                 minWidth: '140px',
-                padding: '6px 0'
+                padding: '8px 0'
             }"
         >
             <div 
                 @click="addNewDisplayFromMenu()"
-                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                @mouseout="$event.target.style.background='transparent'"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
+                @mouseover="$event.target.style.background='rgba(0,0,0,0.06)'; $event.target.style.borderRadius='8px'"
+                @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
                 <i class="fas fa-plus" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 新建
             </div>
-            <div v-if="displayContextMenu.displayId" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div v-if="displayContextMenu.displayId" style="height: 1px; background: rgba(255, 255, 255, 0.55); margin: 6px 4px;"></div>
             <div 
                 v-if="displayContextMenu.displayId"
                 @click="editDisplayFromMenu()"
-                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                @mouseout="$event.target.style.background='transparent'"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
+                @mouseover="$event.target.style.background='rgba(0,0,0,0.06)'; $event.target.style.borderRadius='8px'"
+                @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
                 <i class="fas fa-edit" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 编辑
@@ -3994,20 +4510,20 @@ export default {
             <div 
                 v-if="displayContextMenu.displayId"
                 @click="toggleDisplayEnabledFromMenu()"
-                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                @mouseover="$event.target.style.background='rgba(0,0,0,0.05)'"
-                @mouseout="$event.target.style.background='transparent'"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
+                @mouseover="$event.target.style.background='rgba(0,0,0,0.06)'; $event.target.style.borderRadius='8px'"
+                @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
                 <i :class="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? 'fas fa-pause' : 'fas fa-play'" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 {{ displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? '禁用' : '启用' }}
             </div>
-            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(255, 255, 255, 0.55); margin: 6px 4px;"></div>
             <div 
                 v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem"
                 @click="deleteDisplayFromMenu()"
-                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 10px; transition: background 0.2s;"
-                @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.1)'"
-                @mouseout="$event.target.style.background='transparent'"
+                style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--btn-red-bg, #ff4444); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
+                @mouseover="$event.target.style.background='rgba(255, 68, 68, 0.12)'; $event.target.style.borderRadius='8px'"
+                @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
                 <i class="fas fa-trash" style="font-size: 12px; color: var(--btn-red-bg, #ff4444); width: 16px;"></i>
                 删除
@@ -4228,4 +4744,5 @@ export default {
     </style>
   `
 }
+
 

@@ -11,6 +11,14 @@
     "languageHint": "表示言語を選択します。この設定が最優先で、未設定の場合はシステムに従います。",
     "languageLabel": "表示言語"
   },
+<<<<<<< Updated upstream
+=======
+  "audio": {
+    "title": "車両オーディオ",
+    "enableVehicle": "車両オーディオを有効にする",
+    "enableVehicleHint": "オンの場合、到着/発車や「次のステップ」で駅オーディオを再生します。オフでは再生しません。"
+  },
+>>>>>>> Stashed changes
   "settings": {
     "appearance": "外観",
     "themeMode": "テーマ",
@@ -88,6 +96,10 @@
     "outerLoop": "外回り (反時計回り)",
     "innerLoop": "内回り (時計回り)",
     "dirLabel": "上り",
+<<<<<<< Updated upstream
+=======
+    "dirLabelDown": "下り",
+>>>>>>> Stashed changes
     "modeNormal": "各駅停車",
     "modeExpress": "快速",
     "modeDirect": "直通",
@@ -203,10 +215,18 @@
     "open": "Open",
     "rename": "Rename",
     "ctxFolderOpen": "Open Folder",
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "再読み込み",
+>>>>>>> Stashed changes
     "ctxFolderNewFolder": "New Folder",
     "ctxNewFolder": "New Folder",
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "ファイルの場所を開く",
+>>>>>>> Stashed changes
     "ctxRename": "Rename",
     "ctxOpenFolder": "Open Folder",
     "ctxDelete": "Delete",
@@ -242,7 +262,13 @@
     "searchResultHint": "Try other keywords or search by folder name",
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
+<<<<<<< Updated upstream
     "throughSaveButton": "Save Through Line"
+=======
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
+>>>>>>> Stashed changes
   },
   "consoleButtons": {
     "arrive": "Arrive",
@@ -299,7 +325,20 @@
     "xferNamePlaceholder": "Line name/number",
     "btnCancel": "Cancel",
     "btnConfirm": "OK",
+<<<<<<< Updated upstream
     "btnSave": "Save"
+=======
+    "btnSave": "Save",
+    "audioRename": "名前を変更",
+    "audioRenamePlaceholder": "音声表示名",
+    "audioCut": "切り取り",
+    "audioModeQuick": "モードショートカット",
+    "audioDynamicMenu": "ダイナミックオーディオ",
+    "audioDynamicAdd": "プレースホルダーを追加",
+    "audioDynamicName": "ダイナミックオーディオ",
+    "audioStartPlaceholder": "始発駅オーディオ",
+    "audioTerminalPlaceholder": "終着駅オーディオ"
+>>>>>>> Stashed changes
   },
   "colorPicker": {
     "title": "色を選択",

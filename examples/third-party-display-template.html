@@ -344,6 +344,10 @@
             channelName: 'metro_pids_v3',  // BroadcastChannel 频道名称
             snapshotKey: 'metro_pids_display_snapshot',  // localStorage 快照键名
             enableDebug: false,  // 是否启用调试面板（按 F12 切换）
+            wsEnabled: true,      // 是否启用 WebSocket（跨设备 / 局域网）
+            wsUrl: '',            // 可留空自动根据当前 host 拼 URL
+            wsPort: 9400,
+            wsRetryMs: 1500,
         };
 
         // ==================== 站点计算 API 配置 ====================
@@ -374,6 +378,10 @@
         let appData = null;
         let rtState = { idx: 0, state: 0 };
         let bc = null;
+        let bcConnected = false;
+        let ws = null;
+        let wsConnected = false;
+        let wsRetryTimer = null;
         let isConnected = false;
 
         // ==================== BroadcastChannel 初始化 ====================
@@ -389,14 +397,103 @@
                     
                     // 显示端启动时，请求主程序同步数据
                     bc.postMessage({ t: 'REQ' });
-                    updateConnectionStatus(true);
+                    bcConnected = true;
+                    updateConnectionStatus(wsConnected || bcConnected);
                 } catch (e) {
                     console.warn('[Display] BroadcastChannel 创建失败:', e);
-                    updateConnectionStatus(false);
+                    bcConnected = false;
+                    updateConnectionStatus(wsConnected || bcConnected);
                 }
             } else {
                 console.warn('[Display] 浏览器不支持 BroadcastChannel');
-                updateConnectionStatus(false);
+                bcConnected = false;
+                updateConnectionStatus(wsConnected || bcConnected);
+            }
+        }
+
+        // ==================== WebSocket 初始化（用于跨设备 / 局域网） ====================
+        function getWsUrl() {
+            if (CONFIG.wsUrl && CONFIG.wsUrl.trim()) return CONFIG.wsUrl.trim();
+            if (typeof window === 'undefined') return null;
+            const host = window.location.hostname || 'localhost';
+            const port = CONFIG.wsPort || 9400;
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${proto}//${host}:${port}`;
+        }
+
+        function scheduleWsReconnect() {
+            if (!CONFIG.wsEnabled) return;
+            if (wsRetryTimer) return;
+            wsRetryTimer = setTimeout(() => {
+                wsRetryTimer = null;
+                connectWebSocket();
+            }, CONFIG.wsRetryMs || 1500);
+        }
+
+        function connectWebSocket() {
+            if (!CONFIG.wsEnabled) return;
+            const url = getWsUrl();
+            if (!url) {
+                console.warn('[Display] 未能解析 WebSocket URL');
+                return;
+            }
+            try {
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                }
+            } catch (e) {}
+
+            try {
+                ws = new WebSocket(url);
+            } catch (e) {
+                console.warn('[Display] WebSocket 创建失败:', e);
+                wsConnected = false;
+                updateConnectionStatus(wsConnected || bcConnected);
+                scheduleWsReconnect();
+                return;
+            }
+
+            wsConnected = false;
+
+            ws.addEventListener('open', () => {
+                wsConnected = true;
+                updateConnectionStatus(wsConnected || bcConnected);
+                try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
+            });
+
+            ws.addEventListener('message', (event) => {
+                if (!event) return;
+                const payload = event.data;
+                try {
+                    const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+                    handleMessage(parsed);
+                } catch (e) {
+                    handleMessage(event);
+                }
+            });
+
+            ws.addEventListener('close', () => {
+                wsConnected = false;
+                updateConnectionStatus(wsConnected || bcConnected);
+                scheduleWsReconnect();
+            });
+
+            ws.addEventListener('error', () => {
+                wsConnected = false;
+                updateConnectionStatus(wsConnected || bcConnected);
+                scheduleWsReconnect();
+            });
+        }
+
+        function sendViaWebSocket(payload) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+            try {
+                ws.send(JSON.stringify(payload));
+                return true;
+            } catch (e) {
+                console.warn('[Display] WebSocket 发送失败:', e);
+                return false;
             }
         }
 
@@ -661,41 +758,50 @@
         function sendCommand(command) {
             // 直接发送命令格式，让主程序根据用户配置的快捷键来判断是否执行
             // 通过 BroadcastChannel 发送 CMD_KEY 消息到主程序
+            const payload = { t: 'CMD_KEY', command: command };
+
+            if (sendViaWebSocket(payload)) {
+                console.log('[Display] ✅ 控制命令已通过 WebSocket 发送:', command);
+                return true;
+            }
+
             if (bc) {
                 try {
-                    bc.postMessage({
-                        t: 'CMD_KEY',
-                        command: command  // 'next', 'prev', 'arrive', 'depart'
-                    });
+                    bc.postMessage(payload);
                     console.log('[Display] ✅ 控制命令已通过广播发送:', command);
                     return true;
                 } catch (e) {
                     console.warn('[Display] ❌ 广播发送命令失败:', e);
                     return false;
                 }
-            } else {
-                console.warn('[Display] ❌ BroadcastChannel 不可用，无法发送控制命令');
-                console.warn('[Display] 提示：请确保浏览器支持 BroadcastChannel API');
-                return false;
             }
+
+            console.warn('[Display] ❌ 无可用通道发送控制命令');
+            return false;
         }
 
         // ==================== 通过广播请求数据同步 ====================
         function requestDataSync() {
             // 通过 BroadcastChannel 发送 REQ 消息，请求主程序同步数据
+            const payload = { t: 'REQ' };
+
+            if (sendViaWebSocket(payload)) {
+                console.log('[Display] ✅ 已通过 WebSocket 请求数据同步');
+                return true;
+            }
+
             if (bc) {
                 try {
-                    bc.postMessage({ t: 'REQ' });
+                    bc.postMessage(payload);
                     console.log('[Display] ✅ 已通过广播请求数据同步');
                     return true;
                 } catch (e) {
                     console.warn('[Display] ❌ 广播请求数据失败:', e);
                     return false;
                 }
-            } else {
-                console.warn('[Display] ❌ BroadcastChannel 不可用，无法请求数据');
-                return false;
             }
+            console.warn('[Display] ❌ 无可用通道请求数据');
+            return false;
         }
 
         // ==================== 键盘快捷键（支持自定义快捷键） ====================
@@ -751,6 +857,9 @@
         function init() {
             console.log('[Display] 第三方显示器模板初始化');
             
+            // 初始化 WebSocket（跨设备）
+            connectWebSocket();
+
             // 初始化 BroadcastChannel
             initBroadcastChannel();
             
@@ -758,7 +867,7 @@
             restoreSnapshot();
             
             // 通过广播请求初始数据（不依赖API服务器）
-            requestDataViaBroadcast();
+            requestDataSync();
 
             // 启动时钟更新
             setInterval(updateCurrentTime, 1000);
@@ -789,6 +898,12 @@
         window.addEventListener('beforeunload', () => {
             if (bc) {
                 bc.close();
+            }
+            if (ws) {
+                try { ws.close(); } catch (e) {}
+            }
+            if (wsRetryTimer) {
+                clearTimeout(wsRetryTimer);
             }
         });
     </script>

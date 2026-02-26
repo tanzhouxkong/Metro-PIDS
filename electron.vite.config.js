@@ -229,6 +229,7 @@ export default defineConfig({
     server: {
       port: 5173,
       strictPort: false,
+      host: '0.0.0.0', // 允许局域网访问
       hmr: {
         protocol: 'ws',
         host: 'localhost',

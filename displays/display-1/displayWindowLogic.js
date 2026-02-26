@@ -6421,29 +6421,57 @@ export function initDisplayWindow(rootElement) {
   const startRec = async (bps) => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return;
     try {
+      // 降低帧率到 30fps 以提高兼容性和稳定性，避免某些机器上的花屏问题
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'browser', frameRate: 60 },
+        video: { displaySurface: 'browser', frameRate: 30 },
         audio: false
       });
       const recTip = locateId('rec-tip');
       if (recTip) recTip.style.display = 'block';
-      const options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: bps };
-      if (!MediaRecorder.isTypeSupported(options.mimeType)) options.mimeType = 'video/webm';
+      
+      // 优先使用 VP8（兼容性更好），如果支持 VP9 再使用 VP9
+      let options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: bps };
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        options.mimeType = 'video/webm;codecs=vp9';
+      } else if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm';
+      }
+      
       recorder = new MediaRecorder(stream, options);
       chunks = [];
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        // 验证数据有效性，避免损坏的帧导致花屏
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+      recorder.onerror = (e) => {
+        console.error('录制错误:', e);
+        if (recTip) recTip.style.display = 'none';
+        if (bc) bc.postMessage({ t: 'REC_STOP_ERR' });
       };
       recorder.onstop = () => {
+        // 验证所有数据块是否有效
+        if (chunks.length === 0) {
+          alert('录制失败：未捕获到任何数据');
+          if (recTip) recTip.style.display = 'none';
+          return;
+        }
         const blob = new Blob(chunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'MetroPIDS_' + new Date().toISOString().replace(/[:.]/g, '-') + '.webm';
         a.click();
+        // 清理资源
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          chunks = [];
+        }, 100);
         if (recTip) recTip.style.display = 'none';
       };
-      recorder.start();
+      // 添加 timeslice 参数（1000ms），定期触发 dataavailable，避免数据块过大导致内存问题或花屏
+      recorder.start(1000);
       if (bc) bc.postMessage({ t: 'REC_STARTED' });
     } catch (err) {
       console.error(err);

@@ -11,6 +11,14 @@
     "languageHint": "Select interface language, this setting takes precedence, otherwise follows system.",
     "languageLabel": "Interface Language"
   },
+<<<<<<< Updated upstream
+=======
+  "audio": {
+    "title": "Vehicle audio",
+    "enableVehicle": "Enable vehicle audio",
+    "enableVehicleHint": "When on, arrivals/departures and Next Step will play station audio; turn off to mute them."
+  },
+>>>>>>> Stashed changes
   "settings": {
     "appearance": "Appearance",
     "themeMode": "Theme Mode",
@@ -80,18 +88,30 @@
     "currentLine": "Current Line",
     "openManager": "Open Manager",
     "saveCurrentLine": "Save Current Line",
+<<<<<<< Updated upstream
     "resetData": "Reset Data",
     "serviceMode": "Service Mode",
     "currentMode": "Current Mode",
 <<<<<<< Updated upstream
     "singleLine": "Single Line (Linear)",
 =======
+=======
+    "saveAsZip": "Save as ZIP",
+    "resetData": "Reset Data",
+    "serviceMode": "Service Mode",
+    "currentMode": "Current Mode",
+>>>>>>> Stashed changes
     "singleLine": "Single Line",
     "loopLine": "Loop Line",
     "outerLoop": "Outer Loop (Counter-clockwise)",
     "innerLoop": "Inner Loop (Clockwise)",
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
     "dirLabel": "Upbound",
+=======
+    "dirLabel": "Upbound",
+    "dirLabelDown": "Downbound",
+>>>>>>> Stashed changes
     "modeNormal": "Normal",
     "modeExpress": "Express",
     "modeDirect": "Direct",
@@ -142,8 +162,11 @@
     "autoplayTitle": "Auto Play",
     "autoplayEnable": "Auto Play",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "autoplayInterval": "Enable Interval:"
 =======
+=======
+>>>>>>> Stashed changes
     "autoplayInterval": "Enable Interval:",
     "recordingTitle": "Video Recording",
     "recordingDisplay": "Display",
@@ -190,6 +213,9 @@
       "recordingStageSegmentsDone": "Segments finished",
       "recordingStageConcatStart": "Merging segments",
       "recordingOpenFolder": "Open Folder"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   },
   "lineManager": {
@@ -212,10 +238,18 @@
     "rename": "Rename",
 
     "ctxFolderOpen": "Open Folder",
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "Refresh",
+>>>>>>> Stashed changes
     "ctxFolderNewFolder": "New Folder",
     "ctxNewFolder": "New Folder",
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "Open File Location",
+>>>>>>> Stashed changes
     "ctxRename": "Rename",
     "ctxOpenFolder": "Open Folder",
     "ctxDelete": "Delete",
@@ -256,7 +290,13 @@
     "searchResultHint": "Try other keywords or search by folder name",
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
+<<<<<<< Updated upstream
     "throughSaveButton": "Save Through Line"
+=======
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
+>>>>>>> Stashed changes
   },
   "consoleButtons": {
     "arrive": "Arrive",
@@ -300,8 +340,64 @@
     "expressSkip": "Skip",
 
     "xferSectionTitle": "Transfer Lines",
+<<<<<<< Updated upstream
     "xferSectionHint": "Right-click to operate",
     "xferEmpty": "No transfers, right-click to add or paste",
+=======
+    "audioSectionTitle": "Station Audio",
+    "xferSectionHint": "Right-click to operate",
+    "xferEmpty": "No transfers, right-click to add or paste",
+    "audioWelcomeTitle": "Welcome (first station)",
+    "audioDepartTitle": "Departure",
+    "audioArriveTitle": "Arrival",
+    "audioEndTitle": "End (terminal)",
+    "audioEmpty": "No audio, right-click to add or paste",
+    "audioDropToAdd": "Drop audio here to add",
+    "audioSeparateDirection": "Separate up/down",
+    "directionUp": "Up",
+    "directionDown": "Down",
+    "audioAdd": "Add",
+    "audioAddTo": "Add to",
+    "audioAddNeedElectron": "Add audio is only available in Electron desktop",
+    "audioAddNeedSaveLine": "Please save the line first before adding audio",
+    "audioAddCopyFailed": "Failed to copy audio file",
+    "audioPlay": "Play",
+    "audioRename": "Rename",
+    "audioRenamePlaceholder": "Audio display name",
+    "audioDelete": "Delete",
+    "audioCopy": "Copy",
+    "audioCut": "Cut",
+    "audioPaste": "Paste",
+    "audioModeArrive": "Arrival",
+    "audioModeDepart": "Departure",
+    "audioModeShortTurn": "Short turn",
+    "audioModeExpress": "Express",
+    "audioModeDirect": "Direct",
+    "audioDisabledInNormal": "Disabled in normal mode",
+    "audioModeQuick": "Mode shortcuts",
+    "audioDynamicMenu": "Dynamic audio",
+    "audioDynamicAdd": "Add placeholder",
+    "audioDynamicName": "Dynamic audio",
+    "audioStartPlaceholder": "Origin audio",
+    "audioTerminalPlaceholder": "Terminal audio",
+    "audioApplyToAllStations": "Apply selected to all stations",
+    "audioCommonTitle": "Line common audios",
+    "audioCommonDesc": "Frequent service phrases, quick insert",
+    "audioCommonAddUp": "Add to Up",
+    "audioCommonAddDown": "Add to Down",
+    "audioCommonAddBoth": "Add to both",
+    "audioTerminalTag": "Terminal audio",
+      "audioSelectFiles": "Select audio files",
+      "audioAddBlank": "Add empty slot",
+      "audioHotkey": "Hotkey",
+      "audioCommonPlaceholder": "Common audio",
+    "audioTerminalSlotTitle": "Auto terminal audios",
+    "audioTerminalSlotDesc": "Items tagged as terminal auto-match first/last stations in order",
+    "audioTerminalEmpty": "No terminal-tagged items",
+    "audioMarkStationAudio": "Mark as terminal audio",
+    "audioTerminalUntag": "Unmark terminal",
+    "audioSelectHint": "Ctrl: multi-select; Shift: range select",
+>>>>>>> Stashed changes
     "xferUnnamed": "Unnamed",
     "xferExitBadge": "Out-of-station Transfer",
     "xferSuspendedBadge": "Suspended",
@@ -325,7 +421,10 @@
     "btnConfirm": "OK",
     "btnSave": "Save"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   },
   "colorPicker": {
     "title": "Select Color",
@@ -380,6 +479,9 @@
     "down": "Downbound",
     "outer": "Outer Loop",
     "inner": "Inner Loop"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   }
 }

@@ -11,6 +11,14 @@
     "languageHint": "选择界面语言，优先使用此设置，其次跟随系统。",
     "languageLabel": "界面语言"
   },
+<<<<<<< Updated upstream
+=======
+  "audio": {
+    "title": "车辆音频",
+    "enableVehicle": "启用车辆音频",
+    "enableVehicleHint": "开启后，进站/出站以及“下一步”切换会播放车站音频；关闭后不播放。"
+  },
+>>>>>>> Stashed changes
   "settings": {
     "appearance": "外观",
     "themeMode": "主题模式",
@@ -22,6 +30,7 @@
   "display": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "显示端管理 (Display Management)",
 =======
 <<<<<<< HEAD
@@ -29,6 +38,9 @@
 =======
     "title": "显示端管理 (Display Management)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "显示端管理",
 >>>>>>> Stashed changes
 =======
     "title": "显示端管理",
@@ -45,6 +57,7 @@
   "api": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "API 服务器 (API Server)",
 =======
 <<<<<<< HEAD
@@ -52,6 +65,9 @@
 =======
     "title": "API 服务器 (API Server)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "API 服务器",
 >>>>>>> Stashed changes
 =======
     "title": "API 服务器",
@@ -64,14 +80,18 @@
   "keys": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     "title": "快捷键",
     "nextState": "进站/离站",
     "prevStation": "上一站",
     "nextStation": "下一站",
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
@@ -82,6 +102,8 @@
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -123,18 +145,30 @@
     "currentLine": "当前线路",
     "openManager": "打开管理器",
     "saveCurrentLine": "保存当前线路",
+<<<<<<< Updated upstream
     "resetData": "重置数据",
     "serviceMode": "运营模式",
     "currentMode": "当前模式",
 <<<<<<< Updated upstream
     "singleLine": "单线 (Linear)",
 =======
+=======
+    "saveAsZip": "保存为压缩包",
+    "resetData": "重置数据",
+    "serviceMode": "运营模式",
+    "currentMode": "当前模式",
+>>>>>>> Stashed changes
     "singleLine": "单线",
     "loopLine": "环线",
     "outerLoop": "外环 (逆时针)",
     "innerLoop": "内环 (顺时针)",
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
     "dirLabel": "上行",
+=======
+    "dirLabel": "上行",
+    "dirLabelDown": "下行",
+>>>>>>> Stashed changes
     "modeNormal": "普通",
     "modeExpress": "大站车",
     "modeDirect": "直达",
@@ -186,8 +220,11 @@
     "autoplayTitle": "自动播放",
     "autoplayEnable": "自动播放",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "autoplayInterval": "启用间隔:"
 =======
+=======
+>>>>>>> Stashed changes
     "autoplayInterval": "启用间隔:",
     "recordingTitle": "视频录制",
     "recordingDisplay": "显示端",
@@ -234,6 +271,9 @@
           "recordingStageSegmentsDone": "分段录制完成",
           "recordingStageConcatStart": "正在拼接片段",
           "recordingOpenFolder": "打开文件夹"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   },
   "lineManager": {
@@ -256,10 +296,18 @@
     "rename": "重命名",
 
     "ctxFolderOpen": "打开文件夹",
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "刷新",
+>>>>>>> Stashed changes
     "ctxFolderNewFolder": "新建文件夹",
     "ctxNewFolder": "新建文件夹",
     "ctxCopy": "复制",
     "ctxPaste": "粘贴",
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "打开文件所在位置",
+>>>>>>> Stashed changes
     "ctxRename": "重命名",
     "ctxOpenFolder": "打开文件夹",
     "ctxDelete": "删除",
@@ -300,7 +348,13 @@
     "searchResultHint": "尝试其他关键词，或搜索文件夹名称",
     "locate": "定位",
     "savingToPrefix": "当前将保存到：",
+<<<<<<< Updated upstream
     "throughSaveButton": "保存贯通线路"
+=======
+    "throughSaveButton": "保存贯通线路",
+    "saveLineButton": "保存当前线路",
+    "saveZipButton": "保存为压缩包"
+>>>>>>> Stashed changes
   },
   "consoleButtons": {
     "arrive": "进站",
@@ -317,6 +371,7 @@
 
     "nameZhLabel": "中文站名",
     "nameZhPlaceholder": "例如: 人民广场",
+<<<<<<< Updated upstream
     "nameEnLabel": "英文站名 (English)",
     "nameEnPlaceholder": "e.g. People's Square",
 
@@ -325,16 +380,34 @@
     "statusSuspended": "暂缓开通",
 
     "doorLabel": "开门方向 (Door)",
+=======
+    "nameEnLabel": "英文站名",
+    "nameEnPlaceholder": "e.g. People's Square",
+
+    "statusLabel": "站点状态",
+    "statusNormal": "正常运营",
+    "statusSuspended": "暂缓开通",
+
+    "doorLabel": "开门方向",
+>>>>>>> Stashed changes
     "doorLeft": "左侧",
     "doorRight": "右侧",
     "doorBoth": "双侧",
 
+<<<<<<< Updated upstream
     "dockLabel": "停靠方向 (Dock)",
+=======
+    "dockLabel": "停靠方向",
+>>>>>>> Stashed changes
     "dockUp": "仅上行",
     "dockDown": "仅下行",
     "dockBoth": "双向",
 
+<<<<<<< Updated upstream
     "turnbackLabel": "折返位置 (Turnback)",
+=======
+    "turnbackLabel": "折返位置",
+>>>>>>> Stashed changes
     "turnbackNone": "无",
     "turnbackPre": "站前折返",
     "turnbackPost": "站后折返",
@@ -344,8 +417,68 @@
     "expressSkip": "跳过",
 
     "xferSectionTitle": "换乘线路",
+<<<<<<< Updated upstream
     "xferSectionHint": "右键操作",
     "xferEmpty": "暂无换乘，右键可添加或粘贴",
+=======
+    "audioSectionTitle": "车站音频",
+    "xferSectionHint": "右键操作",
+    "xferEmpty": "暂无换乘，右键可添加或粘贴",
+    "audioWelcomeTitle": "首站欢迎音频",
+    "audioDepartTitle": "出站音频",
+    "audioArriveTitle": "进站音频",
+    "audioEndTitle": "终点站结束音频",
+    "audioEmpty": "暂无音频，右键可添加或粘贴",
+    "audioDropToAdd": "拖拽音频到此处添加",
+    "audioSeparateDirection": "上下行分开",
+    "directionUp": "上行",
+    "directionDown": "下行",
+    "directionBoth": "上下行",
+    "audioApplyAllUp": "仅上行",
+    "audioApplyAllDown": "仅下行",
+    "audioApplyAllBoth": "上下行",
+    "audioAdd": "添加",
+    "audioAddTo": "添加至",
+    "audioAddNeedElectron": "添加音频需在 Electron 桌面环境中使用",
+    "audioAddNeedSaveLine": "请先保存线路后再添加音频",
+    "audioAddCopyFailed": "复制音频文件失败",
+    "audioPlay": "播放",
+    "audioRename": "重命名",
+    "audioRenamePlaceholder": "音频显示名称",
+    "audioDelete": "删除",
+    "audioCopy": "复制",
+    "audioCut": "剪切",
+    "audioPaste": "粘贴",
+    "audioModeArrive": "进站使用",
+    "audioModeDepart": "出站使用",
+    "audioModeShortTurn": "短交路使用",
+    "audioModeExpress": "大站车使用",
+    "audioModeDirect": "直达车使用",
+    "audioDisabledInNormal": "普通模式下禁用",
+    "audioModeQuick": "模式快捷",
+    "audioDynamicMenu": "动态音频",
+    "audioDynamicAdd": "添加占位符",
+    "audioDynamicName": "动态音频",
+    "audioStartPlaceholder": "始发站音频",
+    "audioTerminalPlaceholder": "终到站音频",
+    "audioApplyToAllStations": "应用到所有站",
+    "audioCommonTitle": "通用音频",
+    "audioCommonDesc": "常用服务用语，可一键插入上下行列表",
+    "audioCommonAddUp": "加到上行",
+    "audioCommonAddDown": "加到下行",
+    "audioCommonAddBoth": "上下行",
+    "audioSelectFiles": "选择音频文件",
+    "audioAddBlank": "添加空槽",
+    "audioHotkey": "快捷键",
+    "audioCommonPlaceholder": "通用音频",
+    "audioTerminalTag": "本站音频",
+    "audioTerminalSlotTitle": "首末站自动音频",
+    "audioTerminalSlotDesc": "打上“本站音频”标签的条目自动匹配首/末站并按顺序播放",
+    "audioTerminalEmpty": "暂无“本站音频”条目",
+    "audioMarkStationAudio": "标记为本站音频",
+    "audioTerminalUntag": "取消本站音频",
+    "audioSelectHint": "支持 Ctrl 多选、Shift 连选",
+>>>>>>> Stashed changes
     "xferUnnamed": "未命名",
     "xferExitBadge": "出站换乘",
     "xferSuspendedBadge": "暂缓开通",
@@ -369,7 +502,10 @@
     "btnConfirm": "确定",
     "btnSave": "保存"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   },
   "colorPicker": {
     "title": "选择颜色",
@@ -424,6 +560,9 @@
     "down": "下行",
     "outer": "外环",
     "inner": "内环"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   }
 }

@@ -31,6 +31,86 @@ function json(obj, status = 200, extraHeaders = {}) {
   });
 }
 
+function isPlainObject(value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function tryParseJsonString(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  if (!(text.startsWith('{') || text.startsWith('['))) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function hasValidLineName(line) {
+  return !!(line && isPlainObject(line.meta) && typeof line.meta.lineName === 'string' && line.meta.lineName.trim());
+}
+
+/**
+ * 从多种格式中提取线路 JSON（兼容旧版 JSON 与新版 MPL 包装结构）
+ */
+function extractLineData(payload) {
+  if (!payload) return null;
+  const queue = [payload];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current == null) continue;
+
+    if (typeof current === 'string') {
+      const parsed = tryParseJsonString(current);
+      if (parsed) queue.push(parsed);
+      continue;
+    }
+
+    if (!isPlainObject(current)) continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    if (hasValidLineName(current)) return current;
+
+    // 常见包装字段
+    for (const key of ['line', 'lineData', 'appData', 'data', 'content', 'payload', 'json', 'lineJson', 'line_json']) {
+      if (current[key] != null) queue.push(current[key]);
+    }
+
+    // 兼容 files['line.json'] / files.lineJson
+    if (isPlainObject(current.files)) {
+      const files = current.files;
+      if (files['line.json'] != null) queue.push(files['line.json']);
+      if (files.lineJson != null) queue.push(files.lineJson);
+      if (files.line_json != null) queue.push(files.line_json);
+    }
+
+    // 兼容 entries 数组中携带 line.json 内容
+    if (Array.isArray(current.entries)) {
+      for (const ent of current.entries) {
+        if (!isPlainObject(ent)) continue;
+        const name = String(ent.name || ent.filename || '').toLowerCase();
+        if (name === 'line.json') {
+          if (ent.content != null) queue.push(ent.content);
+          if (ent.data != null) queue.push(ent.data);
+          if (ent.text != null) queue.push(ent.text);
+          if (ent.json != null) queue.push(ent.json);
+        }
+      }
+    }
+
+    // 兼容单条线路数组包裹
+    if (Array.isArray(current.lines) && current.lines.length === 1) {
+      queue.push(current.lines[0]);
+    }
+  }
+
+  return null;
+}
+
 /**
  * 获取 CORS 头
  */
@@ -296,7 +376,9 @@ const PresetLinesHandler = {
       const raw = await env.LINES.get(key.name);
       if (!raw) continue;
       try {
-        lines.push(JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        const line = extractLineData(parsed);
+        if (line) lines.push(line);
       } catch {
         // 忽略损坏的数据
       }
@@ -310,33 +392,40 @@ const PresetLinesHandler = {
     if (!raw) {
       throw { status: 404, error: '预设线路不存在' };
     }
-    return { ok: true, line: JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    const line = extractLineData(parsed);
+    if (!line) {
+      throw { status: 500, error: '预设线路数据格式无效' };
+    }
+    return { ok: true, line };
   },
 
   // POST /preset - 创建预设线路
   async create(env, body) {
-    if (!body?.meta?.lineName) {
-      throw { status: 400, error: '缺少 meta.lineName' };
+    const line = extractLineData(body);
+    if (!line?.meta?.lineName) {
+      throw { status: 400, error: '请求体中缺少有效线路数据（meta.lineName）' };
     }
-    const key = String(body.meta.lineName);
+    const key = String(line.meta.lineName);
     const exists = await env.LINES.get(key);
     if (exists) {
       throw { status: 409, error: '该预设线路已存在，请使用 PUT 更新' };
     }
-    await env.LINES.put(key, JSON.stringify(body));
-    return { ok: true, line: body };
+    await env.LINES.put(key, JSON.stringify(line));
+    return { ok: true, line };
   },
 
   // PUT /preset/:lineName - 更新预设线路
   async update(env, lineName, body) {
-    if (!body?.meta?.lineName) {
-      throw { status: 400, error: '缺少 meta.lineName' };
+    const line = extractLineData(body);
+    if (!line?.meta?.lineName) {
+      throw { status: 400, error: '请求体中缺少有效线路数据（meta.lineName）' };
     }
-    if (body.meta.lineName !== lineName) {
+    if (line.meta.lineName !== lineName) {
       throw { status: 400, error: 'URL 与 body 中的 lineName 不一致' };
     }
-    await env.LINES.put(lineName, JSON.stringify(body));
-    return { ok: true, line: body };
+    await env.LINES.put(lineName, JSON.stringify(line));
+    return { ok: true, line };
   },
 
   // DELETE /preset/:lineName - 删除预设线路
@@ -362,15 +451,100 @@ function normalizeRuntimeLineName(name) {
   }
 }
 
+function getUtf8ByteLength(text) {
+  try {
+    return new TextEncoder().encode(String(text || '')).byteLength;
+  } catch {
+    return String(text || '').length;
+  }
+}
+
+function splitAudioFilesForKv(audioMap, maxChunkBytes) {
+  const entries = Object.entries(audioMap || {}).filter(([k, v]) => typeof k === 'string' && k && typeof v === 'string' && v);
+  const chunks = [];
+  let current = {};
+
+  for (const [pathKey, dataUrl] of entries) {
+    current[pathKey] = dataUrl;
+    const currentSize = getUtf8ByteLength(JSON.stringify(current));
+    if (currentSize <= maxChunkBytes) continue;
+
+    delete current[pathKey];
+    if (Object.keys(current).length === 0) {
+      throw new Error(`单个音频条目过大，无法分片存储：${pathKey}`);
+    }
+    chunks.push(current);
+    current = { [pathKey]: dataUrl };
+
+    const oneSize = getUtf8ByteLength(JSON.stringify(current));
+    if (oneSize > maxChunkBytes) {
+      throw new Error(`单个音频条目超过分片上限：${pathKey}`);
+    }
+  }
+
+  if (Object.keys(current).length > 0) chunks.push(current);
+  return chunks;
+}
+
+function collectShardKeysFromLine(line) {
+  const keys = line?.meta?.cloudAudioShardKeys;
+  if (!Array.isArray(keys)) return [];
+  return keys.filter((k) => typeof k === 'string' && k.trim());
+}
+
+async function deleteShardKeys(env, keys) {
+  for (const key of keys || []) {
+    try {
+      await env.LINES.delete(key);
+    } catch {
+      // 忽略删除失败
+    }
+  }
+}
+
+async function hydrateRuntimeLineCloudAudio(env, line) {
+  if (!line || !line.meta || typeof line.meta !== 'object') return line;
+  if (line.meta.cloudAudioFiles && typeof line.meta.cloudAudioFiles === 'object') return line;
+  const shardKeys = collectShardKeysFromLine(line);
+  if (!shardKeys.length) return line;
+
+  const merged = {};
+  for (const shardKey of shardKeys) {
+    const raw = await env.LINES.get(shardKey);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof k === 'string' && k && typeof v === 'string' && v) {
+            merged[k] = v;
+          }
+        }
+      }
+    } catch {
+      // 忽略损坏分片
+    }
+  }
+
+  line.meta.cloudAudioFiles = merged;
+  line.meta.cloudAudioCount = Object.keys(merged).length;
+  line.meta.cloudAudioSource = line.meta.cloudAudioSource || 'embedded';
+  return line;
+}
+
 /**
  * 运控线路 API
  */
 const RuntimeLinesHandler = {
   PREFIX: 'runtime:',
+  AUDIO_PREFIX: 'runtime-audio:',
+  KV_VALUE_LIMIT_BYTES: 26_214_400,
+  SHARD_SAFE_LIMIT_BYTES: 20_000_000,
 
   // GET /runtime/lines - 获取所有运控线路（分页拉全量，按规范化 lineName 去重，规范 key 优先）
   async list(env) {
     const linesByKey = new Map(); // normalized lineName -> line
+    const lineSizesByKey = new Map(); // normalized lineName -> sizeBytes
     const canonicalKey = (norm) => this.PREFIX + norm;
     let cursor = null;
     do {
@@ -381,12 +555,17 @@ const RuntimeLinesHandler = {
         const raw = await env.LINES.get(k.name);
         if (!raw) continue;
         try {
-          const line = JSON.parse(raw);
+          const parsed = JSON.parse(raw);
+          const line = extractLineData(parsed);
+          if (!line) continue;
           const metaName = line?.meta?.lineName;
           const norm = normalizeRuntimeLineName(metaName) || k.name.replace(this.PREFIX, '');
           const isCanonical = k.name === canonicalKey(norm);
+          const metadataSize = Number(k?.metadata?.sizeBytes);
+          const sizeBytes = Number.isFinite(metadataSize) && metadataSize >= 0 ? metadataSize : getUtf8ByteLength(raw);
           if (isCanonical || !linesByKey.has(norm)) {
             linesByKey.set(norm, line);
+            lineSizesByKey.set(norm, sizeBytes);
           }
         } catch {
           // 忽略损坏的数据
@@ -395,7 +574,11 @@ const RuntimeLinesHandler = {
       cursor = (list.list_complete === true || list.listComplete === true) ? null : (list.cursor || null);
     } while (cursor);
 
-    return { lines: Array.from(linesByKey.values()) };
+    const lineSizes = {};
+    for (const [norm, size] of lineSizesByKey.entries()) {
+      lineSizes[norm] = size;
+    }
+    return { lines: Array.from(linesByKey.values()), lineSizes };
   },
 
   // GET /runtime/lines/:lineName - 获取单个运控线路
@@ -411,10 +594,11 @@ const RuntimeLinesHandler = {
         const value = await env.LINES.get(k.name);
         if (!value) continue;
         try {
-          const json = JSON.parse(value);
+          const json = extractLineData(JSON.parse(value));
+          if (!json) continue;
           const metaName = json?.meta?.lineName;
           if (normalizeRuntimeLineName(metaName) === norm) {
-            raw = value;
+            raw = JSON.stringify(json);
             break;
           }
         } catch {
@@ -427,28 +611,170 @@ const RuntimeLinesHandler = {
       throw { status: 404, error: '运控线路不存在' };
     }
 
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    const line = extractLineData(parsed);
+    if (!line) {
+      throw { status: 500, error: '运控线路数据格式无效' };
+    }
+    return await hydrateRuntimeLineCloudAudio(env, line);
   },
 
   // PUT /runtime/lines/:lineName - 更新/创建运控线路（始终用规范化名称作 key，新上传覆盖老版本）
   async update(env, lineName, body) {
-    if (!body?.meta?.lineName) {
-      throw { status: 400, error: '缺少 meta.lineName' };
+    const line = extractLineData(body);
+    if (!line?.meta?.lineName) {
+      throw { status: 400, error: '请求体中缺少有效线路数据（meta.lineName）' };
     }
-    const bodyNorm = normalizeRuntimeLineName(body.meta.lineName);
+    const bodyNorm = normalizeRuntimeLineName(line.meta.lineName);
     const urlNorm = normalizeRuntimeLineName(lineName);
     if (bodyNorm !== urlNorm) {
       throw { status: 400, error: 'URL 与 body 中的 lineName 不一致' };
     }
+
     const key = this.PREFIX + bodyNorm;
-    await env.LINES.put(key, JSON.stringify(body));
-    return { ok: true, line: body };
+    const existingRaw = await env.LINES.get(key);
+    let oldShardKeys = [];
+    if (existingRaw) {
+      try {
+        const existingParsed = JSON.parse(existingRaw);
+        const existingLine = extractLineData(existingParsed);
+        oldShardKeys = collectShardKeysFromLine(existingLine);
+      } catch {
+        oldShardKeys = [];
+      }
+    }
+
+    const originalRaw = JSON.stringify(line);
+    let rawToStore = originalRaw;
+    let lineToStore = line;
+    let shardKeys = [];
+    let storageMode = 'inline';
+
+    if (getUtf8ByteLength(originalRaw) > this.KV_VALUE_LIMIT_BYTES) {
+      const cloudAudioFiles = line?.meta?.cloudAudioFiles;
+      if (!cloudAudioFiles || typeof cloudAudioFiles !== 'object' || Array.isArray(cloudAudioFiles)) {
+        throw { status: 413, error: `KV PUT failed: value too large (${getUtf8ByteLength(originalRaw)} bytes), 且不存在可分片的 cloudAudioFiles` };
+      }
+
+      const chunks = splitAudioFilesForKv(cloudAudioFiles, this.SHARD_SAFE_LIMIT_BYTES);
+      const baseLine = JSON.parse(JSON.stringify(line));
+      if (!baseLine.meta || typeof baseLine.meta !== 'object') baseLine.meta = {};
+      delete baseLine.meta.cloudAudioFiles;
+
+      const shardSuffix = Date.now();
+      for (let i = 0; i < chunks.length; i++) {
+        const shardKey = `${this.AUDIO_PREFIX}${bodyNorm}:${shardSuffix}:${i}`;
+        const shardRaw = JSON.stringify(chunks[i]);
+        await env.LINES.put(shardKey, shardRaw, {
+          metadata: {
+            lineName: String(line.meta.lineName || ''),
+            type: 'runtime-audio-shard',
+            index: i,
+            updatedAt: Date.now()
+          }
+        });
+        shardKeys.push(shardKey);
+      }
+
+      baseLine.meta.cloudAudioShardKeys = shardKeys;
+      baseLine.meta.cloudAudioShardCount = shardKeys.length;
+      baseLine.meta.cloudAudioSource = 'embedded';
+      lineToStore = baseLine;
+      rawToStore = JSON.stringify(baseLine);
+      storageMode = 'sharded';
+    }
+
+    const sizeBytes = getUtf8ByteLength(rawToStore);
+    if (sizeBytes > this.KV_VALUE_LIMIT_BYTES) {
+      await deleteShardKeys(env, shardKeys);
+      throw { status: 413, error: `KV PUT failed: value too large after sharding (${sizeBytes} bytes)` };
+    }
+
+    await env.LINES.put(key, rawToStore, {
+      metadata: {
+        lineName: String(line.meta.lineName || ''),
+        sizeBytes,
+        storageMode,
+        shardCount: shardKeys.length,
+        updatedAt: Date.now()
+      }
+    });
+
+    const staleShardKeys = oldShardKeys.filter((k) => !shardKeys.includes(k));
+    if (staleShardKeys.length) {
+      await deleteShardKeys(env, staleShardKeys);
+    }
+
+    return {
+      ok: true,
+      line: lineToStore,
+      sizeBytes,
+      storageMode,
+      shardCount: shardKeys.length
+    };
+  },
+
+  // POST /runtime/lines/upload-shard - 上传单个音频分片（用于大线路分片上传）
+  async uploadShard(env, lineName, body) {
+    const norm = normalizeRuntimeLineName(lineName);
+    if (!norm) {
+      throw { status: 400, error: '缺少有效的线路名称' };
+    }
+
+    const uploadId = body?.uploadId != null ? String(body.uploadId) : '';
+    const index = Number(body?.index);
+    const audioFiles = body?.audioFiles;
+    if (!uploadId || !Number.isInteger(index) || index < 0) {
+      throw { status: 400, error: 'uploadId/index 无效' };
+    }
+    if (!audioFiles || typeof audioFiles !== 'object' || Array.isArray(audioFiles)) {
+      throw { status: 400, error: 'audioFiles 无效' };
+    }
+
+    const raw = JSON.stringify(audioFiles);
+    const sizeBytes = getUtf8ByteLength(raw);
+    if (sizeBytes > this.KV_VALUE_LIMIT_BYTES) {
+      throw { status: 413, error: `分片过大：${sizeBytes} bytes` };
+    }
+
+    const shardKey = `${this.AUDIO_PREFIX}${norm}:upload:${uploadId}:${index}`;
+    await env.LINES.put(shardKey, raw, {
+      metadata: {
+        lineName: norm,
+        type: 'runtime-audio-shard',
+        uploadId,
+        index,
+        sizeBytes,
+        updatedAt: Date.now()
+      }
+    });
+
+    return {
+      ok: true,
+      shardKey,
+      sizeBytes,
+      count: Object.keys(audioFiles).length
+    };
   },
 
   // DELETE /runtime/lines/:lineName - 删除运控线路（删除规范 key 及所有同一条线路的旧 key）
   async delete(env, lineName) {
     const norm = normalizeRuntimeLineName(lineName);
     const canonicalKey = this.PREFIX + norm;
+    const collectDeleteTargets = new Set([canonicalKey]);
+
+    const canonicalRaw = await env.LINES.get(canonicalKey);
+    if (canonicalRaw) {
+      try {
+        const canonicalLine = extractLineData(JSON.parse(canonicalRaw));
+        for (const shardKey of collectShardKeysFromLine(canonicalLine)) {
+          collectDeleteTargets.add(shardKey);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     await env.LINES.delete(canonicalKey);
     let cursor = null;
     do {
@@ -460,9 +786,13 @@ const RuntimeLinesHandler = {
         const raw = await env.LINES.get(k.name);
         if (!raw) continue;
         try {
-          const line = JSON.parse(raw);
+          const line = extractLineData(JSON.parse(raw));
+          if (!line) continue;
           const metaNorm = normalizeRuntimeLineName(line?.meta?.lineName);
           if (metaNorm === norm) {
+            for (const shardKey of collectShardKeysFromLine(line)) {
+              collectDeleteTargets.add(shardKey);
+            }
             await env.LINES.delete(k.name);
           }
         } catch {
@@ -471,6 +801,8 @@ const RuntimeLinesHandler = {
       }
       cursor = (list.list_complete === true || list.listComplete === true) ? null : (list.cursor || null);
     } while (cursor);
+
+    await deleteShardKeys(env, Array.from(collectDeleteTargets).filter((k) => k.startsWith(this.AUDIO_PREFIX)));
     return { ok: true };
   }
 };
@@ -2218,6 +2550,29 @@ async function handleRequest(request, env) {
     // 运控线路 API
     if (pathname === '/runtime/lines' && method === 'GET') {
       return json(await RuntimeLinesHandler.list(env), 200, corsHeaders);
+    }
+    if (pathname === '/runtime/lines' && method === 'PUT') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      const line = extractLineData(body);
+      const lineName = line?.meta?.lineName;
+      if (!lineName || typeof lineName !== 'string' || !lineName.trim()) {
+        return json({ ok: false, error: '请求体中缺少有效线路数据（meta.lineName）' }, 400, corsHeaders);
+      }
+      return json(await RuntimeLinesHandler.update(env, lineName, body), 200, corsHeaders);
+    }
+    if (pathname === '/runtime/lines/upload-shard' && method === 'POST') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      const lineName = body?.lineName;
+      if (!lineName || typeof lineName !== 'string' || !lineName.trim()) {
+        return json({ ok: false, error: 'lineName 不能为空' }, 400, corsHeaders);
+      }
+      return json(await RuntimeLinesHandler.uploadShard(env, lineName, body), 200, corsHeaders);
     }
     if (pathname.startsWith('/runtime/lines/') && pathname.length > '/runtime/lines/'.length) {
       const lineName = decodeURIComponent(pathname.slice('/runtime/lines/'.length));

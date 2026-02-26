@@ -13,7 +13,10 @@ import { useSettings } from './composables/useSettings.js'
 import { useUIState } from './composables/useUIState.js'
 import { useCloudConfig, CLOUD_API_BASE } from './composables/useCloudConfig.js'
 import { usePlugins } from './composables/usePlugins.js'
+import { useStationAudio } from './composables/useStationAudio.js'
 import dialogService from './utils/dialogService.js'
+
+const COMMON_APPLY_KEYS = ['1','2','3','4','5','6','7','8','9','0','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']
 
 export default {
   name: 'App',
@@ -25,6 +28,94 @@ export default {
     const { settings } = useSettings();
     const kbd = useKeyboard();
     const cloudConfig = useCloudConfig(CLOUD_API_BASE);
+    const { playArrive, playDepart } = useStationAudio(pidState);
+    let commonPreview = null;
+
+    const getLineDirOrFilePath = () => {
+      const metaLine = (pidState.appData?.meta?.lineName || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+      if (metaLine && pidState.lineNameToFilePath && pidState.lineNameToFilePath[metaLine]) return pidState.lineNameToFilePath[metaLine];
+      if (pidState.currentFilePath && typeof pidState.currentFilePath === 'string' && pidState.currentFilePath.trim()) return pidState.currentFilePath.trim();
+      if (typeof window !== 'undefined' && window.__currentLineFilePath) return window.__currentLineFilePath;
+      return '';
+    };
+
+    const stopAnyAudioElements = () => {
+      try {
+        const nodes = typeof document !== 'undefined' ? document.getElementsByTagName('audio') : [];
+        for (const el of nodes || []) {
+          try {
+            el.muted = true;
+            el.volume = 0;
+            el.pause();
+            el.currentTime = 0;
+            el.src = '';
+            if (typeof el.load === 'function') el.load();
+          } catch (e) {}
+        }
+      } catch (e) {}
+    };
+
+    const stopCommonPreview = () => {
+      stopAnyAudioElements();
+      if (!commonPreview) return;
+      try { commonPreview.pause(); } catch (e) {}
+      commonPreview = null;
+    };
+
+    if (typeof window !== 'undefined') {
+      window.__stopCommonAudio = stopCommonPreview;
+      window.__stopAnyAudioElements = stopAnyAudioElements;
+    }
+
+    const playCommonByHotkey = async (normKey) => {
+      const appData = pidState.appData;
+      const meta = appData?.meta;
+      const ca = meta?.commonAudio;
+      if (!ca || typeof ca !== 'object') return false;
+      const list = Array.isArray(ca.up?.list) ? ca.up.list : [];
+      if (!list.length) return false;
+      const applied = list.filter((i) => i && i.applied);
+      if (!applied.length) return false;
+      const keyIdx = COMMON_APPLY_KEYS.findIndex((k) => k.toUpperCase() === normKey.toUpperCase());
+      if (keyIdx < 0 || keyIdx >= applied.length) return false;
+      const item = applied[keyIdx];
+      if (!item?.path) return false;
+      const linePath = getLineDirOrFilePath();
+      if (!linePath || !window?.electronAPI?.lines?.resolveAudioPath) return false;
+      try {
+        // 打断当前进/出站播放（包含列表循环），并临时阻止短时间内的站点音频重启
+        if (typeof window !== 'undefined') {
+          window.__blockStationAudioUntil = Date.now() + 2000; // 在通用音频播放期间禁止站点音频重启
+        }
+        stopAnyAudioElements();
+        if (typeof window.__stopStationAudio === 'function') {
+          try { await window.__stopStationAudio(); } catch (e) {}
+        }
+        stopCommonPreview();
+        const res = await window.electronAPI.lines.resolveAudioPath(linePath, item.path);
+        if (!res?.ok) return false;
+        const url = res.playableUrl || ('file:///' + (res.path || '').replace(/\\/g, '/'));
+        if (!url || url === 'file:///') return false;
+        const a = new Audio(url);
+        commonPreview = a;
+        const clear = () => { if (commonPreview === a) commonPreview = null; };
+        a.onended = clear;
+        a.onpause = clear;
+        a.onerror = clear;
+        await a.play().catch(() => {});
+        return true;
+      } catch (err) {
+        console.warn('[App] playCommonByHotkey error', err);
+        return false;
+      }
+    };
+    const playAfterToggle = (prevIdx) => {
+      if (settings.vehicleAudioEnabled === false) return;
+      const idx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : prevIdx;
+      if (idx == null) return;
+      if (pidState.rt?.state === 0) playArrive(idx);
+      else playDepart(idx);
+    };
 
     // 监听来自侧边栏的面板切换消息
     let panelStateCleanup = null;
@@ -82,7 +173,7 @@ export default {
 
     // 键盘处理
     kbd.install();
-    kbd.onKey((e) => {
+    kbd.onKey(async (e) => {
         if (pidState.isRec || ['INPUT','TEXTAREA'].includes((e.target && e.target.tagName) || '')) return;
         
         const code = e.code;
@@ -101,18 +192,33 @@ export default {
             return normalize(code) === t || normalize(key) === t;
         };
 
-        if (match(km.arrdep)) { e.preventDefault(); next(); return; }
+        // 通用音频快捷键（按应用顺序 1/2/.../0/F1...）
+        const normKeyForCommon = (key || code || '').toUpperCase();
+        if (COMMON_APPLY_KEYS.some((k) => k.toUpperCase() === normKeyForCommon)) {
+          if (await playCommonByHotkey(normKeyForCommon)) {
+            try { e.preventDefault(); } catch (err) {}
+            return;
+          }
+        }
+
+        if (match(km.arrdep)) {
+          e.preventDefault();
+          const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+          next();
+          playAfterToggle(prevIdx);
+          return;
+        }
         if (match(km.prev)) { move(-getStep()); return; }
         if (match(km.next)) { move(getStep()); return; }
         
         // 硬编码兜底
-        if (code === 'Enter' || key === 'Enter') { e.preventDefault(); next(); }
+        if (code === 'Enter' || key === 'Enter') { e.preventDefault(); const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0; next(); playAfterToggle(prevIdx); }
         if (code === 'ArrowLeft' || key === 'ArrowLeft') move(-getStep());
         if (code === 'ArrowRight' || key === 'ArrowRight') move(getStep());
     });
 
     // 广播处理
-    bcOn((data) => {
+    bcOn(async (data) => {
       // 调试：记录收到的 CMD_UI 消息
       try { if (data && data.t === 'CMD_UI') console.log('[debug][bc] CMD_UI received in App.js', data); } catch(e) {}
       // 安全：忽略通过 BroadcastChannel 传入的 CMD_UI，防止显示端误触主控的窗口操作
@@ -143,28 +249,38 @@ export default {
              const t = normalize(target);
              return normalize(code) === t || normalize(key) === t;
          };
+
+         // 通用音频快捷键（按应用顺序 1/2/.../0/F1...）
+         const normKeyForCommon = (key || code || '').toUpperCase();
+         if (COMMON_APPLY_KEYS.some((k) => k.toUpperCase() === normKeyForCommon)) {
+           if (await playCommonByHotkey(normKeyForCommon)) return;
+         }
          
          // 如果发送的是命令格式，直接执行对应操作（命令是语义化的，不需要匹配快捷键）
          if (command) {
-             if (command === 'next') {
-                 move(getStep());
-                 return;
-             }
-             if (command === 'prev') {
-                 move(-getStep());
-                 return;
-             }
-             if (command === 'arrive' || command === 'depart') {
-                 next();
-                 return;
-             }
+           if (command === 'next') {
+             move(getStep());
              return;
+           }
+           if (command === 'prev') {
+             move(-getStep());
+             return;
+           }
+           if (command === 'arrive' || command === 'depart') {
+             const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+             next();
+             playAfterToggle(prevIdx);
+             return;
+           }
+           return;
          }
          
          // 如果发送的是按键格式，检查是否与用户配置的快捷键匹配
          if (match(km.arrdep)) {
-             next();
-             return;
+           const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+           next();
+           playAfterToggle(prevIdx);
+           return;
          }
          if (match(km.prev)) {
              move(-getStep());

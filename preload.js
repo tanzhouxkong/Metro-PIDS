@@ -1,6 +1,15 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // 拖拽文件时获取真实路径（contextIsolation 下 dataTransfer.files[].path 不可用）
+  getPathForFile: (file) => {
+    if (!file || typeof file !== 'object') return '';
+    try {
+      return (typeof webUtils !== 'undefined' && webUtils.getPathForFile) ? webUtils.getPathForFile(file) : (file.path || '');
+    } catch (e) {
+      return file.path || '';
+    }
+  },
   // 平台信息
   platform: process.platform,
   isPackaged: async () => {
@@ -35,6 +44,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     } catch (e) {
       console.error('syncSettings failed:', e);
       return false;
+    }
+  },
+  getLanIPs: async () => {
+    try {
+      return await ipcRenderer.invoke('network/lan-ips');
+    } catch (e) {
+      console.error('getLanIPs failed:', e);
+      return { ok: false, error: String(e.message || e) };
     }
   },
   openLineManager: async (target) => {
@@ -72,9 +89,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return false;
     }
   },
-  switchLine: async (lineName) => {
+  switchLine: async (lineName, options) => {
     try {
-      return await ipcRenderer.invoke('line-manager/switch-line', lineName);
+      return await ipcRenderer.invoke('line-manager/switch-line', lineName, options);
     } catch (e) {
       return { ok: false, error: String(e) };
     }
@@ -102,7 +119,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 监听线路切换请求（用于主窗口）
   onSwitchLineRequest: (callback) => {
     if (typeof callback !== 'function') return () => {};
-    const handler = (event, lineName, target) => callback(lineName, target);
+    const handler = (event, lineName, target, folderPath) => callback(lineName, target, folderPath);
     ipcRenderer.on('switch-line-request', handler);
     return () => ipcRenderer.removeListener('switch-line-request', handler);
   },
@@ -133,14 +150,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     read: async (filename, dir) => {
       return await ipcRenderer.invoke('lines/read', filename, dir);
     },
-    save: async (filename, contentObj, dir) => {
-      return await ipcRenderer.invoke('lines/save', filename, contentObj, dir);
+    save: async (filename, contentObj, dir, sourceLinePath) => {
+      return await ipcRenderer.invoke('lines/save', filename, contentObj, dir, sourceLinePath);
     },
     delete: async (filename, dir) => {
       return await ipcRenderer.invoke('lines/delete', filename, dir);
     },
     openFolder: async (dir) => {
       return await ipcRenderer.invoke('lines/openFolder', dir);
+    },
+    getLineDir: async (lineFilePath) => {
+      try { return await ipcRenderer.invoke('lines/getLineDir', lineFilePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    copyAudioToLineDir: async (lineDirOrLineFilePath, sourceFilePath) => {
+      try { return await ipcRenderer.invoke('lines/copyAudioToLineDir', lineDirOrLineFilePath, sourceFilePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    resolveAudioPath: async (lineFilePath, relativePath) => {
+      try { return await ipcRenderer.invoke('lines/resolveAudioPath', lineFilePath, relativePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    cleanupAudioDir: async (lineData, lineFilePath, options) => {
+      try { return await ipcRenderer.invoke('lines/cleanupAudioDir', lineData, lineFilePath, options); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    saveAsZip: async (lineData, lineFilePath, targetZipPath, audioSourceDir) => {
+      try { return await ipcRenderer.invoke('lines/saveAsZip', lineData, lineFilePath, targetZipPath, audioSourceDir); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    extractZipToTemp: async (zipPath) => {
+      try { return await ipcRenderer.invoke('lines/extractZipToTemp', zipPath); } catch (e) { return { ok: false, error: String(e) }; }
     },
     folders: {
       list: async () => {
@@ -552,6 +587,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
         console.error('[preload] 打开视频输出文件夹失败:', e);
         return { ok: false, error: String(e) };
       }
+<<<<<<< Updated upstream
+=======
+    },
+    addAudioEvent: async (payload) => {
+      try {
+        return await ipcRenderer.invoke('recording/add-audio-event', payload || {});
+      } catch (e) {
+        console.error('[preload] 上报录制音频事件失败:', e);
+        return { ok: false, error: String(e) };
+      }
+>>>>>>> Stashed changes
     }
   }
 });
