@@ -102,6 +102,7 @@ export default {
         console.warn('[SlidePanel] 切换语言时更新 settings.hkLang 失败:', e)
       }
     }
+<<<<<<< Updated upstream
 
     // 国际化：当前语言（简体 / 繁体 / 英文）
     const currentLocale = ref(i18n.global.locale.value || 'zh-CN')
@@ -130,6 +131,8 @@ export default {
         console.warn('[SlidePanel] 切换语言时更新 settings.hkLang 失败:', e)
       }
     }
+=======
+>>>>>>> Stashed changes
 
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
@@ -151,6 +154,25 @@ export default {
         })
         const wsPortDisplay = computed(() => settings.wsPort || 9400)
         const apiPortDisplay = 9001
+<<<<<<< Updated upstream
+=======
+        const multiScreenHttpPort = ref(5173)
+        const multiScreenEntryUrl = computed(() => {
+            const host = (lanIpsResolved.value && lanIpsResolved.value[0])
+                ? lanIpsResolved.value[0]
+                : ((typeof window !== 'undefined' && window.location) ? (window.location.hostname || '127.0.0.1') : '127.0.0.1')
+            const port = Number(multiScreenHttpPort.value) || 5173
+            return `http://${host}:${port}/examples/display-switcher.html`
+        })
+        const multiScreenQrUrl = computed(() => {
+            const data = encodeURIComponent(multiScreenEntryUrl.value)
+            return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=${data}`
+        })
+        const showMultiScreenQrDialog = ref(false)
+        const showWsClientsDialog = ref(false)
+        const wsClientsLoading = ref(false)
+        const wsClients = ref([])
+>>>>>>> Stashed changes
 
         const loadLanIps = async () => {
             try {
@@ -168,6 +190,101 @@ export default {
                 lanIps.value = [window.location.hostname || 'localhost']
             }
         }
+<<<<<<< Updated upstream
+=======
+
+        const loadMultiScreenHttpPort = async () => {
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getMultiScreenPort) {
+                    const res = await window.electronAPI.getMultiScreenPort()
+                    const nextPort = Number(res && res.port)
+                    if (res && res.ok && Number.isFinite(nextPort) && nextPort > 0 && nextPort <= 65535) {
+                        multiScreenHttpPort.value = nextPort
+                        return
+                    }
+                }
+            } catch (e) {
+                console.warn('[SlidePanel] 获取多屏入口端口失败:', e)
+            }
+            multiScreenHttpPort.value = 5173
+        }
+
+        const closeMultiScreenQrDialog = () => {
+            showMultiScreenQrDialog.value = false
+        }
+
+        const openMultiScreenQrDialog = () => {
+            showMultiScreenQrDialog.value = true
+        }
+
+        const closeWsClientsDialog = () => {
+            showWsClientsDialog.value = false
+        }
+
+        const formatWsClientLatency = (latencyMs) => {
+            if (latencyMs == null || !Number.isFinite(Number(latencyMs))) {
+                return '未知'
+            }
+            return `${Number(latencyMs).toFixed(2)}ms`
+        }
+
+        const loadWsClients = async () => {
+            wsClientsLoading.value = true
+            try {
+                if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.getWsClients) {
+                    const res = await window.electronAPI.getWsClients()
+                    if (res && res.ok && Array.isArray(res.clients)) {
+                        wsClients.value = res.clients
+                        return
+                    }
+                }
+                wsClients.value = []
+            } catch (e) {
+                console.warn('[SlidePanel] 获取 WS 客户端列表失败:', e)
+                wsClients.value = []
+            } finally {
+                wsClientsLoading.value = false
+            }
+        }
+
+        const openWsClientsDialog = async () => {
+            showWsClientsDialog.value = true
+            await loadWsClients()
+        }
+
+        const copyMultiScreenEntryUrl = async () => {
+            const url = multiScreenEntryUrl.value
+            let copied = false
+            try {
+                if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    await navigator.clipboard.writeText(url)
+                    copied = true
+                }
+            } catch (e) {}
+            if (!copied) {
+                try {
+                    const ta = document.createElement('textarea')
+                    ta.value = url
+                    ta.style.position = 'fixed'
+                    ta.style.opacity = '0'
+                    ta.style.pointerEvents = 'none'
+                    document.body.appendChild(ta)
+                    ta.focus()
+                    ta.select()
+                    copied = !!document.execCommand('copy')
+                    document.body.removeChild(ta)
+                } catch (e) {}
+            }
+            await showMsg(
+                copied
+                    ? i18n.global.t('multiScreen.copySuccessMsg')
+                    : i18n.global.t('multiScreen.copyFailMsg', { url }),
+                copied
+                    ? i18n.global.t('multiScreen.copySuccessTitle')
+                    : i18n.global.t('multiScreen.copyFailTitle')
+            )
+        }
+>>>>>>> Stashed changes
     
     // 颜色选择器
     const showColorPicker = ref(false);
@@ -1532,6 +1649,7 @@ export default {
 
     // 存储清理函数（用于网页环境的事件监听器）
     let cleanupWebListeners = null;
+    let cleanupWsPortAutoSwitchListener = null;
 
     // 处理云控/运控线路数据（Electron 与网页环境共用，用于“应用”云控线路）
     async function applyRuntimeLineData(lineData) {
@@ -1605,10 +1723,28 @@ export default {
                     console.warn('无法设置云控线路切换监听:', e);
                 }
             }
+            if (window.electronAPI.onWsPortAutoSwitched) {
+                try {
+                    cleanupWsPortAutoSwitchListener = window.electronAPI.onWsPortAutoSwitched((payload) => {
+                        const nextPort = Number(payload && payload.to);
+                        if (!Number.isFinite(nextPort) || nextPort < 1 || nextPort > 65535) return;
+                        if (Number(settings.wsPort || 9400) === nextPort) return;
+                        settings.wsPort = nextPort;
+                        saveSettings();
+                        loadLanIps();
+                    });
+                } catch (e) {
+                    console.warn('无法设置 WS 端口自动切换监听:', e);
+                }
+            }
         }
 
         // 加载局域网 IP，便于设置页展示
         loadLanIps();
+<<<<<<< Updated upstream
+=======
+        loadMultiScreenHttpPort();
+>>>>>>> Stashed changes
         
         // 网页环境：监听 postMessage 和 storage 事件
         if (typeof window !== 'undefined' && (!window.electronAPI || !window.electronAPI.onSwitchLineRequest)) {
@@ -1755,12 +1891,15 @@ export default {
     }
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     const keyMapDisplay = computed(() => ({
         arrdep: { label: i18n.global.t('keys.nextState') },
         prev: { label: i18n.global.t('keys.prevStation') },
         next: { label: i18n.global.t('keys.nextStation') }
     }));
 =======
+=======
+>>>>>>> Stashed changes
     let lineManagerSaveWatcher = null;
 
     const stopLineManagerSaveWatcher = () => {
@@ -1770,6 +1909,150 @@ export default {
         }
     };
 >>>>>>> Stashed changes
+
+    function cachePendingLineSave(payload) {
+        try {
+            localStorage.setItem('pendingLineSaveData', JSON.stringify(payload));
+            localStorage.setItem('lineManagerSaveMode', payload.mode || 'line');
+            localStorage.removeItem('lineManagerSaveResult');
+        } catch (e) {
+            console.warn('[线路管理器] 无法写入本地缓存:', e);
+        }
+    }
+
+    function startLineManagerSaveWatcher(requestId, payload, mode) {
+        stopLineManagerSaveWatcher();
+        const timeout = Date.now() + 30000;
+
+        lineManagerSaveWatcher = setInterval(async () => {
+            if (Date.now() > timeout) {
+                stopLineManagerSaveWatcher();
+                localStorage.removeItem('lineManagerSaveResult');
+                localStorage.removeItem('pendingLineSaveData');
+                localStorage.removeItem('lineManagerSaveMode');
+                return;
+            }
+            const raw = localStorage.getItem('lineManagerSaveResult');
+            if (!raw) return;
+
+            let result;
+            try {
+                result = JSON.parse(raw);
+            } catch (e) {
+                console.warn('[线路管理器] 保存结果解析失败:', e);
+                stopLineManagerSaveWatcher();
+                return;
+            }
+
+            if (result.requestId && result.requestId !== requestId) {
+                return;
+            }
+
+            stopLineManagerSaveWatcher();
+            localStorage.removeItem('lineManagerSaveResult');
+            localStorage.removeItem('pendingLineSaveData');
+            localStorage.removeItem('lineManagerSaveMode');
+
+            if (result && result.success) {
+                const dirPart = (p) => {
+                    if (!p || typeof p !== 'string') return null;
+                    const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+                    return idx >= 0 ? p.substring(0, idx + 1) : null;
+                };
+
+                const cleanName = payload.cleanLineName || payload.lineName || '';
+
+                if (result.folderId) {
+                    pidsState.currentFolderId = result.folderId;
+                }
+                if (result.filePath) {
+                    pidsState.currentFilePath = result.filePath;
+                    if (cleanName) {
+                        pidsState.lineNameToFilePath[cleanName] = result.filePath;
+                    }
+                    const dir = dirPart(result.filePath);
+                    if (dir) pidsState.lastKnownSaveDir = dir;
+                } else if (result.folderPath) {
+                    const dir = dirPart(result.folderPath);
+                    if (dir) pidsState.lastKnownSaveDir = dir;
+                }
+
+                if (result.folderPath) {
+                    try {
+                        await fileIO.refreshLinesFromFolder(true, result.folderPath);
+                    } catch (e) {
+                        console.warn('[线路管理器] 刷新线路列表失败:', e);
+                    }
+                }
+
+                try { saveCfg(); } catch (e) {}
+                try { sync(); } catch (e) {}
+
+                try {
+                    const { showNotification } = await import('../utils/notificationService.js');
+                    const folderLabel = result.folderName || result.folderId || '';
+                    const targetLabel = folderLabel ? ` -> ${folderLabel}` : '';
+                    const modeLabel = mode === 'zip' ? '保存为压缩包' : '保存当前线路';
+                    showNotification('保存成功', `${modeLabel}：${payload.lineName || cleanName}${targetLabel}`);
+                } catch (e) {}
+            } else {
+                const errMsg = (result && result.error) ? String(result.error) : '未知错误';
+                const isCancelled = !!(result && result.cancelled) || errMsg === 'window-closed' || errMsg === 'cancelled';
+                if (isCancelled) {
+                    await showMsg('已取消保存', '提示');
+                } else {
+                    await showMsg('保存失败：' + errMsg, '错误');
+                }
+            }
+        }, 400);
+    }
+
+    async function openLineManagerForSave(mode = 'line') {
+        const cur = pidsState.appData;
+        const lineName = cur && cur.meta ? (cur.meta.lineName || '') : '';
+        if (!cur || !cur.meta || !lineName) {
+            await showMsg('当前线路数据无效，无法保存');
+            return;
+        }
+
+        let serializable;
+        try {
+            serializable = JSON.parse(JSON.stringify(cur));
+        } catch (e) {
+            await showMsg('保存失败：线路数据无法序列化');
+            return;
+        }
+
+        const cleanLineName = lineName.replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
+        const requestId = Date.now();
+        const payload = {
+            mode,
+            lineName,
+            cleanLineName,
+            lineData: serializable,
+            currentFilePath: pidsState.currentFilePath || null,
+            currentFolderId: pidsState.currentFolderId || null,
+            lastKnownSaveDir: pidsState.lastKnownSaveDir || null,
+            requestId,
+            ts: Date.now()
+        };
+
+        cachePendingLineSave(payload);
+
+        if (window.electronAPI && window.electronAPI.openLineManager) {
+            await window.electronAPI.openLineManager();
+        } else {
+            await openLineManagerWindow();
+        }
+
+        startLineManagerSaveWatcher(requestId, payload, mode);
+    }
+
+    const keyMapDisplay = computed(() => ({
+        arrdep: { label: i18n.global.t('keys.nextState') },
+        prev: { label: i18n.global.t('keys.prevStation') },
+        next: { label: i18n.global.t('keys.nextStation') }
+    }));
 
     function cachePendingLineSave(payload) {
         try {
@@ -2706,10 +2989,13 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2721,10 +3007,13 @@ export default {
             wallpaperOpacity: 0.35,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2823,8 +3112,11 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2839,8 +3131,11 @@ export default {
             }
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2896,10 +3191,13 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2910,10 +3208,13 @@ export default {
                         wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2963,10 +3264,13 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2977,10 +3281,13 @@ export default {
                 wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -3285,8 +3592,11 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -3303,8 +3613,11 @@ export default {
                             }
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -3604,6 +3917,13 @@ export default {
                 cleanupWebListeners();
                 cleanupWebListeners = null;
             }
+<<<<<<< Updated upstream
+=======
+            if (cleanupWsPortAutoSwitchListener) {
+                cleanupWsPortAutoSwitchListener();
+                cleanupWsPortAutoSwitchListener = null;
+            }
+>>>>>>> Stashed changes
             stopLineManagerSaveWatcher();
         });
 
@@ -3629,10 +3949,20 @@ export default {
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             presetContextMenu, showPresetContextMenu, closePresetContextMenu, applyPresetFromMenu, deletePresetFromMenu, sharePresetOffline, importPresetFromShareCode, generateShareId,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             openLineManagerWindow,
 =======
             openLineManagerWindow, openLineManagerForSave,
             lanIpsResolved, loadLanIps, wsPortDisplay, apiPortDisplay,
+>>>>>>> Stashed changes
+=======
+            openLineManagerWindow, openLineManagerForSave,
+            lanIpsResolved, loadLanIps, wsPortDisplay, apiPortDisplay,
+            multiScreenHttpPort,
+            multiScreenEntryUrl, multiScreenQrUrl, showMultiScreenQrDialog,
+            openMultiScreenQrDialog, closeMultiScreenQrDialog, copyMultiScreenEntryUrl,
+            showWsClientsDialog, wsClientsLoading, wsClients,
+            openWsClientsDialog, closeWsClientsDialog, loadWsClients, formatWsClientLatency,
 >>>>>>> Stashed changes
             // 显示端管理方法
             currentDisplay, currentDisplayId, displayState, selectDisplay, 
@@ -3783,6 +4113,7 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               {{ $t('preferences.language') }} (Language)
 =======
 <<<<<<< HEAD
@@ -3790,6 +4121,9 @@ export default {
 =======
               {{ $t('preferences.language') }} (Language)
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+              {{ $t('preferences.language') }}
 >>>>>>> Stashed changes
 =======
               {{ $t('preferences.language') }}
@@ -3814,7 +4148,10 @@ export default {
         </div>
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                 <!-- Vehicle Audio -->
                 <div class="card" style="border-left: 6px solid #FF6B6B; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
                         <div style="color:#FF6B6B; font-weight:bold; margin-bottom:16px; font-size:15px;">
@@ -3843,6 +4180,9 @@ export default {
                         </div>
                 </div>
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         <!-- Display Management -->
         <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
@@ -3946,6 +4286,7 @@ export default {
                 </label>
             </div>
 
+<<<<<<< Updated upstream
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
                 <div style="flex:1;">
                     <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">局域网同步（WebSocket Bridge）</div>
@@ -3973,11 +4314,17 @@ export default {
                 {{ $t('api.tip3') }}
 <<<<<<< Updated upstream
 =======
+=======
+            <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.12); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.25); line-height:1.6;">
+                <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
+                {{ $t('api.tip3') }}
+>>>>>>> Stashed changes
             </div>
         </div>
 
         <!-- LAN WebSocket Bridge -->
         <div class="card" style="border-left: 6px solid #27ae60; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+<<<<<<< Updated upstream
             <div style="color:#27ae60; font-weight:bold; margin-bottom:16px; font-size:15px;">局域网同步（WebSocket Bridge）</div>
 
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
@@ -4013,14 +4360,55 @@ export default {
                     <span style="color:var(--text); font-weight:bold;">WebSocket 端口</span>
                     <input type="number" min="1" max="65535" v-model.number="settings.wsPort" @change="saveSettings()" style="width:96px; padding:6px 8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <span style="color:var(--muted);">连接地址：</span>
+=======
+            <div style="color:#27ae60; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('multiScreen.title') }}</div>
+
+            <div style="margin-bottom:12px; color:var(--text); font-size:14px; font-weight:bold;">{{ $t('multiScreen.entryTitle') }}</div>
+
+            <div style="font-size:12px; color:var(--muted); line-height:1.7; background:rgba(39,174,96,0.1); border:1px solid rgba(39,174,96,0.2); padding:12px; border-radius:8px; margin-bottom:12px;">
+                {{ $t('multiScreen.entryDesc1') }}
+                <br>{{ $t('multiScreen.entryDesc2') }}
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+                <input :value="multiScreenEntryUrl" readonly style="flex:1; min-width:260px; padding:8px 10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-family:Consolas, monospace; font-size:12px;">
+                <button class="btn" style="padding:8px 10px; background:#2d98da; color:white;" @click="copyMultiScreenEntryUrl">
+                    <i class="fas fa-copy"></i> {{ $t('multiScreen.copyAddress') }}
+                </button>
+                <button class="btn" style="padding:8px 10px; background:#27ae60; color:white;" @click="openMultiScreenQrDialog">
+                    <i class="fas fa-qrcode"></i> {{ $t('multiScreen.showQr') }}
+                </button>
+                <button class="btn" style="padding:8px 10px; background:#16a085; color:white;" @click="openWsClientsDialog">
+                    <i class="fas fa-network-wired"></i> 查看已连接设备
+                </button>
+            </div>
+
+            <div style="margin-top:8px; display:flex; flex-direction:column; gap:10px; font-size:12px; color:var(--muted);">
+                <div style="color:var(--text); font-weight:bold;">{{ $t('multiScreen.localIp') }}</div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span v-for="ip in lanIpsResolved" :key="ip" style="background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25); color:var(--text);">{{ ip }}</span>
+                    <button class="btn" style="padding:4px 8px; background:var(--btn-gray-bg); color:var(--text);" @click="loadLanIps()"><i class="fas fa-sync"></i> {{ $t('multiScreen.refreshIp') }}</button>
+                </div>
+
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <span style="color:var(--text); font-weight:bold;">{{ $t('multiScreen.wsPort') }}</span>
+                    <input type="number" min="1" max="65535" v-model.number="settings.wsPort" @change="saveSettings()" style="width:96px; padding:6px 8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
+                    <span style="color:var(--muted);">{{ $t('multiScreen.wsAddress') }}</span>
+>>>>>>> Stashed changes
                     <span v-for="ip in lanIpsResolved" :key="ip + '-ws'" style="color:var(--text); background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25);">ws://{{ ip }}:{{ wsPortDisplay }}</span>
                 </div>
 
                 <div style="color:var(--muted); line-height:1.6;">
+<<<<<<< Updated upstream
                     要正常同步，显示端网页需通过 http:// 或 https:// 打开。常用示例：
                     <br>· 远程切换控制页：http://{{ lanIpsResolved[0] }}:5173/examples/display-switcher.html
                     <br>· 第三方显示模板：http://{{ lanIpsResolved[0] }}:5173/examples/third-party-display-template.html
                     <br>浏览器页面里会自动连到上面的 ws 地址。
+                </div>
+>>>>>>> Stashed changes
+=======
+                    {{ $t('multiScreen.tips1') }}
+                    <br>{{ $t('multiScreen.thirdPartyTemplate') }}http://{{ lanIpsResolved[0] }}:5173/examples/third-party-display-template.html
                 </div>
 >>>>>>> Stashed changes
             </div>
@@ -4203,6 +4591,7 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
 =======
 <<<<<<< HEAD
@@ -4210,6 +4599,9 @@ export default {
 =======
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+                        <!-- 显示器1：线路名合并 / C 型开关 -->
 >>>>>>> Stashed changes
 =======
                         <!-- 显示器1：线路名合并 / C 型开关 -->
@@ -4302,6 +4694,98 @@ export default {
                     <div class="se-footer">
                         <button type="button" class="se-btn se-btn-gray" @click="closeDisplayEditDialog">取消</button>
                         <button type="button" class="se-btn se-btn-green" @click="saveDisplayEdit">保存</button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- Multi-Screen QR Dialog -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showMultiScreenQrDialog" class="se-overlay" @click.self="closeMultiScreenQrDialog">
+                <div class="se-dialog" role="dialog" aria-modal="true" style="max-width:520px;">
+                    <div class="se-header">
+                        <div class="se-header-left">
+                            <div class="se-icon">
+                                <i class="fas fa-qrcode"></i>
+                            </div>
+                            <div class="se-titles">
+                                <div class="se-title">{{ $t('multiScreen.qrDialogTitle') }}</div>
+                                <div class="se-subtitle">{{ $t('multiScreen.qrDialogSubtitle') }}</div>
+                            </div>
+                        </div>
+                        <button type="button" class="se-close" @click="closeMultiScreenQrDialog" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div class="se-content" style="display:flex; flex-direction:column; align-items:center; gap:12px;">
+                        <div style="padding:14px; border-radius:14px; border:1px solid var(--divider); background:var(--input-bg); box-shadow:0 4px 14px rgba(0,0,0,0.08);">
+                            <img :src="multiScreenQrUrl" :alt="$t('multiScreen.qrDialogTitle')" style="display:block; width:280px; height:280px; object-fit:contain; border-radius:8px;">
+                        </div>
+                        <div style="width:100%; font-size:12px; color:var(--muted); line-height:1.6; text-align:center; word-break:break-all;">
+                            {{ multiScreenEntryUrl }}
+                        </div>
+                    </div>
+
+                    <div class="se-footer">
+                        <button type="button" class="se-btn se-btn-gray" @click="closeMultiScreenQrDialog">{{ $t('multiScreen.close') }}</button>
+                        <button type="button" class="se-btn se-btn-green" @click="copyMultiScreenEntryUrl">{{ $t('multiScreen.copyAddress') }}</button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- Connected WS Clients Dialog -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showWsClientsDialog" class="se-overlay" @click.self="closeWsClientsDialog">
+                <div class="se-dialog" role="dialog" aria-modal="true" style="max-width:680px;">
+                    <div class="se-header">
+                        <div class="se-header-left">
+                            <div class="se-icon">
+                                <i class="fas fa-network-wired"></i>
+                            </div>
+                            <div class="se-titles">
+                                <div class="se-title">已连接设备</div>
+                                <div class="se-subtitle">实时 WebSocket 客户端列表</div>
+                            </div>
+                        </div>
+                        <button type="button" class="se-close" @click="closeWsClientsDialog" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div class="se-content" style="max-height:58vh; overflow-y:auto;">
+                        <div v-if="wsClientsLoading" style="padding:24px 8px; text-align:center; color:var(--muted); font-size:13px;">
+                            <i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i> 正在加载设备列表...
+                        </div>
+
+                        <div v-else-if="!wsClients || wsClients.length === 0" style="padding:24px 8px; text-align:center; color:var(--muted); font-size:13px;">
+                            暂无已连接设备
+                        </div>
+
+                        <div v-else style="display:flex; flex-direction:column; gap:12px;">
+                            <div
+                                v-for="(client, index) in wsClients"
+                                :key="(client.clientId || 'client') + '-' + index"
+                                style="border:1px solid var(--divider); border-radius:10px; padding:12px; background:var(--input-bg);"
+                            >
+                                <div style="font-size:13px; color:var(--text); line-height:1.7; word-break:break-all;">
+                                    <div><span style="color:var(--muted);">IP：</span>{{ client.ip || '-' }}</div>
+                                    <div><span style="color:var(--muted);">ID：</span>{{ client.clientId || '-' }}</div>
+                                    <div><span style="color:var(--muted);">延迟：</span>{{ formatWsClientLatency(client.latencyMs) }} ｜ <span style="color:var(--muted);">显示器：</span>{{ client.displayName || client.displayId || '未指定' }}</div>
+                                    <div><span style="color:var(--muted);">客户端版本：</span>{{ client.clientVersion || '未上报' }} ｜ <span style="color:var(--muted);">系统：</span>{{ client.system || '未上报' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="se-footer">
+                        <button type="button" class="se-btn se-btn-gray" @click="closeWsClientsDialog">关闭</button>
+                        <button type="button" class="se-btn se-btn-green" @click="loadWsClients">刷新</button>
                     </div>
                 </div>
             </div>

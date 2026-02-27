@@ -12,12 +12,18 @@
     "languageLabel": "Interface Language"
   },
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   "audio": {
     "title": "Vehicle audio",
     "enableVehicle": "Enable vehicle audio",
     "enableVehicleHint": "When on, arrivals/departures and Next Step will play station audio; turn off to mute them."
   },
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   "settings": {
     "appearance": "Appearance",
@@ -45,6 +51,31 @@
     "tip2": "By default, BroadcastChannel communication is used, no HTTP server required.",
     "tip3": "Tip: If third-party displays (especially Python clients) show errors or fail to connect, try toggling this switch and restart the application."
   },
+<<<<<<< Updated upstream
+=======
+  "multiScreen": {
+    "title": "Multi-Screen Collaboration",
+    "entryTitle": "Entry URL",
+    "entryDesc1": "Send the URL below to remote browsers/TV boxes to join multi-screen collaboration.",
+    "entryDesc2": "The page will auto-connect to WebSocket and sync stations, arrival/departure state, and control commands.",
+    "copyAddress": "Copy URL",
+    "showQr": "Show QR Code",
+    "close": "Close",
+    "localIp": "Local IP",
+    "refreshIp": "Refresh",
+    "wsPort": "WebSocket Port",
+    "wsAddress": "Connection:",
+    "tips1": "For proper sync, open display pages via http:// or https://.",
+    "tips2": "If the port is occupied, the client will automatically switch to an available port.",
+    "thirdPartyTemplate": "Third-party display template:",
+    "qrDialogTitle": "Multi-Screen Entry QR Code",
+    "qrDialogSubtitle": "Scan with phone/browser to open entry",
+    "copySuccessTitle": "Copied",
+    "copySuccessMsg": "Multi-screen entry URL copied",
+    "copyFailTitle": "Copy Failed",
+    "copyFailMsg": "Copy failed, please copy manually:\n{url}"
+  },
+>>>>>>> Stashed changes
   "keys": {
     "title": "Keybindings",
     "nextState": "Next State",
@@ -89,6 +120,7 @@
     "openManager": "Open Manager",
     "saveCurrentLine": "Save Current Line",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "resetData": "Reset Data",
     "serviceMode": "Service Mode",
     "currentMode": "Current Mode",
@@ -96,18 +128,28 @@
     "singleLine": "Single Line (Linear)",
 =======
 =======
+=======
+>>>>>>> Stashed changes
     "saveAsZip": "Save as ZIP",
     "resetData": "Reset Data",
     "serviceMode": "Service Mode",
     "currentMode": "Current Mode",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "singleLine": "Single Line",
     "loopLine": "Loop Line",
     "outerLoop": "Outer Loop (Counter-clockwise)",
     "innerLoop": "Inner Loop (Clockwise)",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
     "dirLabel": "Upbound",
+=======
+    "dirLabel": "Upbound",
+    "dirLabelDown": "Downbound",
+>>>>>>> Stashed changes
 =======
     "dirLabel": "Upbound",
     "dirLabelDown": "Downbound",
@@ -163,8 +205,11 @@
     "autoplayEnable": "Auto Play",
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "autoplayInterval": "Enable Interval:"
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     "autoplayInterval": "Enable Interval:",
@@ -214,6 +259,9 @@
       "recordingStageConcatStart": "Merging segments",
       "recordingOpenFolder": "Open Folder"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -239,6 +287,10 @@
 
     "ctxFolderOpen": "Open Folder",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "Refresh",
+>>>>>>> Stashed changes
 =======
     "ctxRefresh": "Refresh",
 >>>>>>> Stashed changes
@@ -247,6 +299,10 @@
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "Open File Location",
+>>>>>>> Stashed changes
 =======
     "ctxOpenFile": "Open File Location",
 >>>>>>> Stashed changes
@@ -291,7 +347,13 @@
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "throughSaveButton": "Save Through Line"
+=======
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
+>>>>>>> Stashed changes
 =======
     "throughSaveButton": "Save Through Line",
     "saveLineButton": "Save Line",
@@ -341,9 +403,12 @@
 
     "xferSectionTitle": "Transfer Lines",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "xferSectionHint": "Right-click to operate",
     "xferEmpty": "No transfers, right-click to add or paste",
 =======
+=======
+>>>>>>> Stashed changes
     "audioSectionTitle": "Station Audio",
     "xferSectionHint": "Right-click to operate",
     "xferEmpty": "No transfers, right-click to add or paste",
@@ -397,6 +462,9 @@
     "audioMarkStationAudio": "Mark as terminal audio",
     "audioTerminalUntag": "Unmark terminal",
     "audioSelectHint": "Ctrl: multi-select; Shift: range select",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "xferUnnamed": "Unnamed",
     "xferExitBadge": "Out-of-station Transfer",
@@ -422,7 +490,10 @@
     "btnSave": "Save"
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   },
@@ -480,6 +551,9 @@
     "outer": "Outer Loop",
     "inner": "Inner Loop"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes

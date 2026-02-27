@@ -1,8 +1,11 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -100,8 +103,41 @@ function isSkippedByService(st, idx, len, meta) {
   }
   return false;
 }
+<<<<<<< Updated upstream
 const SCALER_W = 1900;
 const SCALER_H = 600;
+=======
+function getScalerBaseSizeFromQuery() {
+  try {
+    const sp = new URLSearchParams((window.location && window.location.search) ? window.location.search : '');
+    const isWsBrowserMode = ['1', 'true', 'yes', 'on'].includes(String(sp.get('ws') || '').toLowerCase())
+      && !(typeof window !== 'undefined' && window.electronAPI);
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+    const touchPoints = (typeof navigator !== 'undefined' && typeof navigator.maxTouchPoints === 'number') ? navigator.maxTouchPoints : 0;
+    const mobileLikeUA = /Android|iPhone|iPad|iPod|Mobile|Tablet|Windows Phone|HarmonyOS/i.test(ua);
+    const mobileLikeDevice = mobileLikeUA || touchPoints > 1;
+
+    if (isWsBrowserMode && mobileLikeDevice) {
+      const viewportWidthRaw = Number(window.innerWidth || document.documentElement?.clientWidth || screen?.width || 1280);
+      const viewportHeightRaw = Number(window.innerHeight || document.documentElement?.clientHeight || screen?.height || 720);
+      const viewportWidth = Number.isFinite(viewportWidthRaw) && viewportWidthRaw > 0 ? Math.round(viewportWidthRaw) : 1280;
+      const viewportHeight = Number.isFinite(viewportHeightRaw) && viewportHeightRaw > 0 ? Math.round(viewportHeightRaw) : 720;
+      return { width: viewportWidth, height: viewportHeight };
+    }
+
+    const widthRaw = Number(sp.get('dw') || sp.get('designWidth') || 1900);
+    const heightRaw = Number(sp.get('dh') || sp.get('designHeight') || 600);
+    const width = Number.isFinite(widthRaw) && widthRaw > 0 ? Math.round(widthRaw) : 1900;
+    const height = Number.isFinite(heightRaw) && heightRaw > 0 ? Math.round(heightRaw) : 600;
+    return { width, height };
+  } catch (e) {
+    return { width: 1900, height: 600 };
+  }
+}
+const DISPLAY_SCALE_BASE = getScalerBaseSizeFromQuery();
+const SCALER_W = DISPLAY_SCALE_BASE.width;
+const SCALER_H = DISPLAY_SCALE_BASE.height;
+>>>>>>> Stashed changes
 const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot';
 
 // =========================
@@ -2554,6 +2590,110 @@ export function initDisplayWindow(rootElement) {
   };
   
   const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('metro_pids_v3') : null;
+<<<<<<< Updated upstream
+=======
+  const wsQuery = (() => {
+    try {
+      return new URLSearchParams((window.location && window.location.search) ? window.location.search : '');
+    } catch (e) {
+      return new URLSearchParams('');
+    }
+  })();
+  const wsEnabled = ['1', 'true', 'yes', 'on'].includes(String(wsQuery.get('ws') || '').toLowerCase());
+  const wsHost = (wsQuery.get('wsHost') || window.location.hostname || 'localhost').trim();
+  const wsPort = (wsQuery.get('wsPort') || '9400').trim();
+  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProto}//${wsHost}:${wsPort}`;
+  const isExternalBrowserRenderMode = wsEnabled && !(typeof window !== 'undefined' && window.electronAPI);
+  const getAdaptiveRenderMetrics = () => {
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || SCALER_W;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || SCALER_H;
+    if (isExternalBrowserRenderMode) {
+      const normalizedScale = 1.0;
+      return {
+        scaleFactor: normalizedScale,
+        screenWidth: Math.round(viewportWidth),
+        screenHeight: Math.round(viewportHeight),
+        physicalWidth: Math.round(viewportWidth * normalizedScale),
+        physicalHeight: Math.round(viewportHeight * normalizedScale)
+      };
+    }
+    const scaleFactor = window.devicePixelRatio || 1.0;
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
+    return {
+      scaleFactor,
+      screenWidth,
+      screenHeight,
+      physicalWidth: Math.round(screenWidth * scaleFactor),
+      physicalHeight: Math.round(screenHeight * scaleFactor)
+    };
+  };
+  let wsClient = null;
+  let wsReconnectTimer = null;
+  let wsManualClose = false;
+
+  const postRealtimeMessage = (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (bc) {
+      try { bc.postMessage(payload); } catch (e) {}
+    }
+    if (wsClient && wsClient.readyState === 1) {
+      try { wsClient.send(JSON.stringify(payload)); } catch (e) {}
+    }
+  };
+
+  const stopWsBridgeClient = () => {
+    wsManualClose = true;
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (wsClient) {
+      try { wsClient.close(); } catch (e) {}
+      wsClient = null;
+    }
+  };
+
+  const connectWsBridgeClient = () => {
+    if (!wsEnabled || !wsHost) return;
+    try {
+      wsClient = new WebSocket(wsUrl);
+    } catch (e) {
+      wsClient = null;
+      return;
+    }
+
+    wsClient.addEventListener('open', () => {
+      try { wsClient.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
+    });
+
+    wsClient.addEventListener('message', (event) => {
+      let msg = null;
+      try {
+        msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      } catch (e) {
+        msg = null;
+      }
+      if (!msg || !msg.t) return;
+      handleBroadcastMessage({ data: msg });
+    });
+
+    wsClient.addEventListener('close', () => {
+      wsClient = null;
+      if (wsManualClose) return;
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = setTimeout(connectWsBridgeClient, 1500);
+    });
+
+    wsClient.addEventListener('error', () => {
+      if (wsClient) {
+        try { wsClient.close(); } catch (e) {}
+      }
+    });
+  };
+
+>>>>>>> Stashed changes
   let appData = null;
   let rt = { idx: 0, state: 0 };
   let arrivalTimer = null;
@@ -2574,6 +2714,11 @@ export function initDisplayWindow(rootElement) {
   const fitScreen = () => {
     const scaler = root.querySelector('#scaler');
     if (!scaler) return;
+<<<<<<< Updated upstream
+=======
+    scaler.style.width = `${SCALER_W}px`;
+    scaler.style.height = `${SCALER_H}px`;
+>>>>>>> Stashed changes
     
     // 使用多种方式获取窗口尺寸，确保准确性
     // 优先使用视口单位计算，因为它最准确反映实际可用空间
@@ -2581,11 +2726,19 @@ export function initDisplayWindow(rootElement) {
     const visualHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
     
     // 计算缩放比例
+<<<<<<< Updated upstream
     // 由于窗口逻辑尺寸固定为1900×600，visualWidth和visualHeight应该也是1900×600
     // 使用Math.max确保内容能够覆盖整个窗口，消除黑边
     const scaleX = visualWidth / SCALER_W;
     const scaleY = visualHeight / SCALER_H;
     const scale = Math.max(scaleX, scaleY);
+=======
+    // Electron 固定窗口场景维持 cover（Math.max）以消除黑边；
+    // 浏览器兼容场景使用 contain（Math.min）避免比例不一致时内容偏移/被裁切
+    const scaleX = visualWidth / SCALER_W;
+    const scaleY = visualHeight / SCALER_H;
+    const scale = isExternalBrowserRenderMode ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
+>>>>>>> Stashed changes
     
     // 应用缩放，使用transform-origin确保从中心缩放
     scaler.style.transform = `scale(${scale})`;
@@ -2653,9 +2806,13 @@ export function initDisplayWindow(rootElement) {
     try {
       const normCode = normalizeKeyNameGlobal(e.code || e.key);
       const normKey = normalizeKeyNameGlobal(e.key || e.code || null);
+<<<<<<< Updated upstream
       if (bc) {
         bc.postMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey });
       }
+=======
+      postRealtimeMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey });
+>>>>>>> Stashed changes
     } catch (err) {
       // 忽略异常
     }
@@ -3655,7 +3812,11 @@ export function initDisplayWindow(rootElement) {
     
     // 根据系统缩放比例和分辨率计算最大显示站点数
     // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%, 3.0 = 300%）
+<<<<<<< Updated upstream
     const scaleFactor = window.devicePixelRatio || 1.0;
+=======
+    const { scaleFactor, physicalWidth, physicalHeight } = getAdaptiveRenderMetrics();
+>>>>>>> Stashed changes
     
     // 检测是否为4K或2K分辨率
     // 注意：在Electron中，window.screen.width/height 返回的是逻辑像素，需要考虑缩放
@@ -3663,12 +3824,15 @@ export function initDisplayWindow(rootElement) {
     const screenWidth = window.screen.width;
     const screenHeight = window.screen.height;
     
+<<<<<<< Updated upstream
     // 计算物理分辨率
     // 在Electron中，window.screen.width返回的是逻辑像素（受缩放影响）
     // 物理分辨率 = 逻辑像素 × devicePixelRatio
     const physicalWidth = Math.round(screenWidth * scaleFactor);
     const physicalHeight = Math.round(screenHeight * scaleFactor);
     
+=======
+>>>>>>> Stashed changes
     // 4K分辨率判断：物理宽度3800-3900，高度2100-2200（覆盖3840×2160等4K分辨率）
     const is4KResolution = physicalWidth >= 3800 && physicalWidth <= 3900 && 
                            physicalHeight >= 2100 && physicalHeight <= 2200;
@@ -4440,7 +4604,11 @@ export function initDisplayWindow(rootElement) {
     
     // 根据系统缩放比例和分辨率计算最大位置数
     // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%）
+<<<<<<< Updated upstream
     const scaleFactor = window.devicePixelRatio || 1.0;
+=======
+    const { scaleFactor, physicalWidth, physicalHeight } = getAdaptiveRenderMetrics();
+>>>>>>> Stashed changes
     
     // 检测是否为4K或2K分辨率
     // 注意：window.screen.width 返回的是逻辑像素，需要考虑缩放
@@ -4448,8 +4616,11 @@ export function initDisplayWindow(rootElement) {
     // 物理分辨率 = 逻辑像素 × devicePixelRatio
     const screenWidth = window.screen.width;
     const screenHeight = window.screen.height;
+<<<<<<< Updated upstream
     const physicalWidth = Math.round(screenWidth * scaleFactor);
     const physicalHeight = Math.round(screenHeight * scaleFactor);
+=======
+>>>>>>> Stashed changes
     
     // 4K分辨率判断：物理宽度3800-3900，高度2100-2200（覆盖3840×2160等4K分辨率）
     const is4KResolution = physicalWidth >= 3800 && physicalWidth <= 3900 && 
@@ -6366,8 +6537,14 @@ export function initDisplayWindow(rootElement) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return;
     try {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser', frameRate: 60 },
+=======
+      // 降低帧率到 30fps 以提高兼容性和稳定性，避免某些机器上的花屏问题
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser', frameRate: 30 },
+>>>>>>> Stashed changes
 =======
       // 降低帧率到 30fps 以提高兼容性和稳定性，避免某些机器上的花屏问题
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -6378,6 +6555,7 @@ export function initDisplayWindow(rootElement) {
       const recTip = locateId('rec-tip');
       if (recTip) recTip.style.display = 'block';
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
       const options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: bps };
       if (!MediaRecorder.isTypeSupported(options.mimeType)) options.mimeType = 'video/webm';
       recorder = new MediaRecorder(stream, options);
@@ -6387,6 +6565,8 @@ export function initDisplayWindow(rootElement) {
       };
       recorder.onstop = () => {
 =======
+=======
+>>>>>>> Stashed changes
       
       // 优先使用 VP8（兼容性更好），如果支持 VP9 再使用 VP9
       let options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: bps };
@@ -6416,6 +6596,9 @@ export function initDisplayWindow(rootElement) {
           if (recTip) recTip.style.display = 'none';
           return;
         }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         const blob = new Blob(chunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
@@ -6424,10 +6607,13 @@ export function initDisplayWindow(rootElement) {
         a.download = 'MetroPIDS_' + new Date().toISOString().replace(/[:.]/g, '-') + '.webm';
         a.click();
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         if (recTip) recTip.style.display = 'none';
       };
       recorder.start();
 =======
+=======
+>>>>>>> Stashed changes
         // 清理资源
         setTimeout(() => {
           URL.revokeObjectURL(url);
@@ -6437,12 +6623,20 @@ export function initDisplayWindow(rootElement) {
       };
       // 添加 timeslice 参数（1000ms），定期触发 dataavailable，避免数据块过大导致内存问题或花屏
       recorder.start(1000);
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
       if (bc) bc.postMessage({ t: 'REC_STARTED' });
     } catch (err) {
       console.error(err);
       alert('录制启动失败，请检查浏览器权限');
       if (bc) bc.postMessage({ t: 'REC_STOP_ERR' });
+=======
+      postRealtimeMessage({ t: 'REC_STARTED' });
+    } catch (err) {
+      console.error(err);
+      alert('录制启动失败，请检查浏览器权限');
+      postRealtimeMessage({ t: 'REC_STOP_ERR' });
+>>>>>>> Stashed changes
     }
   };
 
@@ -6548,6 +6742,13 @@ export function initDisplayWindow(rootElement) {
   } else {
     restored = restoreSnapshot();
   }
+<<<<<<< Updated upstream
+=======
+  if (wsEnabled) {
+    wsManualClose = false;
+    connectWsBridgeClient();
+  }
+>>>>>>> Stashed changes
   if (typeof window !== 'undefined') {
     window.addEventListener('message', handleWindowMessage);
   }
@@ -6577,6 +6778,10 @@ export function initDisplayWindow(rootElement) {
     window.removeEventListener('resize', fitScreen);
     document.removeEventListener('keydown', handleKeyDown);
     if (bc) bc.removeEventListener('message', handleBroadcastMessage);
+<<<<<<< Updated upstream
+=======
+    stopWsBridgeClient();
+>>>>>>> Stashed changes
     if (typeof window !== 'undefined') {
       window.removeEventListener('message', handleWindowMessage);
     }
@@ -6587,6 +6792,7 @@ export function initDisplayWindow(rootElement) {
   };
 }
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
@@ -6937,6 +7143,8 @@ export function initExitIndicator(rootElement) {
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes

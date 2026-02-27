@@ -4,9 +4,12 @@ import zhTW from './zh-TW.json'
 import en from './en.json'
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
 // 语言 key 类型说明：'zh-CN' | 'zh-TW' | 'en'
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 import ja from './ja.json'
@@ -14,6 +17,9 @@ import ko from './ko.json'
 
 // 语言 key 类型说明：'zh-CN' | 'zh-TW' | 'en' | 'ja' | 'ko'
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -33,6 +39,12 @@ function detectLocale() {
 
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+  if (lang.startsWith('ja')) return 'ja'
+  if (lang.startsWith('ko')) return 'ko'
+
+>>>>>>> Stashed changes
 =======
   if (lang.startsWith('ja')) return 'ja'
   if (lang.startsWith('ko')) return 'ko'
@@ -52,7 +64,11 @@ let currentLanguage = detectLocale()
 const saved = window.localStorage.getItem('mpids-locale')
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 if (saved === 'zh-CN' || saved === 'zh-TW' || saved === 'en') {
+=======
+if (saved === 'zh-CN' || saved === 'zh-TW' || saved === 'en' || saved === 'ja' || saved === 'ko') {
+>>>>>>> Stashed changes
 =======
 if (saved === 'zh-CN' || saved === 'zh-TW' || saved === 'en' || saved === 'ja' || saved === 'ko') {
 >>>>>>> Stashed changes
@@ -68,11 +84,14 @@ export const i18n = createI18n({
   locale: currentLanguage,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   messages: {
     'zh-CN': zhCN,
     'zh-TW': zhTW,
     en
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   fallbackLocale: 'en',
@@ -83,6 +102,9 @@ export const i18n = createI18n({
     ja,
     ko
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -94,12 +116,15 @@ export const langs = [
   { key: 'zh-TW', title: '繁體中文' },
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   { key: 'en', title: 'English' }
 ]
 
 export function setLocale(lang) {
   if (lang !== 'zh-CN' && lang !== 'zh-TW' && lang !== 'en') return
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   { key: 'en', title: 'English' },
@@ -110,6 +135,9 @@ export function setLocale(lang) {
 export function setLocale(lang) {
   if (lang !== 'zh-CN' && lang !== 'zh-TW' && lang !== 'en' && lang !== 'ja' && lang !== 'ko') return
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes

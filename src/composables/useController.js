@@ -30,7 +30,15 @@ export function useController() {
     function sync() {
         if (!state.store || !state.store.list) return;
         state.store.list[state.store.cur] = state.appData;
+<<<<<<< Updated upstream
         localStorage.setItem('pids_global_store_v1', JSON.stringify(state.store));
+=======
+        const persistedStore = {
+            ...state.store,
+            rt: cloneDisplayState(state.rt)
+        };
+        localStorage.setItem('pids_global_store_v1', JSON.stringify(persistedStore));
+>>>>>>> Stashed changes
         persistLinePathInfo();
         
         // 直接使用当前线路数据（贯通线路已在控制面板中合并完成）
@@ -53,6 +61,7 @@ export function useController() {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
                     // 显示器1：壁纸（到站/结束页）
@@ -60,6 +69,11 @@ export function useController() {
                     display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+                    // 显示器1：壁纸（到站/结束页）
+                    display1WallpaperDataUrl: settings?.display?.displays?.['display-1']?.wallpaperDataUrl ?? '',
+                    display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
 >>>>>>> Stashed changes
 =======
                     // 显示器1：壁纸（到站/结束页）

@@ -382,7 +382,98 @@
         let ws = null;
         let wsConnected = false;
         let wsRetryTimer = null;
+<<<<<<< Updated upstream
+=======
+        let wsPingTimer = null;
+>>>>>>> Stashed changes
         let isConnected = false;
+
+        function getClientVersion() {
+            try {
+                const fromQuery = new URLSearchParams(window.location.search).get('clientVersion');
+                if (fromQuery && String(fromQuery).trim()) return String(fromQuery).trim();
+            } catch (e) {}
+            try {
+                const fromWindow = window.METRO_PIDS_CLIENT_VERSION || window.__APP_VERSION__ || window.__APP_VERSION;
+                if (fromWindow && String(fromWindow).trim()) return String(fromWindow).trim();
+            } catch (e) {}
+            try {
+                const fromStorage = localStorage.getItem('metro_pids_client_version');
+                if (fromStorage && fromStorage.trim()) return fromStorage.trim();
+            } catch (e) {}
+            return 'web-client';
+        }
+        const CLIENT_ID_KEY = 'metro_pids_ws_client_id';
+
+        function getOrCreateClientId() {
+            try {
+                const existed = localStorage.getItem(CLIENT_ID_KEY);
+                if (existed && existed.trim()) return existed.trim();
+            } catch (e) {}
+            const generated = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                ? crypto.randomUUID()
+                : `client-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+            try { localStorage.setItem(CLIENT_ID_KEY, generated); } catch (e) {}
+            return generated;
+        }
+
+        function getClientDisplayId() {
+            try {
+                const id = new URLSearchParams(window.location.search).get('displayId');
+                return id ? String(id).trim() : '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function getClientSystem() {
+            try {
+                if (navigator.userAgentData && navigator.userAgentData.platform) {
+                    return String(navigator.userAgentData.platform);
+                }
+                if (navigator.platform) return String(navigator.platform);
+                if (navigator.userAgent) return String(navigator.userAgent);
+            } catch (e) {}
+            return 'unknown';
+        }
+
+        function getClientHelloPayload() {
+            return {
+                t: 'HELLO',
+                clientId: getOrCreateClientId(),
+                displayId: getClientDisplayId(),
+                clientVersion: getClientVersion(),
+                system: getClientSystem(),
+                meta: {
+                    clientId: getOrCreateClientId(),
+                    displayId: getClientDisplayId(),
+                    clientVersion: getClientVersion(),
+                    system: getClientSystem()
+                }
+            };
+        }
+
+        function startWsPing() {
+            if (wsPingTimer) return;
+            wsPingTimer = setInterval(() => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                try {
+                    ws.send(JSON.stringify({
+                        t: 'PING',
+                        ts: Date.now(),
+                        displayId: getClientDisplayId(),
+                        clientVersion: getClientVersion(),
+                        system: getClientSystem()
+                    }));
+                } catch (e) {}
+            }, 3000);
+        }
+
+        function stopWsPing() {
+            if (!wsPingTimer) return;
+            clearInterval(wsPingTimer);
+            wsPingTimer = null;
+        }
 
         // ==================== BroadcastChannel 初始化 ====================
         function initBroadcastChannel() {
@@ -459,7 +550,13 @@
             ws.addEventListener('open', () => {
                 wsConnected = true;
                 updateConnectionStatus(wsConnected || bcConnected);
+<<<<<<< Updated upstream
                 try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
+=======
+                try { ws.send(JSON.stringify(getClientHelloPayload())); } catch (e) {}
+                try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
+                startWsPing();
+>>>>>>> Stashed changes
             });
 
             ws.addEventListener('message', (event) => {
@@ -476,12 +573,20 @@
             ws.addEventListener('close', () => {
                 wsConnected = false;
                 updateConnectionStatus(wsConnected || bcConnected);
+<<<<<<< Updated upstream
+=======
+                stopWsPing();
+>>>>>>> Stashed changes
                 scheduleWsReconnect();
             });
 
             ws.addEventListener('error', () => {
                 wsConnected = false;
                 updateConnectionStatus(wsConnected || bcConnected);
+<<<<<<< Updated upstream
+=======
+                stopWsPing();
+>>>>>>> Stashed changes
                 scheduleWsReconnect();
             });
         }

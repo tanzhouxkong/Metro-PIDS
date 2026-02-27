@@ -12,12 +12,18 @@
     "languageLabel": "인터페이스 언어"
   },
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   "audio": {
     "title": "차량 오디오",
     "enableVehicle": "차량 오디오 사용",
     "enableVehicleHint": "켜면 도착/출발 및 '다음 단계' 전환 시 역 오디오를 재생합니다. 끄면 재생하지 않습니다."
   },
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   "settings": {
     "appearance": "모양",
@@ -45,6 +51,31 @@
     "tip2": "기본은 BroadcastChannel 통신이며 HTTP 서버가 필요 없습니다.",
     "tip3": "팁: 타사 디스플레이(특히 Python 클라이언트) 문제가 있으면 스위치를 바꾸고 앱을 재시작해 보세요."
   },
+<<<<<<< Updated upstream
+=======
+  "multiScreen": {
+    "title": "멀티 스크린 협업",
+    "entryTitle": "협업 진입 주소",
+    "entryDesc1": "아래 주소를 원격 브라우저/TV 박스에 전달하면 멀티 스크린 협업에 접속할 수 있습니다.",
+    "entryDesc2": "페이지는 WebSocket에 자동 연결되어 역 정보/도착·출발 상태/제어 명령을 동기화합니다.",
+    "copyAddress": "주소 복사",
+    "showQr": "QR 코드 표시",
+    "close": "닫기",
+    "localIp": "로컬 IP",
+    "refreshIp": "새로고침",
+    "wsPort": "WebSocket 포트",
+    "wsAddress": "연결 주소:",
+    "tips1": "정상 동기화를 위해 표시 페이지를 http:// 또는 https:// 로 열어 주세요.",
+    "tips2": "포트가 점유된 경우 클라이언트가 사용 가능한 포트로 자동 전환합니다.",
+    "thirdPartyTemplate": "서드파티 표시 템플릿:",
+    "qrDialogTitle": "협업 진입 QR 코드",
+    "qrDialogSubtitle": "휴대폰/브라우저로 스캔",
+    "copySuccessTitle": "복사 완료",
+    "copySuccessMsg": "멀티 스크린 진입 주소를 복사했습니다",
+    "copyFailTitle": "복사 실패",
+    "copyFailMsg": "복사에 실패했습니다. 수동으로 복사해 주세요:\n{url}"
+  },
+>>>>>>> Stashed changes
   "keys": {
     "title": "단축키",
     "nextState": "다음 상태",
@@ -97,6 +128,10 @@
     "innerLoop": "안쪽 루프 (시계 방향)",
     "dirLabel": "상행",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "dirLabelDown": "하행",
+>>>>>>> Stashed changes
 =======
     "dirLabelDown": "하행",
 >>>>>>> Stashed changes
@@ -216,6 +251,10 @@
     "rename": "Rename",
     "ctxFolderOpen": "Open Folder",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "새로 고침",
+>>>>>>> Stashed changes
 =======
     "ctxRefresh": "새로 고침",
 >>>>>>> Stashed changes
@@ -224,6 +263,10 @@
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "파일 위치 열기",
+>>>>>>> Stashed changes
 =======
     "ctxOpenFile": "파일 위치 열기",
 >>>>>>> Stashed changes
@@ -263,7 +306,13 @@
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "throughSaveButton": "Save Through Line"
+=======
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
+>>>>>>> Stashed changes
 =======
     "throughSaveButton": "Save Through Line",
     "saveLineButton": "Save Line",
@@ -326,8 +375,11 @@
     "btnCancel": "Cancel",
     "btnConfirm": "OK",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "btnSave": "Save"
 =======
+=======
+>>>>>>> Stashed changes
     "btnSave": "Save",
     "audioRename": "이름 바꾸기",
     "audioRenamePlaceholder": "오디오 표시 이름",
@@ -337,6 +389,9 @@
     "audioDynamicName": "동적 오디오",
     "audioStartPlaceholder": "시발역 오디오",
     "audioTerminalPlaceholder": "종착역 오디오"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   },
   "colorPicker": {

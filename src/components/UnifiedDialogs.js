@@ -214,9 +214,12 @@ export default {
                   }">{{ title }}</div>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                   <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">
                     {{ type === 'alert' ? 'Alert' : type === 'confirm' ? 'Confirm' : type === 'prompt' ? 'Prompt' : type === 'shareCode' ? 'Share' : '' }}
                   </div>
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======

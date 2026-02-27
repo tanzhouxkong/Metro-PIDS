@@ -1,5 +1,9 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick, Teleport } from 'vue'
+=======
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport } from 'vue'
+>>>>>>> Stashed changes
 =======
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport } from 'vue'
 >>>>>>> Stashed changes
@@ -263,8 +267,13 @@ export default {
         if (window.electronAPI && window.electronAPI.switchLine) {
           const target = localStorage.getItem('throughOperationSelectorTarget');
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           console.log('[线路管理器] applySelectedLine 调用 switchLine, lineName:', line.name, 'target:', target);
           const result = await window.electronAPI.switchLine(line.name);
+=======
+          console.log('[线路管理器] applySelectedLine 调用 switchLine, lineName:', line.name, 'target:', target, 'folderPath:', folderPath);
+          const result = await window.electronAPI.switchLine(line.name, { folderPath });
+>>>>>>> Stashed changes
 =======
           console.log('[线路管理器] applySelectedLine 调用 switchLine, lineName:', line.name, 'target:', target, 'folderPath:', folderPath);
           const result = await window.electronAPI.switchLine(line.name, { folderPath });

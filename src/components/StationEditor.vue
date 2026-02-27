@@ -1,6 +1,10 @@
 <script>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import { reactive, ref, watch, computed, nextTick, Teleport, Transition } from 'vue'
+=======
+import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, onErrorCaptured, Teleport, Transition } from 'vue'
+>>>>>>> Stashed changes
 =======
 import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, onErrorCaptured, Teleport, Transition } from 'vue'
 >>>>>>> Stashed changes
@@ -22,7 +26,10 @@ export default {
   setup(props, { emit }) {
     const { t } = useI18n()
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     const defaultStationAudio = () => ({
       separateDirection: true,
       up: { list: [] },
@@ -42,6 +49,9 @@ export default {
       const e = Array.isArray(d.end) ? d.end : []
       return [...w, ...dep, ...arr, ...e].map((i) => ({ ...i }))
     }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     const form = reactive({
       name: '',
@@ -1168,7 +1178,10 @@ export default {
       closeXferNameEdit,
       confirmXferNameEdit,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
       showAudioNameEdit,
       audioNameEditValue,
       openAudioNameEdit,
@@ -1227,6 +1240,9 @@ export default {
       hasAudioSelection,
       getSelectedAudioItemsInOrder,
       applySelectedToAllStations,
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
       t
     }
@@ -1250,6 +1266,7 @@ export default {
               </div>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               <div class="se-titles">
                 <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
                 <div class="se-subtitle">{{ isNew ? t('stationEditor.subtitleNew') : t('stationEditor.subtitleEdit') }}</div>
@@ -1258,6 +1275,9 @@ export default {
 =======
 >>>>>>> Stashed changes
             <button class="se-close" @click="close" aria-label="关闭">
+=======
+            <button class="se-close" @click="close('header-close-btn')" aria-label="关闭">
+>>>>>>> Stashed changes
 =======
             <button class="se-close" @click="close('header-close-btn')" aria-label="关闭">
 >>>>>>> Stashed changes
@@ -1324,6 +1344,7 @@ export default {
             <div class="se-section" @contextmenu.prevent="openSectionMenu($event)">
               <div class="se-section-head">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <div class="se-section-title">{{ t('stationEditor.xferSectionTitle') }}</div>
                 <span class="se-section-hint">{{ t('stationEditor.xferSectionHint') }}</span>
               </div>
@@ -1385,6 +1406,45 @@ export default {
                   </div>
 >>>>>>> Stashed changes
                 </div>
+=======
+                <div class="se-section-toggle">
+                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'xfer' }" @click="setSectionMode('xfer')">{{ t('stationEditor.xferSectionTitle') }}</button>
+                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'audio' }" @click="setSectionMode('audio')">{{ t('stationEditor.audioSectionTitle') }}</button>
+                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'commonAudio' }" @click.stop="setSectionMode('commonAudio')">{{ t('stationEditor.audioCommonTitle') || '通用音频' }}</button>
+                </div>
+                <span class="se-section-hint">
+                  {{
+                    sectionMode === 'audio'
+                      ? t('stationEditor.audioSelectHint')
+                      : sectionMode === 'commonAudio'
+                        ? (t('stationEditor.audioCommonDesc') || '')
+                        : t('stationEditor.xferSectionHint')
+                  }}
+                </span>
+              </div>
+
+              <template v-if="sectionMode === 'xfer'">
+                <div v-if="form.xfer.length === 0" class="se-empty">{{ t('stationEditor.xferEmpty') }}</div>
+                <div v-else class="se-xfer-list">
+                  <div
+                    v-for="(xf, idx) in form.xfer"
+                    :key="idx"
+                    class="se-xfer-row"
+                    @contextmenu.prevent.stop="openRowMenu($event, idx)"
+                  >
+                    <span class="se-xfer-name">{{ xf.line || t('stationEditor.xferUnnamed') }}</span>
+                    <div v-if="xf.exitTransfer || xf.suspended" class="se-xfer-badges">
+                      <span v-if="xf.exitTransfer" class="se-xfer-badge exit">{{ t('stationEditor.xferExitBadge') }}</span>
+                      <span v-if="xf.suspended" class="se-xfer-badge suspended">{{ t('stationEditor.xferSuspendedBadge') }}</span>
+                    </div>
+                    <div
+                      class="se-xfer-swatch"
+                      :style="{ backgroundColor: xf.color || '#808080' }"
+                      :title="t('stationEditor.xferColorTitle')"
+                    ></div>
+                  </div>
+                </div>
+>>>>>>> Stashed changes
               </template>
 
               <template v-else-if="sectionMode === 'audio'">
@@ -1579,7 +1639,10 @@ export default {
                 <div class="station-context-menu-item danger" @click="runAndClose(() => removeXfer(menuContext.idx))">
                   <i class="fas fa-trash-alt"></i> {{ t('stationEditor.menuDelete') }}
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                 </div>
               </template>
               <template v-else-if="menuContext?.type === 'section' && menuContext?.audio">
@@ -1593,6 +1656,9 @@ export default {
                   "
                 >
                   <i class="fas fa-paste"></i> {{ t('stationEditor.audioPaste') || '粘贴音频到末尾' }}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 </div>
               </template>
@@ -1615,7 +1681,10 @@ export default {
                 <div class="station-context-menu-item" @click="runAndClose(addXfer)">
                   <i class="fas fa-plus"></i> {{ t('stationEditor.menuAddXfer') }}
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                 </div>
               </template>
               <template v-else-if="menuContext?.type === 'audioRow'">
@@ -1780,6 +1849,9 @@ export default {
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item danger" @click="runAndClose(() => removeCommonAudioItem(menuContext.dir, menuContext.idx))">
                   <i class="fas fa-trash-alt"></i> {{ t('stationEditor.audioDelete') }}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 </div>
               </template>
@@ -1803,7 +1875,10 @@ export default {
                     <button type="button" class="se-btn se-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
                     <button type="button" class="se-btn se-btn-green" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                   </div>
                 </div>
               </div>
@@ -1825,6 +1900,9 @@ export default {
                   <div class="se-name-edit-actions">
                     <button type="button" class="se-btn se-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
                     <button type="button" class="se-btn se-btn-green" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                   </div>
                 </div>
@@ -1834,8 +1912,13 @@ export default {
 
           <div class="se-footer">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             <button class="se-btn se-btn-gray" @click="close">{{ t('stationEditor.btnCancel') }}</button>
             <button class="se-btn se-btn-green" @click="save" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
+=======
+            <button class="se-btn se-btn-gray" @click="close('footer-cancel-btn')">{{ t('stationEditor.btnCancel') }}</button>
+            <button class="se-btn se-btn-green" @mousedown="armSaveClick" @click="save($event)" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
+>>>>>>> Stashed changes
 =======
             <button class="se-btn se-btn-gray" @click="close('footer-cancel-btn')">{{ t('stationEditor.btnCancel') }}</button>
             <button class="se-btn se-btn-green" @mousedown="armSaveClick" @click="save($event)" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>

@@ -12,12 +12,18 @@
     "languageLabel": "界面语言"
   },
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   "audio": {
     "title": "车辆音频",
     "enableVehicle": "启用车辆音频",
     "enableVehicleHint": "开启后，进站/出站以及“下一步”切换会播放车站音频；关闭后不播放。"
   },
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   "settings": {
     "appearance": "外观",
@@ -31,6 +37,7 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "显示端管理 (Display Management)",
 =======
 <<<<<<< HEAD
@@ -38,6 +45,9 @@
 =======
     "title": "显示端管理 (Display Management)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "显示端管理",
 >>>>>>> Stashed changes
 =======
     "title": "显示端管理",
@@ -58,6 +68,7 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "API 服务器 (API Server)",
 =======
 <<<<<<< HEAD
@@ -65,6 +76,9 @@
 =======
     "title": "API 服务器 (API Server)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "API 服务器",
 >>>>>>> Stashed changes
 =======
     "title": "API 服务器",
@@ -77,6 +91,7 @@
     "tip2": "默认使用 BroadcastChannel 通信，无需 HTTP 服务器。",
     "tip3": "提示：如果第三方显示器（特别是 Python 客户端）显示异常或无法连接，请尝试更改此开关状态并重启应用重试。"
   },
+<<<<<<< Updated upstream
   "keys": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
@@ -87,10 +102,36 @@
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
+=======
+  "multiScreen": {
+    "title": "多屏协同",
+    "entryTitle": "多屏协同入口",
+    "entryDesc1": "将下方入口地址发给远端浏览器/电视盒子即可接入多屏协同。",
+    "entryDesc2": "页面会自动连接 WebSocket，同步站点、到发车状态和控制命令。",
+    "copyAddress": "复制地址",
+    "showQr": "显示二维码",
+    "close": "关闭",
+    "localIp": "本机 IP",
+    "refreshIp": "刷新",
+    "wsPort": "WebSocket 端口",
+    "wsAddress": "连接地址：",
+    "tips1": "要正常同步，显示端网页需通过 http:// 或 https:// 打开。",
+    "tips2": "若端口被占用，客户端会自动切换到可用端口。",
+    "thirdPartyTemplate": "第三方显示模板：",
+    "qrDialogTitle": "多屏协同入口二维码",
+    "qrDialogSubtitle": "手机/浏览器扫码直达入口",
+    "copySuccessTitle": "复制成功",
+    "copySuccessMsg": "多屏协同入口地址已复制",
+    "copyFailTitle": "复制失败",
+    "copyFailMsg": "复制失败，请手动复制：\n{url}"
+  },
+  "keys": {
+>>>>>>> Stashed changes
     "title": "快捷键",
     "nextState": "进站/离站",
     "prevStation": "上一站",
     "nextStation": "下一站",
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
@@ -102,6 +143,8 @@
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -146,6 +189,7 @@
     "openManager": "打开管理器",
     "saveCurrentLine": "保存当前线路",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "resetData": "重置数据",
     "serviceMode": "运营模式",
     "currentMode": "当前模式",
@@ -153,18 +197,28 @@
     "singleLine": "单线 (Linear)",
 =======
 =======
+=======
+>>>>>>> Stashed changes
     "saveAsZip": "保存为压缩包",
     "resetData": "重置数据",
     "serviceMode": "运营模式",
     "currentMode": "当前模式",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "singleLine": "单线",
     "loopLine": "环线",
     "outerLoop": "外环 (逆时针)",
     "innerLoop": "内环 (顺时针)",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
     "dirLabel": "上行",
+=======
+    "dirLabel": "上行",
+    "dirLabelDown": "下行",
+>>>>>>> Stashed changes
 =======
     "dirLabel": "上行",
     "dirLabelDown": "下行",
@@ -221,8 +275,11 @@
     "autoplayEnable": "自动播放",
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "autoplayInterval": "启用间隔:"
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     "autoplayInterval": "启用间隔:",
@@ -272,6 +329,9 @@
           "recordingStageConcatStart": "正在拼接片段",
           "recordingOpenFolder": "打开文件夹"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -297,6 +357,10 @@
 
     "ctxFolderOpen": "打开文件夹",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "刷新",
+>>>>>>> Stashed changes
 =======
     "ctxRefresh": "刷新",
 >>>>>>> Stashed changes
@@ -305,6 +369,10 @@
     "ctxCopy": "复制",
     "ctxPaste": "粘贴",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "打开文件所在位置",
+>>>>>>> Stashed changes
 =======
     "ctxOpenFile": "打开文件所在位置",
 >>>>>>> Stashed changes
@@ -349,7 +417,13 @@
     "locate": "定位",
     "savingToPrefix": "当前将保存到：",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "throughSaveButton": "保存贯通线路"
+=======
+    "throughSaveButton": "保存贯通线路",
+    "saveLineButton": "保存当前线路",
+    "saveZipButton": "保存为压缩包"
+>>>>>>> Stashed changes
 =======
     "throughSaveButton": "保存贯通线路",
     "saveLineButton": "保存当前线路",
@@ -372,6 +446,7 @@
     "nameZhLabel": "中文站名",
     "nameZhPlaceholder": "例如: 人民广场",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "nameEnLabel": "英文站名 (English)",
     "nameEnPlaceholder": "e.g. People's Square",
 
@@ -381,6 +456,8 @@
 
     "doorLabel": "开门方向 (Door)",
 =======
+=======
+>>>>>>> Stashed changes
     "nameEnLabel": "英文站名",
     "nameEnPlaceholder": "e.g. People's Square",
 
@@ -389,13 +466,20 @@
     "statusSuspended": "暂缓开通",
 
     "doorLabel": "开门方向",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "doorLeft": "左侧",
     "doorRight": "右侧",
     "doorBoth": "双侧",
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "dockLabel": "停靠方向 (Dock)",
+=======
+    "dockLabel": "停靠方向",
+>>>>>>> Stashed changes
 =======
     "dockLabel": "停靠方向",
 >>>>>>> Stashed changes
@@ -404,7 +488,11 @@
     "dockBoth": "双向",
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "turnbackLabel": "折返位置 (Turnback)",
+=======
+    "turnbackLabel": "折返位置",
+>>>>>>> Stashed changes
 =======
     "turnbackLabel": "折返位置",
 >>>>>>> Stashed changes
@@ -418,9 +506,12 @@
 
     "xferSectionTitle": "换乘线路",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "xferSectionHint": "右键操作",
     "xferEmpty": "暂无换乘，右键可添加或粘贴",
 =======
+=======
+>>>>>>> Stashed changes
     "audioSectionTitle": "车站音频",
     "xferSectionHint": "右键操作",
     "xferEmpty": "暂无换乘，右键可添加或粘贴",
@@ -478,6 +569,9 @@
     "audioMarkStationAudio": "标记为本站音频",
     "audioTerminalUntag": "取消本站音频",
     "audioSelectHint": "支持 Ctrl 多选、Shift 连选",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "xferUnnamed": "未命名",
     "xferExitBadge": "出站换乘",
@@ -503,7 +597,10 @@
     "btnSave": "保存"
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   },
@@ -561,6 +658,9 @@
     "outer": "外环",
     "inner": "内环"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes

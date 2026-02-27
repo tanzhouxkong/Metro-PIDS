@@ -12,12 +12,18 @@
     "languageLabel": "表示言語"
   },
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   "audio": {
     "title": "車両オーディオ",
     "enableVehicle": "車両オーディオを有効にする",
     "enableVehicleHint": "オンの場合、到着/発車や「次のステップ」で駅オーディオを再生します。オフでは再生しません。"
   },
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   "settings": {
     "appearance": "外観",
@@ -45,6 +51,31 @@
     "tip2": "既定では BroadcastChannel 通信を使用し、HTTP サーバーは不要です。",
     "tip3": "ヒント：サードパーティ表示（特に Python クライアント）で不具合がある場合、スイッチを切り替えて再起動してください。"
   },
+<<<<<<< Updated upstream
+=======
+  "multiScreen": {
+    "title": "マルチスクリーン連携",
+    "entryTitle": "連携エントリーURL",
+    "entryDesc1": "下記URLをリモートブラウザ/TVボックスに共有すると連携に参加できます。",
+    "entryDesc2": "ページは WebSocket に自動接続し、駅情報・到発状態・制御コマンドを同期します。",
+    "copyAddress": "URLをコピー",
+    "showQr": "QRコード表示",
+    "close": "閉じる",
+    "localIp": "ローカルIP",
+    "refreshIp": "更新",
+    "wsPort": "WebSocket ポート",
+    "wsAddress": "接続先：",
+    "tips1": "同期のため、表示ページは http:// または https:// で開いてください。",
+    "tips2": "ポートが使用中の場合、クライアントは利用可能なポートへ自動で切り替えます。",
+    "thirdPartyTemplate": "サードパーティ表示テンプレート：",
+    "qrDialogTitle": "連携エントリーQRコード",
+    "qrDialogSubtitle": "スマホ/ブラウザで読み取り",
+    "copySuccessTitle": "コピー完了",
+    "copySuccessMsg": "連携エントリーURLをコピーしました",
+    "copyFailTitle": "コピー失敗",
+    "copyFailMsg": "コピーに失敗しました。手動でコピーしてください：\n{url}"
+  },
+>>>>>>> Stashed changes
   "keys": {
     "title": "ショートカットキー",
     "nextState": "次の状態",
@@ -97,6 +128,10 @@
     "innerLoop": "内回り (時計回り)",
     "dirLabel": "上り",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "dirLabelDown": "下り",
+>>>>>>> Stashed changes
 =======
     "dirLabelDown": "下り",
 >>>>>>> Stashed changes
@@ -216,6 +251,10 @@
     "rename": "Rename",
     "ctxFolderOpen": "Open Folder",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "再読み込み",
+>>>>>>> Stashed changes
 =======
     "ctxRefresh": "再読み込み",
 >>>>>>> Stashed changes
@@ -224,6 +263,10 @@
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "ファイルの場所を開く",
+>>>>>>> Stashed changes
 =======
     "ctxOpenFile": "ファイルの場所を開く",
 >>>>>>> Stashed changes
@@ -263,7 +306,13 @@
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "throughSaveButton": "Save Through Line"
+=======
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
+>>>>>>> Stashed changes
 =======
     "throughSaveButton": "Save Through Line",
     "saveLineButton": "Save Line",
@@ -326,8 +375,11 @@
     "btnCancel": "Cancel",
     "btnConfirm": "OK",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "btnSave": "Save"
 =======
+=======
+>>>>>>> Stashed changes
     "btnSave": "Save",
     "audioRename": "名前を変更",
     "audioRenamePlaceholder": "音声表示名",
@@ -338,6 +390,9 @@
     "audioDynamicName": "ダイナミックオーディオ",
     "audioStartPlaceholder": "始発駅オーディオ",
     "audioTerminalPlaceholder": "終着駅オーディオ"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   },
   "colorPicker": {

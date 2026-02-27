@@ -193,7 +193,11 @@
 =======
 {
   "name": "metro-pids",
+<<<<<<< Updated upstream
   "version": "1.6.1-b1",
+=======
+  "version": "1.6.5",
+>>>>>>> Stashed changes
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -219,6 +223,7 @@
     "build": "electron-vite build && electron-builder",
     "build:win": "electron-vite build && electron-builder --win",
     "build:win:publish": "electron-vite build && electron-builder --win --publish=always",
+    "publish:gh": "electron-vite build && electron-builder --win --publish=always",
     "build:sdk": "node ./scripts/build-display-sdk.js",
     "clean:vite:all": "node scripts/clean-vite-cache.js --clean-out"
   },
@@ -257,6 +262,8 @@
       "main.js",
       "preload.js",
       "package.json",
+      "examples/**/*",
+      "assets/**/*",
       "displays/**/*",
       "preset-lines/**/*",
       "!src/**/*",
@@ -277,7 +284,7 @@
     "asar": true,
     "asarUnpack": [
       "preset-lines/**/*",
-      "displays/**/*"
+      "node_modules/@ffmpeg-installer/**"
     ],
     "electronLanguages": [
       "zh-CN",
@@ -286,6 +293,10 @@
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico",
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
+      "sign": null,
       "publish": [
         {
           "provider": "github",
@@ -321,13 +332,21 @@
     }
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "archiver": "^7.0.1",
     "electron-log": "^5.4.3",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
+    "extract-zip": "^2.0.1",
     "mica-electron": "^1.5.9",
     "photoviewer": "^3.11.1",
     "vue": "^3.5.26",
+<<<<<<< Updated upstream
     "vue-i18n": "^9.14.5"
+=======
+    "vue-i18n": "^9.14.5",
+    "ws": "^8.19.0"
+>>>>>>> Stashed changes
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.0",

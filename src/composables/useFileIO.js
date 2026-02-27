@@ -547,6 +547,11 @@ export function useFileIO(state) {
                 console.log('[refreshLinesFromFolder] 无 appData 或 lineName，清空 currentFilePath');
             }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+
+            persistLinePathInfo(state);
+>>>>>>> Stashed changes
 =======
 
             persistLinePathInfo(state);

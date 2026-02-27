@@ -91,8 +91,36 @@ function isSkippedByService(st, idx, len, meta) {
   }
   return false;
 }
-const SCALER_W = 1900;
-const SCALER_H = 600;
+function getScalerBaseSizeFromQuery() {
+  try {
+    const sp = new URLSearchParams((window.location && window.location.search) ? window.location.search : '');
+    const isWsBrowserMode = ['1', 'true', 'yes', 'on'].includes(String(sp.get('ws') || '').toLowerCase())
+      && !(typeof window !== 'undefined' && window.electronAPI);
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+    const touchPoints = (typeof navigator !== 'undefined' && typeof navigator.maxTouchPoints === 'number') ? navigator.maxTouchPoints : 0;
+    const mobileLikeUA = /Android|iPhone|iPad|iPod|Mobile|Tablet|Windows Phone|HarmonyOS/i.test(ua);
+    const mobileLikeDevice = mobileLikeUA || touchPoints > 1;
+
+    if (isWsBrowserMode && mobileLikeDevice) {
+      const viewportWidthRaw = Number(window.innerWidth || document.documentElement?.clientWidth || screen?.width || 1280);
+      const viewportHeightRaw = Number(window.innerHeight || document.documentElement?.clientHeight || screen?.height || 720);
+      const viewportWidth = Number.isFinite(viewportWidthRaw) && viewportWidthRaw > 0 ? Math.round(viewportWidthRaw) : 1280;
+      const viewportHeight = Number.isFinite(viewportHeightRaw) && viewportHeightRaw > 0 ? Math.round(viewportHeightRaw) : 720;
+      return { width: viewportWidth, height: viewportHeight };
+    }
+
+    const widthRaw = Number(sp.get('dw') || sp.get('designWidth') || 1900);
+    const heightRaw = Number(sp.get('dh') || sp.get('designHeight') || 600);
+    const width = Number.isFinite(widthRaw) && widthRaw > 0 ? Math.round(widthRaw) : 1900;
+    const height = Number.isFinite(heightRaw) && heightRaw > 0 ? Math.round(heightRaw) : 600;
+    return { width, height };
+  } catch (e) {
+    return { width: 1900, height: 600 };
+  }
+}
+const DISPLAY_SCALE_BASE = getScalerBaseSizeFromQuery();
+const SCALER_W = DISPLAY_SCALE_BASE.width;
+const SCALER_H = DISPLAY_SCALE_BASE.height;
 const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot';
 
 // =========================
@@ -2057,8 +2085,14 @@ function applyLinearEnglishWrap(node) {
 
 // 直线模式：通过 JS 精确控制站名块相对圆点的垂直位置
 // 目标：中文和英文的第一个字都在同一高度，都在圆点下方
+<<<<<<< Updated upstream
 function applyLinearNamePositionForBox(box) {
   if (!box || !box.querySelectorAll) return;
+=======
+function applyLinearNamePositionForBox(box, options = {}) {
+  if (!box || !box.querySelectorAll) return;
+  const gap = Number.isFinite(options.gap) ? options.gap : 4;
+>>>>>>> Stashed changes
   // 用 rAF 确保节点已经完成布局，可以正确拿到尺寸
   requestAnimationFrame(() => {
     const nodes = box.querySelectorAll('.l-node');
@@ -2071,16 +2105,30 @@ function applyLinearNamePositionForBox(box) {
 
       const nodeRect = node.getBoundingClientRect();
       const dotRect = dot.getBoundingClientRect();
+<<<<<<< Updated upstream
 
       // 期望：中文和英文的第一个字都在圆点下方一个固定 gap（同一高度）
       const gap = 4; // px，越小越靠近圆点
       const desiredTopInNode = dotRect.bottom - nodeRect.top + gap;
+=======
+      const infoRect = infoBtm.getBoundingClientRect();
+
+      // 期望：中文和英文的第一个字都在圆点下方一个固定 gap（同一高度）
+      const desiredTopInNode = dotRect.bottom - nodeRect.top + gap;
+      const dotCenterXInNode = (dotRect.left - nodeRect.left) + (dotRect.width / 2);
+      const desiredLeftInNode = dotCenterXInNode - (infoRect.width / 2);
+>>>>>>> Stashed changes
 
       // 直接设置 infoBtm 的顶部位置，确保 name 和 en 的顶部都在同一高度
       // 因为 infoBtm 是 flex column，justify-content: flex-start，所以 name 和 en 都会从顶部开始
       infoBtm.style.top = `${desiredTopInNode}px`;
+<<<<<<< Updated upstream
       // 水平仍然以圆点中心为参考（不改变 X 方向）
       infoBtm.style.transform = 'translateX(-50%)';
+=======
+      infoBtm.style.left = `${desiredLeftInNode}px`;
+      infoBtm.style.transform = 'none';
+>>>>>>> Stashed changes
     });
   });
 }
@@ -2622,6 +2670,107 @@ export function initDisplayWindow(rootElement) {
   };
   
   const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('metro_pids_v3') : null;
+  const wsQuery = (() => {
+    try {
+      return new URLSearchParams((window.location && window.location.search) ? window.location.search : '');
+    } catch (e) {
+      return new URLSearchParams('');
+    }
+  })();
+  const wsEnabled = ['1', 'true', 'yes', 'on'].includes(String(wsQuery.get('ws') || '').toLowerCase());
+  const wsHost = (wsQuery.get('wsHost') || window.location.hostname || 'localhost').trim();
+  const wsPort = (wsQuery.get('wsPort') || '9400').trim();
+  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProto}//${wsHost}:${wsPort}`;
+  const isExternalBrowserRenderMode = wsEnabled && !(typeof window !== 'undefined' && window.electronAPI);
+  const getAdaptiveRenderMetrics = () => {
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || SCALER_W;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || SCALER_H;
+    if (isExternalBrowserRenderMode) {
+      const normalizedScale = 1.0;
+      return {
+        scaleFactor: normalizedScale,
+        screenWidth: Math.round(viewportWidth),
+        screenHeight: Math.round(viewportHeight),
+        physicalWidth: Math.round(viewportWidth * normalizedScale),
+        physicalHeight: Math.round(viewportHeight * normalizedScale)
+      };
+    }
+    const scaleFactor = window.devicePixelRatio || 1.0;
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
+    return {
+      scaleFactor,
+      screenWidth,
+      screenHeight,
+      physicalWidth: Math.round(screenWidth * scaleFactor),
+      physicalHeight: Math.round(screenHeight * scaleFactor)
+    };
+  };
+  let wsClient = null;
+  let wsReconnectTimer = null;
+  let wsManualClose = false;
+
+  const postRealtimeMessage = (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (bc) {
+      try { bc.postMessage(payload); } catch (e) {}
+    }
+    if (wsClient && wsClient.readyState === 1) {
+      try { wsClient.send(JSON.stringify(payload)); } catch (e) {}
+    }
+  };
+
+  const stopWsBridgeClient = () => {
+    wsManualClose = true;
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (wsClient) {
+      try { wsClient.close(); } catch (e) {}
+      wsClient = null;
+    }
+  };
+
+  const connectWsBridgeClient = () => {
+    if (!wsEnabled || !wsHost) return;
+    try {
+      wsClient = new WebSocket(wsUrl);
+    } catch (e) {
+      wsClient = null;
+      return;
+    }
+
+    wsClient.addEventListener('open', () => {
+      try { wsClient.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
+    });
+
+    wsClient.addEventListener('message', (event) => {
+      let msg = null;
+      try {
+        msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      } catch (e) {
+        msg = null;
+      }
+      if (!msg || !msg.t) return;
+      handleBroadcastMessage({ data: msg });
+    });
+
+    wsClient.addEventListener('close', () => {
+      wsClient = null;
+      if (wsManualClose) return;
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = setTimeout(connectWsBridgeClient, 1500);
+    });
+
+    wsClient.addEventListener('error', () => {
+      if (wsClient) {
+        try { wsClient.close(); } catch (e) {}
+      }
+    });
+  };
+
   let appData = null;
   let rt = { idx: 0, state: 0 };
   let arrivalTimer = null;
@@ -2642,6 +2791,8 @@ export function initDisplayWindow(rootElement) {
   const fitScreen = () => {
     const scaler = root.querySelector('#scaler');
     if (!scaler) return;
+    scaler.style.width = `${SCALER_W}px`;
+    scaler.style.height = `${SCALER_H}px`;
     
     // 使用多种方式获取窗口尺寸，确保准确性
     // 优先使用视口单位计算，因为它最准确反映实际可用空间
@@ -2649,11 +2800,11 @@ export function initDisplayWindow(rootElement) {
     const visualHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
     
     // 计算缩放比例
-    // 由于窗口逻辑尺寸固定为1900×600，visualWidth和visualHeight应该也是1900×600
-    // 使用Math.max确保内容能够覆盖整个窗口，消除黑边
+    // Electron 固定窗口场景维持 cover（Math.max）以消除黑边；
+    // 浏览器兼容场景使用 contain（Math.min）避免比例不一致时内容偏移/被裁切
     const scaleX = visualWidth / SCALER_W;
     const scaleY = visualHeight / SCALER_H;
-    const scale = Math.max(scaleX, scaleY);
+    const scale = isExternalBrowserRenderMode ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
     
     // 应用缩放，使用transform-origin确保从中心缩放
     scaler.style.transform = `scale(${scale})`;
@@ -2721,9 +2872,7 @@ export function initDisplayWindow(rootElement) {
     try {
       const normCode = normalizeKeyNameGlobal(e.code || e.key);
       const normKey = normalizeKeyNameGlobal(e.key || e.code || null);
-      if (bc) {
-        bc.postMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey });
-      }
+      postRealtimeMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey });
     } catch (err) {
       // 忽略异常
     }
@@ -3729,19 +3878,13 @@ export function initDisplayWindow(rootElement) {
     
     // 根据系统缩放比例和分辨率计算最大显示站点数
     // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%, 3.0 = 300%）
-    const scaleFactor = window.devicePixelRatio || 1.0;
+    const { scaleFactor, physicalWidth, physicalHeight } = getAdaptiveRenderMetrics();
     
     // 检测是否为4K或2K分辨率
     // 注意：在Electron中，window.screen.width/height 返回的是逻辑像素，需要考虑缩放
     // 使用 window.screen.width 和 window.screen.height 获取屏幕分辨率
     const screenWidth = window.screen.width;
     const screenHeight = window.screen.height;
-    
-    // 计算物理分辨率
-    // 在Electron中，window.screen.width返回的是逻辑像素（受缩放影响）
-    // 物理分辨率 = 逻辑像素 × devicePixelRatio
-    const physicalWidth = Math.round(screenWidth * scaleFactor);
-    const physicalHeight = Math.round(screenHeight * scaleFactor);
     
     // 4K分辨率判断：物理宽度3800-3900，高度2100-2200（覆盖3840×2160等4K分辨率）
     const is4KResolution = physicalWidth >= 3800 && physicalWidth <= 3900 && 
@@ -4249,23 +4392,25 @@ export function initDisplayWindow(rootElement) {
       mapPanel.replaceChildren(box);
       // 替换后立即同步完成站名定位并显示，避免闪烁（强制 reflow 后设置 left/top）
       void box.offsetHeight;
-      const gap = -8;
+      const arrivalNameGap = isExternalBrowserRenderMode ? -14 : -8;
       box.querySelectorAll('.l-node').forEach((node) => {
         const infoBtm = node.querySelector('.info-btm');
         const dot = node.querySelector('.dot');
         if (!infoBtm) return;
-        const anchor = node.offsetWidth / 2;
         const applyLeft = () => {
           if (!node.isConnected) return;
           void infoBtm.offsetHeight;
           const blockWidth = infoBtm.scrollWidth || infoBtm.offsetWidth || 0;
-          infoBtm.style.left = `${-blockWidth + anchor}px`;
+          const nodeRect = node.getBoundingClientRect();
+          const dotRect = dot && dot.isConnected ? dot.getBoundingClientRect() : null;
+          const dotCenterX = dotRect ? (dotRect.left - nodeRect.left) + (dotRect.width / 2) : (node.offsetWidth / 2);
+          infoBtm.style.left = `${dotCenterX - blockWidth}px`;
         };
         applyLeft();
         if (dot && dot.isConnected) {
           const nodeRect = node.getBoundingClientRect();
           const dotRect = dot.getBoundingClientRect();
-          infoBtm.style.top = `${dotRect.bottom - nodeRect.top + gap}px`;
+          infoBtm.style.top = `${dotRect.bottom - nodeRect.top + arrivalNameGap}px`;
         }
         infoBtm.style.opacity = '1';
         requestAnimationFrame(() => {
@@ -4348,23 +4493,25 @@ export function initDisplayWindow(rootElement) {
     });
     mapPanel.replaceChildren(box);
     void box.offsetHeight;
-    const gapVal = -8;
+    const arrivalNameGap = isExternalBrowserRenderMode ? -14 : -8;
     box.querySelectorAll('.l-node').forEach((node) => {
       const infoBtm = node.querySelector('.info-btm');
       const dot = node.querySelector('.dot');
       if (!infoBtm) return;
-      const anchor = node.offsetWidth / 2;
       const applyLeft = () => {
         if (!node.isConnected) return;
         void infoBtm.offsetHeight;
         const blockWidth = infoBtm.scrollWidth || infoBtm.offsetWidth || 0;
-        infoBtm.style.left = `${-blockWidth + anchor}px`;
+        const nodeRect = node.getBoundingClientRect();
+        const dotRect = dot && dot.isConnected ? dot.getBoundingClientRect() : null;
+        const dotCenterX = dotRect ? (dotRect.left - nodeRect.left) + (dotRect.width / 2) : (node.offsetWidth / 2);
+        infoBtm.style.left = `${dotCenterX - blockWidth}px`;
       };
       applyLeft();
       if (dot && dot.isConnected) {
         const nodeRect = node.getBoundingClientRect();
         const dotRect = dot.getBoundingClientRect();
-        infoBtm.style.top = `${dotRect.bottom - nodeRect.top + gapVal}px`;
+        infoBtm.style.top = `${dotRect.bottom - nodeRect.top + arrivalNameGap}px`;
       }
       infoBtm.style.opacity = '1';
       requestAnimationFrame(() => {
@@ -4514,7 +4661,7 @@ export function initDisplayWindow(rootElement) {
     
     // 根据系统缩放比例和分辨率计算最大位置数
     // 获取缩放因子（devicePixelRatio，例如 1.0 = 100%, 1.25 = 125%, 2.0 = 200%, 2.5 = 250%）
-    const scaleFactor = window.devicePixelRatio || 1.0;
+    const { scaleFactor, physicalWidth, physicalHeight } = getAdaptiveRenderMetrics();
     
     // 检测是否为4K或2K分辨率
     // 注意：window.screen.width 返回的是逻辑像素，需要考虑缩放
@@ -4522,8 +4669,6 @@ export function initDisplayWindow(rootElement) {
     // 物理分辨率 = 逻辑像素 × devicePixelRatio
     const screenWidth = window.screen.width;
     const screenHeight = window.screen.height;
-    const physicalWidth = Math.round(screenWidth * scaleFactor);
-    const physicalHeight = Math.round(screenHeight * scaleFactor);
     
     // 4K分辨率判断：物理宽度3800-3900，高度2100-2200（覆盖3840×2160等4K分辨率）
     const is4KResolution = physicalWidth >= 3800 && physicalWidth <= 3900 && 
@@ -5640,8 +5785,14 @@ export function initDisplayWindow(rootElement) {
       // 一次性插入所有节点，只触发一次重排
       box.appendChild(fragment);
 
+<<<<<<< Updated upstream
       // 节点插入后，根据圆点位置精确调整 info-btm 垂直位置（保证第一个字更贴近圆点）
       applyLinearNamePositionForBox(box);
+=======
+      // 节点插入后，根据圆点位置精确调整 info-btm 位置（外部浏览器与客户端分别微调）
+      const linearNameGap = isExternalBrowserRenderMode ? -2 : 4;
+      applyLinearNamePositionForBox(box, { gap: linearNameGap });
+>>>>>>> Stashed changes
       
       // 设置track容器宽度
       const trackWidth = boxWidth; // track宽度与box宽度一致
@@ -5809,8 +5960,14 @@ export function initDisplayWindow(rootElement) {
         }
         box.appendChild(node);
       });
+<<<<<<< Updated upstream
       // 节点插入后，根据圆点位置精确调整 info-btm 垂直位置（保证第一个字更贴近圆点）
       applyLinearNamePositionForBox(box);
+=======
+      // 节点插入后，根据圆点位置精确调整 info-btm 位置（外部浏览器与客户端分别微调）
+      const linearNameGap = isExternalBrowserRenderMode ? -2 : 4;
+      applyLinearNamePositionForBox(box, { gap: linearNameGap });
+>>>>>>> Stashed changes
     }
     c.appendChild(box);
     
@@ -6472,11 +6629,15 @@ export function initDisplayWindow(rootElement) {
       };
       // 添加 timeslice 参数（1000ms），定期触发 dataavailable，避免数据块过大导致内存问题或花屏
       recorder.start(1000);
+<<<<<<< Updated upstream
       if (bc) bc.postMessage({ t: 'REC_STARTED' });
+=======
+      postRealtimeMessage({ t: 'REC_STARTED' });
+>>>>>>> Stashed changes
     } catch (err) {
       console.error(err);
       alert('录制启动失败，请检查浏览器权限');
-      if (bc) bc.postMessage({ t: 'REC_STOP_ERR' });
+      postRealtimeMessage({ t: 'REC_STOP_ERR' });
     }
   };
 
@@ -6489,6 +6650,17 @@ export function initDisplayWindow(rootElement) {
     if (!data || !data.t) return;
     if (data.t === 'SYNC') {
       appData = data.d;
+      try {
+        if (appData && appData.meta && data.settings && data.settings.display) {
+          const pathnameForMerge = typeof window !== 'undefined' && window.location && window.location.pathname ? window.location.pathname : '';
+          const mergeVal = pathnameForMerge.includes('/display-3/')
+            ? data.settings.display.display3LineNameMerge
+            : data.settings.display.display1LineNameMerge;
+          if (mergeVal !== undefined) {
+            appData.meta.lineNameMerge = !!mergeVal;
+          }
+        }
+      } catch (e) {}
       // 自动检测并应用短交路逻辑（如果首末站是暂缓车站）
       if (appData) {
         autoApplyShortTurnIfNeeded(appData);
@@ -6543,6 +6715,17 @@ export function initDisplayWindow(rootElement) {
     const data = event.data;
     if (!data || data.t !== 'SYNC') return;
     appData = data.d;
+    try {
+      if (appData && appData.meta && data.settings && data.settings.display) {
+        const pathnameForMerge = typeof window !== 'undefined' && window.location && window.location.pathname ? window.location.pathname : '';
+        const mergeVal = pathnameForMerge.includes('/display-3/')
+          ? data.settings.display.display3LineNameMerge
+          : data.settings.display.display1LineNameMerge;
+        if (mergeVal !== undefined) {
+          appData.meta.lineNameMerge = !!mergeVal;
+        }
+      }
+    } catch (e) {}
     // 自动检测并应用短交路逻辑（如果首末站是暂缓车站）
     if (appData) {
       autoApplyShortTurnIfNeeded(appData);
@@ -6624,6 +6807,10 @@ export function initDisplayWindow(rootElement) {
   } else {
     restored = restoreSnapshot();
   }
+  if (wsEnabled) {
+    wsManualClose = false;
+    connectWsBridgeClient();
+  }
   if (typeof window !== 'undefined') {
     window.addEventListener('message', handleWindowMessage);
   }
@@ -6653,6 +6840,7 @@ export function initDisplayWindow(rootElement) {
     window.removeEventListener('resize', fitScreen);
     document.removeEventListener('keydown', handleKeyDown);
     if (bc) bc.removeEventListener('message', handleBroadcastMessage);
+    stopWsBridgeClient();
     if (typeof window !== 'undefined') {
       window.removeEventListener('message', handleWindowMessage);
     }

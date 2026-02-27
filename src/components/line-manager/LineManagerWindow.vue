@@ -1,7 +1,11 @@
 <script>
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick, Teleport, Transition } from 'vue'
+=======
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
+>>>>>>> Stashed changes
 =======
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
 >>>>>>> Stashed changes
@@ -212,7 +216,11 @@ export default {
     async function doSaveThroughLine(lineData, cleanLineName, folder, sourceLinePaths = null) {
       try {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         if (folder.id === 'default' || folder.name === t('lineManagerWindow.defaultFolder') || folder.id === CLOUD_FOLDER_ID) {
+=======
+        if (folder.id === CLOUD_FOLDER_ID) {
+>>>>>>> Stashed changes
 =======
         if (folder.id === CLOUD_FOLDER_ID) {
 >>>>>>> Stashed changes
@@ -224,8 +232,13 @@ export default {
 
         const safeName = (cleanLineName || t('lineManagerWindow.throughLine')).replace(/[<>:"/\\|?*]/g, '').trim()
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         const targetFileName = (safeName || 'through-line') + '.json'
         const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path)
+=======
+        const targetFileName = (safeName || 'through-line') + '.mpl'
+        const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path, sourceLinePaths)
+>>>>>>> Stashed changes
 =======
         const targetFileName = (safeName || 'through-line') + '.mpl'
         const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path, sourceLinePaths)
@@ -535,7 +548,10 @@ export default {
         // 非 Electron 环境：仅云控虚拟文件夹
         folders.value = [
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           { id: 'default', name: t('lineManagerWindow.defaultFolder'), path: '', isCurrent: true },
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
           { id: CLOUD_FOLDER_ID, name: t('lineManagerWindow.cloudLinesFolder'), path: null, isRuntime: true }
@@ -822,8 +838,13 @@ export default {
     async function deleteFolder(folderId, folderName, folderPath) {
       if (!window.__lineManagerDialog) return
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
       if (folderId === 'default') {
         await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotDeleteDefaultFolder'), '提示')
+=======
+      if (folderId === CLOUD_FOLDER_ID) {
+        await window.__lineManagerDialog.alert('云控线路文件夹不可删除。', '提示')
+>>>>>>> Stashed changes
 =======
       if (folderId === CLOUD_FOLDER_ID) {
         await window.__lineManagerDialog.alert('云控线路文件夹不可删除。', '提示')
@@ -1052,8 +1073,13 @@ export default {
         // 检查新文件名是否已存在
         const listRes = await window.electronAPI.lines.list(folderPath)
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         const existingNames = (listRes || []).map((it) => it.name.replace(/\.json$/, ''))
         const newNameTrimmed = newName.trim().replace(/\.json$/, '')
+=======
+        const existingNames = (listRes || []).map((it) => it.name.replace(/\.(json|mpl)$/i, ''))
+        const newNameTrimmed = newName.trim().replace(/\.(json|mpl)$/i, '')
+>>>>>>> Stashed changes
 =======
         const existingNames = (listRes || []).map((it) => it.name.replace(/\.(json|mpl)$/i, ''))
         const newNameTrimmed = newName.trim().replace(/\.(json|mpl)$/i, '')
@@ -1064,11 +1090,14 @@ export default {
         }
         
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         const newFileName = newNameTrimmed + '.json'
         
         // 保存为新文件名
         const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath)
 =======
+=======
+>>>>>>> Stashed changes
         // 保持原文件的扩展名（.json 或 .mpl）
         const oldExt = oldFileName.toLowerCase().endsWith('.mpl') ? '.mpl' : '.json'
         const newFileName = newNameTrimmed + oldExt
@@ -1077,6 +1106,9 @@ export default {
         const sep = folderPath && folderPath.includes('\\') ? '\\' : '/'
         const sourceLinePath = folderPath ? ((folderPath.endsWith(sep) ? folderPath : folderPath + sep) + oldFileName) : null
         const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath, sourceLinePath)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         if (!(saveRes && saveRes.ok)) {
           await window.__lineManagerDialog.alert(saveRes?.error || t('lineManager.saveNewFileError'), t('console.error'))
@@ -1750,8 +1782,15 @@ export default {
         const canCopyFolder = contextMenu.value.folderId && !isCloud
         return [
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
           { type: 'sep' },
+=======
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
+          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          { type: 'sep' },
+>>>>>>> Stashed changes
 =======
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
@@ -1774,7 +1813,11 @@ export default {
             disabled: !contextMenu.value.folderId || isCloud
           },
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           ...(canDelete && !isCloud && !isDefault
+=======
+          ...(canDelete && !isCloud
+>>>>>>> Stashed changes
 =======
           ...(canDelete && !isCloud
 >>>>>>> Stashed changes
@@ -1786,6 +1829,11 @@ export default {
         const canPaste = clipboard.value.folder || clipboard.value.type
         return [
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
+>>>>>>> Stashed changes
 =======
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
@@ -1806,6 +1854,7 @@ export default {
             action: 'createNewLine',
             disabled: isCloudFolderActive.value
           },
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
         ]
@@ -1853,6 +1902,67 @@ export default {
           disabled: isCloudFolderActive.value || isDefaultFolderActive.value
         }
       ]),
+=======
+          { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: isCloudFolderActive.value },
+          ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
+        ]
+      }),
+      lineMenuItems: computed(() => {
+        const selectedLine = lineContextMenu.value.line
+        const isRuntimeLine = !!selectedLine?.isRuntime
+        return [
+          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
+          { type: 'sep' },
+          {
+            label: t('lineManager.ctxNewLine'),
+            icon: 'fas fa-plus',
+            action: 'createNewLine',
+            disabled: isCloudFolderActive.value
+          },
+          { type: 'sep' },
+          { label: t('lineManager.ctxOpen'), icon: 'fas fa-folder-open', action: 'openLine' },
+          {
+            label: t('lineManager.ctxOpenFile'),
+            icon: 'fas fa-file-alt',
+            action: 'openFile',
+            disabled: isCloudFolderActive.value || isRuntimeLine
+          },
+          {
+            label: t('lineManager.ctxRename'),
+            icon: 'fas fa-edit',
+            action: 'renameLine',
+            disabled: isCloudFolderActive.value
+          },
+          { type: 'sep' },
+          {
+            label: t('lineManager.ctxCopy'),
+            icon: 'fas fa-copy',
+            action: 'copyLine',
+            disabled: false
+          },
+          {
+            label: t('lineManager.ctxCut'),
+            icon: 'fas fa-cut',
+            action: 'cutLine',
+            disabled: isCloudFolderActive.value
+          },
+          {
+            label: t('lineManager.ctxPaste'),
+            icon: 'fas fa-paste',
+            action: 'pasteLine',
+            disabled: isCloudFolderActive.value || !clipboard.value.type
+          },
+          { type: 'sep' },
+          {
+            label: t('lineManager.ctxDelete'),
+            icon: 'fas fa-trash',
+            action: 'deleteLine',
+            danger: true,
+            disabled: isCloudFolderActive.value
+          }
+        ]
+      }),
+>>>>>>> Stashed changes
 =======
           { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: isCloudFolderActive.value },
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
@@ -2122,20 +2232,30 @@ export default {
         <div v-if="isSavingThroughLine || isSavingLine" class="lmw-bottom-bar">
           <div class="lmw-bottom-bar-left">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             <span class="lmw-bottom-bar-muted">{{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}</span>
 =======
+=======
+>>>>>>> Stashed changes
             <span class="lmw-bottom-bar-muted">
               {{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}
               <template v-if="isSavingLine && pendingLineSaveData && pendingLineSaveData.lineName"> · {{ pendingLineSaveData.lineName }}</template>
               <template v-else-if="isSavingThroughLine && pendingThroughLineInfo && pendingThroughLineInfo.lineName"> · {{ pendingThroughLineInfo.lineName }}</template>
             </span>
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
           </div>
           <div class="lmw-bottom-bar-right">
             <button type="button" class="lmw-btn lmw-btn-through" @click="isSavingThroughLine ? handleSaveThroughLine() : handleSavePendingLine()">
               <i class="fas fa-save"></i>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               <span>{{ t('lineManager.throughSaveButton') }}</span>
+=======
+              <span>{{ bottomBarActionLabel }}</span>
+>>>>>>> Stashed changes
 =======
               <span>{{ bottomBarActionLabel }}</span>
 >>>>>>> Stashed changes

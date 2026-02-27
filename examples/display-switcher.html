@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>显示端切换面板</title>
   <style>
+<<<<<<< Updated upstream
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
     :root {
       --bg: radial-gradient(circle at 20% 20%, #0d1b2a, #0b1320 45%, #070d16);
@@ -19,11 +20,28 @@
       --card-gap: 14px;
       --radius: 14px;
       font-family: 'Space Grotesk', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+=======
+    :root {
+      --theme: #00b894;
+      --bg: #efeff4;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-border: #e5e5ea;
+      --text: #000000;
+      --muted: #8e8e93;
+      --danger: #ff6b6b;
+      --success: #2ecc71;
+      --surface: #ffffff;
+      --surface-2: #f7f7fa;
+      --card-gap: 14px;
+      --radius: 14px;
+      font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+>>>>>>> Stashed changes
       color: var(--text);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
+<<<<<<< Updated upstream
       min-height: 100vh;
       background: var(--bg);
       display: flex;
@@ -33,6 +51,49 @@
     }
     .wrap {
       width: min(1200px, 100%);
+=======
+      height: 100vh;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .app-shell {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .app-topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: rgba(255, 255, 255, 0.88);
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .app-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .app-subtitle {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .app-main {
+      flex: 1;
+      min-height: 0;
+    }
+    .content-area {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      overflow: auto;
+    }
+    .wrap {
+      width: 100%;
+>>>>>>> Stashed changes
       display: grid;
       grid-template-columns: 3fr 2fr;
       gap: 18px;
@@ -42,6 +103,7 @@
       border: 1px solid var(--panel-border);
       border-radius: var(--radius);
       padding: 18px;
+<<<<<<< Updated upstream
       box-shadow: 0 12px 50px rgba(0,0,0,0.35);
       backdrop-filter: blur(10px);
     }
@@ -49,6 +111,15 @@
       margin: 0 0 12px;
       letter-spacing: 0.02em;
       font-size: 26px;
+=======
+      box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+    }
+    h1 {
+      margin: 0 0 12px;
+      letter-spacing: 0;
+      font-size: 26px;
+      font-weight: 700;
+>>>>>>> Stashed changes
     }
     .subtitle { color: var(--muted); margin-bottom: 14px; }
     .conn-row { display: grid; grid-template-columns: 1.2fr 0.7fr auto; gap: 10px; align-items: center; margin-bottom: 12px; }
@@ -57,42 +128,77 @@
       width: 100%;
       padding: 10px 12px;
       border-radius: 10px;
+<<<<<<< Updated upstream
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(255,255,255,0.05);
       color: var(--text);
     }
     input:focus { outline: 1px solid var(--accent); }
+=======
+      border: 1px solid var(--panel-border);
+      background: var(--surface);
+      color: var(--text);
+    }
+    input:focus { outline: 1px solid var(--theme); }
+>>>>>>> Stashed changes
     button {
       cursor: pointer;
       border: none;
       padding: 10px 14px;
       border-radius: 10px;
       font-weight: 700;
+<<<<<<< Updated upstream
       letter-spacing: 0.01em;
       color: #041018;
       background: linear-gradient(120deg, var(--accent), var(--accent-2));
       box-shadow: 0 10px 30px rgba(73, 214, 255, 0.35);
     }
     button.secondary { background: rgba(255,255,255,0.08); color: var(--text); box-shadow: none; border: 1px solid rgba(255,255,255,0.15); }
+=======
+      letter-spacing: 0;
+      color: #fff;
+      background: var(--theme);
+      box-shadow: 0 3px 10px rgba(0, 184, 148, 0.25);
+    }
+    button.secondary {
+      background: #e5e5ea;
+      color: #000;
+      box-shadow: none;
+      border: 1px solid #d9d9df;
+    }
+>>>>>>> Stashed changes
     .status {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       padding: 8px 12px;
       border-radius: 999px;
+<<<<<<< Updated upstream
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.12);
       font-size: 13px;
     }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 6px rgba(255,255,255,0.04); }
+=======
+      background: var(--surface);
+      border: 1px solid var(--panel-border);
+      font-size: 13px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 6px rgba(0,0,0,0.04); }
+>>>>>>> Stashed changes
     .dot.ok { background: var(--success); }
     .dot.bad { background: var(--danger); }
     .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--card-gap); }
     .card {
       border-radius: var(--radius);
       padding: 14px;
+<<<<<<< Updated upstream
       border: 1px solid rgba(255,255,255,0.08);
       background: linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+=======
+      border: 1px solid var(--panel-border);
+      background: var(--surface);
+>>>>>>> Stashed changes
       position: relative;
       overflow: hidden;
     }
@@ -104,23 +210,41 @@
       gap: 6px;
       padding: 6px 10px;
       border-radius: 999px;
+<<<<<<< Updated upstream
       background: rgba(255,255,255,0.08);
       border: 1px solid rgba(255,255,255,0.12);
       font-size: 12px;
       color: var(--muted);
     }
     .pill.active { color: var(--text); border-color: rgba(73,214,255,0.5); background: rgba(73,214,255,0.08); }
+=======
+      background: var(--surface-2);
+      border: 1px solid var(--panel-border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pill.active { color: var(--theme); border-color: rgba(0,184,148,0.35); background: rgba(0,184,148,0.08); }
+>>>>>>> Stashed changes
     .card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
     .log {
       height: 300px;
       overflow: auto;
       border-radius: 12px;
+<<<<<<< Updated upstream
       border: 1px solid rgba(255,255,255,0.08);
       background: rgba(0,0,0,0.35);
       padding: 12px;
       font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
       font-size: 12px;
       color: var(--muted);
+=======
+      border: 1px solid var(--panel-border);
+      background: var(--surface);
+      padding: 12px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+      font-size: 12px;
+      color: #333;
+>>>>>>> Stashed changes
       line-height: 1.5;
     }
     .tip { font-size: 12px; color: var(--muted); margin-top: 6px; }
@@ -131,10 +255,25 @@
   </style>
 </head>
 <body>
+<<<<<<< Updated upstream
   <div class="wrap">
     <section class="panel">
       <h1>显示端切换面板</h1>
       <div class="subtitle">通过局域网 WebSocket Bridge (默认端口 9400) 切换显示端，页面保持不跳转。</div>
+=======
+  <div class="app-shell">
+    <header class="app-topbar">
+      <div class="app-title">Metro PIDS 控制台</div>
+      <div class="app-subtitle">多屏协同 / 显示端切换</div>
+    </header>
+
+    <div class="app-main">
+      <main class="content-area">
+        <div class="wrap">
+          <section class="panel">
+      <h1>多屏协同入口</h1>
+      <div class="subtitle">默认自动跳转到已启用显示器页面。</div>
+>>>>>>> Stashed changes
       <div class="conn-row">
         <div>
           <label for="host">桥接地址</label>
@@ -153,6 +292,7 @@
         <span class="dot" id="dot"></span>
         <span id="status-text">未连接</span>
       </div>
+<<<<<<< Updated upstream
       <div class="tip">提示：确保在主控机设置中开启“WebSocket Bridge”，并确认端口未被占用。</div>
       <div style="margin-top:16px;">
         <div class="cards" id="cards"></div>
@@ -164,6 +304,22 @@
       <div class="log" id="log"></div>
       <div class="tip">收到 DISPLAY_SWITCHED / ACK 会在此显示，方便确认切换是否成功。</div>
     </section>
+=======
+      <div class="tip">提示：确保在主控机设置中开启“多屏协同”，并确认端口未被占用。</div>
+      <div style="margin-top:16px;">
+        <div class="cards" id="cards"></div>
+      </div>
+          </section>
+
+          <section class="panel">
+      <h1>事件</h1>
+      <div class="log" id="log"></div>
+      <div class="tip">收到 DISPLAY_SWITCHED / ACK 会在此显示，方便确认切换是否成功。</div>
+          </section>
+        </div>
+      </main>
+    </div>
+>>>>>>> Stashed changes
   </div>
 
   <script>
@@ -187,6 +343,221 @@
       lastAck: null
     };
 
+<<<<<<< Updated upstream
+=======
+    function normalizePathToHttpUrl(raw) {
+      const path = String(raw || '').trim();
+      if (!path) return '';
+      if (/^https?:\/\//i.test(path)) return path;
+      if (/^[a-zA-Z]:\\/.test(path) || /^\\\\/.test(path)) return '';
+      let cleaned = path.replace(/\\/g, '/');
+      cleaned = cleaned.replace(/^\.\//, '');
+      if (!cleaned.startsWith('/')) cleaned = '/' + cleaned;
+      return cleaned;
+    }
+
+    function appendDisplayParams(url, display) {
+      if (!url || !display) return url;
+      try {
+        const resolved = new URL(url, window.location.origin);
+        const host = (els.host.value || window.location.hostname || 'localhost').trim();
+        const port = (els.port.value || '9400').trim();
+        const dw = Number(display.width);
+        const dh = Number(display.height);
+        resolved.searchParams.set('displayId', String(display.id || 'display-1'));
+        if (Number.isFinite(dw) && dw > 0) resolved.searchParams.set('dw', String(Math.round(dw)));
+        if (Number.isFinite(dh) && dh > 0) resolved.searchParams.set('dh', String(Math.round(dh)));
+        resolved.searchParams.set('ws', '1');
+        resolved.searchParams.set('wsHost', host);
+        resolved.searchParams.set('wsPort', port);
+        return resolved.href;
+      } catch (_) {
+        return url;
+      }
+    }
+
+    function resolveDisplayTargetUrl(display) {
+      if (!display || !display.id) return '';
+      const source = String(display.source || 'builtin');
+      const customUrl = String(display.url || '').trim();
+      if ((source === 'online' || source === 'custom' || source === 'gitee') && customUrl) {
+        return appendDisplayParams(customUrl, display);
+      }
+      if (source === 'builtin') {
+        const safeId = encodeURIComponent(String(display.id || '').trim());
+        if (!safeId) return '';
+        return appendDisplayParams(`/displays/${safeId}/display_window.html`, display);
+      }
+      if (customUrl) {
+        return appendDisplayParams(normalizePathToHttpUrl(customUrl), display);
+      }
+      return '';
+    }
+
+    function getCurrentDisplayIdFromLocalSettings() {
+      try {
+        const raw = localStorage.getItem('pids_settings_v1');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.display?.currentDisplayId || null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function probeCurrentDisplayIdViaWs(timeoutMs = 1200) {
+      return new Promise((resolve) => {
+        let settled = false;
+        const done = (id) => {
+          if (settled) return;
+          settled = true;
+          resolve(id || null);
+        };
+
+        const url = resolveWsUrl();
+        let ws = null;
+        const timer = setTimeout(() => {
+          try { if (ws) ws.close(); } catch (_) {}
+          done(null);
+        }, timeoutMs);
+
+        try {
+          ws = new WebSocket(url);
+        } catch (_) {
+          clearTimeout(timer);
+          done(null);
+          return;
+        }
+
+        ws.addEventListener('open', () => {
+          const displayIdFromQuery = new URLSearchParams(window.location.search).get('displayId') || '';
+          const clientVersion = new URLSearchParams(window.location.search).get('clientVersion')
+            || window.METRO_PIDS_CLIENT_VERSION
+            || window.__APP_VERSION__
+            || window.__APP_VERSION
+            || 'web-client';
+          const systemName = (navigator.userAgentData && navigator.userAgentData.platform)
+            ? String(navigator.userAgentData.platform)
+            : (navigator.platform || navigator.userAgent || 'unknown');
+          try {
+            ws.send(JSON.stringify({
+              t: 'HELLO',
+              clientVersion: String(clientVersion),
+              system: systemName,
+              displayId: displayIdFromQuery
+            }));
+          } catch (_) {}
+          try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (_) {}
+        });
+
+        ws.addEventListener('message', (event) => {
+          let msg = null;
+          try {
+            msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          } catch (_) {
+            msg = null;
+          }
+          if (!msg) return;
+          let id = null;
+          if (msg.t === 'SYNC') {
+            id = msg.currentDisplayId
+              || (msg.r && msg.r.currentDisplayId)
+              || (msg.settings && msg.settings.display && msg.settings.display.currentDisplayId)
+              || null;
+          }
+          if (msg.t === 'DISPLAY_SWITCHED' && msg.displayId) id = msg.displayId;
+          if (msg.t === 'SWITCH_DISPLAY_ACK' && msg.ok && msg.displayId) id = msg.displayId;
+          if (id) {
+            clearTimeout(timer);
+            try { ws.close(); } catch (_) {}
+            done(id);
+          }
+        });
+
+        ws.addEventListener('close', () => {
+          clearTimeout(timer);
+          done(null);
+        });
+        ws.addEventListener('error', () => {
+          clearTimeout(timer);
+          done(null);
+        });
+      });
+    }
+
+    async function autoRedirectIfNeeded() {
+      let displays = [];
+      let configCurrentId = null;
+      try {
+        const res = await fetch('../displays/config.json');
+        const json = await res.json();
+        displays = Object.values(json.displays || {});
+        configCurrentId = json?.displayDefaults?.currentDisplayId || null;
+      } catch (e) {
+        logLine('读取显示器配置失败，进入面板模式: ' + e.message);
+        return false;
+      }
+
+      if (!displays.length) {
+        logLine('显示器列表为空，进入面板模式');
+        return false;
+      }
+
+      const displayById = new Map(displays.map(d => [d.id, d]));
+      const enabledDisplays = displays.filter(d => d && d.enabled !== false);
+      if (!enabledDisplays.length) {
+        logLine('没有启用的显示器，进入面板模式');
+        return false;
+      }
+
+      const idFromQuery = new URLSearchParams(window.location.search).get('displayId');
+      let targetDisplay = null;
+
+      const wsCurrentId = await probeCurrentDisplayIdViaWs(1800);
+      if (wsCurrentId && displayById.get(wsCurrentId) && displayById.get(wsCurrentId).enabled !== false) {
+        targetDisplay = displayById.get(wsCurrentId);
+      }
+
+      // 防误跳：若没有显式 displayId 且 WS 也拿不到当前显示端，则停留在面板页
+      // 避免回退到 config 默认值（通常是 display-1）导致总是跳错
+      if (!targetDisplay && !idFromQuery) {
+        logLine('未获取到实时当前显示端ID，停止自动跳转，进入面板模式');
+        return false;
+      }
+
+      if (!targetDisplay && idFromQuery && displayById.get(idFromQuery) && displayById.get(idFromQuery).enabled !== false) {
+        targetDisplay = displayById.get(idFromQuery);
+      }
+
+      if (!targetDisplay || targetDisplay.enabled === false) {
+        const localCurrentId = getCurrentDisplayIdFromLocalSettings();
+        if (localCurrentId && displayById.get(localCurrentId) && displayById.get(localCurrentId).enabled !== false) {
+          targetDisplay = displayById.get(localCurrentId);
+        }
+      }
+
+      if (!targetDisplay) {
+        if (configCurrentId && displayById.get(configCurrentId) && displayById.get(configCurrentId).enabled !== false) {
+          targetDisplay = displayById.get(configCurrentId);
+        }
+      }
+
+      if (!targetDisplay) {
+        targetDisplay = enabledDisplays[0];
+      }
+
+      const targetUrl = resolveDisplayTargetUrl(targetDisplay);
+      if (!targetUrl) {
+        logLine('目标显示器 URL 不可用，进入面板模式');
+        return false;
+      }
+
+      logLine(`自动跳转到 ${targetDisplay.name || targetDisplay.id}: ${targetUrl}`);
+      window.location.replace(targetUrl);
+      return true;
+    }
+
+>>>>>>> Stashed changes
     function logLine(text) {
       const time = new Date().toLocaleTimeString();
       els.log.innerText = `[${time}] ${text}\n` + els.log.innerText;
@@ -283,9 +654,21 @@
           }
           return;
         }
+<<<<<<< Updated upstream
         if (msg.t === 'SYNC' && msg.r && msg.r.currentDisplayId) {
           state.currentDisplayId = msg.r.currentDisplayId;
           renderCards();
+=======
+        if (msg.t === 'SYNC') {
+          const syncDisplayId = msg.currentDisplayId
+            || (msg.r && msg.r.currentDisplayId)
+            || (msg.settings && msg.settings.display && msg.settings.display.currentDisplayId)
+            || null;
+          if (syncDisplayId) {
+            state.currentDisplayId = syncDisplayId;
+            renderCards();
+          }
+>>>>>>> Stashed changes
           return;
         }
       });
@@ -328,7 +711,15 @@
 
     // 初始化默认主机
     els.host.value = window.location.hostname || '';
+<<<<<<< Updated upstream
     loadDisplays();
+=======
+    autoRedirectIfNeeded().then((redirected) => {
+      if (!redirected) {
+        loadDisplays();
+      }
+    });
+>>>>>>> Stashed changes
   </script>
 </body>
 </html>

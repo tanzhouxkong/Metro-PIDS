@@ -10,7 +10,12 @@ import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
+=======
+import { DEFAULT_SETTINGS } from '../utils/defaults.js'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
+>>>>>>> Stashed changes
 =======
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
@@ -32,8 +37,11 @@ export default {
     const fileIO = useFileIO(pidsState)
     const { settings, saveSettings } = useSettings()
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     const { t } = useI18n()
 =======
+=======
+>>>>>>> Stashed changes
     const { playArrive, playDepart } = useStationAudio(pidsState)
     const { t } = useI18n()
 
@@ -70,6 +78,9 @@ export default {
     if (typeof pidsState.store.cur !== 'number') {
         pidsState.store.cur = 0
     }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
@@ -1551,7 +1562,10 @@ export default {
                     if (progress.isRecording === false) {
                         // 主进程已停止（可能是完成、用户停止或异常），本地立刻退出录制态并清理计时器
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                         try {
                             if (typeof window !== 'undefined') {
                                 window.__disableStationAudioDuringRecording = false;
@@ -1559,6 +1573,9 @@ export default {
                                 window.__recordingAudioStartAt = 0;
                             }
                         } catch (e) {}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                         recordingState.value.isRecording = false;
                         recordingState.value.progress = 0;
@@ -1639,7 +1656,10 @@ export default {
     // 组件卸载时清理录制监听
     onBeforeUnmount(() => {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
         try {
             if (typeof window !== 'undefined') {
                 window.__disableStationAudioDuringRecording = false;
@@ -1647,12 +1667,19 @@ export default {
                 window.__recordingAudioStartAt = 0;
             }
         } catch (e) {}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         if (recordingProgressUnsubscribe) {
             recordingProgressUnsubscribe();
             recordingProgressUnsubscribe = null;
         }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+        stopLineManagerSaveWatcher();
+>>>>>>> Stashed changes
 =======
         stopLineManagerSaveWatcher();
 >>>>>>> Stashed changes
@@ -1794,7 +1821,10 @@ export default {
     }
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     let lineManagerSaveWatcher = null;
 
     const stopLineManagerSaveWatcher = () => {
@@ -1940,6 +1970,9 @@ export default {
         startLineManagerSaveWatcher(requestId, payload, mode);
     }
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     // ========== 视频录制相关 ==========
     const recordingState = ref({
@@ -2160,7 +2193,10 @@ export default {
             recordingState.value.mode = enableParallel ? 'parallel' : 'single';
             recordingState.value.isRecording = true;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
             const vehicleAudioEnabled = settings.vehicleAudioEnabled !== false;
             try {
                 if (typeof window !== 'undefined') {
@@ -2172,6 +2208,9 @@ export default {
             if (!vehicleAudioEnabled) {
                 try { if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') await window.__stopStationAudio(); } catch (e) {}
             }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             const options = {
                 encoder: recordingState.value.encoder,
@@ -2180,7 +2219,12 @@ export default {
                 bitrate: safeBitrate,     // Mbps
                 fps: recordingState.value.fps,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 intervalSec: safeInterval
+=======
+                intervalSec: safeInterval,
+                vehicleAudioEnabled: vehicleAudioEnabled
+>>>>>>> Stashed changes
 =======
                 intervalSec: safeInterval,
                 vehicleAudioEnabled: vehicleAudioEnabled
@@ -2254,7 +2298,11 @@ export default {
 
                         if (recordingState.value.nextIn <= 0) {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                             try { await controllerNext(); } catch (e) {}
+=======
+                            try { await controllerNextWithAudio(); } catch (e) {}
+>>>>>>> Stashed changes
 =======
                             try { await controllerNextWithAudio(); } catch (e) {}
 >>>>>>> Stashed changes
@@ -2269,7 +2317,10 @@ export default {
             } else {
                 recordingState.value.isRecording = false;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                 try {
                     if (typeof window !== 'undefined') {
                         window.__disableStationAudioDuringRecording = false;
@@ -2277,13 +2328,19 @@ export default {
                         window.__recordingAudioStartAt = 0;
                     }
                 } catch (e) {}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 await showMsg(result?.error || t('console.recordingError'));
             }
         } catch (e) {
             recordingState.value.isRecording = false;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
             try {
                 if (typeof window !== 'undefined') {
                     window.__disableStationAudioDuringRecording = false;
@@ -2291,6 +2348,9 @@ export default {
                     window.__recordingAudioStartAt = 0;
                 }
             } catch (e2) {}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             console.error('开始录制失败:', e);
             await showMsg(t('console.recordingError') + ': ' + String(e));
@@ -2309,7 +2369,10 @@ export default {
             if (result && result.ok) {
                 recordingState.value.isRecording = false;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                 try {
                     if (typeof window !== 'undefined') {
                         window.__disableStationAudioDuringRecording = false;
@@ -2317,6 +2380,9 @@ export default {
                         window.__recordingAudioStartAt = 0;
                     }
                 } catch (e) {}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 recordingState.value.progress = 0;
                 recordingState.value.nextIn = 0;
@@ -2334,7 +2400,10 @@ export default {
         }
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
         try {
             if (typeof window !== 'undefined') {
                 window.__disableStationAudioDuringRecording = false;
@@ -2343,6 +2412,9 @@ export default {
             }
         } catch (e) {}
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
         recordingStepTimer = null;
@@ -2441,8 +2513,11 @@ export default {
         clearMicaLogs,
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         t
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
         t,
@@ -2460,6 +2535,9 @@ export default {
         openRecordingFolder,
         loadAvailableEncoders
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -2493,11 +2571,16 @@ export default {
                   <i class="fas fa-folder-open" style="font-size:18px;"></i> {{ t('console.openManager') }}
               </button>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
                   <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
               </button>
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
                   <i class="fas fa-trash-alt" style="font-size:18px;"></i> {{ t('console.resetData') }}
+=======
+              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
+                  <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
+>>>>>>> Stashed changes
 =======
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
                   <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
@@ -2539,6 +2622,7 @@ export default {
                     ></div>
                 </div>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <option value="loop">{{ t('console.loopLine') }}</option>
                     <option value="linear">{{ t('console.singleLine') }}</option>
@@ -2555,6 +2639,82 @@ export default {
                     <option value="down">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</option>
                 </template>
             </select>
+=======
+                <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1; align-items:center;">
+                    <button class="btn" :style="{
+                        height:'44px',
+                        padding:'10px 18px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.mode==='loop' ? '#10b981' : 'var(--input-bg)',
+                        color: pidsState.appData.meta.mode==='loop' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.mode==='loop' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
+                        fontWeight:'800',
+                        minWidth:'110px'
+                    }" @click="pidsState.appData.meta.mode='loop'; saveCfg()">{{ t('console.loopLine') }}</button>
+                    <button class="btn" :style="{
+                        height:'44px',
+                        padding:'10px 18px',
+                        borderRadius:'10px',
+                        border:'1px solid var(--divider)',
+                        background: pidsState.appData.meta.mode==='linear' ? '#1e90ff' : 'var(--input-bg)',
+                        color: pidsState.appData.meta.mode==='linear' ? '#fff' : 'var(--text)',
+                        boxShadow: pidsState.appData.meta.mode==='linear' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
+                        fontWeight:'800',
+                        minWidth:'110px'
+                    }" @click="pidsState.appData.meta.mode='linear'; saveCfg()">{{ t('console.singleLine') }}</button>
+
+                    <template v-if="pidsState.appData.meta.mode === 'loop'">
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='outer' ? '#5F27CD' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='outer' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='outer' ? '0 6px 14px rgba(95,39,205,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'120px'
+                        }" @click="pidsState.appData.meta.dirType='outer'; saveCfg()">{{ t('console.outerLoop') }}</button>
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='inner' ? '#ffa502' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='inner' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='inner' ? '0 6px 14px rgba(255,165,2,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'120px'
+                        }" @click="pidsState.appData.meta.dirType='inner'; saveCfg()">{{ t('console.innerLoop') }}</button>
+                    </template>
+                    <template v-else>
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='up' ? '#1e90ff' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='up' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='up' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'180px'
+                        }" @click="pidsState.appData.meta.dirType='up'; saveCfg()">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</button>
+                        <button class="btn" :style="{
+                            height:'44px',
+                            padding:'10px 18px',
+                            borderRadius:'10px',
+                            border:'1px solid var(--divider)',
+                            background: pidsState.appData.meta.dirType==='down' ? '#10b981' : 'var(--input-bg)',
+                            color: pidsState.appData.meta.dirType==='down' ? '#fff' : 'var(--text)',
+                            boxShadow: pidsState.appData.meta.dirType==='down' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
+                            fontWeight:'800',
+                            minWidth:'180px'
+                        }" @click="pidsState.appData.meta.dirType='down'; saveCfg()">{{ t('console.dirLabelDown') || t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</button>
+                    </template>
+                </div>
+            </div>
+>>>>>>> Stashed changes
 =======
                 <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1; align-items:center;">
                     <button class="btn" :style="{
@@ -2678,6 +2838,7 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
@@ -2708,6 +2869,33 @@ export default {
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+=======
+
+            <div
+                v-if="pidsState.appData?.meta?.autoShortTurn"
+                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
+            >
+                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
+                    <i class="fas fa-magic" style="margin-right:6px;"></i>
+                    已启用自动短交路
+                </div>
+                <div style="color:var(--muted);">
+                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button
+                        class="btn"
+                        @click="unlockAutoShortTurn()"
+                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
+                    >
+                        转为手动设置
+                    </button>
+                </div>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
+                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
+>>>>>>> Stashed changes
 =======
 
             <div
@@ -2769,6 +2957,7 @@ export default {
                 >
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
             
             <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
@@ -2776,6 +2965,8 @@ export default {
 >>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2790,8 +2981,11 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2803,10 +2997,13 @@ export default {
                 >
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
                 <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2820,10 +3017,13 @@ export default {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -2842,10 +3042,13 @@ export default {
                 >{{ t('console.shortTurnApply') }}</button>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -3074,6 +3277,7 @@ export default {
               <div style="font-size:13px; color:var(--muted); font-weight:bold;">{{ t('console.recordingParallelTitle') }}</div>
               <div style="display:flex; align-items:center; gap:10px;">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <label style="position:relative; display:inline-block; width:52px; height:28px;">
                   <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
                   <span style="position: absolute; cursor: pointer; inset: 0px; background-color: rgb(204, 204, 204); transition: 0.4s; border-radius: 24px;"
@@ -3084,6 +3288,8 @@ export default {
                       backgroundColor:'white', transition:'0.4s', borderRadius:'50%',
                       transform: recordingState.parallelEnabled ? 'translateX(24px)' : 'translateX(0)'
 =======
+=======
+>>>>>>> Stashed changes
                 <label style="position:relative; display:inline-block; width:44px; height:24px;">
                   <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
                   <span style="position: absolute; cursor: pointer; inset: 0px; background-color: #ccc; transition: background-color 0.3s, box-shadow 0.2s; border-radius: 24px;"
@@ -3099,6 +3305,9 @@ export default {
                       backgroundColor:'white', transition:'transform 0.3s', borderRadius:'50%',
                       boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
                       transform: recordingState.parallelEnabled ? 'translateX(20px)' : 'translateX(0)'
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                     }"></span>
                 </label>

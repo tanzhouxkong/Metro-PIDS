@@ -53,6 +53,15 @@ function loadSafe() {
     }
     if (state.store.cur < 0 || state.store.cur >= state.store.list.length) state.store.cur = 0;
     state.appData = state.store.list[state.store.cur];
+<<<<<<< Updated upstream
+=======
+    if (state.store && state.store.rt && typeof state.store.rt === 'object') {
+        const savedRt = state.store.rt;
+        const idx = Number.isInteger(savedRt.idx) ? savedRt.idx : 0;
+        const curState = Number.isInteger(savedRt.state) ? savedRt.state : 0;
+        state.rt = { ...state.rt, ...savedRt, idx, state: curState };
+    }
+>>>>>>> Stashed changes
 
     // 恢复文件路径映射，确保启动时能解析音频路径
     if (typeof localStorage !== 'undefined') {

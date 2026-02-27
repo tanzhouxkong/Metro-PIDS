@@ -109,10 +109,13 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const os = require('os');
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 let ffmpegPath = null;
 try {
   ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 =======
+=======
+>>>>>>> Stashed changes
 let WebSocketServer = null;
 try {
   WebSocketServer = require('ws').WebSocketServer;
@@ -127,6 +130,9 @@ try {
   if (ffmpegPath && ffmpegPath.includes('app.asar')) {
     ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
   }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 } catch (e) {
   console.warn('[main] FFmpeg未安装，录制功能将不可用:', e);
@@ -286,15 +292,228 @@ let mainWin = null;
 let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
 let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 const ENABLE_BACKGROUND_RENDER = process.env.METRO_PIDS_BACKGROUND_RENDER === '1';
 const WINDOW_BACKGROUND_THROTTLING = !ENABLE_BACKGROUND_RENDER;
 
 // WebSocket 局域网同步（用于跨设备的显示端/第三方显示器）
 let wsServer = null;
 const wsClients = new Set();
+<<<<<<< Updated upstream
 let wsSyncTimer = null;
 let lastWsSyncKey = null;
+=======
+const wsClientMeta = new Map();
+let wsSyncTimer = null;
+let lastWsSyncKey = null;
+let wsActivePort = null;
+let multiScreenHttpServer = null;
+let multiScreenHttpPort = null;
+
+function getStaticMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return 'text/html; charset=utf-8';
+  if (ext === '.js' || ext === '.mjs') return 'application/javascript; charset=utf-8';
+  if (ext === '.css') return 'text/css; charset=utf-8';
+  if (ext === '.json') return 'application/json; charset=utf-8';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.ico') return 'image/x-icon';
+  if (ext === '.woff') return 'font/woff';
+  if (ext === '.woff2') return 'font/woff2';
+  if (ext === '.ttf') return 'font/ttf';
+  return 'application/octet-stream';
+}
+
+function resolveStaticRootDir() {
+  const appPath = app.getAppPath();
+  if (appPath && fs.existsSync(path.join(appPath, 'examples', 'display-switcher.html'))) {
+    return appPath;
+  }
+  const cwdPath = process.cwd();
+  if (cwdPath && fs.existsSync(path.join(cwdPath, 'examples', 'display-switcher.html'))) {
+    return cwdPath;
+  }
+  return appPath || cwdPath;
+}
+
+function startMultiScreenHttpServer(portOverride) {
+  stopMultiScreenHttpServer();
+
+  const http = require('http');
+  const rootDir = resolveStaticRootDir();
+  const basePort = normalizeWsPort(portOverride || process.env.PIDS_MULTI_HTTP_PORT || '5173', 5173);
+  const maxAttempts = 20;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidatePort = basePort + i;
+    if (candidatePort > 65535) break;
+
+    try {
+      const server = http.createServer((req, res) => {
+        try {
+          const reqUrl = new URL(req.url || '/', 'http://127.0.0.1');
+          let pathname = decodeURIComponent(reqUrl.pathname || '/');
+          if (pathname === '/') pathname = '/examples/display-switcher.html';
+          if (pathname === '/favicon.ico') {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          const safeRelativePath = pathname.replace(/^\/+/, '');
+          const filePath = path.resolve(rootDir, safeRelativePath);
+          const normalizedRoot = path.resolve(rootDir) + path.sep;
+          if (!(filePath + path.sep).startsWith(normalizedRoot) && filePath !== path.resolve(rootDir)) {
+            res.statusCode = 403;
+            res.end('Forbidden');
+            return;
+          }
+
+          if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+            res.statusCode = 404;
+            res.end('Not Found');
+            return;
+          }
+
+          res.setHeader('Content-Type', getStaticMimeType(filePath));
+          res.setHeader('Cache-Control', 'no-cache');
+          fs.createReadStream(filePath).pipe(res);
+        } catch (e) {
+          res.statusCode = 500;
+          res.end('Internal Server Error');
+        }
+      });
+
+      server.listen(candidatePort, () => {
+        multiScreenHttpServer = server;
+        multiScreenHttpPort = candidatePort;
+        console.log(`[MultiScreen] 本地入口页面服务已启动: http://127.0.0.1:${candidatePort}/examples/display-switcher.html`);
+      });
+
+      server.on('error', (e) => {
+        console.warn('[MultiScreen] 静态服务异常:', e && e.message);
+      });
+
+      return true;
+    } catch (e) {
+      const code = e && e.code;
+      const msg = String((e && e.message) || '');
+      const isInUse = code === 'EADDRINUSE' || msg.includes('EADDRINUSE') || msg.toLowerCase().includes('address already in use');
+      if (!isInUse) {
+        console.warn(`[MultiScreen] 启动静态服务失败 (端口 ${candidatePort}):`, e && e.message);
+        return false;
+      }
+    }
+  }
+
+  console.warn(`[MultiScreen] 无法启动入口页面服务：端口 ${basePort}-${Math.min(basePort + maxAttempts - 1, 65535)} 均不可用`);
+  return false;
+}
+
+function stopMultiScreenHttpServer() {
+  if (multiScreenHttpServer) {
+    try {
+      multiScreenHttpServer.close();
+    } catch (e) {}
+  }
+  multiScreenHttpServer = null;
+  multiScreenHttpPort = null;
+}
+
+function normalizeWsRemoteIp(raw) {
+  if (!raw) return '';
+  const text = String(raw);
+  if (text.startsWith('::ffff:')) return text.slice(7);
+  if (text === '::1') return '127.0.0.1';
+  return text;
+}
+
+function ensureWsClientMeta(socket, req) {
+  if (!socket) return null;
+  const existing = wsClientMeta.get(socket);
+  if (existing) return existing;
+  const meta = {
+    connectedAt: Date.now(),
+    lastSeenAt: Date.now(),
+    ip: normalizeWsRemoteIp(req && req.socket && req.socket.remoteAddress),
+    clientId: (crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : `client-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+    latencyMs: null,
+    displayId: '',
+    clientVersion: '',
+    system: ''
+  };
+  wsClientMeta.set(socket, meta);
+  return meta;
+}
+
+function updateWsClientMeta(socket, patch = {}) {
+  const meta = wsClientMeta.get(socket);
+  if (!meta) return;
+  Object.assign(meta, patch, { lastSeenAt: Date.now() });
+}
+
+function getWsConnectedDevicesSnapshot() {
+  const displayNameMap = {
+    'display-1': '显示器1',
+    'display-2': '显示器2',
+    'display-3': '显示器3'
+  };
+  const devices = [];
+  for (const socket of wsClients) {
+    const meta = wsClientMeta.get(socket);
+    if (!meta) continue;
+    const displayName = meta.displayId ? (displayNameMap[meta.displayId] || String(meta.displayId)) : '';
+    devices.push({
+      ip: meta.ip || '',
+      clientId: meta.clientId || '',
+      latencyMs: Number.isFinite(meta.latencyMs) ? Number(meta.latencyMs) : null,
+      displayId: meta.displayId || '',
+      displayName,
+      clientVersion: meta.clientVersion || '',
+      system: meta.system || '',
+      connectedAt: meta.connectedAt,
+      lastSeenAt: meta.lastSeenAt
+    });
+  }
+  return devices;
+}
+
+function normalizeWsPort(value, fallback = 9400) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 65535) return fallback;
+  return n;
+}
+
+function persistWsPortSetting(port) {
+  try {
+    if (!store) return;
+    const currentSettings = store.get('settings', {}) || {};
+    if (Number(currentSettings.wsPort) === Number(port)) return;
+    store.set('settings', { ...currentSettings, wsPort: Number(port) });
+  } catch (e) {
+    console.warn('[WS] 持久化 wsPort 失败:', e && e.message);
+  }
+}
+
+function notifyWsPortAutoSwitched(fromPort, toPort) {
+  try {
+    if (!mainWin || mainWin.isDestroyed() || !mainWin.webContents) return;
+    mainWin.webContents.send('ws/port-auto-switched', {
+      from: Number(fromPort),
+      to: Number(toPort)
+    });
+  } catch (e) {
+    console.warn('[WS] 通知渲染进程端口变更失败:', e && e.message);
+  }
+}
+>>>>>>> Stashed changes
 
 async function switchDisplay(displayId, width, height, options = {}) {
   const source = options.reason || 'ipc';
@@ -651,8 +870,15 @@ async function fetchAppDataSnapshot() {
           const raw = localStorage.getItem('pids_global_store_v1');
           if (!raw) return null;
           const store = JSON.parse(raw);
+<<<<<<< Updated upstream
           if (!store || !store.list || !store.cur) return null;
           return store.list[store.cur] || null;
+=======
+          if (!store || !Array.isArray(store.list)) return null;
+          const cur = Number(store.cur);
+          if (!Number.isInteger(cur) || cur < 0 || cur >= store.list.length) return null;
+          return store.list[cur] || null;
+>>>>>>> Stashed changes
         } catch(e) {
           return null;
         }
@@ -688,6 +914,50 @@ async function fetchRtStateSnapshot() {
   }
 }
 
+<<<<<<< Updated upstream
+=======
+async function fetchDisplaySyncSettingsSnapshot() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  try {
+    const result = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          const raw = localStorage.getItem('pids_settings_v1');
+          if (!raw) return null;
+          const settings = JSON.parse(raw);
+          if (!settings || !settings.display) return null;
+          const d = settings.display || {};
+          const displays = d.displays || {};
+          return {
+            display: {
+              currentDisplayId: d.currentDisplayId || null,
+              display2NextStationDuration: d.display2NextStationDuration || 10000,
+              display2FooterLED: d.display2FooterLED || '',
+              display2FooterWatermark: d.display2FooterWatermark !== false,
+              display1LayoutMode: (displays['display-1'] && displays['display-1'].layoutMode) || 'linear',
+              display3LayoutMode: (displays['display-3'] && displays['display-3'].layoutMode) || 'c-type',
+              display1WallpaperDataUrl: (displays['display-1'] && displays['display-1'].wallpaperDataUrl) || '',
+              display1WallpaperOpacity: (displays['display-1'] && Number.isFinite(displays['display-1'].wallpaperOpacity))
+                ? displays['display-1'].wallpaperOpacity
+                : 0.35,
+              display3DepartDuration: d.display3DepartDuration || 8000,
+              display1LineNameMerge: !!(displays['display-1'] && displays['display-1'].lineNameMerge),
+              display3LineNameMerge: !!(displays['display-3'] && displays['display-3'].lineNameMerge)
+            }
+          };
+        } catch(e) {
+          return null;
+        }
+      })();
+    `);
+    return result;
+  } catch (e) {
+    console.warn('[DisplayAPI] 获取显示设置失败:', e);
+    return null;
+  }
+}
+
+>>>>>>> Stashed changes
 function broadcastToDisplayWindows(payload) {
   const channelName = 'metro_pids_v3';
   const payloadStr = JSON.stringify(payload);
@@ -775,11 +1045,20 @@ function broadcastToAllChannels(payload, options = {}) {
 async function sendSyncToWsClient(client) {
   if (!client || client.readyState !== 1) return;
   try {
+<<<<<<< Updated upstream
     const [appData, rtState] = await Promise.all([
       fetchAppDataSnapshot(),
       fetchRtStateSnapshot()
     ]);
     client.send(JSON.stringify({ t: 'SYNC', d: appData, r: rtState || null }));
+=======
+    const [appData, rtState, syncSettings] = await Promise.all([
+      fetchAppDataSnapshot(),
+      fetchRtStateSnapshot(),
+      fetchDisplaySyncSettingsSnapshot()
+    ]);
+    client.send(JSON.stringify({ t: 'SYNC', d: appData, r: rtState || null, settings: syncSettings || undefined }));
+>>>>>>> Stashed changes
   } catch (e) {
     console.warn('[WS] 发送 SYNC 失败:', e && e.message);
   }
@@ -788,11 +1067,20 @@ async function sendSyncToWsClient(client) {
 async function maybePushStateToWsClients(force = false) {
   if (!wsServer || wsClients.size === 0) return;
   try {
+<<<<<<< Updated upstream
     const [appData, rtState] = await Promise.all([
       fetchAppDataSnapshot(),
       fetchRtStateSnapshot()
     ]);
     const payload = { t: 'SYNC', d: appData, r: rtState || null };
+=======
+    const [appData, rtState, syncSettings] = await Promise.all([
+      fetchAppDataSnapshot(),
+      fetchRtStateSnapshot(),
+      fetchDisplaySyncSettingsSnapshot()
+    ]);
+    const payload = { t: 'SYNC', d: appData, r: rtState || null, settings: syncSettings || undefined };
+>>>>>>> Stashed changes
     const key = JSON.stringify(payload);
     if (!force && key === lastWsSyncKey) return;
     lastWsSyncKey = key;
@@ -810,6 +1098,7 @@ function startWebSocketBridge(portOverride) {
 
   stopWebSocketBridge();
 
+<<<<<<< Updated upstream
   const port = parseInt(portOverride || process.env.PIDS_WS_PORT || process.env.METRO_PIDS_WS_PORT || '9400', 10);
   try {
     wsServer = new WebSocketServer({ port });
@@ -821,6 +1110,47 @@ function startWebSocketBridge(portOverride) {
 
   wsServer.on('connection', (socket, req) => {
     wsClients.add(socket);
+=======
+  const basePort = normalizeWsPort(portOverride || process.env.PIDS_WS_PORT || process.env.METRO_PIDS_WS_PORT || '9400', 9400);
+  const maxAttempts = 20;
+  let selectedPort = null;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidatePort = basePort + i;
+    if (candidatePort > 65535) break;
+    try {
+      wsServer = new WebSocketServer({ port: candidatePort });
+      selectedPort = candidatePort;
+      break;
+    } catch (e) {
+      const code = e && e.code;
+      const msg = String((e && e.message) || '');
+      const isInUse = code === 'EADDRINUSE' || msg.includes('EADDRINUSE') || msg.toLowerCase().includes('address already in use');
+      if (!isInUse) {
+        console.warn(`[WS] 无法启动 WebSocket Bridge (端口 ${candidatePort}):`, e && e.message);
+        wsServer = null;
+        wsActivePort = null;
+        return false;
+      }
+      if (i < maxAttempts - 1) {
+        console.warn(`[WS] 端口 ${candidatePort} 被占用，尝试下一个端口...`);
+      }
+    }
+  }
+
+  if (!wsServer || !selectedPort) {
+    console.warn(`[WS] 无法启动 WebSocket Bridge：端口 ${basePort}-${Math.min(basePort + maxAttempts - 1, 65535)} 均不可用`);
+    wsServer = null;
+    wsActivePort = null;
+    return false;
+  }
+
+  let wsBridgeReady = false;
+
+  wsServer.on('connection', (socket, req) => {
+    wsClients.add(socket);
+    const clientMeta = ensureWsClientMeta(socket, req);
+>>>>>>> Stashed changes
     console.log('[WS] 客户端已连接:', req && req.socket && req.socket.remoteAddress);
     sendSyncToWsClient(socket);
 
@@ -835,10 +1165,66 @@ function startWebSocketBridge(portOverride) {
       if (!msg || typeof msg !== 'object') return;
 
       if (msg.t === 'PING') {
+<<<<<<< Updated upstream
+=======
+        const latencyMs = (typeof msg.ts === 'number' && Number.isFinite(msg.ts)) ? Number((Date.now() - msg.ts).toFixed(2)) : null;
+        const pingPatch = {};
+        if (latencyMs != null) pingPatch.latencyMs = latencyMs;
+        if (msg.displayId && typeof msg.displayId === 'string') pingPatch.displayId = String(msg.displayId).trim();
+        if (msg.clientVersion && typeof msg.clientVersion === 'string') pingPatch.clientVersion = String(msg.clientVersion).trim();
+        if (msg.system && typeof msg.system === 'string') pingPatch.system = String(msg.system).trim();
+        if (Object.keys(pingPatch).length > 0) {
+          updateWsClientMeta(socket, pingPatch);
+        }
+>>>>>>> Stashed changes
         try { socket.send(JSON.stringify({ t: 'PONG', ts: Date.now() })); } catch (e) {}
         return;
       }
 
+<<<<<<< Updated upstream
+=======
+      if (msg.clientId && typeof msg.clientId === 'string') {
+        updateWsClientMeta(socket, { clientId: String(msg.clientId).trim() || clientMeta.clientId });
+      }
+      if (msg.displayId && typeof msg.displayId === 'string') {
+        updateWsClientMeta(socket, { displayId: String(msg.displayId) });
+      }
+      if (typeof msg.latencyMs === 'number' && Number.isFinite(msg.latencyMs)) {
+        updateWsClientMeta(socket, { latencyMs: Number(msg.latencyMs) });
+      }
+      if (msg.clientVersion && typeof msg.clientVersion === 'string') {
+        updateWsClientMeta(socket, { clientVersion: String(msg.clientVersion).trim() });
+      }
+      if (msg.version && typeof msg.version === 'string') {
+        updateWsClientMeta(socket, { clientVersion: String(msg.version).trim() });
+      }
+      if (msg.appVersion && typeof msg.appVersion === 'string') {
+        updateWsClientMeta(socket, { clientVersion: String(msg.appVersion).trim() });
+      }
+      if (msg.system && typeof msg.system === 'string') {
+        updateWsClientMeta(socket, { system: String(msg.system).trim() });
+      }
+      if (msg.platform && typeof msg.platform === 'string') {
+        updateWsClientMeta(socket, { system: String(msg.platform).trim() });
+      }
+      if (msg.os && typeof msg.os === 'string') {
+        updateWsClientMeta(socket, { system: String(msg.os).trim() });
+      }
+      if (msg.t === 'HELLO' && msg.meta && typeof msg.meta === 'object') {
+        const metaPatch = {};
+        if (msg.meta.clientId && typeof msg.meta.clientId === 'string') metaPatch.clientId = String(msg.meta.clientId).trim();
+        if (msg.meta.displayId && typeof msg.meta.displayId === 'string') metaPatch.displayId = String(msg.meta.displayId).trim();
+        if (msg.meta.clientVersion && typeof msg.meta.clientVersion === 'string') metaPatch.clientVersion = String(msg.meta.clientVersion).trim();
+        if (msg.meta.version && typeof msg.meta.version === 'string') metaPatch.clientVersion = String(msg.meta.version).trim();
+        if (msg.meta.system && typeof msg.meta.system === 'string') metaPatch.system = String(msg.meta.system).trim();
+        if (msg.meta.platform && typeof msg.meta.platform === 'string') metaPatch.system = String(msg.meta.platform).trim();
+        if (msg.meta.os && typeof msg.meta.os === 'string') metaPatch.system = String(msg.meta.os).trim();
+        if (Object.keys(metaPatch).length > 0) {
+          updateWsClientMeta(socket, metaPatch);
+        }
+      }
+
+>>>>>>> Stashed changes
       if (msg.t === 'REQ') {
         await sendSyncToWsClient(socket);
         return;
@@ -846,6 +1232,10 @@ function startWebSocketBridge(portOverride) {
 
       if (msg.t === 'SWITCH_DISPLAY' && msg.displayId) {
         const targetId = String(msg.displayId);
+<<<<<<< Updated upstream
+=======
+        updateWsClientMeta(socket, { displayId: targetId });
+>>>>>>> Stashed changes
         const ok = await switchDisplay(targetId, msg.width, msg.height, { reason: 'ws' });
         try {
           socket.send(JSON.stringify({ t: 'SWITCH_DISPLAY_ACK', ok: !!ok, displayId: targetId }));
@@ -868,6 +1258,7 @@ function startWebSocketBridge(portOverride) {
 
     socket.on('close', () => {
       wsClients.delete(socket);
+<<<<<<< Updated upstream
     });
     socket.on('error', () => {
       wsClients.delete(socket);
@@ -875,6 +1266,52 @@ function startWebSocketBridge(portOverride) {
   });
 
   wsServer.on('error', (e) => {
+=======
+      wsClientMeta.delete(socket);
+    });
+    socket.on('error', () => {
+      wsClients.delete(socket);
+      wsClientMeta.delete(socket);
+    });
+  });
+
+  wsServer.on('listening', () => {
+    if (wsBridgeReady) return;
+    wsBridgeReady = true;
+    wsActivePort = selectedPort;
+    if (selectedPort !== basePort) {
+      console.warn(`[WS] 检测到端口占用，已自动切换 WebSocket 端口: ${basePort} -> ${selectedPort}`);
+      persistWsPortSetting(selectedPort);
+      notifyWsPortAutoSwitched(basePort, selectedPort);
+    }
+    console.log(`[WS] WebSocket Bridge 已启动，端口: ${selectedPort}`);
+  });
+
+  wsServer.on('error', (e) => {
+    const msg = String((e && e.message) || '');
+    const code = e && e.code;
+    const isInUse = code === 'EADDRINUSE' || msg.includes('EADDRINUSE') || msg.toLowerCase().includes('address already in use');
+
+    if (!wsBridgeReady && isInUse) {
+      const nextPort = selectedPort + 1;
+      const maxPort = Math.min(basePort + maxAttempts - 1, 65535);
+      if (nextPort <= maxPort) {
+        console.warn(`[WS] 端口 ${selectedPort} 启动阶段被占用（异步错误），改为尝试端口 ${nextPort}...`);
+        setTimeout(() => {
+          try {
+            startWebSocketBridge(nextPort);
+          } catch (err) {
+            console.warn('[WS] 自动切换重试失败:', err && err.message);
+          }
+        }, 0);
+        return;
+      }
+      console.warn(`[WS] 无法启动 WebSocket Bridge：端口 ${basePort}-${maxPort} 均不可用`);
+      stopWebSocketBridge();
+      return;
+    }
+
+>>>>>>> Stashed changes
     console.warn('[WS] WebSocket 服务器错误:', e && e.message);
   });
 
@@ -883,7 +1320,10 @@ function startWebSocketBridge(portOverride) {
     maybePushStateToWsClients();
   }, 1200);
 
+<<<<<<< Updated upstream
   console.log(`[WS] WebSocket Bridge 已启动，端口: ${port}`);
+=======
+>>>>>>> Stashed changes
   return true;
 }
 
@@ -896,7 +1336,15 @@ function stopWebSocketBridge() {
     try { wsServer.close(); } catch (e) {}
     wsServer = null;
   }
+<<<<<<< Updated upstream
   wsClients.clear();
+  lastWsSyncKey = null;
+}
+>>>>>>> Stashed changes
+=======
+  wsActivePort = null;
+  wsClients.clear();
+  wsClientMeta.clear();
   lastWsSyncKey = null;
 }
 >>>>>>> Stashed changes
@@ -907,6 +1355,12 @@ let recordingState = {
   displayId: null,
   options: null,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+  outputPath: null,
+  audioMixEnabled: false,
+  audioEvents: [],
+>>>>>>> Stashed changes
 =======
   outputPath: null,
   audioMixEnabled: false,
@@ -944,7 +1398,10 @@ let recordingEncoders = {
   gpu: []
 };
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 
 function normalizeRecordingAudioEvent(payload) {
   if (!payload || typeof payload !== 'object') return null;
@@ -1036,6 +1493,9 @@ async function muxStationAudioTimelineToVideo({ inputVideoPath, audioEvents }) {
   return { ok: true, outputPath: inputVideoPath, mixed: true };
 }
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 let lineManagerWin = null;
 let devWin = null;
@@ -2017,6 +2477,27 @@ function createWindow() {
     }
   });
 
+<<<<<<< Updated upstream
+=======
+  ipcMain.handle('network/ws-clients', async () => {
+    try {
+      const clients = getWsConnectedDevicesSnapshot();
+      return { ok: true, clients };
+    } catch (e) {
+      console.warn('[main] 获取 WS 客户端列表失败:', e);
+      return { ok: false, error: String(e.message || e), clients: [] };
+    }
+  });
+
+  ipcMain.handle('network/multi-screen-port', async () => {
+    try {
+      return { ok: true, port: Number(multiScreenHttpPort) || 5173 };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e), port: 5173 };
+    }
+  });
+
+>>>>>>> Stashed changes
   // 暴露 IPC 供渲染层打开线路管理器
   ipcMain.handle('open-line-manager', (event, target) => {
     // target 可能是 'lineA' 或 'lineB'，用于贯通线路设置
@@ -2447,6 +2928,12 @@ function createWindow() {
       recordingState.displayId = displayId;
       recordingState.options = safeOptions;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+      recordingState.outputPath = outputPath;
+      recordingState.audioMixEnabled = safeOptions.vehicleAudioEnabled !== false;
+      recordingState.audioEvents = [];
+>>>>>>> Stashed changes
 =======
       recordingState.outputPath = outputPath;
       recordingState.audioMixEnabled = safeOptions.vehicleAudioEnabled !== false;
@@ -2512,6 +2999,10 @@ function createWindow() {
       let captureErrorCount = 0;
       let lastStderrLine = '';
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+      let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
+>>>>>>> Stashed changes
 =======
       let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
 >>>>>>> Stashed changes
@@ -2532,6 +3023,7 @@ function createWindow() {
       recordingState.captureTimer = setInterval(async () => {
         if (!recordingState.isRecording || !offscreenWin || offscreenWin.isDestroyed()) return;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         try {
           const image = await offscreenWin.webContents.capturePage();
           const bitmap = image.toBitmap();
@@ -2539,6 +3031,8 @@ function createWindow() {
             ffmpegProcess.stdin.write(bitmap);
             framesWritten += 1;
 =======
+=======
+>>>>>>> Stashed changes
         
         // 帧同步：如果前一个 capturePage 还在进行中，跳过本次帧，避免帧堆积导致花屏
         if (isCapturing) {
@@ -2564,6 +3058,9 @@ function createWindow() {
             ffmpegProcess.stdin.write(bitmap);
             framesWritten += 1;
             captureErrorCount = 0; // 成功时重置错误计数
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             if (firstFrameWatchdog) {
               clearTimeout(firstFrameWatchdog);
@@ -2573,13 +3070,19 @@ function createWindow() {
             stopRecording({ error: 'FFmpeg 输入流已关闭，无法写入视频帧' });
           }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
           
           // 记录抓帧耗时，如果过长则警告
           const captureDuration = Date.now() - captureStartTime;
           if (captureDuration > frameInterval) {
             console.warn(`[main] 抓帧耗时 ${captureDuration}ms，超过帧间隔 ${frameInterval}ms`);
           }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         } catch (e) {
           console.error('[main] 抓帧失败:', e);
@@ -2589,6 +3092,11 @@ function createWindow() {
             stopRecording({ error: `抓帧失败（已连续 ${captureErrorCount} 次）：${String(e)}` });
           }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+        } finally {
+          isCapturing = false;
+>>>>>>> Stashed changes
 =======
         } finally {
           isCapturing = false;
@@ -2651,7 +3159,11 @@ function createWindow() {
 
   // 停止录制
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   function stopRecording({ error = null, completed = false } = {}) {
+=======
+  async function stopRecording({ error = null, completed = false } = {}) {
+>>>>>>> Stashed changes
 =======
   async function stopRecording({ error = null, completed = false } = {}) {
 >>>>>>> Stashed changes
@@ -2685,10 +3197,13 @@ function createWindow() {
     const wasRecording = recordingState.isRecording;
     const lastElapsed = recordingState.elapsed;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     recordingState.isRecording = false;
     recordingState.displayId = null;
     recordingState.options = null;
 =======
+=======
+>>>>>>> Stashed changes
     const outputPath = recordingState.outputPath;
     const audioMixEnabled = recordingState.audioMixEnabled === true;
     const audioEvents = Array.isArray(recordingState.audioEvents) ? [...recordingState.audioEvents] : [];
@@ -2700,6 +3215,9 @@ function createWindow() {
     recordingState.outputPath = null;
     recordingState.audioMixEnabled = false;
     recordingState.audioEvents = [];
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     recordingState.offscreenWin = null;
     recordingState.ffmpegProcess = null;
@@ -2710,7 +3228,10 @@ function createWindow() {
     recordingState.remaining = null;
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     if (!finalError && completed && audioMixEnabled && outputPath && audioEvents.length > 0) {
       try {
         const muxResult = await muxStationAudioTimelineToVideo({ inputVideoPath: outputPath, audioEvents });
@@ -2724,6 +3245,9 @@ function createWindow() {
       }
     }
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     // 发送停止/错误事件（让前端退出录制态；仅完成时发送 100%）
     if (wasRecording && mainWin && !mainWin.isDestroyed()) {
@@ -2731,18 +3255,24 @@ function createWindow() {
         isRecording: false,
         completed: !!completed,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         error: error ? String(error) : null,
         progress: completed ? 100 : null,
         elapsed: lastElapsed,
         remaining: completed ? 0 : null,
         duration: recordingState.duration
 =======
+=======
+>>>>>>> Stashed changes
         error: finalError,
         progress: completed ? 100 : null,
         elapsed: lastElapsed,
         remaining: completed ? 0 : null,
         duration: recordingState.duration,
         outputPath: outputPath || null
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
       });
     }
@@ -2750,11 +3280,14 @@ function createWindow() {
 
   ipcMain.handle('recording/stop', async () => {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     stopRecording({ completed: true });
     return { ok: true };
   });
 
 =======
+=======
+>>>>>>> Stashed changes
     await stopRecording({ completed: true });
     return { ok: true };
   });
@@ -2777,6 +3310,9 @@ function createWindow() {
     }
   });
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   ipcMain.handle('recording/status', async () => {
     return {
@@ -3080,6 +3616,10 @@ function createWindow() {
     let lastStderrLine = '';
     let closedCode = null;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
+>>>>>>> Stashed changes
 =======
     let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
 >>>>>>> Stashed changes
@@ -3123,10 +3663,13 @@ function createWindow() {
       if (parallelRecordingState.abort || !parallelRecordingState.isRecording) return;
       if (!offscreenWin || offscreenWin.isDestroyed()) return;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
       try {
         const image = await offscreenWin.webContents.capturePage();
         const bitmap = image.toBitmap();
 =======
+=======
+>>>>>>> Stashed changes
       
       // 帧同步：如果前一个 capturePage 还在进行中，跳过本次帧，避免帧堆积导致花屏
       if (isCapturing) {
@@ -3148,16 +3691,22 @@ function createWindow() {
         const image = await Promise.race([capturePromise, timeoutPromise]);
         const bitmap = image.toBitmap();
         
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
           ffmpegProcess.stdin.write(bitmap);
           framesWritten += 1;
           recordObj.framesWritten = framesWritten;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           if (framesWritten === 1) {
             try { clearTimeout(firstFrameWatchdog); } catch (e) {}
           }
 =======
+=======
+>>>>>>> Stashed changes
           captureErrorCount = 0; // 成功时重置错误计数
           if (framesWritten === 1) {
             try { clearTimeout(firstFrameWatchdog); } catch (e) {}
@@ -3168,6 +3717,9 @@ function createWindow() {
           if (captureDuration > frameInterval) {
             console.warn(`[main] 片段 #${segmentIndex} 抓帧耗时 ${captureDuration}ms，超过帧间隔 ${frameInterval}ms`);
           }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         } else {
           // FFmpeg 已正常或提前结束，输入流被关闭。
@@ -3182,6 +3734,11 @@ function createWindow() {
           stopParallelRecording({ error: `片段 #${segmentIndex} 抓帧失败（连续 ${captureErrorCount} 次）：${String(e)}` });
         }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+      } finally {
+        isCapturing = false;
+>>>>>>> Stashed changes
 =======
       } finally {
         isCapturing = false;
@@ -7497,10 +8054,14 @@ app.whenReady().then(async () => {
   try {
     const currentSettings = store ? store.get('settings', {}) : {};
     const shouldEnableApiServer = currentSettings.enableApiServer === true;
+<<<<<<< Updated upstream
     const shouldEnableWsBridge = currentSettings.enableWebSocketBridge === true
       || currentSettings.enableApiServer === true
       || process.env.PIDS_WS_ENABLE === '1'
       || process.env.ENABLE_WS_BRIDGE === '1';
+=======
+    const shouldEnableWsBridge = true;
+>>>>>>> Stashed changes
     const wsPortSetting = currentSettings.wsPort || currentSettings.wsPortOverride || null;
     
     if (shouldEnableApiServer && displayApiServer) {
@@ -7517,6 +8078,11 @@ app.whenReady().then(async () => {
       stopWebSocketBridge();
       console.log('[main] WebSocket Bridge 未启用');
     }
+<<<<<<< Updated upstream
+=======
+
+    startMultiScreenHttpServer(5173);
+>>>>>>> Stashed changes
   } catch (e) {
     console.warn('[main] 读取 API 服务器设置失败，使用默认值（未启用）:', e);
   }
@@ -7638,8 +8204,10 @@ app.whenReady().then(async () => {
                   const raw = localStorage.getItem('pids_global_store_v1');
                   if (!raw) return null;
                   const store = JSON.parse(raw);
-                  if (!store || !store.list || !store.cur) return null;
-                  return store.list[store.cur] || null;
+                  if (!store || !Array.isArray(store.list)) return null;
+                  const cur = Number(store.cur);
+                  if (!Number.isInteger(cur) || cur < 0 || cur >= store.list.length) return null;
+                  return store.list[cur] || null;
                 } catch(e) {
                   return null;
                 }
@@ -7821,6 +8389,10 @@ function closeAllWindows() {
 app.on('before-quit', (event) => {
   console.log('[main] before-quit 事件触发');
   stopWebSocketBridge();
+<<<<<<< Updated upstream
+=======
+  stopMultiScreenHttpServer();
+>>>>>>> Stashed changes
   // 如果还有窗口未关闭，先关闭所有窗口
   const allWindows = BrowserWindow.getAllWindows();
   if (allWindows.length > 0) {

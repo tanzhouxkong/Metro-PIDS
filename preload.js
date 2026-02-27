@@ -54,6 +54,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return { ok: false, error: String(e.message || e) };
     }
   },
+<<<<<<< Updated upstream
+=======
+  getMultiScreenPort: async () => {
+    try {
+      return await ipcRenderer.invoke('network/multi-screen-port');
+    } catch (e) {
+      console.error('getMultiScreenPort failed:', e);
+      return { ok: false, error: String(e.message || e), port: 5173 };
+    }
+  },
+  getWsClients: async () => {
+    try {
+      return await ipcRenderer.invoke('network/ws-clients');
+    } catch (e) {
+      console.error('getWsClients failed:', e);
+      return { ok: false, error: String(e.message || e), clients: [] };
+    }
+  },
+  onWsPortAutoSwitched: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (event, payload) => callback(payload);
+    ipcRenderer.on('ws/port-auto-switched', handler);
+    return () => ipcRenderer.removeListener('ws/port-auto-switched', handler);
+  },
+>>>>>>> Stashed changes
   openLineManager: async (target) => {
     try {
       return await ipcRenderer.invoke('open-line-manager', target);
@@ -588,7 +613,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return { ok: false, error: String(e) };
       }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     },
     addAudioEvent: async (payload) => {
       try {
@@ -597,6 +625,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         console.error('[preload] 上报录制音频事件失败:', e);
         return { ok: false, error: String(e) };
       }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     }
   }

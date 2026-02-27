@@ -6,6 +6,7 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 <<<<<<< HEAD
   <meta name="application-name" content="Metro-PIDS 云控管理后台" />
@@ -18,6 +19,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+=======
+  <meta name="application-name" content="Metro-PIDS 云控管理后台" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23667eea'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='10' fill='%23fff' font-weight='bold'%3EMP%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+>>>>>>> Stashed changes
 =======
   <meta name="application-name" content="Metro-PIDS 云控管理后台" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -451,8 +459,13 @@
             <div class="table-container">
               <table id="runtime-table">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 <thead><tr><th>线路名称</th><th>站点数量</th><th>操作</th></tr></thead>
                 <tbody id="runtime-tbody"><tr><td colspan="3" class="empty-state">点击"刷新列表"加载数据</td></tr></tbody>
+=======
+                <thead><tr><th>线路名称</th><th>站点数量</th><th>文件大小</th><th>操作</th></tr></thead>
+                <tbody id="runtime-tbody"><tr><td colspan="4" class="empty-state">点击"刷新列表"加载数据</td></tr></tbody>
+>>>>>>> Stashed changes
 =======
                 <thead><tr><th>线路名称</th><th>站点数量</th><th>文件大小</th><th>操作</th></tr></thead>
                 <tbody id="runtime-tbody"><tr><td colspan="4" class="empty-state">点击"刷新列表"加载数据</td></tr></tbody>
@@ -464,17 +477,23 @@
             <h2><i class="fas fa-edit"></i> 云控线路编辑</h2>
             <div style="background:var(--bg-active); padding:12px; border-radius:8px; margin-bottom:16px; font-size:13px; border:1px solid var(--border-color); color:var(--text-secondary);">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               <strong>💡 使用说明：</strong> 选择 JSON 文件上传，系统会自动读取线路数据。支持一次选择多个文件批量上传。
             </div>
             <div class="field">
               <label>选择 JSON 文件</label>
               <input type="file" id="runtime-line-file-input" accept=".json" multiple />
 =======
+=======
+>>>>>>> Stashed changes
               <strong>💡 使用说明：</strong> 选择 JSON 或 MPL 文件上传，系统会自动读取线路数据。支持一次选择多个文件批量上传。
             </div>
             <div class="field">
               <label>选择 JSON / MPL 文件</label>
               <input type="file" id="runtime-line-file-input" accept=".json,.mpl,.zip" multiple />
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
               <div id="runtime-files-list" style="margin-top:8px; display:none;"><ul id="runtime-files-items" style="font-size:12px; color:var(--text-secondary); padding-left:20px;"></ul></div>
             </div>
@@ -796,7 +815,12 @@
             </div>
             <div class="btn-group">
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
               <button class="btn btn-secondary" id="btn-download-records">下载 CSV</button>
+=======
+              <button class="btn btn-secondary" id="btn-download-records" title="导出全部访问记录，不应用「排除的设备ID」">下载全量 CSV</button>
+              <button class="btn btn-secondary" id="btn-download-records-filtered" title="导出与当前页面一致的记录（已排除指定设备）">下载当前视图 CSV</button>
+>>>>>>> Stashed changes
 =======
               <button class="btn btn-secondary" id="btn-download-records" title="导出全部访问记录，不应用「排除的设备ID」">下载全量 CSV</button>
               <button class="btn btn-secondary" id="btn-download-records-filtered" title="导出与当前页面一致的记录（已排除指定设备）">下载当前视图 CSV</button>
@@ -917,9 +941,12 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
 =======
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -941,9 +968,12 @@
         </div>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
         <div class="field"><label>类型</label><select id="holiday-edit-typeDes"><option value="全部">全部</option><option value="工作日">工作日</option><option value="周末">周末</option><option value="其他">其他</option></select></div>
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -1017,7 +1047,10 @@
     </div>
   </div>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 
   <div class="modal" id="runtime-upload-detail-modal">
     <div class="modal-content" style="max-width:920px;">
@@ -1033,6 +1066,9 @@
       </div>
     </div>
   </div>
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   <script>
     // 侧边栏切换（含移动端抽屉）
@@ -3966,6 +4002,7 @@
             byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           }
           // 按设备统计访问数量
           if (device.deviceId) {
@@ -3974,6 +4011,8 @@
           // 按设备统计访问数量
           if (device.deviceId) {
             byDeviceDevices[device.deviceId] = (byDeviceDevices[device.deviceId] || 0) + 1;
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======

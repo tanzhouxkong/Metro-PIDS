@@ -2,7 +2,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import {
   getFilteredStations,
   calculateDisplayStationInfo
-} from '../../src/utils/displayStationCalculator.js'
+} from '../shared/displayStationCalculator.js'
 
 export default {
   name: 'JinanDisplay',
@@ -308,8 +308,19 @@ export default {
       isNextStationBlinking.value = false
     }
 
+    const displayQuery = (() => {
+      try {
+        return new URLSearchParams((window.location && window.location.search) ? window.location.search : '')
+      } catch (e) {
+        return new URLSearchParams('')
+      }
+    })()
+    const queryWidth = Number(displayQuery.get('dw') || displayQuery.get('designWidth') || 1500)
+    const queryHeight = Number(displayQuery.get('dh') || displayQuery.get('designHeight') || 400)
+    const SCREEN_WIDTH = Number.isFinite(queryWidth) && queryWidth > 0 ? Math.round(queryWidth) : 1500 // 屏幕宽度
+    const SCREEN_HEIGHT = Number.isFinite(queryHeight) && queryHeight > 0 ? Math.round(queryHeight) : 400
+
     // 地图相关计算
-    const SCREEN_WIDTH = 1500 // 屏幕宽度
     const PADDING = 40 // 左右内边距
     const PADDING_LEFT = 5 // 左边距（用于站点）
     const PADDING_RIGHT = 20 // 右边距（用于站点）
@@ -602,8 +613,8 @@ export default {
       
       // 计算基础缩放比例
       // 使用 Math.min 确保内容不超出窗口，但配合 baseScale 调整避免白边
-      const widthRatio = window.innerWidth / 1500
-      const heightRatio = window.innerHeight / 400
+      const widthRatio = window.innerWidth / SCREEN_WIDTH
+      const heightRatio = window.innerHeight / SCREEN_HEIGHT
       let ratio = Math.min(widthRatio, heightRatio) * baseScale
       
       // 对所有情况都稍微增加缩放比例（1%），确保内容能够完全覆盖窗口，避免白边
@@ -815,8 +826,65 @@ export default {
         if (bcNew) {
           bcNew.postMessage({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey })
         }
+        if (wsClient && wsClient.readyState === 1) {
+          wsClient.send(JSON.stringify({ t: 'CMD_KEY', code: e.code, key: e.key, normCode, normKey }))
+        }
       } catch (err) {
         console.warn('Keyboard event error', err)
+      }
+    }
+
+    let wsClient = null
+    let wsReconnectTimer = null
+    let wsShouldRun = false
+
+    const connectWs = () => {
+      if (!wsShouldRun) return
+      const wsHost = (displayQuery.get('wsHost') || window.location.hostname || 'localhost').trim()
+      const wsPort = (displayQuery.get('wsPort') || '9400').trim()
+      if (!wsHost) return
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${wsProto}//${wsHost}:${wsPort}`
+      try {
+        wsClient = new WebSocket(wsUrl)
+      } catch (e) {
+        wsClient = null
+        return
+      }
+      wsClient.onopen = () => {
+        try { wsClient.send(JSON.stringify({ t: 'REQ' })) } catch (e) {}
+      }
+      wsClient.onmessage = (event) => {
+        let data = null
+        try {
+          data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+        } catch (e) {
+          data = null
+        }
+        if (data) {
+          handleBroadcastMessage({ data })
+        }
+      }
+      wsClient.onclose = () => {
+        wsClient = null
+        if (!wsShouldRun) return
+        if (wsReconnectTimer) clearTimeout(wsReconnectTimer)
+        wsReconnectTimer = setTimeout(connectWs, 1500)
+      }
+      wsClient.onerror = () => {
+        try { wsClient && wsClient.close() } catch (e) {}
+      }
+    }
+
+    const closeWs = () => {
+      wsShouldRun = false
+      if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer)
+        wsReconnectTimer = null
+      }
+      if (wsClient) {
+        try { wsClient.close() } catch (e) {}
+        wsClient = null
       }
     }
 
@@ -841,6 +909,12 @@ export default {
         bcNew.postMessage({ t: 'REQ' })
       } catch (e) {
         console.warn('BroadcastChannel (metro_pids_v3) not supported', e)
+      }
+
+      const wsEnabled = ['1', 'true', 'yes', 'on'].includes(String(displayQuery.get('ws') || '').toLowerCase())
+      if (wsEnabled) {
+        wsShouldRun = true
+        connectWs()
       }
       
       // 监听 window.postMessage（用于接收主程序发送的数据）
@@ -887,6 +961,7 @@ export default {
         bcNew.close()
         bcNew = null
       }
+      closeWs()
       window.removeEventListener('resize', fitScreen)
       document.removeEventListener('keydown', handleKeyDown)
     })
@@ -922,6 +997,7 @@ export default {
       semicircleRadius,
       semicirclePath,
       SCREEN_WIDTH,
+      SCREEN_HEIGHT,
       PADDING,
       PADDING_RIGHT,
       PADDING_LEFT,

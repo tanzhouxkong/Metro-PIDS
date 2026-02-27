@@ -12,12 +12,18 @@
     "languageLabel": "介面語言"
   },
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
   "audio": {
     "title": "車輛音頻",
     "enableVehicle": "啟用車輛音頻",
     "enableVehicleHint": "開啟後，進站/出站以及「下一步」切換會播放車站音頻；關閉後不播放。"
   },
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   "settings": {
     "appearance": "外觀",
@@ -31,6 +37,7 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "顯示端管理 (Display Management)",
 =======
 <<<<<<< HEAD
@@ -38,6 +45,9 @@
 =======
     "title": "顯示端管理 (Display Management)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "顯示端管理",
 >>>>>>> Stashed changes
 =======
     "title": "顯示端管理",
@@ -58,6 +68,7 @@
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "title": "API 伺服器 (API Server)",
 =======
 <<<<<<< HEAD
@@ -65,6 +76,9 @@
 =======
     "title": "API 伺服器 (API Server)",
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
+    "title": "API 伺服器",
 >>>>>>> Stashed changes
 =======
     "title": "API 伺服器",
@@ -77,6 +91,7 @@
     "tip2": "預設使用 BroadcastChannel 通訊，無需 HTTP 伺服器。",
     "tip3": "提示：如果第三方顯示器（特別是 Python 客戶端）顯示異常或無法連線，請嘗試更改此開關狀態並重啟應用重試。"
   },
+<<<<<<< Updated upstream
   "keys": {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
@@ -87,10 +102,36 @@
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
+=======
+  "multiScreen": {
+    "title": "多螢協同",
+    "entryTitle": "多螢協同入口",
+    "entryDesc1": "將下方入口位址發給遠端瀏覽器/電視盒子即可接入多螢協同。",
+    "entryDesc2": "頁面會自動連線 WebSocket，同步站點、到發車狀態與控制命令。",
+    "copyAddress": "複製位址",
+    "showQr": "顯示 QR 碼",
+    "close": "關閉",
+    "localIp": "本機 IP",
+    "refreshIp": "重新整理",
+    "wsPort": "WebSocket 連接埠",
+    "wsAddress": "連線位址：",
+    "tips1": "要正常同步，顯示端網頁需透過 http:// 或 https:// 開啟。",
+    "tips2": "若連接埠被占用，客戶端會自動切換到可用連接埠。",
+    "thirdPartyTemplate": "第三方顯示模板：",
+    "qrDialogTitle": "多螢協同入口 QR 碼",
+    "qrDialogSubtitle": "手機/瀏覽器掃碼直達入口",
+    "copySuccessTitle": "複製成功",
+    "copySuccessMsg": "多螢協同入口位址已複製",
+    "copyFailTitle": "複製失敗",
+    "copyFailMsg": "複製失敗，請手動複製：\n{url}"
+  },
+  "keys": {
+>>>>>>> Stashed changes
     "title": "快捷鍵",
     "nextState": "進站/離站",
     "prevStation": "上一站",
     "nextStation": "下一站",
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 =======
@@ -102,6 +143,8 @@
 <<<<<<< Updated upstream
 =======
 >>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -122,11 +165,17 @@
     "githubIssue": "GitHub Issue：",
     "githubIssueDesc": "提交問題或建議",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
         "audioSelectFiles": "選擇音訊檔",
         "audioAddBlank": "新增空槽",
         "audioHotkey": "快捷鍵",
         "audioCommonPlaceholder": "通用音訊",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "update": {
       "checking": "檢查中...",
@@ -153,6 +202,7 @@
     "openManager": "開啟管理器",
     "saveCurrentLine": "儲存目前線路",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "resetData": "重設資料",
     "serviceMode": "營運模式",
     "currentMode": "目前模式",
@@ -160,16 +210,24 @@
     "singleLine": "單線 (Linear)",
 =======
 =======
+=======
+>>>>>>> Stashed changes
     "saveAsZip": "儲存為壓縮包",
     "resetData": "重設資料",
     "serviceMode": "營運模式",
     "currentMode": "目前模式",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "singleLine": "單線",
     "loopLine": "環線",
     "outerLoop": "外環 (逆時針)",
     "innerLoop": "內環 (順時針)",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -224,8 +282,11 @@
     "autoplayEnable": "自動播放",
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "autoplayInterval": "啟用間隔:"
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     "autoplayInterval": "啟用間隔:",
@@ -275,6 +336,9 @@
       "recordingStageConcatStart": "正在拼接片段",
       "recordingOpenFolder": "打開資料夾"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -300,6 +364,10 @@
 
     "ctxFolderOpen": "開啟資料夾",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxRefresh": "重新整理",
+>>>>>>> Stashed changes
 =======
     "ctxRefresh": "重新整理",
 >>>>>>> Stashed changes
@@ -308,6 +376,10 @@
     "ctxCopy": "複製",
     "ctxPaste": "貼上",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    "ctxOpenFile": "開啟檔案所在位置",
+>>>>>>> Stashed changes
 =======
     "ctxOpenFile": "開啟檔案所在位置",
 >>>>>>> Stashed changes
@@ -352,7 +424,13 @@
     "locate": "定位",
     "savingToPrefix": "目前將儲存到：",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "throughSaveButton": "儲存貫通線路"
+=======
+    "throughSaveButton": "儲存貫通線路",
+    "saveLineButton": "儲存當前線路",
+    "saveZipButton": "儲存為壓縮包"
+>>>>>>> Stashed changes
 =======
     "throughSaveButton": "儲存貫通線路",
     "saveLineButton": "儲存當前線路",
@@ -402,6 +480,7 @@
 
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "xferSectionTitle": "換乘線路",
     "xferSectionHint": "右鍵操作",
     "xferEmpty": "暫無換乘，右鍵可新增或貼上",
@@ -418,6 +497,8 @@
     "xferSectionHint": "右鍵操作",
     "xferEmpty": "暫無換乘，右鍵可添加或粘貼",
 =======
+=======
+>>>>>>> Stashed changes
     "xferSectionTitle": "換乘路線",
     "audioSectionTitle": "車站音頻",
     "xferSectionHint": "右鍵操作",
@@ -457,6 +538,9 @@
     "audioTerminalPlaceholder": "終到站音頻",
     "audioApplyToAllStations": "選中的文件應用到所有站",
     "audioSelectHint": "支援 Ctrl 多選、Shift 連選",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "xferUnnamed": "未命名",
     "xferExitBadge": "出站換乘",
@@ -467,6 +551,9 @@
     "menuCopy": "複製",
     "menuPaste": "粘貼",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -478,6 +565,7 @@
     "menuCopyAll": "複製全部",
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     "menuAddXfer": "新增換乘",
 
     "xferNameDialogTitle": "編輯線路名稱",
@@ -487,6 +575,8 @@
     "btnConfirm": "確定",
     "btnSave": "儲存"
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     "menuAddXfer": "添加換乘",
@@ -552,6 +642,9 @@
     "outer": "外環",
     "inner": "內環"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
