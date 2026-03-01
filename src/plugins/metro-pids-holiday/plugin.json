@@ -1,0 +1,26 @@
+{
+  "name": "metro-pids/holiday",
+  "title": "节日",
+  "description": "按日期显示节日相关提示与消息",
+  "version": "1.0.0",
+  "author": "Metro-PIDS",
+  "category": "metro-pids-trigger",
+  "apiVersion": 2,
+  "metroPids": {
+    "hooks": ["dateCheck", "lineSwitch"],
+    "configSchema": {
+      "holidays": {
+        "type": "object",
+        "description": "节日配置，key 为节日 ID",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "date": { "type": "object", "properties": { "month": {}, "day": {} } },
+          "startDate": { "type": "string", "format": "date" },
+          "endDate": { "type": "string", "format": "date" },
+          "duration": { "type": "number" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}
