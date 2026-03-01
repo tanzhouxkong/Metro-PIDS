@@ -1,13 +1,5 @@
 <script>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { reactive, ref, watch, computed, nextTick, Teleport, Transition } from 'vue'
-=======
 import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, onErrorCaptured, Teleport, Transition } from 'vue'
->>>>>>> Stashed changes
-=======
-import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, onErrorCaptured, Teleport, Transition } from 'vue'
->>>>>>> Stashed changes
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 
@@ -25,11 +17,6 @@ export default {
   emits: ['update:modelValue', 'save', 'apply-audio-to-all', 'save-line-audio'],
   setup(props, { emit }) {
     const { t } = useI18n()
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
     const defaultStationAudio = () => ({
       separateDirection: true,
       up: { list: [] },
@@ -49,10 +36,6 @@ export default {
       const e = Array.isArray(d.end) ? d.end : []
       return [...w, ...dep, ...arr, ...e].map((i) => ({ ...i }))
     }
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
     const form = reactive({
       name: '',
       en: '',
@@ -130,6 +113,11 @@ export default {
     const sectionMode = ref('xfer') // 'xfer' | 'audio' | 'commonAudio'
     const audioSectionCrashed = ref(false)
     const seDebugLog = (event, extra = {}) => {
+      let traceEnabled = false
+      try {
+        traceEnabled = localStorage.getItem('metro_pids_debug_station_editor') === '1'
+      } catch (e) {}
+      if (!traceEnabled) return
       try {
         const upCount = Array.isArray(form?.stationAudio?.up?.list) ? form.stationAudio.up.list.length : 0
         const downCount = Array.isArray(form?.stationAudio?.down?.list) ? form.stationAudio.down.list.length : 0
@@ -1177,11 +1165,6 @@ export default {
       openXferNameEdit,
       closeXferNameEdit,
       confirmXferNameEdit,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
       showAudioNameEdit,
       audioNameEditValue,
       openAudioNameEdit,
@@ -1240,10 +1223,6 @@ export default {
       hasAudioSelection,
       getSelectedAudioItemsInOrder,
       applySelectedToAllStations,
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
       t
     }
   }
@@ -1264,23 +1243,7 @@ export default {
                   <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
                 </div>
               </div>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-              <div class="se-titles">
-                <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
-                <div class="se-subtitle">{{ isNew ? t('stationEditor.subtitleNew') : t('stationEditor.subtitleEdit') }}</div>
-              </div>
-            </div>
-=======
->>>>>>> Stashed changes
-            <button class="se-close" @click="close" aria-label="关闭">
-=======
-            <button class="se-close" @click="close('header-close-btn')" aria-label="关闭">
->>>>>>> Stashed changes
-=======
-            <button class="se-close" @click="close('header-close-btn')" aria-label="关闭">
->>>>>>> Stashed changes
+            <button class="se-close" @click="close('header-close-btn')" :aria-label="t('stationEditor.closeLabel')">
               <i class="fas fa-times"></i>
             </button>
           </div>
@@ -1343,74 +1306,10 @@ export default {
 
             <div class="se-section" @contextmenu.prevent="openSectionMenu($event)">
               <div class="se-section-head">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                <div class="se-section-title">{{ t('stationEditor.xferSectionTitle') }}</div>
-                <span class="se-section-hint">{{ t('stationEditor.xferSectionHint') }}</span>
-              </div>
-
-              <div v-if="form.xfer.length === 0" class="se-empty">{{ t('stationEditor.xferEmpty') }}</div>
-              <div v-else class="se-xfer-list">
-                <div
-                  v-for="(xf, idx) in form.xfer"
-                  :key="idx"
-                  class="se-xfer-row"
-                  @contextmenu.prevent.stop="openRowMenu($event, idx)"
-                >
-                  <span class="se-xfer-name">{{ xf.line || t('stationEditor.xferUnnamed') }}</span>
-                  <div v-if="xf.exitTransfer || xf.suspended" class="se-xfer-badges">
-                    <span v-if="xf.exitTransfer" class="se-xfer-badge exit">{{ t('stationEditor.xferExitBadge') }}</span>
-                    <span v-if="xf.suspended" class="se-xfer-badge suspended">{{ t('stationEditor.xferSuspendedBadge') }}</span>
-                  </div>
-                  <div
-                    class="se-xfer-swatch"
-                    :style="{ backgroundColor: xf.color || '#808080' }"
-                    :title="t('stationEditor.xferColorTitle')"
-                  ></div>
-=======
                 <div class="se-section-toggle">
                   <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'xfer' }" @click="setSectionMode('xfer')">{{ t('stationEditor.xferSectionTitle') }}</button>
                   <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'audio' }" @click="setSectionMode('audio')">{{ t('stationEditor.audioSectionTitle') }}</button>
-                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'commonAudio' }" @click.stop="setSectionMode('commonAudio')">{{ t('stationEditor.audioCommonTitle') || '通用音频' }}</button>
-                </div>
-                <span class="se-section-hint">
-                  {{
-                    sectionMode === 'audio'
-                      ? t('stationEditor.audioSelectHint')
-                      : sectionMode === 'commonAudio'
-                        ? (t('stationEditor.audioCommonDesc') || '')
-                        : t('stationEditor.xferSectionHint')
-                  }}
-                </span>
-              </div>
-
-              <template v-if="sectionMode === 'xfer'">
-                <div v-if="form.xfer.length === 0" class="se-empty">{{ t('stationEditor.xferEmpty') }}</div>
-                <div v-else class="se-xfer-list">
-                  <div
-                    v-for="(xf, idx) in form.xfer"
-                    :key="idx"
-                    class="se-xfer-row"
-                    @contextmenu.prevent.stop="openRowMenu($event, idx)"
-                  >
-                    <span class="se-xfer-name">{{ xf.line || t('stationEditor.xferUnnamed') }}</span>
-                    <div v-if="xf.exitTransfer || xf.suspended" class="se-xfer-badges">
-                      <span v-if="xf.exitTransfer" class="se-xfer-badge exit">{{ t('stationEditor.xferExitBadge') }}</span>
-                      <span v-if="xf.suspended" class="se-xfer-badge suspended">{{ t('stationEditor.xferSuspendedBadge') }}</span>
-                    </div>
-                    <div
-                      class="se-xfer-swatch"
-                      :style="{ backgroundColor: xf.color || '#808080' }"
-                      :title="t('stationEditor.xferColorTitle')"
-                    ></div>
-                  </div>
->>>>>>> Stashed changes
-                </div>
-=======
-                <div class="se-section-toggle">
-                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'xfer' }" @click="setSectionMode('xfer')">{{ t('stationEditor.xferSectionTitle') }}</button>
-                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'audio' }" @click="setSectionMode('audio')">{{ t('stationEditor.audioSectionTitle') }}</button>
-                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'commonAudio' }" @click.stop="setSectionMode('commonAudio')">{{ t('stationEditor.audioCommonTitle') || '通用音频' }}</button>
+                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'commonAudio' }" @click.stop="setSectionMode('commonAudio')">{{ t('stationEditor.audioCommonTitle') }}</button>
                 </div>
                 <span class="se-section-hint">
                   {{
@@ -1444,11 +1343,10 @@ export default {
                     ></div>
                   </div>
                 </div>
->>>>>>> Stashed changes
               </template>
 
               <template v-else-if="sectionMode === 'audio'">
-                <div v-if="audioSectionCrashed" class="se-audio-crash-fallback">音频区加载异常，已降级显示。请关闭后重试。</div>
+                <div v-if="audioSectionCrashed" class="se-audio-crash-fallback">{{ t('stationEditor.audioCrashFallback') }}</div>
                 <div v-else class="se-audio-columns" :class="{ two: form.stationAudio.separateDirection }">
                   <div
                     v-for="dir in (form.stationAudio.separateDirection ? ['up', 'down'] : ['up'])"
@@ -1487,13 +1385,13 @@ export default {
                           @contextmenu.prevent.stop="openAudioRowMenu($event, dir, idx)"
                         >
                           <div class="se-audio-arrdep-bar" :class="{ empty: !getAudioArriveDepartColor(item) }" :style="getAudioArriveDepartColor(item) ? { background: getAudioArriveDepartColor(item) } : {}"></div>
-                          <span class="se-audio-drag" title="拖拽排序" @click.stop><i class="fas fa-bars"></i></span>
+                          <span class="se-audio-drag" :title="t('stationEditor.audioDragSort')" @click.stop><i class="fas fa-bars"></i></span>
                           <span class="se-audio-num">
-                            <template v-if="getAudioDisplayNumber(dir, idx).arrive != null">进站{{ getAudioDisplayNumber(dir, idx).arrive }}</template>
-                            <template v-else-if="getAudioDisplayNumber(dir, idx).depart != null">出站{{ getAudioDisplayNumber(dir, idx).depart }}</template>
+                            <template v-if="getAudioDisplayNumber(dir, idx).arrive != null">{{ t('stationEditor.audioLabelArrive') }}{{ getAudioDisplayNumber(dir, idx).arrive }}</template>
+                            <template v-else-if="getAudioDisplayNumber(dir, idx).depart != null">{{ t('stationEditor.audioLabelDepart') }}{{ getAudioDisplayNumber(dir, idx).depart }}</template>
                             <template v-else>—</template>
                           </span>
-                          <span v-if="isAudioBroken('station', dir, idx, item)" class="se-audio-broken-icon" title="文件损坏">
+                          <span v-if="isAudioBroken('station', dir, idx, item)" class="se-audio-broken-icon" :title="t('stationEditor.audioBroken')">
                             <i class="fas fa-exclamation-triangle"></i>
                           </span>
                           <div class="se-xfer-name-wrap">
@@ -1503,7 +1401,7 @@ export default {
                               <span v-if="item.modes?.express" class="se-xfer-badge se-audio-badge-express">{{ t('stationEditor.audioModeExpress') }}</span>
                               <span v-if="item.modes?.direct" class="se-xfer-badge se-audio-badge-direct">{{ t('stationEditor.audioModeDirect') }}</span>
                               <span v-if="item.disabledInNormal" class="se-xfer-badge se-audio-badge-disabled">{{ t('stationEditor.audioDisabledInNormal') }}</span>
-                              <span v-if="item.role === 'terminal'" class="se-xfer-badge se-audio-badge-terminal">{{ t('stationEditor.audioTerminalTag') || '本站音频' }}</span>
+                              <span v-if="item.role === 'terminal'" class="se-xfer-badge se-audio-badge-terminal">{{ t('stationEditor.audioTerminalTag') }}</span>
                             </div>
                           </div>
                         </div>
@@ -1514,7 +1412,7 @@ export default {
                           @dragleave="onAudioBlockDragLeave"
                           @drop.prevent.stop="onAudioBlockDrop($event, dir)"
                         >
-                          <span class="se-audio-drop-add-text">{{ t('stationEditor.audioDropToAdd') || '拖拽音频到此处添加' }}</span>
+                          <span class="se-audio-drop-add-text">{{ t('stationEditor.audioDropToAdd') }}</span>
                         </div>
                       </div>
                     </div>
@@ -1523,7 +1421,7 @@ export default {
               </template>
               <template v-else-if="sectionMode === 'commonAudio'">
                 <div class="se-common-audio">
-                  <div v-if="audioSectionCrashed" class="se-audio-crash-fallback">音频区加载异常，已降级显示。请关闭后重试。</div>
+                  <div v-if="audioSectionCrashed" class="se-audio-crash-fallback">{{ t('stationEditor.audioCrashFallback') }}</div>
                   <template v-else>
                   <div class="se-audio-columns">
                     <div
@@ -1556,9 +1454,9 @@ export default {
                             @contextmenu.prevent.stop="openCommonAudioRowMenu($event, dir, idx)"
                           >
                             <div class="se-audio-arrdep-bar" :class="{ empty: !getAudioArriveDepartColor(item) }" :style="getAudioArriveDepartColor(item) ? { background: getAudioArriveDepartColor(item) } : {}"></div>
-                            <span class="se-audio-drag" title="拖拽排序" @click.stop><i class="fas fa-bars"></i></span>
+                            <span class="se-audio-drag" :title="t('stationEditor.audioDragSort')" @click.stop><i class="fas fa-bars"></i></span>
                             <span class="se-audio-num">{{ getCommonApplyLabel(dir, idx) || '—' }}</span>
-                            <span v-if="isAudioBroken('common', dir, idx, item)" class="se-audio-broken-icon" title="文件损坏">
+                            <span v-if="isAudioBroken('common', dir, idx, item)" class="se-audio-broken-icon" :title="t('stationEditor.audioBroken')">
                               <i class="fas fa-exclamation-triangle"></i>
                             </span>
                             <div class="se-xfer-name-wrap">
@@ -1568,7 +1466,7 @@ export default {
                                 <span v-if="item.modes?.express" class="se-xfer-badge se-audio-badge-express">{{ t('stationEditor.audioModeExpress') }}</span>
                                 <span v-if="item.modes?.direct" class="se-xfer-badge se-audio-badge-direct">{{ t('stationEditor.audioModeDirect') }}</span>
                                 <span v-if="item.disabledInNormal" class="se-xfer-badge se-audio-badge-disabled">{{ t('stationEditor.audioDisabledInNormal') }}</span>
-                                <span v-if="item.role === 'terminal'" class="se-xfer-badge se-audio-badge-terminal">{{ t('stationEditor.audioTerminalTag') || '本站音频' }}</span>
+                                <span v-if="item.role === 'terminal'" class="se-xfer-badge se-audio-badge-terminal">{{ t('stationEditor.audioTerminalTag') }}</span>
                               </div>
                             </div>
                           </div>
@@ -1577,7 +1475,7 @@ export default {
                             @dragover.prevent.stop
                             @drop.prevent.stop="onCommonAudioDrop($event, dir)"
                           >
-                            <span class="se-audio-drop-add-text">{{ t('stationEditor.audioDropToAdd') || '拖拽音频到此处添加' }}</span>
+                            <span class="se-audio-drop-add-text">{{ t('stationEditor.audioDropToAdd') }}</span>
                           </div>
                         </div>
                       </div>
@@ -1638,11 +1536,6 @@ export default {
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item danger" @click="runAndClose(() => removeXfer(menuContext.idx))">
                   <i class="fas fa-trash-alt"></i> {{ t('stationEditor.menuDelete') }}
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
                 </div>
               </template>
               <template v-else-if="menuContext?.type === 'section' && menuContext?.audio">
@@ -1655,11 +1548,7 @@ export default {
                       : (hasAudioClipboard && runAndClose(() => pasteAudioItem(menuContext.audioDir || 'up', -1)))
                   "
                 >
-                  <i class="fas fa-paste"></i> {{ t('stationEditor.audioPaste') || '粘贴音频到末尾' }}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+                  <i class="fas fa-paste"></i> {{ t('stationEditor.audioPasteToEnd') }}
                 </div>
               </template>
               <template v-else-if="menuContext?.type === 'section'">
@@ -1680,11 +1569,6 @@ export default {
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item" @click="runAndClose(addXfer)">
                   <i class="fas fa-plus"></i> {{ t('stationEditor.menuAddXfer') }}
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
                 </div>
               </template>
               <template v-else-if="menuContext?.type === 'audioRow'">
@@ -1735,7 +1619,7 @@ export default {
                       <i class="fas fa-arrow-down"></i> {{ t('stationEditor.audioApplyAllDown') || t('stationEditor.directionDown') }}
                     </div>
                     <div class="station-context-menu-item" @click.stop="runAndClose(() => applySelectedToAllStations(menuContext.dir, 'both'))">
-                      <i class="fas fa-arrows-alt-v"></i> {{ t('stationEditor.audioApplyAllBoth') || t('stationEditor.directionBoth') || '上下行' }}
+                      <i class="fas fa-arrows-alt-v"></i> {{ t('stationEditor.audioApplyAllBoth') }}
                     </div>
                   </div>
                 </Teleport>
@@ -1794,23 +1678,23 @@ export default {
                 </div>
                 <div class="station-context-menu-item" @click="runAndClose(() => toggleCommonAudioApplied(menuContext.dir, menuContext.idx))">
                   <i class="fas fa-check-circle"></i>
-                  {{ getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.applied ? '停用应用' : '标记应用' }}
+                  {{ getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.applied ? t('stationEditor.audioApplyToggleOff') : t('stationEditor.audioApplyToggleOn') }}
                 </div>
                 <div class="station-context-menu-item" @click="runAndClose(() => openAudioNameEdit(menuContext.dir, menuContext.idx, 'common'))">
                   <i class="fas fa-edit"></i> {{ t('stationEditor.audioRename') }}
                 </div>
                 <div class="station-context-menu-item" @click="runAndClose(() => copyCommonAudioItem(menuContext.dir, menuContext.idx, false))">
-                  <i class="fas fa-copy"></i> {{ t('stationEditor.audioCopy') || '复制' }}
+                  <i class="fas fa-copy"></i> {{ t('stationEditor.audioCopy') }}
                 </div>
                 <div
                   class="station-context-menu-item"
                   :class="{ disabled: !hasCommonAudioClipboard }"
                   @click="hasCommonAudioClipboard && runAndClose(() => pasteCommonAudioItem(menuContext.dir, menuContext.idx))"
                 >
-                  <i class="fas fa-paste"></i> {{ t('stationEditor.audioPaste') || '粘贴' }}
+                  <i class="fas fa-paste"></i> {{ t('stationEditor.audioPaste') }}
                 </div>
                 <div class="station-context-menu-item" @click="runAndClose(() => cutCommonAudioItem(menuContext.dir, menuContext.idx))">
-                  <i class="fas fa-cut"></i> {{ t('stationEditor.audioCut') || '剪贴' }}
+                  <i class="fas fa-cut"></i> {{ t('stationEditor.audioCut') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div
@@ -1849,10 +1733,6 @@ export default {
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item danger" @click="runAndClose(() => removeCommonAudioItem(menuContext.dir, menuContext.idx))">
                   <i class="fas fa-trash-alt"></i> {{ t('stationEditor.audioDelete') }}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 </div>
               </template>
             </div>
@@ -1874,11 +1754,6 @@ export default {
                   <div class="se-name-edit-actions">
                     <button type="button" class="se-btn se-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
                     <button type="button" class="se-btn se-btn-green" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
                   </div>
                 </div>
               </div>
@@ -1894,16 +1769,12 @@ export default {
                   <input
                     v-model="audioNameEditValue"
                     class="se-input se-name-edit-input"
-                    :placeholder="t('stationEditor.audioRenamePlaceholder') || '音频显示名称'"
+                    :placeholder="t('stationEditor.audioRenamePlaceholder')"
                     @keydown.enter="confirmAudioNameEdit"
                   />
                   <div class="se-name-edit-actions">
                     <button type="button" class="se-btn se-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
                     <button type="button" class="se-btn se-btn-green" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                   </div>
                 </div>
               </div>
@@ -1911,18 +1782,8 @@ export default {
           </Teleport>
 
           <div class="se-footer">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            <button class="se-btn se-btn-gray" @click="close">{{ t('stationEditor.btnCancel') }}</button>
-            <button class="se-btn se-btn-green" @click="save" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
-=======
             <button class="se-btn se-btn-gray" @click="close('footer-cancel-btn')">{{ t('stationEditor.btnCancel') }}</button>
             <button class="se-btn se-btn-green" @mousedown="armSaveClick" @click="save($event)" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
->>>>>>> Stashed changes
-=======
-            <button class="se-btn se-btn-gray" @click="close('footer-cancel-btn')">{{ t('stationEditor.btnCancel') }}</button>
-            <button class="se-btn se-btn-green" @mousedown="armSaveClick" @click="save($event)" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
->>>>>>> Stashed changes
           </div>
         </div>
 
@@ -2565,6 +2426,61 @@ export default {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+:global(html.blur-disabled) .se-dialog {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16) !important;
+}
+:global(html.blur-disabled.dark) .se-dialog,
+:global(html.blur-disabled[data-theme='dark']) .se-dialog {
+  background: #1c1c20 !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
+}
+
+:global(html.blur-disabled) .station-context-menu,
+:global(html.blur-disabled) .apply-all-submenu,
+:global(html.blur-disabled) .glass-submenu {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16) !important;
+  box-shadow: 0 8px 30px rgba(15,23,42,0.22) !important;
+}
+:global(html.blur-disabled) .station-context-menu-item:hover,
+:global(html.blur-disabled) .apply-all-submenu .station-context-menu-item:hover {
+  background: #f5f7fb !important;
+}
+
+:global(html.blur-disabled.dark) .station-context-menu,
+:global(html.blur-disabled[data-theme='dark']) .station-context-menu,
+:global(html.blur-disabled.dark) .apply-all-submenu,
+:global(html.blur-disabled[data-theme='dark']) .apply-all-submenu,
+:global(html.blur-disabled.dark) .glass-submenu,
+:global(html.blur-disabled[data-theme='dark']) .glass-submenu {
+  background: #1c1c20 !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.42) !important;
+}
+:global(html.blur-disabled.dark) .station-context-menu-item:hover,
+:global(html.blur-disabled[data-theme='dark']) .station-context-menu-item:hover,
+:global(html.blur-disabled.dark) .apply-all-submenu .station-context-menu-item:hover,
+:global(html.blur-disabled[data-theme='dark']) .apply-all-submenu .station-context-menu-item:hover {
+  background: rgba(255,255,255,0.08) !important;
+}
+
+:global(html.blur-disabled) .se-name-edit-dialog {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16) !important;
+}
+:global(html.blur-disabled.dark) .se-name-edit-dialog,
+:global(html.blur-disabled[data-theme='dark']) .se-name-edit-dialog {
+  background: #1c1c20 !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
 }
 
 .se-footer {

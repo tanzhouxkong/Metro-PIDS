@@ -32,6 +32,20 @@ export default {
         const releaseNotes = ref([])
         const loadingNotes = ref(false)
         const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot'
+
+        const isDisplayEnabled = (display) => {
+            if (!display || typeof display !== 'object') return false;
+            const value = display.enabled;
+            if (value === false || value === 'false' || value === 0 || value === '0') return false;
+            return true;
+        }
+
+        const getDisplayName = (display, fallbackId = '') => {
+            if (display && display.name) return display.name;
+            if (display && display.id) return display.id;
+            if (fallbackId) return fallbackId;
+            return '未命名显示端';
+        }
         
         // 使用 computed 让显示端信息响应式更新
         const currentDisplayInfo = computed(() => {
@@ -382,7 +396,10 @@ export default {
             const displayId = currentDisplayId;
             
             // 使用从 localStorage 读取的配置进行验证（优先使用 localStorage，因为它包含最新数据）
-            const targetDisplay = displayConfig || (localStorageSettings?.display?.displays?.[displayId]) || (settings?.display?.displays?.[displayId]);
+            const localDisplay = localStorageSettings?.display?.displays?.[displayId];
+            const settingsDisplay = settings?.display?.displays?.[displayId];
+            // 设置对象优先，localStorage 仅作为兜底，避免缓存滞后导致误判禁用
+            const targetDisplay = settingsDisplay || displayConfig || localDisplay;
             
             if (!targetDisplay) {
                 console.warn('[LeftRail] 显示端不存在:', displayId, {
@@ -415,8 +432,9 @@ export default {
                 }
             }
             
-            if (!targetDisplay.enabled) {
-                showNotification('显示端已禁用', `显示端 "${targetDisplay.name}" 当前已禁用，无法打开`, {
+            if (!isDisplayEnabled(targetDisplay)) {
+                const displayName = getDisplayName(targetDisplay, displayId);
+                showNotification('显示端已禁用', `显示端 "${displayName}" 当前已禁用，无法打开`, {
                     tag: 'display-disabled',
                     urgency: 'normal'
                 });
@@ -796,7 +814,7 @@ export default {
         }
     },
     template: `
-    <div id="leftRail" class="left-rail-blur" style="position:relative; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:60px; padding-bottom:20px;">
+    <div id="leftRail" class="left-rail-blur" style="position:relative; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:48px; padding-bottom:20px;">
       
       <!-- Top Section -->
       <div id="railInner" style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:16px; flex:1;">

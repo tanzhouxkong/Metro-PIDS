@@ -2085,14 +2085,9 @@ function applyLinearEnglishWrap(node) {
 
 // 直线模式：通过 JS 精确控制站名块相对圆点的垂直位置
 // 目标：中文和英文的第一个字都在同一高度，都在圆点下方
-<<<<<<< Updated upstream
-function applyLinearNamePositionForBox(box) {
-  if (!box || !box.querySelectorAll) return;
-=======
 function applyLinearNamePositionForBox(box, options = {}) {
   if (!box || !box.querySelectorAll) return;
   const gap = Number.isFinite(options.gap) ? options.gap : 4;
->>>>>>> Stashed changes
   // 用 rAF 确保节点已经完成布局，可以正确拿到尺寸
   requestAnimationFrame(() => {
     const nodes = box.querySelectorAll('.l-node');
@@ -2105,30 +2100,18 @@ function applyLinearNamePositionForBox(box, options = {}) {
 
       const nodeRect = node.getBoundingClientRect();
       const dotRect = dot.getBoundingClientRect();
-<<<<<<< Updated upstream
-
-      // 期望：中文和英文的第一个字都在圆点下方一个固定 gap（同一高度）
-      const gap = 4; // px，越小越靠近圆点
-      const desiredTopInNode = dotRect.bottom - nodeRect.top + gap;
-=======
       const infoRect = infoBtm.getBoundingClientRect();
 
       // 期望：中文和英文的第一个字都在圆点下方一个固定 gap（同一高度）
       const desiredTopInNode = dotRect.bottom - nodeRect.top + gap;
       const dotCenterXInNode = (dotRect.left - nodeRect.left) + (dotRect.width / 2);
       const desiredLeftInNode = dotCenterXInNode - (infoRect.width / 2);
->>>>>>> Stashed changes
 
       // 直接设置 infoBtm 的顶部位置，确保 name 和 en 的顶部都在同一高度
       // 因为 infoBtm 是 flex column，justify-content: flex-start，所以 name 和 en 都会从顶部开始
       infoBtm.style.top = `${desiredTopInNode}px`;
-<<<<<<< Updated upstream
-      // 水平仍然以圆点中心为参考（不改变 X 方向）
-      infoBtm.style.transform = 'translateX(-50%)';
-=======
       infoBtm.style.left = `${desiredLeftInNode}px`;
       infoBtm.style.transform = 'none';
->>>>>>> Stashed changes
     });
   });
 }
@@ -5785,14 +5768,9 @@ export function initDisplayWindow(rootElement) {
       // 一次性插入所有节点，只触发一次重排
       box.appendChild(fragment);
 
-<<<<<<< Updated upstream
-      // 节点插入后，根据圆点位置精确调整 info-btm 垂直位置（保证第一个字更贴近圆点）
-      applyLinearNamePositionForBox(box);
-=======
       // 节点插入后，根据圆点位置精确调整 info-btm 位置（外部浏览器与客户端分别微调）
       const linearNameGap = isExternalBrowserRenderMode ? -2 : 4;
       applyLinearNamePositionForBox(box, { gap: linearNameGap });
->>>>>>> Stashed changes
       
       // 设置track容器宽度
       const trackWidth = boxWidth; // track宽度与box宽度一致
@@ -5960,14 +5938,9 @@ export function initDisplayWindow(rootElement) {
         }
         box.appendChild(node);
       });
-<<<<<<< Updated upstream
-      // 节点插入后，根据圆点位置精确调整 info-btm 垂直位置（保证第一个字更贴近圆点）
-      applyLinearNamePositionForBox(box);
-=======
       // 节点插入后，根据圆点位置精确调整 info-btm 位置（外部浏览器与客户端分别微调）
       const linearNameGap = isExternalBrowserRenderMode ? -2 : 4;
       applyLinearNamePositionForBox(box, { gap: linearNameGap });
->>>>>>> Stashed changes
     }
     c.appendChild(box);
     
@@ -6629,11 +6602,7 @@ export function initDisplayWindow(rootElement) {
       };
       // 添加 timeslice 参数（1000ms），定期触发 dataavailable，避免数据块过大导致内存问题或花屏
       recorder.start(1000);
-<<<<<<< Updated upstream
-      if (bc) bc.postMessage({ t: 'REC_STARTED' });
-=======
       postRealtimeMessage({ t: 'REC_STARTED' });
->>>>>>> Stashed changes
     } catch (err) {
       console.error(err);
       alert('录制启动失败，请检查浏览器权限');

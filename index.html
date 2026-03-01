@@ -15,14 +15,6 @@
         href="assets/fontawesome/css/all.min.css" 
         onerror="console.warn('Font Awesome failed to load, using fallback'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);"
     >
-    <!-- Element Plus CSS -->
-    <link 
-        rel="stylesheet" 
-        href="https://unpkg.com/element-plus@latest/dist/index.css"
-    >
-    <!-- Element Plus JS (UMD) -->
-    <script src="https://unpkg.com/element-plus@latest/dist/index.full.js"></script>
-    
     <!-- Global Styles -->
     <style>
         /* ================= CSS Variables ================= */
@@ -789,7 +781,17 @@
         <div class="app-loading">加载中</div>
     </div>
 
+    <!-- Fallback import map: 支持在 file:// 或非 Vite 代理场景下解析裸模块 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "vue": "./assets/vue.esm-browser.js",
+                "vue-i18n": "./node_modules/vue-i18n/dist/vue-i18n.esm-browser.js"
+            }
+        }
+    </script>
+
     <!-- Vite Entry Point -->
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="./src/main.js"></script>
 </body>
 </html>

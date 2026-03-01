@@ -5,22 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>显示端切换面板</title>
   <style>
-<<<<<<< Updated upstream
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
-    :root {
-      --bg: radial-gradient(circle at 20% 20%, #0d1b2a, #0b1320 45%, #070d16);
-      --panel: rgba(255, 255, 255, 0.04);
-      --panel-border: rgba(255, 255, 255, 0.08);
-      --accent: #49d6ff;
-      --accent-2: #5ef0c3;
-      --text: #e8f0ff;
-      --muted: #9cb2c9;
-      --danger: #ff7b7b;
-      --success: #7be0a5;
-      --card-gap: 14px;
-      --radius: 14px;
-      font-family: 'Space Grotesk', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-=======
     :root {
       --theme: #00b894;
       --bg: #efeff4;
@@ -35,23 +19,11 @@
       --card-gap: 14px;
       --radius: 14px;
       font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
->>>>>>> Stashed changes
       color: var(--text);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-<<<<<<< Updated upstream
-      min-height: 100vh;
-      background: var(--bg);
-      display: flex;
-      align-items: stretch;
-      justify-content: center;
-      padding: 32px 18px;
-    }
-    .wrap {
-      width: min(1200px, 100%);
-=======
       height: 100vh;
       background: var(--bg);
       overflow: hidden;
@@ -93,7 +65,6 @@
     }
     .wrap {
       width: 100%;
->>>>>>> Stashed changes
       display: grid;
       grid-template-columns: 3fr 2fr;
       gap: 18px;
@@ -103,15 +74,6 @@
       border: 1px solid var(--panel-border);
       border-radius: var(--radius);
       padding: 18px;
-<<<<<<< Updated upstream
-      box-shadow: 0 12px 50px rgba(0,0,0,0.35);
-      backdrop-filter: blur(10px);
-    }
-    h1 {
-      margin: 0 0 12px;
-      letter-spacing: 0.02em;
-      font-size: 26px;
-=======
       box-shadow: 0 6px 24px rgba(0,0,0,0.08);
     }
     h1 {
@@ -119,7 +81,6 @@
       letter-spacing: 0;
       font-size: 26px;
       font-weight: 700;
->>>>>>> Stashed changes
     }
     .subtitle { color: var(--muted); margin-bottom: 14px; }
     .conn-row { display: grid; grid-template-columns: 1.2fr 0.7fr auto; gap: 10px; align-items: center; margin-bottom: 12px; }
@@ -128,33 +89,17 @@
       width: 100%;
       padding: 10px 12px;
       border-radius: 10px;
-<<<<<<< Updated upstream
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.05);
-      color: var(--text);
-    }
-    input:focus { outline: 1px solid var(--accent); }
-=======
       border: 1px solid var(--panel-border);
       background: var(--surface);
       color: var(--text);
     }
     input:focus { outline: 1px solid var(--theme); }
->>>>>>> Stashed changes
     button {
       cursor: pointer;
       border: none;
       padding: 10px 14px;
       border-radius: 10px;
       font-weight: 700;
-<<<<<<< Updated upstream
-      letter-spacing: 0.01em;
-      color: #041018;
-      background: linear-gradient(120deg, var(--accent), var(--accent-2));
-      box-shadow: 0 10px 30px rgba(73, 214, 255, 0.35);
-    }
-    button.secondary { background: rgba(255,255,255,0.08); color: var(--text); box-shadow: none; border: 1px solid rgba(255,255,255,0.15); }
-=======
       letter-spacing: 0;
       color: #fff;
       background: var(--theme);
@@ -166,39 +111,25 @@
       box-shadow: none;
       border: 1px solid #d9d9df;
     }
->>>>>>> Stashed changes
     .status {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       padding: 8px 12px;
       border-radius: 999px;
-<<<<<<< Updated upstream
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.12);
-      font-size: 13px;
-    }
-    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 6px rgba(255,255,255,0.04); }
-=======
       background: var(--surface);
       border: 1px solid var(--panel-border);
       font-size: 13px;
     }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 6px rgba(0,0,0,0.04); }
->>>>>>> Stashed changes
     .dot.ok { background: var(--success); }
     .dot.bad { background: var(--danger); }
     .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--card-gap); }
     .card {
       border-radius: var(--radius);
       padding: 14px;
-<<<<<<< Updated upstream
-      border: 1px solid rgba(255,255,255,0.08);
-      background: linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
-=======
       border: 1px solid var(--panel-border);
       background: var(--surface);
->>>>>>> Stashed changes
       position: relative;
       overflow: hidden;
     }
@@ -210,41 +141,23 @@
       gap: 6px;
       padding: 6px 10px;
       border-radius: 999px;
-<<<<<<< Updated upstream
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .pill.active { color: var(--text); border-color: rgba(73,214,255,0.5); background: rgba(73,214,255,0.08); }
-=======
       background: var(--surface-2);
       border: 1px solid var(--panel-border);
       font-size: 12px;
       color: var(--muted);
     }
     .pill.active { color: var(--theme); border-color: rgba(0,184,148,0.35); background: rgba(0,184,148,0.08); }
->>>>>>> Stashed changes
     .card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
     .log {
       height: 300px;
       overflow: auto;
       border-radius: 12px;
-<<<<<<< Updated upstream
-      border: 1px solid rgba(255,255,255,0.08);
-      background: rgba(0,0,0,0.35);
-      padding: 12px;
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-      font-size: 12px;
-      color: var(--muted);
-=======
       border: 1px solid var(--panel-border);
       background: var(--surface);
       padding: 12px;
       font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
       font-size: 12px;
       color: #333;
->>>>>>> Stashed changes
       line-height: 1.5;
     }
     .tip { font-size: 12px; color: var(--muted); margin-top: 6px; }
@@ -255,12 +168,6 @@
   </style>
 </head>
 <body>
-<<<<<<< Updated upstream
-  <div class="wrap">
-    <section class="panel">
-      <h1>显示端切换面板</h1>
-      <div class="subtitle">通过局域网 WebSocket Bridge (默认端口 9400) 切换显示端，页面保持不跳转。</div>
-=======
   <div class="app-shell">
     <header class="app-topbar">
       <div class="app-title">Metro PIDS 控制台</div>
@@ -273,7 +180,6 @@
           <section class="panel">
       <h1>多屏协同入口</h1>
       <div class="subtitle">默认自动跳转到已启用显示器页面。</div>
->>>>>>> Stashed changes
       <div class="conn-row">
         <div>
           <label for="host">桥接地址</label>
@@ -292,19 +198,6 @@
         <span class="dot" id="dot"></span>
         <span id="status-text">未连接</span>
       </div>
-<<<<<<< Updated upstream
-      <div class="tip">提示：确保在主控机设置中开启“WebSocket Bridge”，并确认端口未被占用。</div>
-      <div style="margin-top:16px;">
-        <div class="cards" id="cards"></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h1>事件</h1>
-      <div class="log" id="log"></div>
-      <div class="tip">收到 DISPLAY_SWITCHED / ACK 会在此显示，方便确认切换是否成功。</div>
-    </section>
-=======
       <div class="tip">提示：确保在主控机设置中开启“多屏协同”，并确认端口未被占用。</div>
       <div style="margin-top:16px;">
         <div class="cards" id="cards"></div>
@@ -319,7 +212,6 @@
         </div>
       </main>
     </div>
->>>>>>> Stashed changes
   </div>
 
   <script>
@@ -343,8 +235,6 @@
       lastAck: null
     };
 
-<<<<<<< Updated upstream
-=======
     function normalizePathToHttpUrl(raw) {
       const path = String(raw || '').trim();
       if (!path) return '';
@@ -557,7 +447,6 @@
       return true;
     }
 
->>>>>>> Stashed changes
     function logLine(text) {
       const time = new Date().toLocaleTimeString();
       els.log.innerText = `[${time}] ${text}\n` + els.log.innerText;
@@ -654,11 +543,6 @@
           }
           return;
         }
-<<<<<<< Updated upstream
-        if (msg.t === 'SYNC' && msg.r && msg.r.currentDisplayId) {
-          state.currentDisplayId = msg.r.currentDisplayId;
-          renderCards();
-=======
         if (msg.t === 'SYNC') {
           const syncDisplayId = msg.currentDisplayId
             || (msg.r && msg.r.currentDisplayId)
@@ -668,7 +552,6 @@
             state.currentDisplayId = syncDisplayId;
             renderCards();
           }
->>>>>>> Stashed changes
           return;
         }
       });
@@ -711,15 +594,11 @@
 
     // 初始化默认主机
     els.host.value = window.location.hostname || '';
-<<<<<<< Updated upstream
-    loadDisplays();
-=======
     autoRedirectIfNeeded().then((redirected) => {
       if (!redirected) {
         loadDisplays();
       }
     });
->>>>>>> Stashed changes
   </script>
 </body>
 </html>

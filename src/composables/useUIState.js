@@ -6,7 +6,7 @@ const uiState = reactive({
     showDisplay: false,
     autoLocked: false,
     showDevButton: false, // 是否显示开发者按钮
-    // 自动播放弹窗用：暂停/继续回调与状态（由 ConsolePage/SlidePanel 的 startWithLock 注册）
+    // 自动播放弹窗用：暂停/继续回调与状态（由主页面/SlidePanel 的 startWithLock 注册）
     autoplayTogglePause: null,
     autoplayIsPausedRef: null,
     // 云控显示端相关：是否在界面中展示“系统显示器”选项（由云端配置控制）

@@ -97,8 +97,34 @@ export default {
         return false;
       }
     },
+    isBlurEnabled() {
+      try {
+        const el = document.documentElement;
+        return !(el && el.classList.contains('blur-disabled'));
+      } catch (e) {
+        return true;
+      }
+    },
     getGlassBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
       return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)';
+    },
+    getDialogBackdrop() {
+      return this.isBlurEnabled() ? 'blur(20px) saturate(180%)' : 'none';
+    },
+    getDialogBorder() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '1px solid rgba(255,255,255,0.16)' : '1px solid rgba(15,23,42,0.16)';
+      }
+      return '1px solid rgba(255,255,255,0.1)';
+    },
+    getDialogContentBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
+      return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)';
     },
     // 在输入框上显示复制/粘贴右键菜单
     onInputContextMenu(e) {
@@ -171,13 +197,14 @@ export default {
                :style="{ 
                  position: 'relative', 
                  background: getGlassBg(),
-                 backdropFilter: 'blur(20px) saturate(180%)',
-                 WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                 backdropFilter: getDialogBackdrop(),
+                 WebkitBackdropFilter: getDialogBackdrop(),
+                 border: getDialogBorder(),
                  borderRadius: '16px', 
                  padding: '0', 
                  width: '420px', 
                  maxWidth: '90%', 
-                 boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1)', 
+                 boxShadow: '0 20px 60px rgba(0,0,0,0.4)', 
                  overflow: 'hidden',
                  transform: 'scale(1)',
                  transition: 'transform 0.2s'
@@ -212,18 +239,6 @@ export default {
                     color: 'var(--text, #333)', 
                     letterSpacing: '-0.5px' 
                   }">{{ title }}</div>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                  <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">
-                    {{ type === 'alert' ? 'Alert' : type === 'confirm' ? 'Confirm' : type === 'prompt' ? 'Prompt' : type === 'shareCode' ? 'Share' : '' }}
-                  </div>
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 </div>
               </div>
               <button @click="closeDialog(type==='confirm'?false:null)" 
@@ -235,7 +250,7 @@ export default {
             </div>
             
             <!-- Content -->
-            <div :style="{ padding:'24px 28px', background: (isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)') }">
+            <div :style="{ padding:'24px 28px', background: getDialogContentBg() }">
               <div v-if="type !== 'shareCode'" id="ud-msg" style="margin-bottom:20px; color:var(--text, #333); font-size:14px; line-height:1.7; white-space:pre-wrap;">{{ msg }}</div>
               
               <!-- 分享码显示区域 -->
@@ -329,13 +344,13 @@ export default {
       </Transition>
     </Teleport>
     
-    <style>
+    <component :is="'style'">
       .fade-enter-active, .fade-leave-active {
         transition: opacity 0.3s ease;
       }
       .fade-enter-from, .fade-leave-to {
         opacity: 0;
       }
-    </style>
+    </component>
   `
 }

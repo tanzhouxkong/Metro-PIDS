@@ -36,10 +36,17 @@
             color: var(--text); 
         }
     </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "vue": "./assets/vue.esm-browser.js"
+            }
+        }
+    </script>
 </head>
 <body>
     <div id="topbar-app"></div>
-    <script type="module" src="./src/topbarEntry.js"></script>
+    <script type="module" src="/src/topbarEntry.js"></script>
 </body>
 </html>
 

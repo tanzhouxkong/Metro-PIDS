@@ -1,14 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol } = require('electron');
-
-// 提前注册关键 IPC 占位处理器，避免渲染进程启动早于主进程完整初始化时出现 "No handler registered"
-// 后续在主流程中会 removeHandler 并注册正式实现。
-try {
-  ipcMain.handle('effects/dialog-blur', async () => ({ ok: true }));
-  ipcMain.handle('effects/main-blur', async () => ({ ok: true }));
-  ipcMain.handle('system/get-geolocation', async () => ({ country: null, city: null, latitude: null, longitude: null }));
-} catch (e) {
-  // 忽略重复注册异常（热重载场景）
-}
+﻿const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol } = require('electron');
 
 // 辅助函数：显示显示器识别错误对话框
 function showDisplayErrorDialog(title, message, details) {
@@ -140,17 +130,7 @@ try {
 // 默认使用 BroadcastChannel 进行通信，如需使用 Python 客户端可启用此选项
 let displayApiServer = null;
 try {
-  const apiServerPathCandidates = [
-    path.join(__dirname, 'scripts', 'display-api-server.js'),
-    path.join(__dirname, '..', 'scripts', 'display-api-server.js'),
-    path.join(__dirname, '..', '..', 'scripts', 'display-api-server.js'),
-    path.join(app.getAppPath(), 'scripts', 'display-api-server.js'),
-    path.join(process.cwd(), 'scripts', 'display-api-server.js')
-  ];
-  const apiServerPath = apiServerPathCandidates.find((p) => {
-    try { return fs.existsSync(p); } catch (e) { return false; }
-  });
-  const apiServerModule = require(apiServerPath || './scripts/display-api-server.js');
+  const apiServerModule = require('./scripts/display-api-server.js');
   displayApiServer = apiServerModule.createDisplayApiServer();
 } catch (e) {
   console.warn('[main] 无法加载显示器控制API服务器:', e);
@@ -232,6 +212,8 @@ let Store = null;
 let store = null;
 try {
   logger = require('electron-log');
+  Store = require('electron-store');
+  store = new Store();
   
   // 配置 logger 输出到文件和控制台
   if (logger) {
@@ -244,28 +226,7 @@ try {
     console.log('[main] 日志文件位置:', logger.transports.file.getFile().path);
   }
 } catch (e) {
-  console.warn('electron-log not available:', e);
-}
-
-try {
-  const storeModule = require('electron-store');
-  Store = storeModule && storeModule.default ? storeModule.default : storeModule;
-  store = new Store();
-} catch (e) {
-  if (e && e.code === 'ERR_REQUIRE_ESM') {
-    Promise.resolve()
-      .then(() => import('electron-store'))
-      .then((storeModule) => {
-        Store = storeModule && storeModule.default ? storeModule.default : storeModule;
-        store = new Store();
-        console.log('[main] electron-store loaded via dynamic import');
-      })
-      .catch((err) => {
-        console.warn('electron-store dynamic import failed:', err);
-      });
-  } else {
-    console.warn('electron-store not available:', e);
-  }
+  console.warn('electron-log or electron-store not available:', e);
 }
 
 // Electron 32+ 内置了 setBackgroundMaterial API，无需额外安装原生模块
@@ -366,7 +327,7 @@ function startMultiScreenHttpServer(portOverride) {
 
   const http = require('http');
   const rootDir = resolveStaticRootDir();
-  const basePort = normalizeWsPort(portOverride || process.env.PIDS_MULTI_HTTP_PORT || '9517', 9517);
+  const basePort = normalizeWsPort(portOverride || process.env.PIDS_MULTI_HTTP_PORT || '5173', 5173);
   const maxAttempts = 20;
 
   for (let i = 0; i < maxAttempts; i++) {
@@ -1507,8 +1468,7 @@ function getRendererUrl(htmlRelativePath) {
   
   // 兜底：开发模式但环境变量缺失时，使用默认端口
   if (!app.isPackaged) {
-    const fallbackDevPort = Number(process.env.PIDS_DEV_SERVER_PORT || '5180');
-    return `http://localhost:${fallbackDevPort}/${basePath}`;
+    return `http://localhost:5173/${basePath}`;
   }
   
   // 生产环境：使用打包后的静态文件
@@ -1938,46 +1898,6 @@ function createWindow() {
         if (mainWin && !mainWin.isDestroyed()) {
           mainWin.center();
           console.log('[MainWindow] ✅ 窗口已显示并居中');
-
-          setTimeout(() => {
-            if (!mainWin || mainWin.isDestroyed()) return;
-
-            const bounds = mainWin.getBounds();
-            const sidebarWidth = 60;
-            const topbarUrl = getRendererUrl('topbar.html');
-            const sidebarUrl = getRendererUrl('sidebar.html');
-
-            console.log('[MainWindow] 📦 初始化顶部栏和侧边栏 BrowserView...');
-
-            const topbarView = createBrowserView('topbar', topbarUrl, {
-              x: 0,
-              y: 0,
-              width: 1,
-              height: 32 / bounds.height
-            });
-
-            const sidebarView = createBrowserView('sidebar', sidebarUrl, {
-              x: 0,
-              y: 32 / bounds.height,
-              width: sidebarWidth / bounds.width,
-              height: (bounds.height - 32) / bounds.height
-            });
-
-            if (!topbarView || !sidebarView) {
-              console.error('[MainWindow] ❌ 初始化 BrowserView 失败');
-              return;
-            }
-
-            if (typeof mainWin.setTopBrowserView === 'function') {
-              try {
-                mainWin.setTopBrowserView(topbarView);
-              } catch (e) {
-                console.warn('[MainWindow] ⚠️ 设置顶部栏层级失败:', e);
-              }
-            }
-
-            console.log('[MainWindow] ✅ 顶部栏和侧边栏 BrowserView 已初始化');
-          }, 300);
         }
       } catch (e) {
         console.warn('[MainWindow] ⚠️ 居中窗口失败:', e);
@@ -2464,9 +2384,9 @@ function createWindow() {
 
   ipcMain.handle('network/multi-screen-port', async () => {
     try {
-      return { ok: true, port: Number(multiScreenHttpPort) || 9517 };
+      return { ok: true, port: Number(multiScreenHttpPort) || 5173 };
     } catch (e) {
-      return { ok: false, error: String(e.message || e), port: 9517 };
+      return { ok: false, error: String(e.message || e), port: 5173 };
     }
   });
 
@@ -3842,7 +3762,6 @@ function createWindow() {
     }
   });
 
-  ipcMain.removeHandler('effects/dialog-blur');
   ipcMain.handle('effects/dialog-blur', (event, enable) => {
     const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
     if (!win) return { ok: false, error: 'no-window' };
@@ -3864,7 +3783,6 @@ function createWindow() {
   });
 
   // 获取设备地理位置（使用操作系统原生 API / IP 定位）
-  ipcMain.removeHandler('system/get-geolocation');
   ipcMain.handle('system/get-geolocation', async () => {
     try {
       // 使用免费的 IP 定位服务（ipapi.co）
@@ -3932,7 +3850,6 @@ function createWindow() {
   });
 
   // 主窗口模糊开关（通过 mica-electron 控制，而非 CSS）
-  ipcMain.removeHandler('effects/main-blur');
   ipcMain.handle('effects/main-blur', (event, enable) => {
     MAIN_BLUR_ENABLED = !!enable;
 
@@ -3989,10 +3906,10 @@ function createWindow() {
     try { mainWin.webContents.send('window/maxstate', false); } catch (e) {}
   });
 
-  // 创建 BrowserView 复合布局（若 ready-to-show 已触发则立即执行）
-  const initMainBrowserViews = () => {
+  // 窗口 ready 后发送初始最大化状态，并创建 BrowserView 复合布局
+  mainWin.once('ready-to-show', () => {
     try { mainWin.webContents.send('window/maxstate', mainWin.isMaximized()); } catch (e) {}
-
+    
     // 延迟一小段时间确保主窗口内容已加载，然后创建 BrowserView 复合布局
     // 关键问题：BrowserView 覆盖整个窗口时会拦截所有事件，即使设置了 pointer-events: none
     // 解决方案：创建两个独立的 BrowserView，分别覆盖顶部栏和侧边栏区域
@@ -4071,13 +3988,7 @@ function createWindow() {
         });
       }
     }, 500);
-  };
-
-  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible()) {
-    initMainBrowserViews();
-  } else {
-    mainWin.once('ready-to-show', initMainBrowserViews);
-  }
+  });
 
   // 监听窗口大小变化，自动调整 BrowserView 布局
   mainWin.on('resize', () => {
@@ -4093,8 +4004,6 @@ function createWindow() {
     closeAllWindows();
     mainWin = null;
   });
-}
-
 }
 
 // ==================== BrowserView 复合布局管理 ====================
@@ -4217,16 +4126,6 @@ function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height:
     view: view,
     bounds: bounds
   });
-
-  // 监听 console 消息并转发到主进程（需在 loadURL 之前注册，避免丢失早期错误）
-  view.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    const prefix = `[BrowserView:${viewId}]`;
-    const at = sourceId ? `(${sourceId}:${line})` : '';
-    if (level === 0) console.log(prefix, message, at);
-    else if (level === 1) console.warn(prefix, message, at);
-    else if (level === 2) console.error(prefix, message, at);
-    else console.error(prefix, `[console:${level}]`, message, at);
-  });
   
   // 加载URL
   console.log(`[BrowserView:${viewId}] 📥 开始加载 URL:`, url);
@@ -4250,14 +4149,12 @@ function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height:
             const leftrailApp = document.getElementById('leftrail-app');
             const leftRail = document.getElementById('leftRail');
             const buttons = leftRail?.querySelectorAll('button') || [];
-            const info = {
-              sidebarEntryLoaded: !!window.__SIDEBAR_ENTRY_LOADED,
+            console.log('[BrowserView:sidebar] DOM 检查:', {
               leftrailApp: !!leftrailApp,
               leftRail: !!leftRail,
               buttonsCount: buttons.length,
               leftrailAppChildren: leftrailApp?.children?.length || 0
-            };
-            console.log('[BrowserView:sidebar] DOM 检查:', JSON.stringify(info));
+            });
             if (buttons.length > 0) {
               console.log('[BrowserView:sidebar] ✅ 按钮已渲染:', buttons.length);
             } else {
@@ -4279,6 +4176,14 @@ function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height:
     console.log(`[BrowserView:${viewId}] 🔧 打开 DevTools`);
     view.webContents.openDevTools();
   }
+  
+  // 监听 console 消息并转发到主进程
+  view.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const prefix = `[BrowserView:${viewId}]`;
+    if (level === 0) console.log(prefix, message);
+    else if (level === 1) console.warn(prefix, message);
+    else if (level === 2) console.error(prefix, message);
+  });
   
   // 将视图附加到主窗口（使用 addBrowserView 支持多个 BrowserView）
   try {
@@ -7920,7 +7825,7 @@ app.whenReady().then(async () => {
       console.log('[main] WebSocket Bridge 未启用');
     }
 
-    startMultiScreenHttpServer(process.env.PIDS_MULTI_HTTP_PORT || 9517);
+    startMultiScreenHttpServer(5173);
   } catch (e) {
     console.warn('[main] 读取 API 服务器设置失败，使用默认值（未启用）:', e);
   }
@@ -10103,3 +10008,5 @@ ipcMain.handle('line-manager/close', async (event) => {
     return { ok: false, error: String(e) };
   }
 });
+
+)

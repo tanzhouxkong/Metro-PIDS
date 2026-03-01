@@ -175,5 +175,28 @@ html.dark .lmcm-icon{
 html.dark .lmcm-sep{
   background: var(--divider);
 }
+
+html.blur-disabled .lmcm{
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22);
+}
+html.blur-disabled .lmcm-item:hover{
+  background: #f5f7fb;
+}
+html.blur-disabled.dark .lmcm,
+html.blur-disabled[data-theme="dark"] .lmcm{
+  background: #1c1c20;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.42);
+}
+html.blur-disabled.dark .lmcm-item:hover,
+html.blur-disabled[data-theme="dark"] .lmcm-item:hover{
+  background: rgba(255,255,255,0.08);
+}
 </style>
 

@@ -1,4 +1,4 @@
-﻿import { useUIState } from '../composables/useUIState.js'
+import { useUIState } from '../composables/useUIState.js'
 import { useAutoplay } from '../composables/useAutoplay.js'
 import { useFileIO } from '../composables/useFileIO.js'
 import { usePidsState } from '../composables/usePidsState.js'
@@ -77,8 +77,176 @@ export default {
 
     // 国际化：当前语言（简体 / 繁体 / 英文）
     const currentLocale = ref(i18n.global.locale.value || 'zh-CN')
+        const showLanguageDropdown = ref(false)
+        const showThemeModeDropdown = ref(false)
+        const themeModeDropdownRef = ref(null)
+        const languageDropdownRef = ref(null)
+        const themeModeDropdownOpenUp = ref(false)
+        const languageDropdownOpenUp = ref(false)
+        const dropdownThemeDark = ref(false)
+        let dropdownThemeObserver = null
+        let dropdownThemeMediaQuery = null
 
     const languageOptions = langs
+
+        const themeModeOptions = computed(() => [
+            { key: 'system', title: i18n.global.t('settings.themeSystem') },
+            { key: 'light', title: i18n.global.t('settings.themeLight') },
+            { key: 'dark', title: i18n.global.t('settings.themeDark') }
+        ])
+
+        const currentThemeModeTitle = computed(() => {
+            const option = themeModeOptions.value.find((opt) => opt.key === settings.themeMode)
+            return option ? option.title : (settings.themeMode || 'system')
+        })
+
+        const selectThemeMode = (modeKey) => {
+            settings.themeMode = modeKey
+            saveSettings()
+            showThemeModeDropdown.value = false
+        }
+
+        const resolveDropdownDirection = (containerRef, estimatedMenuHeight = 340) => {
+            if (typeof window === 'undefined' || !containerRef || !containerRef.value) return false
+            const rect = containerRef.value.getBoundingClientRect()
+            const spaceBelow = window.innerHeight - rect.bottom
+            const spaceAbove = rect.top
+            return spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow
+        }
+
+        const toggleThemeModeDropdown = () => {
+            if (!showThemeModeDropdown.value) {
+                themeModeDropdownOpenUp.value = resolveDropdownDirection(themeModeDropdownRef, 340)
+            }
+            showThemeModeDropdown.value = !showThemeModeDropdown.value
+        }
+
+        const currentLanguageTitle = computed(() => {
+            const option = languageOptions.find((opt) => opt.key === currentLocale.value)
+            return option ? option.title : (currentLocale.value || 'zh-CN')
+        })
+
+        const selectLanguage = (langKey) => {
+            currentLocale.value = langKey
+            changeLanguage()
+            showLanguageDropdown.value = false
+        }
+
+        const toggleLanguageDropdown = () => {
+            if (!showLanguageDropdown.value) {
+                languageDropdownOpenUp.value = resolveDropdownDirection(languageDropdownRef, 340)
+            }
+            showLanguageDropdown.value = !showLanguageDropdown.value
+        }
+
+        const updateDropdownThemeState = () => {
+            if (typeof document === 'undefined') {
+                dropdownThemeDark.value = false
+                return
+            }
+            const root = document.documentElement
+            const explicitDark = root.classList.contains('dark') || root.getAttribute('data-theme') === 'dark'
+            if (explicitDark) {
+                dropdownThemeDark.value = true
+                return
+            }
+            if (typeof window !== 'undefined' && window.matchMedia) {
+                dropdownThemeDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches
+                return
+            }
+            dropdownThemeDark.value = false
+        }
+
+        const isDarkThemeActive = () => dropdownThemeDark.value
+        const isGlassBlurEnabled = () => settings.blurEnabled !== false
+        const glassBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(22px) saturate(180%)' : 'none')
+        const glassTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(18px) saturate(170%)' : 'none')
+        const contextMenuBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%) contrast(1.06)' : 'none')
+
+        const glassMenuBackground = () => {
+            if (!isGlassBlurEnabled()) return isDarkThemeActive() ? '#1c1c20' : '#ffffff'
+            return isDarkThemeActive() ? 'rgba(28, 28, 32, 0.78)' : 'rgba(255,255,255,0.58)'
+        }
+        const glassMenuBorder = () => {
+            if (!isGlassBlurEnabled()) return isDarkThemeActive() ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.16)'
+            return isDarkThemeActive() ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)'
+        }
+        const glassMenuShadow = () => (isDarkThemeActive()
+            ? '0 14px 36px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(255,255,255,0.06)'
+            : '0 14px 36px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.5)')
+        const glassItemHoverBackground = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.32)')
+        const glassItemActiveBackground = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.38)')
+        const glassDividerColor = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.14)' : 'rgba(224,224,224,0.5)')
+
+        const themeModeDropdownMenuStyle = computed(() => ({
+            position: 'absolute',
+            left: '0',
+            right: '0',
+            top: themeModeDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+            bottom: themeModeDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+            background: glassMenuBackground(),
+            backdropFilter: glassBackdropFilter(),
+            WebkitBackdropFilter: glassBackdropFilter(),
+            border: `1px solid ${glassMenuBorder()}`,
+            borderRadius: '12px',
+            boxShadow: glassMenuShadow(),
+            maxHeight: 'min(460px, 56vh)',
+            overflowY: 'auto',
+            padding: '6px',
+            zIndex: 9999
+        }))
+
+        const languageDropdownMenuStyle = computed(() => ({
+            position: 'absolute',
+            left: '0',
+            right: '0',
+            top: languageDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+            bottom: languageDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+            background: glassMenuBackground(),
+            backdropFilter: glassBackdropFilter(),
+            WebkitBackdropFilter: glassBackdropFilter(),
+            border: `1px solid ${glassMenuBorder()}`,
+            borderRadius: '12px',
+            boxShadow: glassMenuShadow(),
+            maxHeight: 'min(460px, 56vh)',
+            overflowY: 'auto',
+            padding: '6px',
+            zIndex: 9999
+        }))
+
+        const dropdownTriggerStyle = computed(() => ({
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: '10px',
+            border: `1px solid ${glassMenuBorder()}`,
+            background: glassMenuBackground(),
+            backdropFilter: glassTriggerBackdropFilter(),
+            WebkitBackdropFilter: glassTriggerBackdropFilter(),
+            color: 'var(--text)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: glassMenuShadow()
+        }))
+
+        const handlePreferencesDropdownOutsideClick = (event) => {
+            const target = event.target
+            if (
+                showThemeModeDropdown.value &&
+                themeModeDropdownRef.value &&
+                !themeModeDropdownRef.value.contains(target)
+            ) {
+                showThemeModeDropdown.value = false
+            }
+            if (
+                showLanguageDropdown.value &&
+                languageDropdownRef.value &&
+                !languageDropdownRef.value.contains(target)
+            ) {
+                showLanguageDropdown.value = false
+            }
+        }
 
     // 语言切换：同时更新全局 i18n + 应用自身的简/繁配置（供显示端 3 使用）
     const changeLanguage = () => {
@@ -102,37 +270,6 @@ export default {
         console.warn('[SlidePanel] 切换语言时更新 settings.hkLang 失败:', e)
       }
     }
-<<<<<<< Updated upstream
-
-    // 国际化：当前语言（简体 / 繁体 / 英文）
-    const currentLocale = ref(i18n.global.locale.value || 'zh-CN')
-
-    const languageOptions = langs
-
-    // 语言切换：同时更新全局 i18n + 应用自身的简/繁配置（供显示端 3 使用）
-    const changeLanguage = () => {
-      const lang = currentLocale.value || 'zh-CN'
-      // 1) vue-i18n 全局语言
-      setLocale(lang)
-
-      // 2) Metro-PIDS 自身设置：映射为 hkLang (sc / tc)，供 HKDisplay.vue 使用
-      try {
-        if (lang === 'zh-CN') {
-          settings.hkLang = 'sc'
-        } else if (lang === 'zh-TW') {
-          settings.hkLang = 'tc'
-        } else {
-          // 英文暂时保持简体为基础
-          settings.hkLang = 'sc'
-        }
-        // 持久化到 pids_settings_v1，并同步到主进程 / 显示端
-        saveSettings()
-      } catch (e) {
-        console.warn('[SlidePanel] 切换语言时更新 settings.hkLang 失败:', e)
-      }
-    }
-=======
->>>>>>> Stashed changes
 
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
@@ -154,8 +291,6 @@ export default {
         })
         const wsPortDisplay = computed(() => settings.wsPort || 9400)
         const apiPortDisplay = 9001
-<<<<<<< Updated upstream
-=======
         const multiScreenHttpPort = ref(5173)
         const multiScreenEntryUrl = computed(() => {
             const host = (lanIpsResolved.value && lanIpsResolved.value[0])
@@ -172,7 +307,6 @@ export default {
         const showWsClientsDialog = ref(false)
         const wsClientsLoading = ref(false)
         const wsClients = ref([])
->>>>>>> Stashed changes
 
         const loadLanIps = async () => {
             try {
@@ -190,8 +324,6 @@ export default {
                 lanIps.value = [window.location.hostname || 'localhost']
             }
         }
-<<<<<<< Updated upstream
-=======
 
         const loadMultiScreenHttpPort = async () => {
             try {
@@ -284,7 +416,6 @@ export default {
                     : i18n.global.t('multiScreen.copyFailTitle')
             )
         }
->>>>>>> Stashed changes
     
     // 颜色选择器
     const showColorPicker = ref(false);
@@ -1705,6 +1836,23 @@ export default {
 
     // 监听来自线路管理器的线路切换请求
     onMounted(async () => {
+        if (typeof document !== 'undefined') {
+            document.addEventListener('pointerdown', handlePreferencesDropdownOutsideClick, true)
+            updateDropdownThemeState()
+            dropdownThemeObserver = new MutationObserver(() => updateDropdownThemeState())
+            dropdownThemeObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['class', 'data-theme']
+            })
+            if (typeof window !== 'undefined' && window.matchMedia) {
+                dropdownThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+                if (typeof dropdownThemeMediaQuery.addEventListener === 'function') {
+                    dropdownThemeMediaQuery.addEventListener('change', updateDropdownThemeState)
+                } else if (typeof dropdownThemeMediaQuery.addListener === 'function') {
+                    dropdownThemeMediaQuery.addListener(updateDropdownThemeState)
+                }
+            }
+        }
         // Electron 环境：通过 IPC 监听
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onSwitchLineRequest) {
             try {
@@ -1741,10 +1889,7 @@ export default {
 
         // 加载局域网 IP，便于设置页展示
         loadLanIps();
-<<<<<<< Updated upstream
-=======
         loadMultiScreenHttpPort();
->>>>>>> Stashed changes
         
         // 网页环境：监听 postMessage 和 storage 事件
         if (typeof window !== 'undefined' && (!window.electronAPI || !window.electronAPI.onSwitchLineRequest)) {
@@ -1890,16 +2035,6 @@ export default {
         }
     }
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-    const keyMapDisplay = computed(() => ({
-        arrdep: { label: i18n.global.t('keys.nextState') },
-        prev: { label: i18n.global.t('keys.prevStation') },
-        next: { label: i18n.global.t('keys.nextStation') }
-    }));
-=======
-=======
->>>>>>> Stashed changes
     let lineManagerSaveWatcher = null;
 
     const stopLineManagerSaveWatcher = () => {
@@ -1908,7 +2043,6 @@ export default {
             lineManagerSaveWatcher = null;
         }
     };
->>>>>>> Stashed changes
 
     function cachePendingLineSave(payload) {
         try {
@@ -2191,12 +2325,6 @@ export default {
 
         startLineManagerSaveWatcher(requestId, payload, mode);
     }
-
-    const keyMapDisplay = computed(() => ({
-        arrdep: { label: i18n.global.t('keys.nextState') },
-        prev: { label: i18n.global.t('keys.prevStation') },
-        next: { label: i18n.global.t('keys.nextStation') }
-    }));
 
     function recordKey(keyName, event) {
         event.preventDefault();
@@ -2900,13 +3028,41 @@ export default {
 
         function normalizeDisplaysMap(maybeMap) {
             const raw = (maybeMap && typeof maybeMap === 'object' && !Array.isArray(maybeMap)) ? { ...maybeMap } : {};
+            const defaultMap = (DEFAULT_SETTINGS && DEFAULT_SETTINGS.display && DEFAULT_SETTINGS.display.displays && typeof DEFAULT_SETTINGS.display.displays === 'object')
+                ? DEFAULT_SETTINGS.display.displays
+                : {};
             // 永远兜底补齐系统显示器，避免因任何覆盖/序列化异常导致系统显示器“消失”
-            const merged = { ...DEFAULT_SETTINGS.display.displays, ...raw };
+            // 并对每个显示器做字段级合并，防止部分更新把 name/description 等字段覆盖丢失
+            const merged = {};
+            const ids = new Set([...Object.keys(defaultMap), ...Object.keys(raw)]);
+            ids.forEach((id) => {
+                const def = defaultMap[id] && typeof defaultMap[id] === 'object' ? defaultMap[id] : {};
+                const cur = raw[id] && typeof raw[id] === 'object' ? raw[id] : {};
+                merged[id] = { ...def, ...cur };
+                if (!merged[id].id) merged[id].id = id;
+                if (!merged[id].name) merged[id].name = def.name || id;
+                if (merged[id].enabled === undefined) merged[id].enabled = def.enabled !== false;
+                if (!merged[id].source) merged[id].source = def.source || 'builtin';
+            });
             // 强制系统显示器标记
             ['display-1', 'display-2', 'display-3'].forEach((id) => {
                 if (merged[id]) merged[id].isSystem = true;
             });
             return merged;
+        }
+
+        function isDisplayEnabled(display) {
+            if (!display || typeof display !== 'object') return false;
+            const value = display.enabled;
+            if (value === false || value === 'false' || value === 0 || value === '0') return false;
+            return true;
+        }
+
+        function getDisplayName(display, fallbackId = '') {
+            if (display && display.name) return display.name;
+            if (display && display.id) return display.id;
+            if (fallbackId) return fallbackId;
+            return '未命名显示端';
         }
 
         // 监听设置变化，同步到本地状态
@@ -2986,39 +3142,13 @@ export default {
         const display1WallpaperInput = ref(null);
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
-            lineNameMerge: false, showAllStations: false,
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             // 仅显示器1使用的选项：线路名合并 / C 型开关
             lineNameMerge: false,
             // 显示器1：壁纸（仅到站/结束页背景）
             wallpaperDataUrl: '',
             wallpaperOpacity: 0.35,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             // 显示器2：下一站/到站白屏时长
             nextStationDurationSeconds: 10,
             // 显示器3：出站页面显示时长
@@ -3109,18 +3239,6 @@ export default {
             displayEdit.layoutMode = display.layoutMode !== undefined && (display.layoutMode === 'linear' || display.layoutMode === 'c-type')
                 ? display.layoutMode
                 : 'linear';
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             if (displayId === 'display-1') {
                 displayEdit.wallpaperDataUrl = typeof display.wallpaperDataUrl === 'string' ? display.wallpaperDataUrl : '';
                 const op = Number.isFinite(display.wallpaperOpacity) ? display.wallpaperOpacity : parseFloat(display.wallpaperOpacity);
@@ -3129,18 +3247,6 @@ export default {
                 displayEdit.wallpaperDataUrl = '';
                 displayEdit.wallpaperOpacity = 0.35;
             }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
             displayEdit.departDurationSeconds = departDurationSeconds;
             displayEdit.isSystem = display.isSystem === true;
@@ -3188,38 +3294,12 @@ export default {
                     : {
                         // 仅显示器1支持这些开关
                         lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                        showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
-                        layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
                         // 仅显示器1：壁纸
                         wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
                         wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                         // 显示器3：出站页面显示时长（毫秒）
                         departDuration: displayEdit.isDisplay3
                             ? displayEdit.departDurationSeconds * 1000
@@ -3261,38 +3341,12 @@ export default {
                 name, source, url, description,
                 // 仅显示器1支持这些开关
                 lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
-                layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
                 // 仅显示器1：壁纸
                 wallpaperDataUrl: displayEdit.isDisplay1 ? displayEdit.wallpaperDataUrl : undefined,
                 wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 isDisplay1: displayEdit.isDisplay1,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
                 // 非系统显示端的 display-3 也可以单独配置出站页面时长
@@ -3318,8 +3372,9 @@ export default {
                 return;
             }
             
-            if (!targetDisplay.enabled) {
-                showNotification('显示端已禁用', `显示端 "${targetDisplay.name}" 当前已禁用，无法切换`, {
+            if (!isDisplayEnabled(targetDisplay)) {
+                const displayName = getDisplayName(targetDisplay, displayId);
+                showNotification('显示端已禁用', `显示端 "${displayName}" 当前已禁用，无法切换`, {
                     tag: 'display-disabled',
                     urgency: 'normal'
                 });
@@ -3589,18 +3644,6 @@ export default {
                         if (displayData.layoutMode !== undefined && (displayData.layoutMode === 'linear' || displayData.layoutMode === 'c-type')) {
                             display.layoutMode = displayData.layoutMode;
                         }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                             // 显示器1：壁纸
                             if (displayId === 'display-1') {
                                 if (displayData.wallpaperDataUrl !== undefined) {
@@ -3611,18 +3654,6 @@ export default {
                                     display.wallpaperOpacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 0.35;
                                 }
                             }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                         // 显示器3：更新“出站页面显示时长”
                         if (displayId === 'display-3' && displayData.departDuration !== undefined) {
                             settings.display.display3DepartDuration = displayData.departDuration;
@@ -3771,7 +3802,7 @@ export default {
         function toggleDisplayEnabled(displayId) {
             const display = settings.display.displays[displayId];
             if (display) {
-                display.enabled = !display.enabled;
+                display.enabled = !isDisplayEnabled(display);
                 
                 // 强制更新显示端状态确保响应性
                 settings.display.displays = normalizeDisplaysMap(settings.display.displays);
@@ -3781,8 +3812,9 @@ export default {
                 
                 if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端启用状态已切换:', displayId, display.enabled);
                 
-                const statusText = display.enabled ? '已启用' : '已禁用';
-                showNotification('显示端状态已更新', `${display.name} ${statusText}`, {
+                const statusText = isDisplayEnabled(display) ? '已启用' : '已禁用';
+                const displayName = getDisplayName(display, displayId);
+                showNotification('显示端状态已更新', `${displayName} ${statusText}`, {
                     tag: 'display-status-changed',
                     urgency: 'normal'
                 });
@@ -3831,7 +3863,7 @@ export default {
 
         // 打开所有启用的显示端
         async function openAllDisplays() {
-            const enabledDisplays = Object.values(settings.display.displays).filter(d => d.enabled);
+            const enabledDisplays = Object.values(settings.display.displays).filter((d) => isDisplayEnabled(d));
             
             if (enabledDisplays.length === 0) {
                 await showMsg('没有启用的显示端');
@@ -3908,6 +3940,21 @@ export default {
 
         // 清理分辨率缩放监听
         onUnmounted(() => {
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('pointerdown', handlePreferencesDropdownOutsideClick, true)
+            }
+            if (dropdownThemeObserver) {
+                dropdownThemeObserver.disconnect()
+                dropdownThemeObserver = null
+            }
+            if (dropdownThemeMediaQuery) {
+                if (typeof dropdownThemeMediaQuery.removeEventListener === 'function') {
+                    dropdownThemeMediaQuery.removeEventListener('change', updateDropdownThemeState)
+                } else if (typeof dropdownThemeMediaQuery.removeListener === 'function') {
+                    dropdownThemeMediaQuery.removeListener(updateDropdownThemeState)
+                }
+                dropdownThemeMediaQuery = null
+            }
             if (scaleCheckInterval) {
                 clearInterval(scaleCheckInterval);
                 scaleCheckInterval = null;
@@ -3917,13 +3964,10 @@ export default {
                 cleanupWebListeners();
                 cleanupWebListeners = null;
             }
-<<<<<<< Updated upstream
-=======
             if (cleanupWsPortAutoSwitchListener) {
                 cleanupWsPortAutoSwitchListener();
                 cleanupWsPortAutoSwitchListener = null;
             }
->>>>>>> Stashed changes
             stopLineManagerSaveWatcher();
         });
 
@@ -3948,14 +3992,8 @@ export default {
             showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             presetContextMenu, showPresetContextMenu, closePresetContextMenu, applyPresetFromMenu, deletePresetFromMenu, sharePresetOffline, importPresetFromShareCode, generateShareId,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            openLineManagerWindow,
-=======
             openLineManagerWindow, openLineManagerForSave,
             lanIpsResolved, loadLanIps, wsPortDisplay, apiPortDisplay,
->>>>>>> Stashed changes
-=======
             openLineManagerWindow, openLineManagerForSave,
             lanIpsResolved, loadLanIps, wsPortDisplay, apiPortDisplay,
             multiScreenHttpPort,
@@ -3963,12 +4001,12 @@ export default {
             openMultiScreenQrDialog, closeMultiScreenQrDialog, copyMultiScreenEntryUrl,
             showWsClientsDialog, wsClientsLoading, wsClients,
             openWsClientsDialog, closeWsClientsDialog, loadWsClients, formatWsClientLatency,
->>>>>>> Stashed changes
             // 显示端管理方法
             currentDisplay, currentDisplayId, displayState, selectDisplay, 
             draggedDisplayId, dragOverDisplayId,
             handleDragStart, handleDragEnd, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
             addNewDisplay, editDisplay, toggleDisplayEnabled, deleteDisplay, openAllDisplays, closeAllDisplays,
+            isDisplayEnabled,
             shouldShowDisplay, visibleDisplayEntries, // 显示端可见列表（过滤后若为空则回退为全部）
             // 编辑显示端弹窗（与更新日志同风格）
             showDisplayEditDialog, displayEdit, closeDisplayEditDialog, saveDisplayEdit, pickDisplayEditFile,
@@ -3976,8 +4014,14 @@ export default {
             // 显示端右键菜单
             displayContextMenu, showDisplayContextMenu, closeDisplayContextMenu,
             editDisplayFromMenu, toggleDisplayEnabledFromMenu, deleteDisplayFromMenu, addNewDisplayFromMenu,
-            // 语言设置
-            currentLocale, languageOptions, changeLanguage
+            // 主题/语言设置
+            themeModeDropdownRef, languageDropdownRef,
+            showThemeModeDropdown, toggleThemeModeDropdown, themeModeOptions, currentThemeModeTitle, selectThemeMode, themeModeDropdownMenuStyle,
+            currentLocale, languageOptions, changeLanguage,
+            showLanguageDropdown, toggleLanguageDropdown, currentLanguageTitle, selectLanguage, languageDropdownMenuStyle,
+            dropdownTriggerStyle,
+            glassMenuBackground, glassMenuBorder, glassMenuShadow, glassItemHoverBackground, glassItemActiveBackground, glassDividerColor,
+            contextMenuBackdropFilter
         };
     },
   template: `
@@ -4080,11 +4124,43 @@ export default {
             
             <div style="margin-bottom:16px;">
                 <label style="display:block; font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ $t('settings.themeMode') }}</label>
-                <select v-model="settings.themeMode" @change="saveSettings()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <option value="system">{{ $t('settings.themeSystem') }}</option>
-                    <option value="light">{{ $t('settings.themeLight') }}</option>
-                    <option value="dark">{{ $t('settings.themeDark') }}</option>
-                </select>
+                <div ref="themeModeDropdownRef" style="position:relative;">
+                    <div
+                        @click="toggleThemeModeDropdown"
+                        :style="dropdownTriggerStyle"
+                    >
+                        <span style="font-size:13px; font-weight:600;">{{ currentThemeModeTitle }}</span>
+                        <i :class="showThemeModeDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                    </div>
+
+                    <div
+                        v-if="showThemeModeDropdown"
+                        :style="themeModeDropdownMenuStyle"
+                    >
+                        <div
+                            v-for="opt in themeModeOptions"
+                            :key="opt.key"
+                            @click="selectThemeMode(opt.key)"
+                            :style="{
+                                padding: '9px 10px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                color: 'var(--text)',
+                                fontSize: '13px',
+                                fontWeight: settings.themeMode === opt.key ? '700' : '500',
+                                background: settings.themeMode === opt.key ? glassItemActiveBackground() : 'transparent'
+                            }"
+                            @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                            @mouseout="$event.currentTarget.style.background = (settings.themeMode === opt.key ? glassItemActiveBackground() : 'transparent')"
+                        >
+                            <span>{{ opt.title }}</span>
+                            <i v-if="settings.themeMode === opt.key" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
@@ -4110,27 +4186,7 @@ export default {
         <!-- Language Settings -->
         <div class="card" style="border-left: 6px solid #4A90E2; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#4A90E2; font-weight:bold; margin-bottom:16px; font-size:15px;">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-              {{ $t('preferences.language') }} (Language)
-=======
-<<<<<<< HEAD
-              {{ $t('preferences.language') }}
-=======
-              {{ $t('preferences.language') }} (Language)
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
-              {{ $t('preferences.language') }}
->>>>>>> Stashed changes
-=======
-              {{ $t('preferences.language') }}
->>>>>>> Stashed changes
-=======
-              {{ $t('preferences.language') }}
->>>>>>> Stashed changes
+                            {{ $t('preferences.language') }}
             </div>
 
             <div style="margin-bottom:8px; font-size:12px; color:var(--muted);">
@@ -4139,19 +4195,46 @@ export default {
 
             <div>
                 <label style="display:block; font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ $t('preferences.languageLabel') }}</label>
-                <select v-model="currentLocale" @change="changeLanguage" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <option v-for="opt in languageOptions" :key="opt.key" :value="opt.key">
-                        {{ opt.title }}
-                    </option>
-                </select>
+                <div ref="languageDropdownRef" style="position:relative;">
+                    <div
+                        @click="toggleLanguageDropdown"
+                        :style="dropdownTriggerStyle"
+                    >
+                        <span style="font-size:13px; font-weight:600;">{{ currentLanguageTitle }}</span>
+                        <i :class="showLanguageDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                    </div>
+
+                    <div
+                        v-if="showLanguageDropdown"
+                        :style="languageDropdownMenuStyle"
+                    >
+                        <div
+                            v-for="opt in languageOptions"
+                            :key="opt.key"
+                            @click="selectLanguage(opt.key)"
+                            :style="{
+                                padding: '9px 10px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                color: 'var(--text)',
+                                fontSize: '13px',
+                                fontWeight: currentLocale === opt.key ? '700' : '500',
+                                background: currentLocale === opt.key ? glassItemActiveBackground() : 'transparent'
+                            }"
+                            @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                            @mouseout="$event.currentTarget.style.background = (currentLocale === opt.key ? glassItemActiveBackground() : 'transparent')"
+                        >
+                            <span>{{ opt.title }}</span>
+                            <i v-if="currentLocale === opt.key" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
                 <!-- Vehicle Audio -->
                 <div class="card" style="border-left: 6px solid #FF6B6B; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
                         <div style="color:#FF6B6B; font-weight:bold; margin-bottom:16px; font-size:15px;">
@@ -4180,10 +4263,6 @@ export default {
                         </div>
                 </div>
 
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
         <!-- Display Management -->
         <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('display.title') }}</div>
@@ -4216,7 +4295,7 @@ export default {
                          'display:flex; align-items:center; justify-content:space-between; padding:12px; margin-bottom:8px; background:var(--input-bg); border-radius:12px; border:2px solid var(--divider); cursor:pointer; transition:all 0.2s; user-select:none;',
                          dragOverDisplayId === id ? 'border-color: #4A90E2; background: rgba(74,144,226,0.1); transform: translateY(-2px);' : '',
                          draggedDisplayId === id ? 'opacity: 0.5;' : '',
-                         !display.enabled ? 'opacity: 0.5; cursor: not-allowed; background: var(--input-bg);' : ''
+                         !isDisplayEnabled(display) ? 'opacity: 0.5; cursor: not-allowed; background: var(--input-bg);' : ''
                      ]">
                     
                     <!-- 拖拽手柄 -->
@@ -4235,7 +4314,7 @@ export default {
                         </div>
                         <div class="display-card-muted" style="font-size:12px; color:var(--muted);">
                             {{ display.source === 'builtin' ? '本地显示器' : display.source === 'online' ? '在线显示器' : display.source === 'custom' ? '自定义URL' : display.source === 'gitee' ? 'Gitee页面' : display.source }}
-                            <span v-if="!display.enabled" style="color:#FF6B6B; margin-left:8px;">
+                            <span v-if="!isDisplayEnabled(display)" style="color:#FF6B6B; margin-left:8px;">
                                 <i class="fas fa-pause"></i> 已禁用
                             </span>
                         </div>
@@ -4286,81 +4365,14 @@ export default {
                 </label>
             </div>
 
-<<<<<<< Updated upstream
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <div style="flex:1;">
-                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">局域网同步（WebSocket Bridge）</div>
-                    <div style="font-size:12px; color:var(--muted); line-height:1.5;">
-                        远端浏览器/盒子通过 WebSocket 同步站点和命令，适合多屏联动。
-                    </div>
-                </div>
-                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; margin-left:16px; flex-shrink:0;">
-                    <input type="checkbox" v-model="settings.enableWebSocketBridge" @change="saveSettings()" style="opacity:0; width:0; height:0;">
-                    <span :style="{
-                        position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
-                        backgroundColor: settings.enableWebSocketBridge ? 'var(--accent)' : '#ccc', 
-                        transition:'.4s', borderRadius:'24px'
-                    }"></span>
-                    <span :style="{
-                        position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
-                        backgroundColor:'white', transition:'.4s', borderRadius:'50%',
-                        transform: settings.enableWebSocketBridge ? 'translateX(20px)' : 'translateX(0)'
-                    }"></span>
-                </label>
-            </div>
-            
             <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.12); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.25); line-height:1.6;">
                 <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
                 {{ $t('api.tip3') }}
-<<<<<<< Updated upstream
-=======
-=======
-            <div style="font-size:12px; color:var(--muted); background:rgba(155,89,182,0.12); padding:10px; border-radius:6px; border:1px solid rgba(155,89,182,0.25); line-height:1.6;">
-                <i class="fas fa-info-circle" style="margin-right:6px; color:#9B59B6;"></i>
-                {{ $t('api.tip3') }}
->>>>>>> Stashed changes
             </div>
         </div>
 
         <!-- LAN WebSocket Bridge -->
         <div class="card" style="border-left: 6px solid #27ae60; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-<<<<<<< Updated upstream
-            <div style="color:#27ae60; font-weight:bold; margin-bottom:16px; font-size:15px;">局域网同步（WebSocket Bridge）</div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <div style="flex:1;">
-                    <div style="color:var(--text); font-size:14px; font-weight:bold; margin-bottom:4px;">启用/禁用</div>
-                    <div style="font-size:12px; color:var(--muted); line-height:1.5;">
-                        远端浏览器/盒子通过 WebSocket 同步站点和命令，适合多屏联动。
-                    </div>
-                </div>
-                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0; margin-left:16px; flex-shrink:0;">
-                    <input type="checkbox" v-model="settings.enableWebSocketBridge" @change="saveSettings()" style="opacity:0; width:0; height:0;">
-                    <span :style="{
-                        position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
-                        backgroundColor: settings.enableWebSocketBridge ? 'var(--accent)' : '#ccc', 
-                        transition:'.4s', borderRadius:'24px'
-                    }"></span>
-                    <span :style="{
-                        position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
-                        backgroundColor:'white', transition:'.4s', borderRadius:'50%',
-                        transform: settings.enableWebSocketBridge ? 'translateX(20px)' : 'translateX(0)'
-                    }"></span>
-                </label>
-            </div>
-
-            <div style="margin-top:8px; display:flex; flex-direction:column; gap:10px; font-size:12px; color:var(--muted);">
-                <div style="color:var(--text); font-weight:bold;">本机 IP</div>
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <span v-for="ip in lanIpsResolved" :key="ip" style="background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25); color:var(--text);">{{ ip }}</span>
-                    <button class="btn" style="padding:4px 8px; background:var(--btn-gray-bg); color:var(--text);" @click="loadLanIps()"><i class="fas fa-sync"></i> 刷新</button>
-                </div>
-
-                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                    <span style="color:var(--text); font-weight:bold;">WebSocket 端口</span>
-                    <input type="number" min="1" max="65535" v-model.number="settings.wsPort" @change="saveSettings()" style="width:96px; padding:6px 8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <span style="color:var(--muted);">连接地址：</span>
-=======
             <div style="color:#27ae60; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('multiScreen.title') }}</div>
 
             <div style="margin-bottom:12px; color:var(--text); font-size:14px; font-weight:bold;">{{ $t('multiScreen.entryTitle') }}</div>
@@ -4394,23 +4406,13 @@ export default {
                     <span style="color:var(--text); font-weight:bold;">{{ $t('multiScreen.wsPort') }}</span>
                     <input type="number" min="1" max="65535" v-model.number="settings.wsPort" @change="saveSettings()" style="width:96px; padding:6px 8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
                     <span style="color:var(--muted);">{{ $t('multiScreen.wsAddress') }}</span>
->>>>>>> Stashed changes
                     <span v-for="ip in lanIpsResolved" :key="ip + '-ws'" style="color:var(--text); background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25);">ws://{{ ip }}:{{ wsPortDisplay }}</span>
                 </div>
 
                 <div style="color:var(--muted); line-height:1.6;">
-<<<<<<< Updated upstream
-                    要正常同步，显示端网页需通过 http:// 或 https:// 打开。常用示例：
-                    <br>· 远程切换控制页：http://{{ lanIpsResolved[0] }}:5173/examples/display-switcher.html
-                    <br>· 第三方显示模板：http://{{ lanIpsResolved[0] }}:5173/examples/third-party-display-template.html
-                    <br>浏览器页面里会自动连到上面的 ws 地址。
-                </div>
->>>>>>> Stashed changes
-=======
                     {{ $t('multiScreen.tips1') }}
                     <br>{{ $t('multiScreen.thirdPartyTemplate') }}http://{{ lanIpsResolved[0] }}:5173/examples/third-party-display-template.html
                 </div>
->>>>>>> Stashed changes
             </div>
         </div>
 
@@ -4588,27 +4590,10 @@ export default {
                                 <input v-model="displayEdit.description" type="text" class="se-input" placeholder="显示端描述">
                             </div>
                         </template>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
                         <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
-=======
-<<<<<<< HEAD
                         <!-- 显示器1：线路名合并 / C 型开关 -->
-=======
-                        <!-- 显示器1：线路名合并 / 显示全部站点 / C 型开关 -->
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
                         <!-- 显示器1：线路名合并 / C 型开关 -->
->>>>>>> Stashed changes
-=======
                         <!-- 显示器1：线路名合并 / C 型开关 -->
->>>>>>> Stashed changes
-=======
-                        <!-- 显示器1：线路名合并 / C 型开关 -->
->>>>>>> Stashed changes
                         <template v-if="displayEdit.isDisplay1">
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
@@ -4959,12 +4944,12 @@ export default {
                 position: 'fixed',
                 left: displayContextMenu.x + 'px',
                 top: displayContextMenu.y + 'px',
-                background: 'rgba(255, 255, 255, 0.68)',
-                backdropFilter: 'blur(18px) saturate(150%) contrast(1.05)',
-                WebkitBackdropFilter: 'blur(18px) saturate(150%) contrast(1.05)',
-                border: '1px solid rgba(255, 255, 255, 0.45)',
+                background: glassMenuBackground(),
+                backdropFilter: contextMenuBackdropFilter(),
+                WebkitBackdropFilter: contextMenuBackdropFilter(),
+                border: '1px solid ' + glassMenuBorder(),
                 borderRadius: '12px',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04)',
+                boxShadow: glassMenuShadow(),
                 zIndex: 9999,
                 minWidth: '140px',
                 padding: '8px 0'
@@ -4973,35 +4958,35 @@ export default {
             <div 
                 @click="addNewDisplayFromMenu()"
                 style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
-                @mouseover="$event.target.style.background='rgba(0,0,0,0.06)'; $event.target.style.borderRadius='8px'"
+                @mouseover="$event.target.style.background=glassItemHoverBackground(); $event.target.style.borderRadius='8px'"
                 @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
                 <i class="fas fa-plus" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 新建
             </div>
-            <div v-if="displayContextMenu.displayId" style="height: 1px; background: rgba(255, 255, 255, 0.55); margin: 6px 4px;"></div>
+            <div v-if="displayContextMenu.displayId" :style="{ height:'1px', background:glassDividerColor(), margin:'6px 4px' }"></div>
             <div 
                 v-if="displayContextMenu.displayId"
                 @click="editDisplayFromMenu()"
                 style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
-                @mouseover="$event.target.style.background='rgba(0,0,0,0.06)'; $event.target.style.borderRadius='8px'"
+                @mouseover="$event.target.style.background=glassItemHoverBackground(); $event.target.style.borderRadius='8px'"
                 @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
                 <i class="fas fa-edit" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
                 编辑
             </div>
-            <div v-if="displayContextMenu.displayId" style="height: 1px; background: rgba(224, 224, 224, 0.5); margin: 4px 0;"></div>
+            <div v-if="displayContextMenu.displayId" :style="{ height:'1px', background:glassDividerColor(), margin:'4px 0' }"></div>
             <div 
                 v-if="displayContextMenu.displayId"
                 @click="toggleDisplayEnabledFromMenu()"
                 style="padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text, #333); display: flex; align-items: center; gap: 10px; transition: background 0.2s; border-radius: 8px;"
-                @mouseover="$event.target.style.background='rgba(0,0,0,0.06)'; $event.target.style.borderRadius='8px'"
+                @mouseover="$event.target.style.background=glassItemHoverBackground(); $event.target.style.borderRadius='8px'"
                 @mouseout="$event.target.style.background='transparent'; $event.target.style.borderRadius='8px'"
             >
-                <i :class="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? 'fas fa-pause' : 'fas fa-play'" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
-                {{ displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayState.displays[displayContextMenu.displayId].enabled ? '禁用' : '启用' }}
+                <i :class="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && isDisplayEnabled(displayState.displays[displayContextMenu.displayId]) ? 'fas fa-pause' : 'fas fa-play'" style="font-size: 12px; color: var(--muted, #666); width: 16px;"></i>
+                {{ displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && isDisplayEnabled(displayState.displays[displayContextMenu.displayId]) ? '禁用' : '启用' }}
             </div>
-            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem" style="height: 1px; background: rgba(255, 255, 255, 0.55); margin: 6px 4px;"></div>
+            <div v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem" :style="{ height:'1px', background:glassDividerColor(), margin:'6px 4px' }"></div>
             <div 
                 v-if="displayContextMenu.displayId && displayState.displays[displayContextMenu.displayId] && displayContextMenu.displayId !== 'display-1' && displayContextMenu.displayId !== 'display-2' && displayContextMenu.displayId !== 'display-3' && !displayState.displays[displayContextMenu.displayId].isSystem"
                 @click="deleteDisplayFromMenu()"
@@ -5024,7 +5009,7 @@ export default {
         ></div>
     </Teleport>
     
-    <style>
+    <component :is="'style'">
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -5037,12 +5022,12 @@ export default {
         
         /* 预设右键菜单样式 - 参照站点菜单风格 */
         .preset-context-menu {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(224, 224, 224, 0.8);
+            background: rgba(255, 255, 255, 0.56);
+            backdrop-filter: blur(24px) saturate(190%) contrast(1.06);
+            -webkit-backdrop-filter: blur(24px) saturate(190%) contrast(1.06);
+            border: 1px solid rgba(255, 255, 255, 0.6);
             border-radius: 8px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            box-shadow: 0 14px 36px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.5), 0 0 0 1px rgba(255,255,255,0.16);
             min-width: 140px;
             padding: 6px 0;
             z-index: 9999;
@@ -5060,7 +5045,7 @@ export default {
         }
         
         .preset-context-menu-item:hover {
-            background: rgba(0,0,0,0.05);
+            background: rgba(255,255,255,0.34);
         }
         
         .preset-context-menu-item.danger {
@@ -5112,6 +5097,27 @@ export default {
         :global(.dark) .preset-context-menu-divider,
         :global([data-theme="dark"]) .preset-context-menu-divider {
             background: rgba(255, 255, 255, 0.1);
+        }
+
+        :global(html.blur-disabled) .preset-context-menu {
+            background: #ffffff;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border: 1px solid rgba(15, 23, 42, 0.16);
+            box-shadow: 0 14px 36px rgba(15,23,42,0.22);
+        }
+        :global(html.blur-disabled) .preset-context-menu-item:hover {
+            background: #f5f7fb;
+        }
+        :global(html.blur-disabled.dark) .preset-context-menu,
+        :global(html.blur-disabled[data-theme="dark"]) .preset-context-menu {
+            background: #1c1c20;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 14px 36px rgba(0,0,0,0.42);
+        }
+        :global(html.blur-disabled.dark) .preset-context-menu-item:hover,
+        :global(html.blur-disabled[data-theme="dark"]) .preset-context-menu-item:hover {
+            background: rgba(255,255,255,0.08);
         }
         
         /* iOS 风格毛玻璃效果 - 亮色模式 */
@@ -5202,6 +5208,82 @@ export default {
             background: rgba(50, 50, 50, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
+
+        :global(html.blur-disabled) .release-notes-dialog {
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border: 1px solid rgba(15, 23, 42, 0.16);
+            box-shadow: 0 20px 60px rgba(15,23,42,0.22);
+        }
+        :global(html.blur-disabled) .release-notes-header {
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border-bottom-color: rgba(15, 23, 42, 0.12) !important;
+        }
+        :global(html.blur-disabled) .release-notes-content {
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        :global(html.blur-disabled) .release-note-card {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        :global(html.blur-disabled) .release-note-card:hover {
+            background: #f8f9fc !important;
+        }
+        :global(html.blur-disabled) .release-notes-empty-icon {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        :global(html.blur-disabled.dark) .release-notes-dialog,
+        :global(html.blur-disabled[data-theme="dark"]) .release-notes-dialog {
+            background: #1c1c20 !important;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.42);
+        }
+        :global(html.blur-disabled.dark) .release-notes-header,
+        :global(html.blur-disabled[data-theme="dark"]) .release-notes-header {
+            background: #1c1c20 !important;
+            border-bottom-color: rgba(255, 255, 255, 0.14) !important;
+        }
+        :global(html.blur-disabled.dark) .release-notes-content,
+        :global(html.blur-disabled[data-theme="dark"]) .release-notes-content {
+            background: #1c1c20 !important;
+        }
+        :global(html.blur-disabled.dark) .release-note-card,
+        :global(html.blur-disabled[data-theme="dark"]) .release-note-card {
+            background: #26262b;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        :global(html.blur-disabled.dark) .release-note-card:hover,
+        :global(html.blur-disabled[data-theme="dark"]) .release-note-card:hover {
+            background: #2d2d33 !important;
+        }
+        :global(html.blur-disabled.dark) .release-notes-empty-icon,
+        :global(html.blur-disabled[data-theme="dark"]) .release-notes-empty-icon {
+            background: #26262b;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        :global(html.blur-disabled) .se-dialog {
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border: 1px solid rgba(15, 23, 42, 0.16) !important;
+        }
+        :global(html.blur-disabled.dark) .se-dialog,
+        :global(html.blur-disabled[data-theme="dark"]) .se-dialog {
+            background: #1c1c20 !important;
+            border: 1px solid rgba(255, 255, 255, 0.16) !important;
+        }
         /* 设置页内框/进度条 - 与 PIDS 控制台一致（浅色/深色） */
         .settings-hint-box {
             background: rgba(255, 255, 255, 0.15);
@@ -5225,7 +5307,7 @@ export default {
         :global(html.dark) .settings-progress-bg {
             background: rgba(255, 255, 255, 0.12);
         }
-    </style>
+        </component>
   `
 }
 

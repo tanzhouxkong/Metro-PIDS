@@ -174,15 +174,62 @@ export const DEF_JINAN_YUNBA = {
   ]
 };
 
-// 显示器默认配置统一从 displays/config.json 读取，方便后续修改
-import displayConfig from '../../displays/config.json';
+// BrowserView 环境下避免模块级 JSON 导入（会触发 MIME 类型限制）
+// 这里先使用安全回退配置，运行期可由其它配置链路覆盖
+const displayConfig = {};
+
+const FALLBACK_SYSTEM_DISPLAYS = {
+  'display-1': {
+    id: 'display-1',
+    name: '主显示器',
+    source: 'builtin',
+    url: '',
+    width: 1900,
+    height: 600,
+    enabled: true,
+    isSystem: true,
+    description: '主要显示端，用于主要信息展示'
+  },
+  'display-2': {
+    id: 'display-2',
+    name: '副显示器',
+    source: 'builtin',
+    url: '',
+    width: 1500,
+    height: 400,
+    enabled: true,
+    isSystem: true,
+    description: '辅助显示端，用于补充信息展示'
+  },
+  'display-3': {
+    id: 'display-3',
+    name: '北京地铁LCD',
+    source: 'builtin',
+    url: '',
+    width: 1900,
+    height: 600,
+    enabled: true,
+    isSystem: true,
+    description: '北京地铁风格 LCD 线路图显示端'
+  }
+};
+
+const FALLBACK_DISPLAY_DEFAULTS = {
+  currentDisplayId: 'display-1',
+  display2Mode: 'enabled',
+  display2NextStationDuration: 10000,
+  display2FooterLED: '',
+  display2FooterWatermark: true
+};
 
 const cfgDisplays = displayConfig.displays && typeof displayConfig.displays === 'object'
     ? Object.fromEntries(
         Object.entries(displayConfig.displays).map(([k, v]) => [k, { ...v }])
       )
-    : {};
-const cfgDisplayDefaults = displayConfig.displayDefaults || {};
+    : { ...FALLBACK_SYSTEM_DISPLAYS };
+const cfgDisplayDefaults = (displayConfig.displayDefaults && typeof displayConfig.displayDefaults === 'object')
+    ? displayConfig.displayDefaults
+    : FALLBACK_DISPLAY_DEFAULTS;
 
 export const DEFAULT_SETTINGS = {
     dark: false,

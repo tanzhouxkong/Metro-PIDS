@@ -1,4 +1,4 @@
-import { useUIState } from '../composables/useUIState.js'
+﻿import { useUIState } from '../composables/useUIState.js'
 import { useAutoplay } from '../composables/useAutoplay.js'
 import { showNotification } from '../utils/notificationService.js'
 import { useFileIO } from '../composables/useFileIO.js'
@@ -8,22 +8,8 @@ import { useSettings } from '../composables/useSettings.js'
 import { useStationAudio } from '../composables/useStationAudio.js'
 import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
-=======
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
->>>>>>> Stashed changes
-=======
-import { DEFAULT_SETTINGS } from '../utils/defaults.js'
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
->>>>>>> Stashed changes
-=======
-import { DEFAULT_SETTINGS } from '../utils/defaults.js'
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
->>>>>>> Stashed changes
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 
@@ -36,14 +22,177 @@ export default {
     const { uiState } = useUIState()
     const fileIO = useFileIO(pidsState)
     const { settings, saveSettings } = useSettings()
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-    const { t } = useI18n()
-=======
-=======
->>>>>>> Stashed changes
     const { playArrive, playDepart } = useStationAudio(pidsState)
     const { t } = useI18n()
+    const showShortTurnStartDropdown = ref(false)
+    const showShortTurnEndDropdown = ref(false)
+    const shortTurnStartDropdownRef = ref(null)
+    const shortTurnEndDropdownRef = ref(null)
+    const shortTurnStartDropdownOpenUp = ref(false)
+    const shortTurnEndDropdownOpenUp = ref(false)
+    const dropdownThemeDark = ref(false)
+    let dropdownThemeObserver = null
+    let dropdownThemeMediaQuery = null
+
+    const shortTurnStartTitle = computed(() => {
+        const idx = pidsState.appData?.meta?.startIdx
+        if (idx === -1 || idx == null) return '无'
+        const station = pidsState.appData?.stations?.[idx]
+        return station ? `[${idx + 1}] ${station.name}` : '无'
+    })
+
+    const shortTurnEndTitle = computed(() => {
+        const idx = pidsState.appData?.meta?.termIdx
+        if (idx === -1 || idx == null) return '无'
+        const station = pidsState.appData?.stations?.[idx]
+        return station ? `[${idx + 1}] ${station.name}` : '无'
+    })
+
+    const selectShortTurnStart = (idx) => {
+        pidsState.appData.meta.startIdx = idx
+        unlockAutoShortTurn()
+        saveCfg()
+        showShortTurnStartDropdown.value = false
+    }
+
+    const selectShortTurnEnd = (idx) => {
+        pidsState.appData.meta.termIdx = idx
+        unlockAutoShortTurn()
+        saveCfg()
+        showShortTurnEndDropdown.value = false
+    }
+
+    const resolveDropdownDirection = (containerRef, estimatedMenuHeight = 360) => {
+        if (typeof window === 'undefined' || !containerRef || !containerRef.value) return false
+        const rect = containerRef.value.getBoundingClientRect()
+        const spaceBelow = window.innerHeight - rect.bottom
+        const spaceAbove = rect.top
+        return spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow
+    }
+
+    const toggleShortTurnStartDropdown = () => {
+        if (!showShortTurnStartDropdown.value) {
+            shortTurnStartDropdownOpenUp.value = resolveDropdownDirection(shortTurnStartDropdownRef, 360)
+        }
+        showShortTurnStartDropdown.value = !showShortTurnStartDropdown.value
+    }
+
+    const toggleShortTurnEndDropdown = () => {
+        if (!showShortTurnEndDropdown.value) {
+            shortTurnEndDropdownOpenUp.value = resolveDropdownDirection(shortTurnEndDropdownRef, 360)
+        }
+        showShortTurnEndDropdown.value = !showShortTurnEndDropdown.value
+    }
+
+    const updateDropdownThemeState = () => {
+        if (typeof document === 'undefined') {
+            dropdownThemeDark.value = false
+            return
+        }
+        const root = document.documentElement
+        const explicitDark = root.classList.contains('dark') || root.getAttribute('data-theme') === 'dark'
+        if (explicitDark) {
+            dropdownThemeDark.value = true
+            return
+        }
+        if (typeof window !== 'undefined' && window.matchMedia) {
+            dropdownThemeDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches
+            return
+        }
+        dropdownThemeDark.value = false
+    }
+
+    const isDarkThemeActive = () => dropdownThemeDark.value
+    const isGlassBlurEnabled = () => settings.blurEnabled !== false
+    const shortTurnMenuBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(22px) saturate(180%)' : 'none')
+    const shortTurnTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(18px) saturate(170%)' : 'none')
+
+    const shortTurnMenuBackground = () => {
+        if (!isGlassBlurEnabled()) return isDarkThemeActive() ? '#1c1c20' : '#ffffff'
+        return isDarkThemeActive() ? 'rgba(28, 28, 32, 0.78)' : 'rgba(255,255,255,0.58)'
+    }
+    const shortTurnMenuBorder = () => {
+        if (!isGlassBlurEnabled()) return isDarkThemeActive() ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.16)'
+        return isDarkThemeActive() ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)'
+    }
+    const shortTurnMenuShadow = () => (isDarkThemeActive()
+        ? '0 14px 36px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(255,255,255,0.06)'
+        : '0 14px 36px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.5)')
+    const shortTurnItemHoverBackground = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.32)')
+    const shortTurnItemActiveBackground = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.38)')
+
+    const shortTurnDropdownTriggerStyle = computed(() => ({
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        padding: '8px 12px',
+        borderRadius: '10px',
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnTriggerBackdropFilter(),
+        WebkitBackdropFilter: shortTurnTriggerBackdropFilter(),
+        color: 'var(--text)',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        boxShadow: shortTurnMenuShadow()
+    }))
+
+    const shortTurnStartDropdownMenuStyle = computed(() => ({
+        position: 'absolute',
+        left: '0',
+        right: '0',
+        top: shortTurnStartDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+        bottom: shortTurnStartDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+        maxHeight: 'min(460px, 56vh)',
+        overflowY: 'auto',
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnMenuBackdropFilter(),
+        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        borderRadius: '12px',
+        boxShadow: shortTurnMenuShadow(),
+        padding: '6px',
+        zIndex: 9999
+    }))
+
+    const shortTurnEndDropdownMenuStyle = computed(() => ({
+        position: 'absolute',
+        left: '0',
+        right: '0',
+        top: shortTurnEndDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+        bottom: shortTurnEndDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+        maxHeight: 'min(460px, 56vh)',
+        overflowY: 'auto',
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnMenuBackdropFilter(),
+        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        borderRadius: '12px',
+        boxShadow: shortTurnMenuShadow(),
+        padding: '6px',
+        zIndex: 9999
+    }))
+
+    const handleShortTurnDropdownOutsideClick = (event) => {
+        const target = event.target
+        if (
+            showShortTurnStartDropdown.value &&
+            shortTurnStartDropdownRef.value &&
+            !shortTurnStartDropdownRef.value.contains(target)
+        ) {
+            showShortTurnStartDropdown.value = false
+        }
+        if (
+            showShortTurnEndDropdown.value &&
+            shortTurnEndDropdownRef.value &&
+            !shortTurnEndDropdownRef.value.contains(target)
+        ) {
+            showShortTurnEndDropdown.value = false
+        }
+    }
 
     const playAfterToggle = (prevIdx) => {
         if (recordingState?.value?.isRecording) return;
@@ -59,29 +208,6 @@ export default {
         await controllerNext();
         playAfterToggle(prevIdx);
     };
-
-    if (!pidsState.appData || typeof pidsState.appData !== 'object') {
-        pidsState.appData = { meta: {}, stations: [] }
-    }
-    if (!pidsState.appData.meta || typeof pidsState.appData.meta !== 'object') {
-        pidsState.appData.meta = {}
-    }
-    if (!Array.isArray(pidsState.appData.stations)) {
-        pidsState.appData.stations = []
-    }
-    if (!pidsState.store || typeof pidsState.store !== 'object') {
-        pidsState.store = { list: [pidsState.appData], cur: 0 }
-    }
-    if (!Array.isArray(pidsState.store.list)) {
-        pidsState.store.list = [pidsState.appData]
-    }
-    if (typeof pidsState.store.cur !== 'number') {
-        pidsState.store.cur = 0
-    }
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
     
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
@@ -1523,6 +1649,23 @@ export default {
     
     // 监听来自线路管理器的线路切换请求
     onMounted(async () => {
+        if (typeof document !== 'undefined') {
+            document.addEventListener('pointerdown', handleShortTurnDropdownOutsideClick, true)
+            updateDropdownThemeState()
+            dropdownThemeObserver = new MutationObserver(() => updateDropdownThemeState())
+            dropdownThemeObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['class', 'data-theme']
+            })
+            if (typeof window !== 'undefined' && window.matchMedia) {
+                dropdownThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+                if (typeof dropdownThemeMediaQuery.addEventListener === 'function') {
+                    dropdownThemeMediaQuery.addEventListener('change', updateDropdownThemeState)
+                } else if (typeof dropdownThemeMediaQuery.addListener === 'function') {
+                    dropdownThemeMediaQuery.addListener(updateDropdownThemeState)
+                }
+            }
+        }
         // 初始化 Mica 信息
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.mica) {
             await getMicaInfo();
@@ -1561,22 +1704,6 @@ export default {
                     }
                     if (progress.isRecording === false) {
                         // 主进程已停止（可能是完成、用户停止或异常），本地立刻退出录制态并清理计时器
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-                        try {
-                            if (typeof window !== 'undefined') {
-                                window.__disableStationAudioDuringRecording = false;
-                                window.__recordingAudioCaptureEnabled = false;
-                                window.__recordingAudioStartAt = 0;
-                            }
-                        } catch (e) {}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                         recordingState.value.isRecording = false;
                         recordingState.value.progress = 0;
                         recordingState.value.nextIn = 0;
@@ -1655,34 +1782,26 @@ export default {
     
     // 组件卸载时清理录制监听
     onBeforeUnmount(() => {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-        try {
-            if (typeof window !== 'undefined') {
-                window.__disableStationAudioDuringRecording = false;
-                window.__recordingAudioCaptureEnabled = false;
-                window.__recordingAudioStartAt = 0;
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('pointerdown', handleShortTurnDropdownOutsideClick, true)
+        }
+        if (dropdownThemeObserver) {
+            dropdownThemeObserver.disconnect()
+            dropdownThemeObserver = null
+        }
+        if (dropdownThemeMediaQuery) {
+            if (typeof dropdownThemeMediaQuery.removeEventListener === 'function') {
+                dropdownThemeMediaQuery.removeEventListener('change', updateDropdownThemeState)
+            } else if (typeof dropdownThemeMediaQuery.removeListener === 'function') {
+                dropdownThemeMediaQuery.removeListener(updateDropdownThemeState)
             }
-        } catch (e) {}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+            dropdownThemeMediaQuery = null
+        }
         if (recordingProgressUnsubscribe) {
             recordingProgressUnsubscribe();
             recordingProgressUnsubscribe = null;
         }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
         stopLineManagerSaveWatcher();
->>>>>>> Stashed changes
-=======
-        stopLineManagerSaveWatcher();
->>>>>>> Stashed changes
     });
     
     // 监听线路切换，自动加载预设列表
@@ -1820,11 +1939,6 @@ export default {
         }
     }
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
     let lineManagerSaveWatcher = null;
 
     const stopLineManagerSaveWatcher = () => {
@@ -1851,6 +1965,9 @@ export default {
         lineManagerSaveWatcher = setInterval(async () => {
             if (Date.now() > timeout) {
                 stopLineManagerSaveWatcher();
+                localStorage.removeItem('lineManagerSaveResult');
+                localStorage.removeItem('pendingLineSaveData');
+                localStorage.removeItem('lineManagerSaveMode');
                 return;
             }
 
@@ -1911,7 +2028,6 @@ export default {
                 try { sync(); } catch (e) {}
 
                 try {
-                    const { showNotification } = await import('../utils/notificationService.js');
                     const folderLabel = result.folderName || result.folderId || '';
                     const targetLabel = folderLabel ? ` -> ${folderLabel}` : '';
                     const modeLabel = mode === 'zip' ? '保存为压缩包' : '保存当前线路';
@@ -1970,10 +2086,6 @@ export default {
         startLineManagerSaveWatcher(requestId, payload, mode);
     }
 
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
     // ========== 视频录制相关 ==========
     const recordingState = ref({
         isRecording: false,
@@ -2192,43 +2304,15 @@ export default {
             const enableParallel = !!recordingState.value.parallelEnabled;
             recordingState.value.mode = enableParallel ? 'parallel' : 'single';
             recordingState.value.isRecording = true;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
             const vehicleAudioEnabled = settings.vehicleAudioEnabled !== false;
-            try {
-                if (typeof window !== 'undefined') {
-                    window.__disableStationAudioDuringRecording = !vehicleAudioEnabled;
-                    window.__recordingAudioCaptureEnabled = !!vehicleAudioEnabled;
-                    window.__recordingAudioStartAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-                }
-            } catch (e) {}
-            if (!vehicleAudioEnabled) {
-                try { if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') await window.__stopStationAudio(); } catch (e) {}
-            }
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             const options = {
                 encoder: recordingState.value.encoder,
                 codec: recordingState.value.codec,
                 container: recordingState.value.container,
                 bitrate: safeBitrate,     // Mbps
                 fps: recordingState.value.fps,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                intervalSec: safeInterval
-=======
                 intervalSec: safeInterval,
                 vehicleAudioEnabled: vehicleAudioEnabled
->>>>>>> Stashed changes
-=======
-                intervalSec: safeInterval,
-                vehicleAudioEnabled: vehicleAudioEnabled
->>>>>>> Stashed changes
             };
 
             let result;
@@ -2297,15 +2381,7 @@ export default {
                         recordingState.value.progress = Math.min(100, Math.max(0, (passed / interval) * 100));
 
                         if (recordingState.value.nextIn <= 0) {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                            try { await controllerNext(); } catch (e) {}
-=======
                             try { await controllerNextWithAudio(); } catch (e) {}
->>>>>>> Stashed changes
-=======
-                            try { await controllerNextWithAudio(); } catch (e) {}
->>>>>>> Stashed changes
                             recordingState.value.nextIn = interval;
                             recordingState.value.progress = 0;
                         }
@@ -2316,42 +2392,10 @@ export default {
                 }
             } else {
                 recordingState.value.isRecording = false;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-                try {
-                    if (typeof window !== 'undefined') {
-                        window.__disableStationAudioDuringRecording = false;
-                        window.__recordingAudioCaptureEnabled = false;
-                        window.__recordingAudioStartAt = 0;
-                    }
-                } catch (e) {}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 await showMsg(result?.error || t('console.recordingError'));
             }
         } catch (e) {
             recordingState.value.isRecording = false;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-            try {
-                if (typeof window !== 'undefined') {
-                    window.__disableStationAudioDuringRecording = false;
-                    window.__recordingAudioCaptureEnabled = false;
-                    window.__recordingAudioStartAt = 0;
-                }
-            } catch (e2) {}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             console.error('开始录制失败:', e);
             await showMsg(t('console.recordingError') + ': ' + String(e));
         }
@@ -2368,22 +2412,6 @@ export default {
                 : await window.electronAPI.recording.stopRecording();
             if (result && result.ok) {
                 recordingState.value.isRecording = false;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-                try {
-                    if (typeof window !== 'undefined') {
-                        window.__disableStationAudioDuringRecording = false;
-                        window.__recordingAudioCaptureEnabled = false;
-                        window.__recordingAudioStartAt = 0;
-                    }
-                } catch (e) {}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 recordingState.value.progress = 0;
                 recordingState.value.nextIn = 0;
                 recordingState.value.totalSteps = 0;
@@ -2399,23 +2427,6 @@ export default {
             console.error('停止录制失败:', e);
         }
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-        try {
-            if (typeof window !== 'undefined') {
-                window.__disableStationAudioDuringRecording = false;
-                window.__recordingAudioCaptureEnabled = false;
-                window.__recordingAudioStartAt = 0;
-            }
-        } catch (e) {}
-
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
         try { if (recordingStepTimer) clearInterval(recordingStepTimer); } catch (e) {}
         recordingStepTimer = null;
     }
@@ -2482,6 +2493,21 @@ export default {
         clearShortTurn,
         applyShortTurn,
         unlockAutoShortTurn,
+        showShortTurnStartDropdown,
+        showShortTurnEndDropdown,
+        toggleShortTurnStartDropdown,
+        toggleShortTurnEndDropdown,
+        shortTurnStartDropdownRef,
+        shortTurnEndDropdownRef,
+        shortTurnDropdownTriggerStyle,
+        shortTurnStartDropdownMenuStyle,
+        shortTurnEndDropdownMenuStyle,
+        shortTurnItemHoverBackground,
+        shortTurnItemActiveBackground,
+        shortTurnStartTitle,
+        shortTurnEndTitle,
+        selectShortTurnStart,
+        selectShortTurnEnd,
         shortTurnPresets,
         loadShortTurnPresets,
         saveShortTurnPreset,
@@ -2511,36 +2537,19 @@ export default {
         setBackgroundColor,
         setRoundedCorner,
         clearMicaLogs,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        t
-=======
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-        t,
-        // 录制相关
-        recordingState,
-        parallelStageLabel,
-        recordingProgressPercent,
-        recordingRemainingTimeText,
-        recordingCurrentStationName,
-        recordingArrDepLabel,
-        currentRecordingDisplay,
-        startRecording,
-        stopRecording,
-        toggleRecording,
-        openRecordingFolder,
-        loadAvailableEncoders
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+                t,
+                recordingState,
+                parallelStageLabel,
+                recordingProgressPercent,
+                recordingRemainingTimeText,
+                recordingCurrentStationName,
+                recordingArrDepLabel,
+                currentRecordingDisplay,
+                startRecording,
+                stopRecording,
+                toggleRecording,
+                openRecordingFolder,
+                loadAvailableEncoders,
     }
   },
   template: `
@@ -2570,21 +2579,8 @@ export default {
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
                   <i class="fas fa-folder-open" style="font-size:18px;"></i> {{ t('console.openManager') }}
               </button>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="fileIO.saveCurrentLine()">
-                  <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
-              </button>
-              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF6B6B; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.10);" @click="fileIO.resetData()">
-                  <i class="fas fa-trash-alt" style="font-size:18px;"></i> {{ t('console.resetData') }}
-=======
               <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
                   <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
->>>>>>> Stashed changes
-=======
-              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
-                  <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
->>>>>>> Stashed changes
               </button>
           </div>
           </div>
@@ -2621,25 +2617,6 @@ export default {
                         @click="pickColor"
                     ></div>
                 </div>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                <select v-model="pidsState.appData.meta.mode" @change="saveCfg()" style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <option value="loop">{{ t('console.loopLine') }}</option>
-                    <option value="linear">{{ t('console.singleLine') }}</option>
-                </select>
-            </div>
-            
-            <select v-model="pidsState.appData.meta.dirType" @change="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:16px; background:var(--input-bg); color:var(--text);">
-                <template v-if="pidsState.appData.meta.mode === 'loop'">
-                    <option value="outer">{{ t('console.outerLoop') }}</option>
-                    <option value="inner">{{ t('console.innerLoop') }}</option>
-                </template>
-                <template v-else>
-                    <option value="up">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</option>
-                    <option value="down">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</option>
-                </template>
-            </select>
-=======
                 <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1; align-items:center;">
                     <button class="btn" :style="{
                         height:'44px',
@@ -2714,83 +2691,6 @@ export default {
                     </template>
                 </div>
             </div>
->>>>>>> Stashed changes
-=======
-                <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1; align-items:center;">
-                    <button class="btn" :style="{
-                        height:'44px',
-                        padding:'10px 18px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.mode==='loop' ? '#10b981' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.mode==='loop' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.mode==='loop' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
-                        fontWeight:'800',
-                        minWidth:'110px'
-                    }" @click="pidsState.appData.meta.mode='loop'; saveCfg()">{{ t('console.loopLine') }}</button>
-                    <button class="btn" :style="{
-                        height:'44px',
-                        padding:'10px 18px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.mode==='linear' ? '#1e90ff' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.mode==='linear' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.mode==='linear' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
-                        fontWeight:'800',
-                        minWidth:'110px'
-                    }" @click="pidsState.appData.meta.mode='linear'; saveCfg()">{{ t('console.singleLine') }}</button>
-
-                    <template v-if="pidsState.appData.meta.mode === 'loop'">
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='outer' ? '#5F27CD' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='outer' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='outer' ? '0 6px 14px rgba(95,39,205,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'120px'
-                        }" @click="pidsState.appData.meta.dirType='outer'; saveCfg()">{{ t('console.outerLoop') }}</button>
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='inner' ? '#ffa502' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='inner' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='inner' ? '0 6px 14px rgba(255,165,2,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'120px'
-                        }" @click="pidsState.appData.meta.dirType='inner'; saveCfg()">{{ t('console.innerLoop') }}</button>
-                    </template>
-                    <template v-else>
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='up' ? '#1e90ff' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='up' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='up' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'180px'
-                        }" @click="pidsState.appData.meta.dirType='up'; saveCfg()">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</button>
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='down' ? '#10b981' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='down' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='down' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'180px'
-                        }" @click="pidsState.appData.meta.dirType='down'; saveCfg()">{{ t('console.dirLabelDown') || t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</button>
-                    </template>
-                </div>
-            </div>
->>>>>>> Stashed changes
 
             <div style="margin-bottom:16px;">
                 <div style="font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ t('console.serviceMode') }}</div>
@@ -2835,225 +2735,43 @@ export default {
         <!-- Short Turn Settings -->
         <div class="card" style="border-left: 6px solid #5F27CD; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
             <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.shortTurn') }}</div>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
+            <div style="display:grid; grid-template-columns: 72px minmax(0, 1fr); gap:12px; align-items:center; margin-bottom:12px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
-=======
-<<<<<<< HEAD
-
-            <div
-                v-if="pidsState.appData?.meta?.autoShortTurn"
-                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
-            >
-                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
-                    <i class="fas fa-magic" style="margin-right:6px;"></i>
-                    已启用自动短交路
-                </div>
-                <div style="color:var(--muted);">
-                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
-                </div>
-                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-                    <button
-                        class="btn"
-                        @click="unlockAutoShortTurn()"
-                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
+                <div ref="shortTurnStartDropdownRef" style="position:relative; min-width:0;">
+                    <div
+                        @click="toggleShortTurnStartDropdown"
+                        :style="shortTurnDropdownTriggerStyle"
                     >
-                        转为手动设置
-                    </button>
+                        <span style="font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ shortTurnStartTitle }}</span>
+                        <i :class="showShortTurnStartDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                    </div>
+                    <div v-if="showShortTurnStartDropdown" :style="shortTurnStartDropdownMenuStyle">
+                        <div @click="selectShortTurnStart(-1)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.startIdx === -1 ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.startIdx === -1 ? shortTurnItemActiveBackground() : 'transparent')">无</div>
+                        <div v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" @click="selectShortTurnStart(i)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.startIdx === i ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.startIdx === i ? shortTurnItemActiveBackground() : 'transparent')">[{{i+1}}] {{s.name}}</div>
+                    </div>
                 </div>
             </div>
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
-=======
 
-            <div
-                v-if="pidsState.appData?.meta?.autoShortTurn"
-                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
-            >
-                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
-                    <i class="fas fa-magic" style="margin-right:6px;"></i>
-                    已启用自动短交路
-                </div>
-                <div style="color:var(--muted);">
-                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
-                </div>
-                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-                    <button
-                        class="btn"
-                        @click="unlockAutoShortTurn()"
-                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
-                    >
-                        转为手动设置
-                    </button>
-                </div>
-            </div>
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
->>>>>>> Stashed changes
-=======
-
-            <div
-                v-if="pidsState.appData?.meta?.autoShortTurn"
-                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
-            >
-                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
-                    <i class="fas fa-magic" style="margin-right:6px;"></i>
-                    已启用自动短交路
-                </div>
-                <div style="color:var(--muted);">
-                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
-                </div>
-                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-                    <button
-                        class="btn"
-                        @click="unlockAutoShortTurn()"
-                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
-                    >
-                        转为手动设置
-                    </button>
-                </div>
-            </div>
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
->>>>>>> Stashed changes
-=======
-
-            <div
-                v-if="pidsState.appData?.meta?.autoShortTurn"
-                style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255, 159, 67, 0.35); background:rgba(255, 159, 67, 0.10); color:var(--text); font-size:12px; line-height:1.6; margin-bottom:12px;"
-            >
-                <div style="font-weight:800; color:#ff9f43; margin-bottom:6px;">
-                    <i class="fas fa-magic" style="margin-right:6px;"></i>
-                    已启用自动短交路
-                </div>
-                <div style="color:var(--muted);">
-                    当前线路首/末站存在“暂缓”站点时，系统会自动生成短交路，因此该卡片在自动模式下会被锁定。若你需要手动设置，点击右侧按钮切换为手动。
-                </div>
-                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-                    <button
-                        class="btn"
-                        @click="unlockAutoShortTurn()"
-                        style="background:#ff9f43; color:#fff; border:none; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer;"
-                    >
-                        转为手动设置
-                    </button>
-                </div>
-            </div>
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
->>>>>>> Stashed changes
-                <select
-                    v-model="pidsState.appData.meta.startIdx"
-                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
-                    style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
-                >
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
->>>>>>> Stashed changes
-                <select v-model="pidsState.appData.meta.startIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-                    <option :value="-1">无</option>
-                    <option v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" :value="i">[{{i+1}}] {{s.name}}</option>
-                </select>
-            </div>
-            
-            <div style="display:grid; grid-template-columns: 40px 1fr; gap:12px; align-items:center; margin-bottom:16px;">
+            <div style="display:grid; grid-template-columns: 72px minmax(0, 1fr); gap:12px; align-items:center; margin-bottom:16px;">
                 <label style="color:var(--muted);">{{ t('console.shortTurnEnd') }}</label>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-                <select
-                    v-model="pidsState.appData.meta.termIdx"
-                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
-                    style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
-                >
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
-                <select v-model="pidsState.appData.meta.termIdx" style="padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-                     <option :value="-1">无</option>
-                     <option v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" :value="i">[{{i+1}}] {{s.name}}</option>
-                </select>
+                <div ref="shortTurnEndDropdownRef" style="position:relative; min-width:0;">
+                    <div
+                        @click="toggleShortTurnEndDropdown"
+                        :style="shortTurnDropdownTriggerStyle"
+                    >
+                        <span style="font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ shortTurnEndTitle }}</span>
+                        <i :class="showShortTurnEndDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                    </div>
+                    <div v-if="showShortTurnEndDropdown" :style="shortTurnEndDropdownMenuStyle">
+                        <div @click="selectShortTurnEnd(-1)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.termIdx === -1 ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.termIdx === -1 ? shortTurnItemActiveBackground() : 'transparent')">无</div>
+                        <div v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" @click="selectShortTurnEnd(i)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.termIdx === i ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.termIdx === i ? shortTurnItemActiveBackground() : 'transparent')">[{{i+1}}] {{s.name}}</div>
+                    </div>
+                </div>
             </div>
-            
-            <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px;">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
+
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
                 <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
                 <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-                <button
-                    @click="clearShortTurn()"
-                    class="btn"
-                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
-                    style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;"
-                >{{ t('console.shortTurnClear') }}</button>
-                <button
-                    @click="applyShortTurn()"
-                    class="btn"
-                    :disabled="!!pidsState.appData?.meta?.autoShortTurn"
-                    style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;"
-                >{{ t('console.shortTurnApply') }}</button>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-                <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
-                <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             </div>
 
             <!-- 短交路预设管理 -->
@@ -3276,40 +2994,24 @@ export default {
             <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
               <div style="font-size:13px; color:var(--muted); font-weight:bold;">{{ t('console.recordingParallelTitle') }}</div>
               <div style="display:flex; align-items:center; gap:10px;">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                <label style="position:relative; display:inline-block; width:52px; height:28px;">
-                  <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
-                  <span style="position: absolute; cursor: pointer; inset: 0px; background-color: rgb(204, 204, 204); transition: 0.4s; border-radius: 24px;"
-                    :style="{ backgroundColor: recordingState.parallelEnabled ? 'var(--btn-blue-bg)' : 'rgb(204, 204, 204)', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.6 : 1 }"
-                  ></span>
-                  <span :style="{
-                      position:'absolute', content:'', height:'22px', width:'22px', left:'3px', bottom:'3px',
-                      backgroundColor:'white', transition:'0.4s', borderRadius:'50%',
-                      transform: recordingState.parallelEnabled ? 'translateX(24px)' : 'translateX(0)'
-=======
-=======
->>>>>>> Stashed changes
-                <label style="position:relative; display:inline-block; width:44px; height:24px;">
-                  <input type="checkbox" v-model="recordingState.parallelEnabled" :disabled="recordingState.isRecording" style="opacity:0; width:0; height:0;" />
-                  <span style="position: absolute; cursor: pointer; inset: 0px; background-color: #ccc; transition: background-color 0.3s, box-shadow 0.2s; border-radius: 24px;"
-                    :style="{ 
-                      backgroundColor: recordingState.parallelEnabled ? 'var(--accent)' : '#ccc', 
-                      boxShadow: recordingState.parallelEnabled ? '0 2px 8px rgba(22, 119, 255, 0.35)' : 'none',
-                      cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', 
-                      opacity: recordingState.isRecording ? 0.6 : 1 
-                    }"
-                  ></span>
-                  <span :style="{
-                      position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px',
-                      backgroundColor:'white', transition:'transform 0.3s', borderRadius:'50%',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-                      transform: recordingState.parallelEnabled ? 'translateX(20px)' : 'translateX(0)'
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-                    }"></span>
+                                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
+                                    <input
+                                        type="checkbox"
+                                        v-model="recordingState.parallelEnabled"
+                                        :disabled="recordingState.isRecording"
+                                        style="opacity:0; width:0; height:0;"
+                                    >
+                                    <span :style="{
+                                        position:'absolute', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', top:0, left:0, right:0, bottom:0,
+                                        backgroundColor: recordingState.parallelEnabled ? 'var(--accent)' : '#ccc',
+                                        transition:'.2s', borderRadius:'24px',
+                                        opacity: recordingState.isRecording ? 0.6 : 1
+                                    }"></span>
+                                    <span :style="{
+                                        position:'absolute', height:'18px', width:'18px', left:'3px', bottom:'3px',
+                                        backgroundColor:'white', transition:'.2s', borderRadius:'50%',
+                                        transform: recordingState.parallelEnabled ? 'translateX(20px)' : 'translateX(0)'
+                                    }"></span>
                 </label>
               </div>
             </div>

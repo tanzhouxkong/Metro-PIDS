@@ -382,10 +382,7 @@
         let ws = null;
         let wsConnected = false;
         let wsRetryTimer = null;
-<<<<<<< Updated upstream
-=======
         let wsPingTimer = null;
->>>>>>> Stashed changes
         let isConnected = false;
 
         function getClientVersion() {
@@ -550,13 +547,9 @@
             ws.addEventListener('open', () => {
                 wsConnected = true;
                 updateConnectionStatus(wsConnected || bcConnected);
-<<<<<<< Updated upstream
-                try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
-=======
                 try { ws.send(JSON.stringify(getClientHelloPayload())); } catch (e) {}
                 try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
                 startWsPing();
->>>>>>> Stashed changes
             });
 
             ws.addEventListener('message', (event) => {
@@ -573,20 +566,14 @@
             ws.addEventListener('close', () => {
                 wsConnected = false;
                 updateConnectionStatus(wsConnected || bcConnected);
-<<<<<<< Updated upstream
-=======
                 stopWsPing();
->>>>>>> Stashed changes
                 scheduleWsReconnect();
             });
 
             ws.addEventListener('error', () => {
                 wsConnected = false;
                 updateConnectionStatus(wsConnected || bcConnected);
-<<<<<<< Updated upstream
-=======
                 stopWsPing();
->>>>>>> Stashed changes
                 scheduleWsReconnect();
             });
         }

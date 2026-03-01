@@ -354,7 +354,7 @@ export default {
       uiState.autoLocked = false;
       uiState.autoplayTogglePause = null;
       uiState.autoplayIsPausedRef = null;
-      // 通过设置 autoLocked 为 false，SlidePanel 和 ConsolePage 中的 watch 会自动停止自动播放
+      // 通过设置 autoLocked 为 false，SlidePanel 和主页面中的 watch 会自动停止自动播放
     }
 
     function toggleAutoplayPause() {

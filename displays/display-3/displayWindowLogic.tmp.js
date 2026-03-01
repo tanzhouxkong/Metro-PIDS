@@ -7024,4 +7024,4 @@ function initExitIndicator(rootElement) {
   };
 }
 
-}
+)

@@ -78,8 +78,34 @@ export default {
         return false;
       }
     },
+    isBlurEnabled() {
+      try {
+        const el = document.documentElement;
+        return !(el && el.classList.contains('blur-disabled'));
+      } catch (e) {
+        return true;
+      }
+    },
     getGlassBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
       return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)';
+    },
+    getDialogBackdrop() {
+      return this.isBlurEnabled() ? 'blur(20px) saturate(180%)' : 'none';
+    },
+    getDialogBorder() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '1px solid rgba(255,255,255,0.16)' : '1px solid rgba(15,23,42,0.16)';
+      }
+      return '1px solid rgba(255,255,255,0.1)';
+    },
+    getDialogContentBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
+      return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)';
     }
   },
   mounted() {
@@ -109,7 +135,7 @@ export default {
              }" 
              @click.self="handleCancel">
           <div @click.stop 
-               :style="{ background: getGlassBg(), backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderRadius:'16px', padding:'0', width:'420px', maxWidth:'90%', boxShadow:'0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1)', overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">
+            :style="{ background: getGlassBg(), backdropFilter: getDialogBackdrop(), WebkitBackdropFilter: getDialogBackdrop(), border: getDialogBorder(), borderRadius:'16px', padding:'0', width:'420px', maxWidth:'90%', boxShadow:'0 20px 60px rgba(0,0,0,0.4)', overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">
             <!-- Header -->
             <div :style="{ 
               display: 'flex', 
@@ -145,7 +171,7 @@ export default {
             </div>
             
             <!-- Content -->
-            <div :style="{ padding:'24px 28px', background: (isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)') }">
+            <div :style="{ padding:'24px 28px', background: getDialogContentBg() }">
               <!-- 提示信息 -->
               <div v-if="message" style="margin-bottom:20px; color:var(--text, #333); font-size:14px; line-height:1.7;">{{ message }}</div>
               

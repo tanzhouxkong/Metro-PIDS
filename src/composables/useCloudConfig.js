@@ -8,6 +8,77 @@
  */
 export const CLOUD_API_BASE = 'https://metro.tanzhouxiang.dpdns.org';
 
+const GEO_WARN_INTERVAL = 5 * 60 * 1000;
+const GEO_BG_UPDATE_INTERVAL = 5 * 60 * 1000;
+let geoLastWarnAt = 0;
+let geoBackgroundInFlight = null;
+let geoLastBackgroundAttemptAt = 0;
+
+function warnGeoThrottled(...args) {
+    const now = Date.now();
+    if (now - geoLastWarnAt < GEO_WARN_INTERVAL) return;
+    geoLastWarnAt = now;
+    console.warn(...args);
+}
+
+async function fetchJsonWithTimeout(url, timeout = 8000, headers = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers,
+            signal: controller.signal
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return await response.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function getIpGeolocation() {
+    try {
+        const data = await fetchJsonWithTimeout('https://ipapi.co/json/', 7000);
+        const country = data?.country_code ? String(data.country_code).toUpperCase() : null;
+        const city = data?.city ? String(data.city) : null;
+        const latitude = (data?.latitude !== undefined && data?.latitude !== null) ? Number(data.latitude) : null;
+        const longitude = (data?.longitude !== undefined && data?.longitude !== null) ? Number(data.longitude) : null;
+        if (country || city || Number.isFinite(latitude) || Number.isFinite(longitude)) {
+            return {
+                country,
+                city,
+                latitude: Number.isFinite(latitude) ? latitude : null,
+                longitude: Number.isFinite(longitude) ? longitude : null
+            };
+        }
+    } catch (e) {
+        // 继续尝试下一个服务
+    }
+
+    try {
+        const data = await fetchJsonWithTimeout('https://ipwho.is/', 7000);
+        if (data && data.success !== false) {
+            const country = data?.country_code ? String(data.country_code).toUpperCase() : null;
+            const city = data?.city ? String(data.city) : null;
+            const latitude = (data?.latitude !== undefined && data?.latitude !== null) ? Number(data.latitude) : null;
+            const longitude = (data?.longitude !== undefined && data?.longitude !== null) ? Number(data.longitude) : null;
+            return {
+                country,
+                city,
+                latitude: Number.isFinite(latitude) ? latitude : null,
+                longitude: Number.isFinite(longitude) ? longitude : null
+            };
+        }
+    } catch (e) {
+        // 忽略并返回空
+    }
+
+    return { country: null, city: null, latitude: null, longitude: null };
+}
+
 /**
  * 生成或获取设备唯一ID（多层级存储：Electron IPC -> localStorage -> 随机生成）
  * 按照极光推送的规则：优先从文件系统读取，其次综合设备特征，最后使用localStorage
@@ -102,7 +173,7 @@ function getDeviceId() {
 }
 
 /**
- * 获取设备地理位置信息（优先使用操作系统原生 API，降级到浏览器 Geolocation API）
+ * 获取设备地理位置信息（优先使用操作系统原生 API，降级到 IP 地理定位；浏览器 Geolocation 默认关闭）
  * @returns {Promise<{country: string|null, city: string|null, latitude: number|null, longitude: number|null}>}
  */
 async function getGeolocation() {
@@ -157,12 +228,36 @@ async function getGeolocation() {
                 return location;
             }
         } catch (nativeError) {
-            console.warn('[useCloudConfig] ⚠️ 操作系统原生 API 获取地理位置失败，降级到浏览器 API:', nativeError.message);
+            warnGeoThrottled('[useCloudConfig] ⚠️ 操作系统原生 API 获取地理位置失败，降级到浏览器 API:', nativeError.message);
         }
     }
     
-    // 降级：尝试使用浏览器 Geolocation API
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+    // 降级：使用 IP 地理定位（避免 Chromium 网络定位服务 googleapis 在部分网络环境 403）
+    try {
+        const ipLocation = await getIpGeolocation();
+        if (ipLocation && (ipLocation.country || ipLocation.city || ipLocation.latitude !== null || ipLocation.longitude !== null)) {
+            if (ipLocation.country) localStorage.setItem(STORAGE_KEY_COUNTRY, ipLocation.country);
+            if (ipLocation.city) localStorage.setItem(STORAGE_KEY_CITY, ipLocation.city);
+            if (ipLocation.latitude !== null && ipLocation.latitude !== undefined) {
+                localStorage.setItem(STORAGE_KEY_LAT, String(ipLocation.latitude));
+            }
+            if (ipLocation.longitude !== null && ipLocation.longitude !== undefined) {
+                localStorage.setItem(STORAGE_KEY_LON, String(ipLocation.longitude));
+            }
+            localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
+            return ipLocation;
+        }
+    } catch (error) {
+        warnGeoThrottled('[useCloudConfig] ⚠️ IP 定位失败:', error?.message || error);
+    }
+
+    // 可选：仅在手动开启时才使用浏览器 Geolocation（默认关闭，避免 googleapis 403）
+    let browserGeoEnabled = false;
+    try {
+        browserGeoEnabled = localStorage.getItem('metro_pids_enable_browser_geolocation') === '1';
+    } catch (e) {}
+
+    if (browserGeoEnabled && typeof navigator !== 'undefined' && navigator.geolocation) {
         try {
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(
@@ -170,82 +265,38 @@ async function getGeolocation() {
                     reject,
                     {
                         enableHighAccuracy: false,
-                        timeout: 10000,
-                        maximumAge: 3600000 // 1小时内的缓存位置可以使用
+                        timeout: 8000,
+                        maximumAge: 3600000
                     }
                 );
             });
-            
-            const { latitude, longitude } = position.coords;
-            
-            // 使用反向地理编码 API 获取国家/城市信息
-            // 这里使用免费的 Nominatim API（OpenStreetMap）
-            try {
-                const reverseGeocodeUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`;
-                const response = await fetch(reverseGeocodeUrl, {
-                    headers: {
-                        'User-Agent': 'Metro-PIDS/1.0'
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const address = data.address || {};
-                    
-                    // 提取国家代码（ISO 3166-1 alpha-2）
-                    let country = address.country_code ? address.country_code.toUpperCase() : null;
-                    // 如果没有 country_code，尝试从 country 字段提取
-                    if (!country && address.country) {
-                        // 简单的国家代码映射（常见国家）
-                        const countryMap = {
-                            '中国': 'CN',
-                            'United States': 'US',
-                            'United Kingdom': 'GB',
-                            'Japan': 'JP',
-                            'South Korea': 'KR',
-                            'Germany': 'DE',
-                            'France': 'FR'
-                        };
-                        country = countryMap[address.country] || null;
-                    }
-                    
-                    const city = address.city || address.town || address.village || address.county || null;
-                    
-                    // 保存到缓存
-                    if (country) localStorage.setItem(STORAGE_KEY_COUNTRY, country);
-                    if (city) localStorage.setItem(STORAGE_KEY_CITY, city);
-                    localStorage.setItem(STORAGE_KEY_LAT, latitude.toString());
-                    localStorage.setItem(STORAGE_KEY_LON, longitude.toString());
-                    localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
-                    
-                    return { country, city, latitude, longitude };
-                }
-            } catch (geocodeError) {
-                console.warn('[useCloudConfig] ⚠️ 反向地理编码失败:', geocodeError);
-            }
-            
-            // 如果反向地理编码失败，至少保存坐标
-            localStorage.setItem(STORAGE_KEY_LAT, latitude.toString());
-            localStorage.setItem(STORAGE_KEY_LON, longitude.toString());
+
+            const latitude = position?.coords?.latitude;
+            const longitude = position?.coords?.longitude;
+            if (latitude !== undefined && latitude !== null) localStorage.setItem(STORAGE_KEY_LAT, String(latitude));
+            if (longitude !== undefined && longitude !== null) localStorage.setItem(STORAGE_KEY_LON, String(longitude));
             localStorage.setItem(STORAGE_KEY_TIMESTAMP, Date.now().toString());
-            
-            return { country: null, city: null, latitude, longitude };
+            return {
+                country: localStorage.getItem(STORAGE_KEY_COUNTRY) || null,
+                city: localStorage.getItem(STORAGE_KEY_CITY) || null,
+                latitude: latitude ?? null,
+                longitude: longitude ?? null
+            };
         } catch (error) {
-            console.warn('[useCloudConfig] ⚠️ 获取地理位置失败:', error.message);
-            
-            // 如果获取失败，尝试使用缓存的旧数据（即使过期）
-            const cachedCountry = localStorage.getItem(STORAGE_KEY_COUNTRY);
-            const cachedCity = localStorage.getItem(STORAGE_KEY_CITY);
-            
-            if (cachedCountry || cachedCity) {
-                return {
-                    country: cachedCountry || null,
-                    city: cachedCity || null,
-                    latitude: null,
-                    longitude: null
-                };
-            }
+            warnGeoThrottled('[useCloudConfig] ⚠️ 获取地理位置失败:', error?.message || error);
         }
+    }
+
+    // 如果获取失败，尝试使用缓存的旧数据（即使过期）
+    const fallbackCountry = localStorage.getItem(STORAGE_KEY_COUNTRY);
+    const fallbackCity = localStorage.getItem(STORAGE_KEY_CITY);
+    if (fallbackCountry || fallbackCity) {
+        return {
+            country: fallbackCountry || null,
+            city: fallbackCity || null,
+            latitude: null,
+            longitude: null
+        };
     }
     
     return { country: null, city: null, latitude: null, longitude: null };
@@ -265,13 +316,24 @@ export function useCloudConfig(apiBase, token = null) {
     
     // 后台更新地理位置（不阻塞请求）
     function updateLocationInBackground() {
-        getGeolocation().then(location => {
+        const now = Date.now();
+        if (geoBackgroundInFlight) return geoBackgroundInFlight;
+        if (now - geoLastBackgroundAttemptAt < GEO_BG_UPDATE_INTERVAL) return Promise.resolve(null);
+        geoLastBackgroundAttemptAt = now;
+
+        geoBackgroundInFlight = getGeolocation().then(location => {
             cachedLocation = location;
             locationCacheTime = Date.now();
+            return location;
         }).catch(e => {
             // 忽略错误
-            console.warn('[useCloudConfig] 后台更新地理位置失败:', e);
+            warnGeoThrottled('[useCloudConfig] 后台更新地理位置失败:', e);
+            return null;
+        }).finally(() => {
+            geoBackgroundInFlight = null;
         });
+
+        return geoBackgroundInFlight;
     }
     
     // 获取请求头（包含地理位置信息）

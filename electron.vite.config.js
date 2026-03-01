@@ -4,6 +4,8 @@ import { resolve } from 'path'
 import { copyFileSync, existsSync, mkdirSync, cpSync } from 'fs'
 import { join } from 'path'
 
+const DEV_SERVER_PORT = Number(process.env.PIDS_DEV_SERVER_PORT || '5180')
+
 // 立即执行：确保 main.js 文件在 electron-vite 检查之前就存在
 const outDir = resolve(__dirname, 'out', 'main')
 const target = join(outDir, 'main.js')
@@ -227,14 +229,10 @@ export default defineConfig({
     },
     // Vite 开发服务器配置 - 启用 HMR
     server: {
-      port: 5173,
-      strictPort: false,
+      port: DEV_SERVER_PORT,
+      strictPort: true,
       host: '0.0.0.0', // 允许局域网访问
-      hmr: {
-        protocol: 'ws',
-        host: 'localhost',
-        port: 5173
-      },
+      hmr: true,
       cors: true,
       // 确保依赖预构建正常工作
       fs: {
@@ -244,7 +242,7 @@ export default defineConfig({
     },
     build: {
       // 性能优化：确保 ES6+ 代码被转译为 ES5（兼容性）或 ES2015（现代浏览器）
-      target: 'es2015', // 现代浏览器支持 ES2015，减少转译开销
+      target: 'chrome128', // Electron 渲染进程推荐使用明确的 Chrome 目标
       // 启用代码压缩和优化
       minify: 'esbuild', // esbuild 比 terser 更快，速度比 terser 快 10-100 倍
       // 生产环境禁用 sourcemap 以减小体积和提升性能

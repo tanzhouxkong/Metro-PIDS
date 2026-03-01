@@ -1,14 +1,6 @@
-<script>
+﻿<script>
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { ref, computed, watch, onMounted, nextTick, Teleport, Transition } from 'vue'
-=======
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
->>>>>>> Stashed changes
-=======
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
->>>>>>> Stashed changes
 import { useI18n } from 'vue-i18n'
 import LineManagerDialog from '../LineManagerDialog.js'
 import LineManagerTopbar from '../LineManagerTopbar.js'
@@ -54,6 +46,17 @@ function parseColorMarkup(text) {
 export default {
   name: 'LineManagerWindow',
   components: { Teleport, Transition, LineManagerDialog, LineManagerTopbar, ContextMenu },
+  data() {
+    return {
+      isSavingThroughLine: false,
+      folders: [],
+      loading: false,
+      runtimeLoading: false,
+      isSearchActive: false,
+      currentLines: [],
+      filteredLines: []
+    }
+  },
   setup() {
     const { t } = useI18n()
     const folders = ref([])
@@ -100,7 +103,6 @@ export default {
           console.warn('[线路管理器] 未找到待保存的贯通线路数据')
           return
         }
-
 
         const pendingData = JSON.parse(pendingDataStr)
         const { lineData, lineName, cleanLineName, validSegments, sourceLinePaths } = pendingData
@@ -215,34 +217,16 @@ export default {
 
     async function doSaveThroughLine(lineData, cleanLineName, folder, sourceLinePaths = null) {
       try {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        if (folder.id === 'default' || folder.name === t('lineManagerWindow.defaultFolder') || folder.id === CLOUD_FOLDER_ID) {
-=======
         if (folder.id === CLOUD_FOLDER_ID) {
->>>>>>> Stashed changes
-=======
-        if (folder.id === CLOUD_FOLDER_ID) {
->>>>>>> Stashed changes
           if (window.__lineManagerDialog) {
-            await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotSaveToDefaultOrCloudFolder'), '提示')
+            await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotSaveToDefaultOrCloudFolder'), t('console.info'))
           }
           return
         }
 
         const safeName = (cleanLineName || t('lineManagerWindow.throughLine')).replace(/[<>:"/\\|?*]/g, '').trim()
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        const targetFileName = (safeName || 'through-line') + '.json'
-        const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path)
-=======
         const targetFileName = (safeName || 'through-line') + '.mpl'
         const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path, sourceLinePaths)
->>>>>>> Stashed changes
-=======
-        const targetFileName = (safeName || 'through-line') + '.mpl'
-        const saveRes = await window.electronAPI.lines.save(targetFileName, lineData, folder.path, sourceLinePaths)
->>>>>>> Stashed changes
 
         if (saveRes && saveRes.ok) {
           isSavingThroughLine.value = false
@@ -302,13 +286,29 @@ export default {
     // 纯 JS 文件夹选择弹窗（沿用旧实现）
     async function showFolderSelector(foldersList, title, lineName = '') {
       return new Promise((resolve) => {
+        const root = typeof document !== 'undefined' ? document.documentElement : null
+        const isBlurEnabled = !(root && root.classList.contains('blur-disabled'))
+        const isDarkTheme = !!(root && (root.classList.contains('dark') || root.getAttribute('data-theme') === 'dark'))
+
+        const overlayBg = isBlurEnabled
+          ? 'rgba(0, 0, 0, 0.18)'
+          : (isDarkTheme ? 'rgba(0, 0, 0, 0.36)' : 'rgba(0, 0, 0, 0.28)')
+        const overlayFilter = isBlurEnabled ? 'blur(8px) saturate(130%)' : 'none'
+        const dialogBg = isBlurEnabled
+          ? (isDarkTheme ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)')
+          : (isDarkTheme ? '#1c1c20' : '#ffffff')
+        const dialogFilter = isBlurEnabled ? 'blur(20px) saturate(180%)' : 'none'
+        const dialogBorder = isBlurEnabled
+          ? '1px solid rgba(255,255,255,0.1)'
+          : (isDarkTheme ? '1px solid rgba(255,255,255,0.16)' : '1px solid rgba(15,23,42,0.16)')
+
         const dialog = document.createElement('div')
         dialog.style.cssText =
-          'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:21000; background:rgba(0, 0, 0, 0.18); backdrop-filter:blur(8px) saturate(130%); -webkit-backdrop-filter:blur(8px) saturate(130%); animation:fadeIn 0.3s ease;'
+          'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:21000; background:' + overlayBg + '; backdrop-filter:' + overlayFilter + '; -webkit-backdrop-filter:' + overlayFilter + '; animation:fadeIn 0.3s ease;'
 
         const dialogContent = document.createElement('div')
         dialogContent.style.cssText =
-          'background:rgba(255, 255, 255, 0.85); backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%); border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); overflow:hidden; transform:scale(1); transition:transform 0.2s;'
+          'background:' + dialogBg + '; backdrop-filter:' + dialogFilter + '; -webkit-backdrop-filter:' + dialogFilter + '; border-radius:16px; width:92%; max-width:500px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.4); border:' + dialogBorder + '; overflow:hidden; transform:scale(1); transition:transform 0.2s;'
 
         const header = document.createElement('div')
         header.style.cssText =
@@ -324,7 +324,7 @@ export default {
               </div>
               <div>
                 <h3 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">${title || selectFolderText}</h3>
-                <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">Select Folder</div>
+                <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">${selectFolderText}</div>
               </div>
             </div>
             <button id="closeBtn" style="background:none; border:none; color:var(--muted, #999); cursor:pointer; font-size:20px; padding:8px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:all 0.2s;">
@@ -547,13 +547,6 @@ export default {
       if (!hasFoldersAPI.value) {
         // 非 Electron 环境：仅云控虚拟文件夹
         folders.value = [
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-          { id: 'default', name: t('lineManagerWindow.defaultFolder'), path: '', isCurrent: true },
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
           { id: CLOUD_FOLDER_ID, name: t('lineManagerWindow.cloudLinesFolder'), path: null, isRuntime: true }
         ]
         currentFolderId.value = CLOUD_FOLDER_ID
@@ -837,18 +830,8 @@ export default {
 
     async function deleteFolder(folderId, folderName, folderPath) {
       if (!window.__lineManagerDialog) return
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-      if (folderId === 'default') {
-        await window.__lineManagerDialog.alert(t('lineManagerWindow.cannotDeleteDefaultFolder'), '提示')
-=======
       if (folderId === CLOUD_FOLDER_ID) {
-        await window.__lineManagerDialog.alert('云控线路文件夹不可删除。', '提示')
->>>>>>> Stashed changes
-=======
-      if (folderId === CLOUD_FOLDER_ID) {
-        await window.__lineManagerDialog.alert('云控线路文件夹不可删除。', '提示')
->>>>>>> Stashed changes
+        await window.__lineManagerDialog.alert(t('lineManagerWindow.cloudFolderDeleteForbidden'), t('console.info'))
         return
       }
       const confirmed = await window.__lineManagerDialog.confirm(
@@ -857,7 +840,7 @@ export default {
       )
       if (!confirmed) return
       if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
-        await window.__lineManagerDialog.alert(t('lineManagerWindow.electronApiNotAvailable'), '错误')
+        await window.__lineManagerDialog.alert(t('lineManagerWindow.electronApiNotAvailable'), t('console.error'))
         return
       }
       try {
@@ -869,11 +852,11 @@ export default {
           const errorMsg = res && res.error ? res.error : t('lineManagerWindow.unknownError')
           console.error('删除文件夹失败:', res)
           await loadFolders()
-          await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToDeleteFolder', { errorMsg }), '错误')
+          await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToDeleteFolder', { errorMsg }), t('console.error'))
         }
       } catch (e) {
         console.error('删除文件夹失败:', e)
-        await window.__lineManagerDialog.alert('删除文件夹失败：' + (e.message || e), '错误')
+        await window.__lineManagerDialog.alert(t('lineManagerWindow.deleteFolderFailedPrefix') + (e.message || e), t('console.error'))
       }
     }
 
@@ -1072,32 +1055,13 @@ export default {
         
         // 检查新文件名是否已存在
         const listRes = await window.electronAPI.lines.list(folderPath)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        const existingNames = (listRes || []).map((it) => it.name.replace(/\.json$/, ''))
-        const newNameTrimmed = newName.trim().replace(/\.json$/, '')
-=======
         const existingNames = (listRes || []).map((it) => it.name.replace(/\.(json|mpl)$/i, ''))
         const newNameTrimmed = newName.trim().replace(/\.(json|mpl)$/i, '')
->>>>>>> Stashed changes
-=======
-        const existingNames = (listRes || []).map((it) => it.name.replace(/\.(json|mpl)$/i, ''))
-        const newNameTrimmed = newName.trim().replace(/\.(json|mpl)$/i, '')
->>>>>>> Stashed changes
         if (existingNames.includes(newNameTrimmed)) {
           await window.__lineManagerDialog.alert(t('lineManager.lineNameExists'), t('console.error'))
           return
         }
         
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        const newFileName = newNameTrimmed + '.json'
-        
-        // 保存为新文件名
-        const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath)
-=======
-=======
->>>>>>> Stashed changes
         // 保持原文件的扩展名（.json 或 .mpl）
         const oldExt = oldFileName.toLowerCase().endsWith('.mpl') ? '.mpl' : '.json'
         const newFileName = newNameTrimmed + oldExt
@@ -1106,10 +1070,6 @@ export default {
         const sep = folderPath && folderPath.includes('\\') ? '\\' : '/'
         const sourceLinePath = folderPath ? ((folderPath.endsWith(sep) ? folderPath : folderPath + sep) + oldFileName) : null
         const saveRes = await window.electronAPI.lines.save(newFileName, readRes.content, folderPath, sourceLinePath)
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
         if (!(saveRes && saveRes.ok)) {
           await window.__lineManagerDialog.alert(saveRes?.error || t('lineManager.saveNewFileError'), t('console.error'))
           return
@@ -1207,75 +1167,6 @@ export default {
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
       clipboard.value = { type: 'copy', line, folder: null, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
-    }
-
-    async function duplicateRuntimeLine(line) {
-      closeLineContextMenu()
-      try {
-        const dlg = window.__lineManagerDialog || null
-        const alertFn = async (msg, title = '提示') => {
-          if (dlg && typeof dlg.alert === 'function') return await dlg.alert(msg, title)
-          return await dialogService.alert(msg, title)
-        }
-        const confirmFn = async (msg, title = '确认') => {
-          if (dlg && typeof dlg.confirm === 'function') return await dlg.confirm(msg, title)
-          return await dialogService.confirm(msg, title)
-        }
-        const promptFn = async (msg, defVal = '', title = '输入') => {
-          if (dlg && typeof dlg.prompt === 'function') return await dlg.prompt(msg, defVal, title)
-          return await dialogService.prompt(msg, defVal, title)
-        }
-
-        const sourceName = String(line?.name || line?.data?.meta?.lineName || '').trim()
-        if (!sourceName) {
-          await alertFn('无法识别要复制的云控线路名称', '错误')
-          return
-        }
-
-        const inputName = await promptFn('请输入复制后的线路名称', `${sourceName}-副本`, '复制云控线路')
-        if (inputName == null) return
-
-        const targetName = String(inputName || '').trim()
-        if (!targetName) {
-          await alertFn('线路名称不能为空', '提示')
-          return
-        }
-
-        const existed = currentLines.value.some((it) => String(it?.name || '').trim() === targetName)
-        if (existed) {
-          const ok = await confirmFn(`线路「${targetName}」已存在，是否覆盖？`, '确认覆盖')
-          if (!ok) return
-        }
-
-        let sourceLineData = line?.data || null
-        try {
-          const full = await cloudConfig.getRuntimeLine(sourceName)
-          if (full?.ok && full?.data) sourceLineData = full.data
-          else if (full?.line) sourceLineData = full.line
-        } catch (e) {
-          console.warn('[LineManagerWindow] 复制云控线路时获取完整线路失败，回退使用当前数据:', e)
-        }
-
-        const cloned = JSON.parse(JSON.stringify(sourceLineData || {}))
-        if (!cloned.meta || typeof cloned.meta !== 'object') cloned.meta = {}
-        cloned.meta.lineName = targetName
-
-        const save = await cloudConfig.updateRuntimeLine(targetName, cloned)
-        if (!save?.ok) {
-          throw new Error(save?.error || '复制失败')
-        }
-
-        await loadLinesFromFolder(CLOUD_FOLDER_ID)
-        await alertFn(`已复制云控线路：${sourceName} → ${targetName}`, '成功')
-      } catch (e) {
-        console.error('复制云控线路失败:', e)
-        const dlg = window.__lineManagerDialog || null
-        if (dlg && typeof dlg.alert === 'function') {
-          await dlg.alert('复制云控线路失败：' + (e.message || e), '错误')
-        } else {
-          await dialogService.alert('复制云控线路失败：' + (e.message || e), '错误')
-        }
-      }
     }
 
     async function cutLine(line) {
@@ -1382,29 +1273,58 @@ export default {
       const sourceFolderPath = clipboard.value.sourceFolderPath
       try {
         const sourceLine = clipboard.value.line
-        const sourceFileName = sourceLine.filePath || sourceLine.name
-        const readRes = await window.electronAPI.lines.read(sourceFileName, sourceFolderPath)
-        if (!(readRes && readRes.ok && readRes.content)) {
-          if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('读取源线路失败', '错误')
-          return
+        let targetFileName = sourceLine.filePath || sourceLine.name
+        let lineContent = null
+        let sourceLinePath = null
+
+        if (sourceLine.isRuntime) {
+          const sourceName = String(sourceLine?.name || sourceLine?.data?.meta?.lineName || '').trim()
+          let runtimeLineData = sourceLine?.data || null
+          try {
+            const full = await cloudConfig.getRuntimeLine(sourceName)
+            if (full?.ok && full?.data) runtimeLineData = full.data
+            else if (full?.line) runtimeLineData = full.line
+          } catch (e) {
+            console.warn('[LineManagerWindow] 粘贴云控线路时获取完整线路失败，回退使用当前数据:', e)
+          }
+
+          if (!(runtimeLineData && typeof runtimeLineData === 'object')) {
+            if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('读取源线路失败', '错误')
+            return
+          }
+
+          lineContent = JSON.parse(JSON.stringify(runtimeLineData))
+          const safeBaseName = (sourceName || lineContent?.meta?.lineName || t('lineManagerWindow.unnamedLine'))
+            .replace(/[<>:"/\\|?*]/g, '')
+            .trim() || 'line'
+          targetFileName = safeBaseName + '.mpl'
+        } else {
+          const sourceFileName = sourceLine.filePath || sourceLine.name
+          const readRes = await window.electronAPI.lines.read(sourceFileName, sourceFolderPath)
+          if (!(readRes && readRes.ok && readRes.content)) {
+            if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('读取源线路失败', '错误')
+            return
+          }
+          lineContent = readRes.content
+          const sep = sourceFolderPath && sourceFolderPath.includes('\\') ? '\\' : '/'
+          sourceLinePath = sourceFolderPath
+            ? ((sourceFolderPath.endsWith(sep) ? sourceFolderPath : sourceFolderPath + sep) + sourceFileName)
+            : null
         }
-        let targetFileName = sourceFileName
+
         if (clipboard.value.type === 'copy' && targetFolderId === sourceFolderId) {
           const listRes = await window.electronAPI.lines.list(targetFolderPath)
           const existingNames = (listRes || []).map((it) => it.name)
-          targetFileName = getUniqueLineFileName(existingNames, sourceFileName)
+          targetFileName = getUniqueLineFileName(existingNames, targetFileName)
         }
-        const sep = sourceFolderPath && sourceFolderPath.includes('\\') ? '\\' : '/'
-        const sourceLinePath = sourceFolderPath
-          ? ((sourceFolderPath.endsWith(sep) ? sourceFolderPath : sourceFolderPath + sep) + sourceFileName)
-          : null
-        const saveRes = await window.electronAPI.lines.save(targetFileName, readRes.content, targetFolderPath, sourceLinePath)
+        const saveRes = await window.electronAPI.lines.save(targetFileName, lineContent, targetFolderPath, sourceLinePath)
         if (!(saveRes && saveRes.ok)) {
           if (window.__lineManagerDialog)
             await window.__lineManagerDialog.alert(saveRes?.error || '写入目标失败', '错误')
           return
         }
-        if (clipboard.value.type === 'cut') {
+        if (clipboard.value.type === 'cut' && !sourceLine.isRuntime) {
+          const sourceFileName = sourceLine.filePath || sourceLine.name
           await window.electronAPI.lines.delete(sourceFileName, sourceFolderPath)
         }
         await loadLinesFromFolder(targetFolderId)
@@ -1766,7 +1686,6 @@ export default {
       openLineFile,
       renameLine,
       copyLine,
-      duplicateRuntimeLine,
       cutLine,
       pasteLine,
       createNewLine,
@@ -1781,22 +1700,10 @@ export default {
         const canDelete = contextMenu.value.folderId && contextMenu.value.folderId !== CLOUD_FOLDER_ID
         const canCopyFolder = contextMenu.value.folderId && !isCloud
         return [
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
-          { type: 'sep' },
-=======
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
           { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
           { type: 'sep' },
->>>>>>> Stashed changes
-=======
-          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
-          { type: 'sep' },
-          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
-          { type: 'sep' },
->>>>>>> Stashed changes
           { label: t('lineManager.ctxCopy'), icon: 'fas fa-copy', action: 'copyFolder', disabled: !canCopyFolder },
           { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'pasteFolder', disabled: !clipboard.value.folder },
           { type: 'sep' },
@@ -1812,15 +1719,7 @@ export default {
             action: 'openFolder',
             disabled: !contextMenu.value.folderId || isCloud
           },
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-          ...(canDelete && !isCloud && !isDefault
-=======
           ...(canDelete && !isCloud
->>>>>>> Stashed changes
-=======
-          ...(canDelete && !isCloud
->>>>>>> Stashed changes
             ? [{ type: 'sep' }, { label: t('lineManager.ctxDelete'), icon: 'fas fa-trash', action: 'deleteFolder', danger: true }]
             : [])
         ]
@@ -1828,16 +1727,8 @@ export default {
       sidebarNewMenuItems: computed(() => {
         const canPaste = clipboard.value.folder || clipboard.value.type
         return [
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
->>>>>>> Stashed changes
-=======
-          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
-          { type: 'sep' },
->>>>>>> Stashed changes
           { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: false }] : [])
         ]
@@ -1854,55 +1745,6 @@ export default {
             action: 'createNewLine',
             disabled: isCloudFolderActive.value
           },
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-          ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
-        ]
-      }),
-      lineMenuItems: computed(() => [
-        {
-          label: t('lineManager.ctxNewLine'),
-          icon: 'fas fa-plus',
-          action: 'createNewLine',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
-        },
-        { type: 'sep' },
-        { label: t('lineManager.ctxOpen'), icon: 'fas fa-folder-open', action: 'openLine' },
-        {
-          label: t('lineManager.ctxRename'),
-          icon: 'fas fa-edit',
-          action: 'renameLine',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
-        },
-        { type: 'sep' },
-        {
-          label: t('lineManager.ctxCopy'),
-          icon: 'fas fa-copy',
-          action: 'copyLine',
-          disabled: isCloudFolderActive.value
-        },
-        {
-          label: t('lineManager.ctxCut'),
-          icon: 'fas fa-cut',
-          action: 'cutLine',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
-        },
-        {
-          label: t('lineManager.ctxPaste'),
-          icon: 'fas fa-paste',
-          action: 'pasteLine',
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value || !clipboard.value.type
-        },
-        { type: 'sep' },
-        {
-          label: t('lineManager.ctxDelete'),
-          icon: 'fas fa-trash',
-          action: 'deleteLine',
-          danger: true,
-          disabled: isCloudFolderActive.value || isDefaultFolderActive.value
-        }
-      ]),
-=======
           { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: isCloudFolderActive.value },
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
         ]
@@ -1962,75 +1804,12 @@ export default {
           }
         ]
       }),
->>>>>>> Stashed changes
-=======
-          { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: isCloudFolderActive.value },
-          ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
-        ]
-      }),
-      lineMenuItems: computed(() => {
-        const selectedLine = lineContextMenu.value.line
-        const isRuntimeLine = !!selectedLine?.isRuntime
-        return [
-          { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
-          { type: 'sep' },
-          {
-            label: t('lineManager.ctxNewLine'),
-            icon: 'fas fa-plus',
-            action: 'createNewLine',
-            disabled: isCloudFolderActive.value
-          },
-          { type: 'sep' },
-          { label: t('lineManager.ctxOpen'), icon: 'fas fa-folder-open', action: 'openLine' },
-          {
-            label: t('lineManager.ctxOpenFile'),
-            icon: 'fas fa-file-alt',
-            action: 'openFile',
-            disabled: isCloudFolderActive.value || isRuntimeLine
-          },
-          {
-            label: t('lineManager.ctxRename'),
-            icon: 'fas fa-edit',
-            action: 'renameLine',
-            disabled: isCloudFolderActive.value
-          },
-          { type: 'sep' },
-          {
-            label: t('lineManager.ctxCopy'),
-            icon: 'fas fa-copy',
-            action: 'copyLine',
-            disabled: false
-          },
-          {
-            label: t('lineManager.ctxCut'),
-            icon: 'fas fa-cut',
-            action: 'cutLine',
-            disabled: isCloudFolderActive.value
-          },
-          {
-            label: t('lineManager.ctxPaste'),
-            icon: 'fas fa-paste',
-            action: 'pasteLine',
-            disabled: isCloudFolderActive.value || !clipboard.value.type
-          },
-          { type: 'sep' },
-          {
-            label: t('lineManager.ctxDelete'),
-            icon: 'fas fa-trash',
-            action: 'deleteLine',
-            danger: true,
-            disabled: isCloudFolderActive.value
-          }
-        ]
-      }),
->>>>>>> Stashed changes
       async onFolderMenuSelect(it) {
-          if (it.action === 'refresh') return await refreshExplorer()
         if (!it) return
         if (it.action === 'refresh') return await refreshExplorer()
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
         if (isCloud && ['createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
-          await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
+          await dialogService.alert(t('lineManagerWindow.cloudApplyOnlyNotice'), t('console.info'))
           return
         }
         if (it.action === 'addFolder') return await addFolder()
@@ -2062,7 +1841,7 @@ export default {
         const isCloudTarget = targetFolderId === CLOUD_FOLDER_ID
 
         if (isCloudTarget && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
-          await dialogService.alert('云控线路只支持应用，不支持在此新建或编辑。', '提示')
+          await dialogService.alert(t('lineManagerWindow.cloudApplyOnlyNotice'), t('console.info'))
           return
         }
 
@@ -2086,7 +1865,7 @@ export default {
         if (it.action === 'refresh') return await refreshExplorer()
         // 云控线路：允许“打开”“复制”，其它编辑操作禁用
         if (isCloudFolderActive.value && !['openLine', 'copyLine'].includes(it.action)) {
-          await dialogService.alert('云控线路仅支持应用和复制，不支持在此新建、剪切、粘贴或删除。', '提示')
+          await dialogService.alert(t('lineManagerWindow.cloudApplyCopyOnlyNotice'), t('console.info'))
           return
         }
         if (it.action === 'addFolder') return await addFolder()
@@ -2098,10 +1877,7 @@ export default {
         if (it.action === 'openLine') return await openLine(line)
         if (it.action === 'openFile') return await openLineFile(line)
         if (it.action === 'renameLine') return await renameLine(line)
-        if (it.action === 'copyLine') {
-          if (line?.isRuntime) return await duplicateRuntimeLine(line)
-          return await copyLine(line)
-        }
+        if (it.action === 'copyLine') return await copyLine(line)
         if (it.action === 'cutLine') return await cutLine(line)
         if (it.action === 'pasteLine') return await pasteLine()
         if (it.action === 'deleteLine') return await deleteLine(line)
@@ -2114,7 +1890,7 @@ export default {
 <template>
   <div class="lmw-root">
     <LineManagerTopbar>
-      <div v-if="folders.length > 0 && selectedFolderId" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
+      <div v-if="folders?.length > 0 && selectedFolderId" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
         <div class="lmw-search-inner" style="flex:1;">
           <i class="fas fa-search lmw-search-icon"></i>
           <input
@@ -2128,7 +1904,7 @@ export default {
             type="button"
             class="lmw-search-clear"
             @click="searchQuery = ''"
-            aria-label="清除"
+            :aria-label="t('lineManager.clear')"
           >
             <i class="fas fa-times"></i>
           </button>
@@ -2157,7 +1933,7 @@ export default {
 
     <div class="lmw-main">
       <div class="lmw-main-body">
-      <aside ref="sidebarRef" v-if="folders.length > 0" class="lmw-sidebar" @contextmenu.prevent="showSidebarNewMenu($event)">
+      <aside ref="sidebarRef" v-if="folders?.length > 0" class="lmw-sidebar" @contextmenu.prevent="showSidebarNewMenu($event)">
         <div class="lmw-sidebar-inner">
           <button
             v-for="folder in folders"
@@ -2177,9 +1953,9 @@ export default {
       </aside>
 
       <section class="lmw-content">
-        <header v-if="folders.length > 0 && selectedFolderId" class="lmw-content-header">
+        <header v-if="folders?.length > 0 && selectedFolderId" class="lmw-content-header">
           <span>{{ t('lineManager.currentFolder') }}：</span>
-          <strong>{{ folders.find(f => f.id === selectedFolderId)?.name || selectedFolderId }}</strong>
+          <strong>{{ folders?.find?.(f => f.id === selectedFolderId)?.name || selectedFolderId }}</strong>
         </header>
 
         <div ref="linesRef" class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
@@ -2205,11 +1981,11 @@ export default {
             <div class="lmw-line-main">
               <div class="lmw-line-title" v-html="parseColorMarkup(line.name)"></div>
               <div class="lmw-line-meta">
-                <span v-if="line.isThroughLine" class="lmw-tag through">贯通</span>
-                <span v-if="line.isLoopLine" class="lmw-tag loop">环线</span>
+                <span v-if="line.isThroughLine" class="lmw-tag through">{{ t('folderLineManager.through') }}</span>
+                <span v-if="line.isLoopLine" class="lmw-tag loop">{{ t('folderLineManager.loop') }}</span>
                 <span class="lmw-stations">
                   {{ line.firstStation }} → {{ line.lastStation }}
-                  <span v-if="line.isRuntime">（云控 {{ line.stationCount || line.data?.stations?.length || 0 }} 站）</span>
+                  <span v-if="line.isRuntime">{{ t('lineManager.runtimeStationCount', { count: line.stationCount || line.data?.stations?.length || 0 }) }}</span>
                 </span>
                 <span v-if="isSearchActive && line.folderName" class="lmw-line-folder">
                   <i class="fas fa-folder"></i> {{ line.folderName }}
@@ -2231,34 +2007,16 @@ export default {
         <!-- 底部操作栏：仅在保存贯通线路时显示，橙色「保存贯通线路」按钮 -->
         <div v-if="isSavingThroughLine || isSavingLine" class="lmw-bottom-bar">
           <div class="lmw-bottom-bar-left">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            <span class="lmw-bottom-bar-muted">{{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}</span>
-=======
-=======
->>>>>>> Stashed changes
             <span class="lmw-bottom-bar-muted">
-              {{ t('lineManager.savingToPrefix') }}{{ (folders.find(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}
+              {{ t('lineManager.savingToPrefix') }}{{ (folders?.find?.(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}
               <template v-if="isSavingLine && pendingLineSaveData && pendingLineSaveData.lineName"> · {{ pendingLineSaveData.lineName }}</template>
               <template v-else-if="isSavingThroughLine && pendingThroughLineInfo && pendingThroughLineInfo.lineName"> · {{ pendingThroughLineInfo.lineName }}</template>
             </span>
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
           </div>
           <div class="lmw-bottom-bar-right">
             <button type="button" class="lmw-btn lmw-btn-through" @click="isSavingThroughLine ? handleSaveThroughLine() : handleSavePendingLine()">
               <i class="fas fa-save"></i>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-              <span>{{ t('lineManager.throughSaveButton') }}</span>
-=======
               <span>{{ bottomBarActionLabel }}</span>
->>>>>>> Stashed changes
-=======
-              <span>{{ bottomBarActionLabel }}</span>
->>>>>>> Stashed changes
             </button>
           </div>
         </div>

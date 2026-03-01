@@ -1,16 +1,4 @@
 <template>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
   <div id="display-app" ref="rootRef">
     <div id="scaler">
       <div class="header">
@@ -82,11 +70,6 @@
       </div>
       <div id="welcome-end-screen">
         <div class="welcome-end-body"></div>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
   <div id="display-app" ref="rootRef" class="exit-indicator">
     <!-- 左侧信息面板 40% -->
     <div class="panel-left">
@@ -184,16 +167,9 @@
           <div class="guide-cn" id="guide-cn">本侧开门</div>
           <div class="guide-en" id="guide-en">Please exit from this door</div>
         </div>
-<<<<<<< Updated upstream
-=======
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+      </div>
+    </div>
+  </div>
       </div>
     </div>
   </div>
@@ -201,79 +177,27 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { initExitIndicator } from './displayWindowLogic.js';
-=======
-<<<<<<< HEAD
-// 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
 import { initDisplayWindow } from './displayWindowLogic.js';
-=======
-import { initExitIndicator } from './displayWindowLogic.js';
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
-// 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
-import { initDisplayWindow } from './displayWindowLogic.js';
->>>>>>> Stashed changes
-=======
-// 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
-import { initDisplayWindow } from './displayWindowLogic.js';
->>>>>>> Stashed changes
-=======
-// 显示器1 本目录显示逻辑（displayWindowLogic.js），默认直线布局，可通过状态栏按钮切换为 C 型；显示器3 也引用此逻辑
-import { initDisplayWindow } from './displayWindowLogic.js';
->>>>>>> Stashed changes
 
 const rootRef = ref(null);
 let cleanup = () => {};
 
-// 平台检测
 const platform = ref('');
 const isDarwin = computed(() => platform.value === 'darwin');
 const isLinux = computed(() => platform.value === 'linux');
 
-// 获取平台信息
 if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.platform) {
   platform.value = window.electronAPI.platform;
 }
 
 onMounted(() => {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
   cleanup = initDisplayWindow(rootRef.value);
 });
 
 onBeforeUnmount(() => {
   if (cleanup) {
-  cleanup();
-    cleanup = null;
-  }
-});
-</script>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
-  cleanup = initExitIndicator(rootRef.value) || (() => {});
-});
-
-onBeforeUnmount(() => {
-  if (typeof cleanup === 'function') {
     cleanup();
+    cleanup = null;
   }
 });
 </script>
@@ -608,13 +532,3 @@ onBeforeUnmount(() => {
   margin-top: 4px;
 }
 </style>
-<<<<<<< Updated upstream
-=======
->>>>>>> 5e6badfcb798ff4bb795199c1cd04aeb2a4d3fcc
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes

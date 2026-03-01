@@ -11,6 +11,11 @@
     "languageHint": "表示言語を選択します。この設定が最優先で、未設定の場合はシステムに従います。",
     "languageLabel": "表示言語"
   },
+  "audio": {
+    "title": "車両オーディオ",
+    "enableVehicle": "車両オーディオを有効にする",
+    "enableVehicleHint": "オンの場合、到着/発車や「次のステップ」で駅オーディオを再生します。オフでは再生しません。"
+  },
   "settings": {
     "appearance": "外観",
     "themeMode": "テーマ",
@@ -110,6 +115,7 @@
     "outerLoop": "外回り (反時計回り)",
     "innerLoop": "内回り (時計回り)",
     "dirLabel": "上り",
+    "dirLabelDown": "下り",
     "dirLabelDown": "下り",
     "modeNormal": "各駅停車",
     "modeExpress": "快速",
@@ -227,10 +233,12 @@
     "rename": "Rename",
     "ctxFolderOpen": "Open Folder",
     "ctxRefresh": "再読み込み",
+    "ctxRefresh": "再読み込み",
     "ctxFolderNewFolder": "New Folder",
     "ctxNewFolder": "New Folder",
     "ctxCopy": "Copy",
     "ctxPaste": "Paste",
+    "ctxOpenFile": "ファイルの場所を開く",
     "ctxOpenFile": "ファイルの場所を開く",
     "ctxRename": "Rename",
     "ctxOpenFolder": "Open Folder",
@@ -267,6 +275,9 @@
     "searchResultHint": "Try other keywords or search by folder name",
     "locate": "Locate",
     "savingToPrefix": "Saving to: ",
+    "throughSaveButton": "Save Through Line",
+    "saveLineButton": "Save Line",
+    "saveZipButton": "Save as Package"
     "throughSaveButton": "Save Through Line",
     "saveLineButton": "Save Line",
     "saveZipButton": "Save as Package"
@@ -325,7 +336,17 @@
     "xferNameDialogTitle": "Edit Line Name",
     "xferNamePlaceholder": "Line name/number",
     "btnCancel": "Cancel",
-    "btnConfirm": "OK"
+    "btnConfirm": "OK",
+    "btnSave": "Save",
+    "audioRename": "名前を変更",
+    "audioRenamePlaceholder": "音声表示名",
+    "audioCut": "切り取り",
+    "audioModeQuick": "モードショートカット",
+    "audioDynamicMenu": "ダイナミックオーディオ",
+    "audioDynamicAdd": "プレースホルダーを追加",
+    "audioDynamicName": "ダイナミックオーディオ",
+    "audioStartPlaceholder": "始発駅オーディオ",
+    "audioTerminalPlaceholder": "終着駅オーディオ"
   },
   "colorPicker": {
     "title": "色を選択",
@@ -382,4 +403,3 @@
     "inner": "内回り"
   }
 }
-

@@ -808,17 +808,10 @@ export default {
             state,
             next: handleNext, move, setArr, setDep, handleSetArr, handleSetDep, jumpTo,
             showEditor, editingStation, editingIndex, isNewStation,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            openEditor, saveStation, deleteStation,
-=======
             openEditor, saveStation, saveLineCommonAudio, deleteStation, applyAudioToAllStations,
             commonAudioRef,
->>>>>>> Stashed changes
-=======
             openEditor, saveStation, saveLineCommonAudio, deleteStation, applyAudioToAllStations,
             commonAudioRef,
->>>>>>> Stashed changes
             currentStation, routeInfo, statusDesc, serviceModeLabel, 
             lineModeLabel, directionLabel,
             stationRouteInfo, routeTextRef,
@@ -848,33 +841,17 @@ export default {
                             {{ serviceModeLabel }}
                         </span>
                     </div>
-                    <div class="admin-mode-group">
-                        <span class="admin-mode-value">{{ lineModeLabel }}</span>
-                    </div>
-                    <div class="admin-mode-group">
-                        <span class="admin-mode-value">{{ directionLabel }}</span>
-                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Controls -->
-        <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px;">
-            <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(-1)"><i class="fas fa-chevron-left"></i> {{ $t('consoleButtons.prevStation') }}</button>
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            <button class="btn b-org" style="height:48px; font-size:14px;" @click="setArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
-            <button class="btn b-blue" style="height:48px; font-size:14px;" @click="setDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
-=======
-            <button class="btn b-org" style="height:48px; font-size:14px;" @click="handleSetArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
-            <button class="btn b-blue" style="height:48px; font-size:14px;" @click="handleSetDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
->>>>>>> Stashed changes
-=======
-            <button class="btn b-org" style="height:48px; font-size:14px;" @click="handleSetArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
-            <button class="btn b-blue" style="height:48px; font-size:14px;" @click="handleSetDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
->>>>>>> Stashed changes
-            <button class="btn b-gray" style="height:48px; font-size:14px;" @click="move(1)">{{ $t('consoleButtons.nextStation') }} <i class="fas fa-chevron-right"></i></button>
-            <button class="btn b-red" style="height:48px; font-size:14px;" @click="next()"><i class="fas fa-step-forward"></i> {{ $t('consoleButtons.nextStep') }}</button>
+        <div style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:12px;">
+            <button class="btn b-gray" style="height:48px; font-size:14px; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="move(-1)"><i class="fas fa-chevron-left"></i> {{ $t('consoleButtons.prevStation') }}</button>
+            <button class="btn b-org" style="height:48px; font-size:14px; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="handleSetArr()"><i class="fas fa-sign-in-alt"></i> {{ $t('consoleButtons.arrive') }}</button>
+            <button class="btn b-blue" style="height:48px; font-size:14px; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="handleSetDep()"><i class="fas fa-sign-out-alt"></i> {{ $t('consoleButtons.depart') }}</button>
+            <button class="btn b-gray" style="height:48px; font-size:14px; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="move(1)">{{ $t('consoleButtons.nextStation') }} <i class="fas fa-chevron-right"></i></button>
+            <button class="btn b-red" style="height:48px; font-size:14px; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" @click="next()"><i class="fas fa-step-forward"></i> {{ $t('consoleButtons.nextStep') }}</button>
         </div>
 
         <!-- Station List Header（与 PIDS 控制台区块标题一致） -->
