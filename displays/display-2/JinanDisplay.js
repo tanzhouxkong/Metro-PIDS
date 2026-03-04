@@ -14,6 +14,8 @@ export default {
     const platform = ref('')
     const isDarwin = computed(() => platform.value === 'darwin')
     const isLinux = computed(() => platform.value === 'linux')
+    const nowClock = ref(new Date())
+    let clockTimer = null
     
     // "下一站"页面显示控制
     const forceShowNextStationPage = ref(false) // 强制显示"下一站"页面（用于定时器控制）
@@ -31,6 +33,15 @@ export default {
     // 底栏LED文字和水印
     const footerLED = ref('') // LED滚动文字
     const footerWatermark = ref(true) // 是否显示水印
+    const footerRotateIndex = ref(0)
+    const display2UiVariant = ref('classic') // classic=当前UI, modern=新UI
+    const display2UiVariantClass = computed(() => display2UiVariant.value === 'modern' ? 'ui-modern' : 'ui-classic')
+    const isModernUi = computed(() => display2UiVariant.value === 'modern')
+
+    const FOOTER_TIPS = [
+      '请为老、弱、病、残、孕、需要帮助的乘客让座谢谢。',
+      '公交车是老百姓的私家车，驾驶员是老百姓的专职司机'
+    ]
 
     // BroadcastChannel
     let bc = null
@@ -148,6 +159,38 @@ export default {
       return `${startStation} → ${endStation}`
     })
 
+    const modernHeaderFrom = computed(() => {
+      if (stations.value.length === 0) return '--'
+      return stations.value[0]?.name || '--'
+    })
+
+    const modernHeaderTo = computed(() => {
+      if (stations.value.length === 0) return '--'
+      return stations.value[stations.value.length - 1]?.name || '--'
+    })
+
+    const modernHeaderDate = computed(() => {
+      const d = nowClock.value || new Date()
+      const weekMap = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1)
+      const day = String(d.getDate())
+      const week = weekMap[d.getDay()] || ''
+      return `${y}-${m}-${day} ${week}`
+    })
+
+    const modernHeaderTime = computed(() => {
+      const d = nowClock.value || new Date()
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      const ss = String(d.getSeconds()).padStart(2, '0')
+      return `${hh}.${mm}.${ss}`
+    })
+
+    function updateNowClock() {
+      nowClock.value = new Date()
+    }
+
     // 使用站点计算 API 计算当前站和下一站信息
     const stationInfo = computed(() => {
       if (!appData.value || stations.value.length === 0) {
@@ -198,11 +241,15 @@ export default {
 
     // 是否显示"下一站"页面：仅在强制显示时显示（由定时器控制）
     const showNextStationPage = computed(() => {
+      if (isModernUi.value) return false
       return forceShowNextStationPage.value && stations.value.length > 0
     })
     
     // 是否显示"到站"页面：仅在强制显示时显示（由定时器控制）
     const showArrivalPage = computed(() => {
+      if (isModernUi.value) {
+        return rt.value.state === 0 && stations.value.length > 0
+      }
       return forceShowArrivalPage.value && stations.value.length > 0
     })
     
@@ -251,6 +298,415 @@ export default {
       const idx = stationInfo.value.nextIdx
       return idx >= 0 ? Math.min(idx, stations.value.length - 1) : -1
     })
+
+    const footerSignalMessage = computed(() => {
+      if (rt.value.state === 1) {
+        const terminalName = stations.value.length > 0 ? (stations.value[stations.value.length - 1]?.name || '--') : '--'
+        const nextName = nextStationName.value || '--'
+        return `本车开往： ${terminalName}，车辆前方到站： ${nextName}。`
+      }
+      const arrivedName = currentStationName.value || '--'
+      return `${arrivedName}  到了。请停稳后再起身，下车注意观察后方。`
+    })
+
+    const footerMessageQueue = computed(() => {
+      const queue = [footerSignalMessage.value, ...FOOTER_TIPS]
+      if (footerLED.value && footerLED.value.trim()) {
+        queue.push(footerLED.value.trim())
+      }
+      return queue.filter(Boolean)
+    })
+
+    const displayedFooterLED = computed(() => {
+      const queue = footerMessageQueue.value
+      if (queue.length === 0) return ''
+      const index = ((footerRotateIndex.value % queue.length) + queue.length) % queue.length
+      return queue[index]
+    })
+
+    const modernDepartureStops = computed(() => {
+      const len = stations.value.length
+      if (len <= 0) {
+        return [
+          { key: 's1', name: '--', state: 'past' },
+          { key: 's2', name: '--', state: 'current' },
+          { key: 's3', name: '--', state: 'future' },
+          { key: 's4', name: '--', state: 'future' }
+        ]
+      }
+
+      const last = len - 1
+      const current = Math.max(0, Math.min(activeStationIdx.value, last))
+      const highlight = (rt.value.state === 1 && nextStationIdx.value >= 0)
+        ? Math.max(0, Math.min(nextStationIdx.value, last))
+        : current
+      const base = Math.max(0, current - 1)
+      const idxList = [base, base + 1, base + 2, base + 3].map(i => Math.max(0, Math.min(i, last)))
+
+      return idxList.map((idx, i) => {
+        let state = 'future'
+        if (idx < highlight) state = 'past'
+        else if (idx === highlight) state = 'current'
+        return {
+          key: `s${i + 1}`,
+          idx,
+          name: stations.value[idx]?.name || '--',
+          state
+        }
+      })
+    })
+
+    const modernArrivalRows = computed(() => {
+      const list = stations.value || []
+      if (list.length === 0) return { top: [], bottom: [] }
+
+      const current = Math.max(0, Math.min(activeStationIdx.value, list.length - 1))
+      const mapped = list.map((st, idx) => {
+        let state = 'future'
+        if (idx < current) state = 'passed'
+        else if (idx === current) state = 'current'
+        return {
+          idx,
+          name: st?.name || '--',
+          state
+        }
+      })
+
+      const split = Math.ceil(mapped.length / 2)
+      return {
+        top: mapped.slice(0, split),
+        bottom: mapped.slice(split).reverse()
+      }
+    })
+
+    const modernSingleRowStations = computed(() => {
+      const list = stations.value || []
+      if (list.length === 0) return []
+
+      const current = Math.max(0, Math.min(activeStationIdx.value, list.length - 1))
+      const highlight = (rt.value.state === 1 && nextStationIdx.value >= 0)
+        ? Math.max(0, Math.min(nextStationIdx.value, list.length - 1))
+        : current
+      return list.map((st, idx) => {
+        let state = 'future'
+        if (idx < highlight) state = 'passed'
+        else if (idx === highlight) state = 'current'
+        return {
+          idx,
+          name: st?.name || '--',
+          state
+        }
+      })
+    })
+
+    const modernSingleRowSegments = computed(() => {
+      const list = modernSingleRowStations.value || []
+      if (list.length <= 1) return []
+      const current = Math.max(0, Math.min(activeStationIdx.value, list.length - 1))
+      const movingSegmentIdx = (rt.value.state === 1 && current >= 0 && current < list.length - 1)
+        ? current
+        : -1
+      return list.slice(0, -1).map((node, idx) => ({
+        key: `seg-${idx}`,
+        idx,
+        state: idx < current
+          ? 'passed'
+          : (idx === movingSegmentIdx ? 'current' : 'future')
+      }))
+    })
+
+    function getModernSingleSegmentStyle(segmentIdx) {
+      const count = modernSingleRowStations.value.length
+      if (count <= 1) return { left: '0%', width: '0%' }
+      const cell = 100 / count
+      return {
+        left: `${(segmentIdx + 0.5) * cell}%`,
+        width: `${cell}%`
+      }
+    }
+
+    function advanceFooterMessage() {
+      const len = footerMessageQueue.value.length
+      if (len <= 1) return
+      footerRotateIndex.value = (footerRotateIndex.value + 1) % len
+    }
+
+    const nextPageFiveStations = computed(() => {
+      const len = stations.value.length
+      if (len <= 0) {
+        return [
+          { slot: 'first', idx: -1, name: '--', state: 'future' },
+          { slot: 'prev', idx: -1, name: '--', state: 'future' },
+          { slot: 'next', idx: -1, name: '--', state: 'future' },
+          { slot: 'next2', idx: -1, name: '--', state: 'future' },
+          { slot: 'terminal', idx: -1, name: '--', state: 'future' }
+        ]
+      }
+
+      const firstIdx = 0
+      const terminalIdx = len - 1
+      const currentIdx = Math.max(0, Math.min(activeStationIdx.value, terminalIdx))
+
+      const interior = []
+      for (let i = 1; i < terminalIdx; i++) interior.push(i)
+
+      const rawNextIdx = nextStationIdx.value >= 0
+        ? Math.min(nextStationIdx.value, terminalIdx)
+        : Math.min(currentIdx + 1, terminalIdx)
+      const realNextIdx = rawNextIdx
+
+      let effectiveNextIdx = terminalIdx > 0
+        ? Math.max(1, Math.min(rawNextIdx, terminalIdx - 1))
+        : 0
+      let prevIdx = -1
+      let next2Idx = -1
+
+      // 中间三槽位使用“连续窗口”逻辑，避免出现“第一站-空白-第二站...”
+      if (interior.length >= 3) {
+        const windowStart = Math.max(1, Math.min(effectiveNextIdx - 1, terminalIdx - 3))
+        prevIdx = windowStart
+        effectiveNextIdx = windowStart + 1
+        next2Idx = windowStart + 2
+      } else if (interior.length === 2) {
+        prevIdx = interior[0]
+        effectiveNextIdx = interior[1]
+        next2Idx = -1
+      } else if (interior.length === 1) {
+        prevIdx = interior[0]
+        effectiveNextIdx = interior[0]
+        next2Idx = -1
+      }
+
+      const statusByIdx = (idx) => {
+        if (idx < 0 || realNextIdx < 0) return 'future'
+        return idx < realNextIdx ? 'passed' : 'future'
+      }
+      const rawNameByIdx = (idx) => {
+        if (idx < 0) return '--'
+        const st = stations.value[idx]
+        return st && st.name ? st.name : '--'
+      }
+
+      const nameBySlot = (slot, idx) => {
+        const resolvedIdx = idx
+        if (resolvedIdx < 0) return '--'
+        if (slot === 'first' || slot === 'terminal' || slot === 'next') {
+          return rawNameByIdx(resolvedIdx)
+        }
+        // prev/next2 避免与首末站、下一站重复显示
+        if (resolvedIdx === firstIdx || resolvedIdx === terminalIdx || resolvedIdx === effectiveNextIdx) return '--'
+        return rawNameByIdx(resolvedIdx)
+      }
+
+      return [
+        { slot: 'first', idx: firstIdx, name: nameBySlot('first', firstIdx), state: statusByIdx(firstIdx) },
+        { slot: 'prev', idx: prevIdx, name: nameBySlot('prev', prevIdx), state: statusByIdx(prevIdx) },
+        { slot: 'next', idx: effectiveNextIdx, name: nameBySlot('next', effectiveNextIdx), state: statusByIdx(effectiveNextIdx) },
+        { slot: 'next2', idx: next2Idx, name: nameBySlot('next2', next2Idx), state: statusByIdx(next2Idx) },
+        { slot: 'terminal', idx: terminalIdx, name: nameBySlot('terminal', terminalIdx), state: statusByIdx(terminalIdx) }
+      ]
+    })
+
+    const nextPageLineSegments = computed(() => {
+      const points = nextPageFiveStations.value || []
+      if (points.length < 2) return []
+      const total = points.length - 1
+      const segmentWidth = 100 / total
+      const nextSlotIndex = points.findIndex((p) => p.slot === 'next')
+      const nextNode = points.find((p) => p.slot === 'next')
+      const nextGlobalIdx = nextNode && typeof nextNode.idx === 'number' ? nextNode.idx : -1
+      const boundaryFlags = nextPageBoundaryFlags.value
+      const terminalIdx = Math.max(0, (stations.value.length || 0) - 1)
+      const realNextIdx = nextStationIdx.value >= 0 ? nextStationIdx.value : nextGlobalIdx
+      const realNextSlotIndex = realNextIdx >= 0
+        ? points.findIndex((p) => p && typeof p.idx === 'number' && p.idx === realNextIdx)
+        : -1
+      const effectiveNextSlotIndex = realNextSlotIndex >= 0 ? realNextSlotIndex : nextSlotIndex
+      const forceFirstThreeSolid = (stations.value.length || 0) >= 3 && realNextIdx >= 0 && realNextIdx <= 2
+      const finalApproach = nextStationIdx.value >= 0 && nextStationIdx.value === terminalIdx
+      const segments = []
+      for (let i = 0; i < total; i++) {
+        const leftPoint = points[i]
+        const rightPoint = points[i + 1]
+        const leftIdx = typeof leftPoint?.idx === 'number' ? leftPoint.idx : -1
+        const rightIdx = typeof rightPoint?.idx === 'number' ? rightPoint.idx : -1
+
+        let state = 'future'
+        if (realNextIdx >= 0 && leftIdx >= 0 && rightIdx >= 0) {
+          const segmentRightBound = Math.max(leftIdx, rightIdx)
+          state = segmentRightBound < realNextIdx ? 'passed' : 'future'
+        } else {
+          state = (leftPoint.state === 'passed' && rightPoint.state === 'passed') ? 'passed' : 'future'
+        }
+
+        if (finalApproach && i >= total - 2) {
+          state = 'passed'
+        }
+
+        const aroundNextBySlot = effectiveNextSlotIndex >= 0 && (i === effectiveNextSlotIndex - 1 || i === effectiveNextSlotIndex)
+        const aroundNextByIndex = realNextIdx >= 0 && leftIdx >= 0 && rightIdx >= 0
+          ? (Math.min(leftIdx, rightIdx) <= realNextIdx && realNextIdx <= Math.max(leftIdx, rightIdx))
+          : false
+        const nearNext = aroundNextBySlot || aroundNextByIndex
+        const edgeSolid = (boundaryFlags.omittedLeft && i === 0) || (boundaryFlags.omittedRight && i === total - 1)
+        const alwaysLeftSolid = i === 1
+        const firstThreeSolid = forceFirstThreeSolid && i <= 2
+        const finalApproachSolid = finalApproach && i >= total - 2
+        segments.push({
+          id: `seg-${i}`,
+          left: `${i * segmentWidth}%`,
+          width: `${segmentWidth}%`,
+          state,
+          nearNext,
+          forceSolid: nearNext || edgeSolid || alwaysLeftSolid || firstThreeSolid || finalApproachSolid
+        })
+      }
+      return segments
+    })
+
+    const nextPageBoundaryFlags = computed(() => {
+      const points = nextPageFiveStations.value || []
+      if (points.length < 5) return { omittedLeft: false, omittedRight: false }
+      const prevNode = points.find(p => p.slot === 'prev')
+      const nextNode = points.find(p => p.slot === 'next')
+      const next2Node = points.find(p => p.slot === 'next2')
+
+      if (!prevNode || !nextNode || !next2Node) return { omittedLeft: false, omittedRight: false }
+
+      // 左侧补位：上一站无法位于下一站左边时（接近首站）
+      const omittedLeft = typeof prevNode.idx === 'number' && typeof nextNode.idx === 'number'
+        ? (prevNode.idx < 0 || prevNode.idx >= nextNode.idx)
+        : false
+
+      // 右侧补位：下一站2无法位于下一站右边时（接近末站）
+      const omittedRight = typeof next2Node.idx === 'number' && typeof nextNode.idx === 'number'
+        ? (next2Node.idx < 0 || next2Node.idx <= nextNode.idx)
+        : false
+
+      return { omittedLeft, omittedRight }
+    })
+
+    const nextPageOutOfRange = computed(() => {
+      const flags = nextPageBoundaryFlags.value
+      return flags.omittedLeft || flags.omittedRight
+    })
+
+    // 下一站页面：当前站 -> 下一站 动态红点/红线
+    const nextPagePulseVisible = ref(false)
+    const nextPagePulseProgress = ref(0)
+    let nextPagePulseTimer = null
+    const NEXT_PAGE_PULSE_MOVE_MS = 3000
+    const NEXT_PAGE_PULSE_GAP_MS = 700
+
+    const nextPagePulseTrack = computed(() => {
+      const points = nextPageFiveStations.value || []
+      if (points.length < 2) return null
+
+      const nextNode = points.find((p) => p.slot === 'next')
+      const nextSlotIndex = points.findIndex((p) => p.slot === 'next')
+      const fallbackNextIdx = nextNode && typeof nextNode.idx === 'number' ? nextNode.idx : -1
+      const nextIdx = nextStationIdx.value >= 0 ? nextStationIdx.value : fallbackNextIdx
+      if (nextIdx < 0) return null
+
+      const targetNextSlotIndex = points.findIndex((p) => p && typeof p.idx === 'number' && p.idx === nextIdx)
+      const resolvedNextSlotIndex = targetNextSlotIndex >= 0 ? targetNextSlotIndex : nextSlotIndex
+      if (resolvedNextSlotIndex < 0) return null
+
+      const currentIdx = nextIdx - 1
+      let startSlotIndex = points.findIndex((p) => p && p.idx === currentIdx)
+
+      if (startSlotIndex < 0) {
+        let bestIdx = -1
+        for (let i = 0; i < points.length; i++) {
+          const idx = typeof points[i]?.idx === 'number' ? points[i].idx : -1
+          if (idx >= 0 && idx < nextIdx && idx > bestIdx) {
+            bestIdx = idx
+            startSlotIndex = i
+          }
+        }
+      }
+
+      if (startSlotIndex < 0 || startSlotIndex >= resolvedNextSlotIndex) return null
+
+      const slotToPercent = (slotIndex) => {
+        if (points.length <= 1) return 0
+        return (slotIndex / (points.length - 1)) * 100
+      }
+
+      const startPercent = slotToPercent(startSlotIndex)
+      const endPercent = slotToPercent(resolvedNextSlotIndex)
+      if (endPercent <= startPercent) return null
+
+      return { startPercent, endPercent }
+    })
+
+    const nextPagePulseDotStyle = computed(() => {
+      const track = nextPagePulseTrack.value
+      if (!track || !nextPagePulseVisible.value) return { display: 'none' }
+      const progress = Math.max(0, Math.min(1, nextPagePulseProgress.value))
+      const position = track.startPercent + (track.endPercent - track.startPercent) * progress
+      return { left: `${position}%` }
+    })
+
+    const nextPagePulseTrailStyle = computed(() => {
+      const track = nextPagePulseTrack.value
+      if (!track || !nextPagePulseVisible.value) return { display: 'none' }
+      const progress = Math.max(0, Math.min(1, nextPagePulseProgress.value))
+      const position = track.startPercent + (track.endPercent - track.startPercent) * progress
+      const width = Math.max(0, position - track.startPercent)
+      return {
+        left: `${track.startPercent}%`,
+        width: `${width}%`
+      }
+    })
+
+    function stopNextPagePulse() {
+      if (nextPagePulseTimer) {
+        clearInterval(nextPagePulseTimer)
+        nextPagePulseTimer = null
+      }
+      nextPagePulseVisible.value = false
+      nextPagePulseProgress.value = 0
+    }
+
+    function startNextPagePulse() {
+      stopNextPagePulse()
+
+      if (!showNextStationPage.value || rt.value.state !== 1) return
+      if (!nextPagePulseTrack.value) return
+
+      let moving = true
+      let phaseStart = Date.now()
+      nextPagePulseVisible.value = true
+      nextPagePulseProgress.value = 0
+
+      nextPagePulseTimer = setInterval(() => {
+        if (!showNextStationPage.value || rt.value.state !== 1 || !nextPagePulseTrack.value) {
+          stopNextPagePulse()
+          return
+        }
+
+        const elapsed = Date.now() - phaseStart
+
+        if (moving) {
+          const progress = Math.max(0, Math.min(1, elapsed / NEXT_PAGE_PULSE_MOVE_MS))
+          nextPagePulseProgress.value = progress
+          nextPagePulseVisible.value = true
+
+          if (progress >= 1) {
+            moving = false
+            phaseStart = Date.now()
+            nextPagePulseVisible.value = false
+            nextPagePulseProgress.value = 0
+          }
+        } else if (elapsed >= NEXT_PAGE_PULSE_GAP_MS) {
+          moving = true
+          phaseStart = Date.now()
+          nextPagePulseVisible.value = true
+          nextPagePulseProgress.value = 0
+        }
+      }, 16)
+    }
     
     // 判断站点是否为下一站且正在闪烁
     function isStationBlinking(index) {
@@ -323,7 +779,7 @@ export default {
     // 地图相关计算
     const PADDING = 40 // 左右内边距
     const PADDING_LEFT = 5 // 左边距（用于站点）
-    const PADDING_RIGHT = 20 // 右边距（用于站点）
+    const PADDING_RIGHT = 40 // 右边距（用于站点）
     const ST_WIDTH = 30 // 每个站点固定宽度
     
     // 计算可用宽度
@@ -636,6 +1092,9 @@ export default {
         }
         // 如果包含设置信息，更新"下一站"页面显示时长、LED文字和水印
         if (data.settings && data.settings.display) {
+          if (data.settings.display.display2UiVariant === 'classic' || data.settings.display.display2UiVariant === 'modern') {
+            display2UiVariant.value = data.settings.display.display2UiVariant
+          }
           if (data.settings.display.display2NextStationDuration !== undefined) {
             nextStationDuration.value = data.settings.display.display2NextStationDuration
           }
@@ -653,6 +1112,9 @@ export default {
         }
         // 如果包含设置信息，更新"下一站"页面显示时长、LED文字和水印
         if (data.settings && data.settings.display) {
+          if (data.settings.display.display2UiVariant === 'classic' || data.settings.display.display2UiVariant === 'modern') {
+            display2UiVariant.value = data.settings.display.display2UiVariant
+          }
           if (data.settings.display.display2NextStationDuration !== undefined) {
             nextStationDuration.value = data.settings.display.display2NextStationDuration
           }
@@ -668,6 +1130,9 @@ export default {
       } else if (data.type === 'settings') {
         // 接收设置更新
         if (data.settings && data.settings.display) {
+          if (data.settings.display.display2UiVariant === 'classic' || data.settings.display.display2UiVariant === 'modern') {
+            display2UiVariant.value = data.settings.display.display2UiVariant
+          }
           if (data.settings.display.display2NextStationDuration !== undefined) {
             nextStationDuration.value = data.settings.display.display2NextStationDuration
           }
@@ -679,6 +1144,11 @@ export default {
           }
         }
       }
+
+      // 同步后统一刷新底栏滚动状态（避免仅靠footerLED值变化触发）
+      nextTick(() => {
+        updateLEDScroll()
+      })
     }
     
     // 处理"下一站"页面显示逻辑
@@ -687,6 +1157,13 @@ export default {
       if (nextStationTimer) {
         clearTimeout(nextStationTimer)
         nextStationTimer = null
+      }
+
+      // modern UI：禁用“下一站”页面
+      if (isModernUi.value) {
+        forceShowNextStationPage.value = false
+        stopNextStationBlink()
+        return
       }
       
       // 如果收到出站信号（state === 1），启动定时器
@@ -714,6 +1191,13 @@ export default {
         clearTimeout(arrivalTimer)
         arrivalTimer = null
       }
+
+      // modern UI：到站页改为信号驱动，不受时长限制
+      // 仅在进站信号(state === 0)持续显示，收到出站信号(state === 1)后切走
+      if (isModernUi.value) {
+        forceShowArrivalPage.value = (rt.value.state === 0 && stations.value.length > 0)
+        return
+      }
       
       // 如果收到进站信号（state === 0），启动定时器
       if (rt.value.state === 0 && stations.value.length > 0) {
@@ -740,6 +1224,18 @@ export default {
       }
     })
 
+    watch(
+      [showNextStationPage, nextStationIdx, nextPageFiveStations],
+      ([visible]) => {
+        if (visible && rt.value.state === 1) {
+          startNextPagePulse()
+        } else {
+          stopNextPagePulse()
+        }
+      },
+      { deep: true }
+    )
+
     // 更新LED滚动效果
     function updateLEDScroll() {
       nextTick(() => {
@@ -751,30 +1247,62 @@ export default {
         
         // 移除之前的滚动类
         ledContent.classList.remove('scrolling')
+        ledContent.style.animationDuration = ''
+        ledContent.style.transform = ''
+
+        // 每次先恢复为当前文案，避免历史拼接内容影响宽度计算
+        const text = displayedFooterLED.value || ''
+        ledContent.innerHTML = parseColorMarkup(text)
+
+        if (!text.trim()) return
         
-        // 检查是否需要滚动
-        if (ledContent.scrollWidth > ledContainer.offsetWidth) {
-          // 复制内容以实现无缝滚动
-          const originalHTML = ledContent.innerHTML
-          ledContent.innerHTML = `${originalHTML}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${originalHTML}`
-          ledContent.classList.add('scrolling')
-          
-          // 根据内容宽度计算滚动时间
-          const contentWidth = ledContent.scrollWidth / 2 // 因为内容被复制了
-          const scrollSpeed = 50 // 像素/秒
-          const duration = (contentWidth + 50) / scrollSpeed
-          ledContent.style.animationDuration = `${Math.max(10, Math.min(30, duration))}s`
-        } else {
-          // 恢复原始内容
-          const textOnly = footerLED.value.replace(/<[^>]+>([^<]*)<\/>/g, '$1')
-          ledContent.innerHTML = parseColorMarkup(footerLED.value)
+        // 有文案就从右到左穿屏滚动（短文案也滚动）
+        ledContent.classList.add('scrolling')
+
+        // LED风格：每滚完一整屏再切下一句，避免中途换句
+        ledContent.onanimationiteration = () => {
+          advanceFooterMessage()
         }
+
+        const contentWidth = ledContent.scrollWidth
+        const containerWidth = ledContainer.offsetWidth
+        const scrollSpeed = 50 // 像素/秒
+        const duration = (contentWidth + containerWidth + 40) / scrollSpeed
+        ledContent.style.animationDuration = `${Math.max(8, Math.min(30, duration))}s`
       })
     }
     
-    // 监听LED文字变化
-    watch(footerLED, () => {
+    // 监听底栏显示文字变化
+    watch(displayedFooterLED, () => {
       updateLEDScroll()
+    })
+
+    // 监听轮播队列变化，校正当前索引并刷新滚动
+    watch(footerMessageQueue, () => {
+      const len = footerMessageQueue.value.length
+      if (len <= 0) {
+        footerRotateIndex.value = 0
+      } else if (footerRotateIndex.value >= len) {
+        footerRotateIndex.value = 0
+      }
+      nextTick(() => {
+        updateLEDScroll()
+      })
+    }, { deep: true })
+
+    // 收到新的进出站信号时，先显示信号文案（队列第1条）
+    watch(() => rt.value.state, () => {
+      footerRotateIndex.value = 0
+      nextTick(() => {
+        updateLEDScroll()
+      })
+    })
+
+    // 底栏布局变化时也刷新滚动（例如页面切换/水印显示变化）
+    watch([footerWatermark, showNextStationPage, showArrivalPage], () => {
+      nextTick(() => {
+        updateLEDScroll()
+      })
     })
     
     // 处理控制命令
@@ -925,6 +1453,17 @@ export default {
       })
       
       fitScreen()
+      updateNowClock()
+      if (clockTimer) {
+        clearInterval(clockTimer)
+        clockTimer = null
+      }
+      clockTimer = setInterval(updateNowClock, 1000)
+
+      // 初始化时触发一次底栏滚动计算
+      nextTick(() => {
+        updateLEDScroll()
+      })
       
       // 初始化时检查是否需要显示"下一站"或"到站"页面
       handleNextStationPageDisplay()
@@ -949,9 +1488,14 @@ export default {
         clearTimeout(arrivalTimer)
         arrivalTimer = null
       }
+      if (clockTimer) {
+        clearInterval(clockTimer)
+        clockTimer = null
+      }
       
       // 清除闪烁定时器
       stopNextStationBlink()
+      stopNextPagePulse()
       
       if (bc) {
         bc.close()
@@ -977,6 +1521,10 @@ export default {
       lineNumber,
       routeNumber,
       routeDirection,
+      modernHeaderFrom,
+      modernHeaderTo,
+      modernHeaderDate,
+      modernHeaderTime,
       lineNameHTML,
       activeStationIdx,
       showNextStationPage,
@@ -1001,13 +1549,28 @@ export default {
       PADDING,
       PADDING_RIGHT,
       PADDING_LEFT,
+      isModernUi,
       footerLED,
+      modernDepartureStops,
+      modernArrivalRows,
+      modernSingleRowStations,
+      modernSingleRowSegments,
+      getModernSingleSegmentStyle,
+      displayedFooterLED,
       footerWatermark,
+      display2UiVariantClass,
+      nextPageFiveStations,
+      nextPageLineSegments,
+      nextPageBoundaryFlags,
+      nextPageOutOfRange,
+      nextPagePulseVisible,
+      nextPagePulseDotStyle,
+      nextPagePulseTrailStyle,
       parseColorMarkup
     }
   },
   template: `
-    <div id="display-app">
+    <div id="display-app" :class="display2UiVariantClass">
       <div id="scaler" :style="{ transform: 'scale(' + scaleRatio + ')' }">
         <!-- Custom Title Bar -->
         <div id="display-titlebar" class="custom-titlebar" :class="{ darwin: isDarwin, linux: isLinux }">
@@ -1032,6 +1595,22 @@ export default {
         
         <!-- Header: 深蓝色背景，显示路线信息和图例 -->
         <div class="header">
+          <template v-if="isModernUi">
+            <div class="modern-header-left">
+              <div class="modern-header-date">{{ modernHeaderDate }}</div>
+              <div class="modern-header-time">{{ modernHeaderTime }}</div>
+            </div>
+            <div class="modern-header-center">
+              <span class="modern-header-line" v-html="lineNameHTML"></span>
+              <span class="modern-header-from">{{ modernHeaderFrom }}</span>
+              <span class="modern-header-arrow" aria-hidden="true">
+                <span class="modern-header-arrow-bar"></span>
+                <span class="modern-header-arrow-head"></span>
+              </span>
+              <span class="modern-header-to">{{ modernHeaderTo }}</span>
+            </div>
+          </template>
+          <template v-else>
           <div class="header-left">
             <span class="header-route" v-html="lineNameHTML"></span>
             <span class="header-direction">{{ routeDirection }}</span>
@@ -1047,18 +1626,90 @@ export default {
               <span class="legend-text">未过站</span>
             </div>
           </div>
+          </template>
         </div>
 
         <!-- 下一站页面：全屏白色，仅在出站信号时显示 -->
-        <div v-if="showNextStationPage" class="next-station-page">
-          <div class="next-station-content">
-            <span class="next-station-label">下一站：</span>
-            <span class="next-station-name">{{ nextStationName }}</span>
+        <div v-if="showNextStationPage" class="next-station-page next-station-route-page">
+          <template v-if="isModernUi">
+            <div class="modern-next-wrapper">
+              <div class="modern-next-header">
+                <span class="modern-next-label">下一站</span>
+                <span class="modern-next-name">{{ nextStationName || '--' }}</span>
+              </div>
+              <div class="modern-next-track">
+                <div
+                  v-for="(node, idx) in modernDepartureStops"
+                  :key="node.key"
+                  class="modern-next-node"
+                  :class="'state-' + node.state"
+                >
+                  <div class="modern-next-station-name">{{ node.name }}</div>
+                  <div class="modern-next-dot"></div>
+                  <div v-if="idx < modernDepartureStops.length - 1" class="modern-next-arrow">➜</div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+          <div class="next-page-title">
+            <span class="next-page-title-label">下一站：</span>
+            <span class="next-page-title-name">{{ nextStationName || '--' }}</span>
           </div>
+          <div class="next-page-route-card" :class="{ segmented: nextPageOutOfRange }">
+            <div class="next-page-segments">
+              <div
+                v-for="segment in nextPageLineSegments"
+                :key="segment.id"
+                class="next-page-segment"
+                :class="['state-' + segment.state, { 'force-solid-line': segment.forceSolid }]"
+                :style="{ left: segment.left, width: segment.width }"
+              ></div>
+              <div
+                v-if="nextPagePulseVisible"
+                class="next-page-pulse-trail"
+                :style="nextPagePulseTrailStyle"
+              ></div>
+              <div
+                v-if="nextPagePulseVisible"
+                class="next-page-pulse-dot"
+                :style="nextPagePulseDotStyle"
+              ></div>
+            </div>
+            <div class="next-page-stations">
+              <div
+                v-for="node in nextPageFiveStations"
+                :key="node.slot"
+                class="next-page-station"
+                :class="['slot-' + node.slot, 'state-' + node.state, { 'forced-left-red': nextPageBoundaryFlags.omittedLeft && node.slot === 'first' }]"
+              >
+                <div class="next-page-dot"></div>
+                <div class="next-page-station-name">{{ node.name }}</div>
+              </div>
+            </div>
+          </div>
+          </template>
         </div>
 
         <!-- 到站页面：全屏白色，仅在进站信号时显示 -->
         <div v-else-if="showArrivalPage" class="next-station-page arrival-page">
+          <template v-if="isModernUi">
+            <div class="modern-next-wrapper modern-next-wrapper-arrival">
+              <div class="modern-next-track">
+                <div
+                  v-for="(node, idx) in modernDepartureStops"
+                  :key="'arr-' + node.key"
+                  class="modern-next-node"
+                  :class="'state-' + node.state"
+                >
+                  <div class="modern-next-station-name">{{ node.name }}</div>
+                  <div class="modern-next-dot"></div>
+                  <div v-if="idx < modernDepartureStops.length - 1" class="modern-next-arrow">➜</div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
           <div class="next-station-content" style="flex-direction: column; align-items: center;">
             <div>
               <span class="next-station-label">到站：</span>
@@ -1068,10 +1719,36 @@ export default {
               请停稳后再起身，下车注意观察后方
             </div>
           </div>
+          </template>
         </div>
 
         <!-- 线路区域：正常显示线路图 -->
         <div v-else class="route-map">
+          <template v-if="isModernUi">
+            <div class="modern-arrival-wrapper modern-arrival-wrapper-route">
+              <div class="modern-arrival-row modern-arrival-row-single">
+                <div class="modern-arrival-segments" aria-hidden="true">
+                  <span
+                    v-for="seg in modernSingleRowSegments"
+                    :key="'route-seg-' + seg.key"
+                    class="modern-arrival-segment"
+                    :class="'state-' + seg.state"
+                    :style="getModernSingleSegmentStyle(seg.idx)"
+                  ></span>
+                </div>
+                <div
+                  v-for="(node, idx) in modernSingleRowStations"
+                  :key="'route-single-' + node.idx"
+                  class="modern-arrival-node"
+                  :class="'state-' + node.state"
+                >
+                  <div class="modern-arrival-dot"></div>
+                  <div class="modern-arrival-name">{{ node.name }}</div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
           <!-- 上排站点 - 前半部分站点从左到右排列（覆盖整个屏幕宽度） -->
           <div class="station-row row-top">
             <div 
@@ -1113,7 +1790,7 @@ export default {
               <!-- 使用显示器1的路径绘制方式 -->
               <path 
                 :d="semicirclePath"
-                stroke="#a5f3bc"
+                stroke="#4ade80"
                 stroke-width="4"
                 fill="none"
                 stroke-linecap="round"
@@ -1146,13 +1823,14 @@ export default {
               <span class="station-name" :class="{ 'next-station-name-red': station.isNextStation, 'station-name-two-column': station.isTwoColumn }" v-html="station.formattedName"></span>
             </div>
           </div>
+          </template>
         </div>
 
         <!-- Footer: 深蓝色底栏 -->
         <div class="footer">
           <!-- LED滚动文字 -->
-          <div v-if="footerLED" class="footer-led">
-            <div class="footer-led-content" v-html="parseColorMarkup(footerLED)"></div>
+          <div v-if="displayedFooterLED" class="footer-led">
+            <div class="footer-led-content" v-html="parseColorMarkup(displayedFooterLED)"></div>
           </div>
           <!-- 水印 -->
           <div v-if="footerWatermark" class="footer-watermark">

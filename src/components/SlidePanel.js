@@ -21,6 +21,7 @@ export default {
   name: 'SlidePanel',
   components: { ColorPicker, Teleport, Transition },
   setup() {
+    const isElectronRuntime = typeof navigator !== 'undefined' && /electron/i.test(navigator.userAgent || '');
     const { uiState, closePanel } = useUIState()
         const { state: pidsState, sync: syncState } = usePidsState()
         const { next: controllerNext, sync, getStep } = useController()
@@ -608,10 +609,10 @@ export default {
     }
     
     // 处理从线路管理器返回的线路选择
-    async function handleLineSelectedForThroughOperation(lineName, targetFromIPC, folderPath = null) {
+    async function handleLineSelectedForThroughOperation(lineName, targetFromIPC, folderPath = null, runtimeLineData = null) {
         const meta = pidsState.appData.meta || {};
         // 优先使用 IPC 传递的 target，否则使用本地存储的
-        const target = targetFromIPC || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
+        const target = (targetFromIPC ?? lineSelectorTarget.value ?? localStorage.getItem('throughOperationSelectorTarget'));
         
         console.log('[贯通线路] handleLineSelectedForThroughOperation:', lineName, 'target:', target, 'targetFromIPC:', targetFromIPC, 'lineSelectorTarget.value:', lineSelectorTarget.value);
         
@@ -652,9 +653,13 @@ export default {
             }
             // 加载该线路的站点列表
             if (segmentIndex >= 0) {
-                await loadLineStations(lineName, segmentIndex, folderPath);
+                if (runtimeLineData && Array.isArray(runtimeLineData.stations)) {
+                    lineStationsMap.value[segmentIndex] = runtimeLineData.stations;
+                } else {
+                    await loadLineStations(lineName, segmentIndex, folderPath);
+                }
             }
-        } else if (typeof target === 'number' || (target && target.startsWith('segment-'))) {
+        } else if (typeof target === 'number' || (typeof target === 'string' && target.startsWith('segment-'))) {
             // 新格式：target 是线路段索引
             // 确保 throughLineSegments 数组存在
             if (!meta.throughLineSegments) {
@@ -668,7 +673,11 @@ export default {
                 }
                 meta.throughLineSegments[segmentIndex].lineName = lineName;
                 // 加载该线路的站点列表
-                await loadLineStations(lineName, segmentIndex, folderPath);
+                if (runtimeLineData && Array.isArray(runtimeLineData.stations)) {
+                    lineStationsMap.value[segmentIndex] = runtimeLineData.stations;
+                } else {
+                    await loadLineStations(lineName, segmentIndex, folderPath);
+                }
             }
         } else {
             console.warn('[贯通线路] 无效的 target:', target);
@@ -1758,14 +1767,14 @@ export default {
     // 处理线路切换请求（统一处理 Electron 和网页环境）
     async function handleSwitchLineRequest(lineName, target, folderPath = null) {
         // 检查是否是为贯通线路选择（优先使用传递的 target，否则使用 localStorage）
-        const throughTarget = target || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
+        const throughTarget = (target ?? lineSelectorTarget.value ?? localStorage.getItem('throughOperationSelectorTarget'));
         console.log('[线路切换] 收到线路切换请求:', lineName, 'target:', throughTarget, 'folderPath:', folderPath);
         
         // 检查是否是为贯通线路选择（支持旧格式 'lineA'/'lineB' 和新格式 'segment-0'/'segment-1' 或数字）
         const isThroughOperation = throughTarget === 'lineA' || 
                                    throughTarget === 'lineB' || 
                                    (typeof throughTarget === 'number') ||
-                                   (throughTarget && throughTarget.startsWith('segment-'));
+                                   (typeof throughTarget === 'string' && throughTarget.startsWith('segment-'));
         
         if (isThroughOperation) {
             console.log('[贯通线路] 处理贯通线路选择');
@@ -1864,8 +1873,21 @@ export default {
             }
             if (window.electronAPI.onSwitchRuntimeLine) {
                 try {
-                    window.electronAPI.onSwitchRuntimeLine((lineData) => {
-                        applyRuntimeLineData(lineData);
+                    window.electronAPI.onSwitchRuntimeLine(async (payloadOrLineData) => {
+                        const isPayloadObject = !!(payloadOrLineData && typeof payloadOrLineData === 'object' && Object.prototype.hasOwnProperty.call(payloadOrLineData, 'lineData'));
+                        const runtimeLineData = isPayloadObject ? payloadOrLineData.lineData : payloadOrLineData;
+                        const target = isPayloadObject ? payloadOrLineData.target : null;
+                        const isThroughOperation = target === 'lineA' || target === 'lineB' || typeof target === 'number' || (typeof target === 'string' && target.startsWith('segment-'));
+
+                        if (isThroughOperation) {
+                            const runtimeLineName = runtimeLineData?.meta?.lineName;
+                            if (runtimeLineName) {
+                                await handleLineSelectedForThroughOperation(runtimeLineName, target, null, runtimeLineData);
+                                return;
+                            }
+                        }
+
+                        applyRuntimeLineData(runtimeLineData);
                     });
                 } catch (e) {
                     console.warn('无法设置云控线路切换监听:', e);
@@ -1901,9 +1923,14 @@ export default {
                     await handleSwitchLineRequest(lineName, target, folderPath);
                 } else if (event.data && event.data.type === 'switch-runtime-line') {
                     // 处理运控线路切换
-                    const { lineData } = event.data;
+                    const { lineData, target } = event.data;
+                    const isThroughOperation = target === 'lineA' || target === 'lineB' || typeof target === 'number' || (typeof target === 'string' && target.startsWith('segment-'));
                     if (lineData) {
-                        await applyRuntimeLineData(lineData);
+                        if (isThroughOperation && lineData?.meta?.lineName) {
+                            await handleLineSelectedForThroughOperation(lineData.meta.lineName, target, null, lineData);
+                        } else {
+                            await applyRuntimeLineData(lineData);
+                        }
                     }
                 }
             };
@@ -1917,10 +1944,16 @@ export default {
                     if (isRuntimeLine) {
                         // 运控线路：从 runtimeLineData 获取数据
                         const runtimeData = localStorage.getItem('runtimeLineData');
+                        const target = localStorage.getItem('lineManagerSelectedTarget');
+                        const isThroughOperation = target === 'lineA' || target === 'lineB' || (typeof target === 'string' && target.startsWith('segment-'));
                         if (runtimeData) {
                             try {
                                 const lineData = JSON.parse(runtimeData);
-                                await applyRuntimeLineData(lineData);
+                                if (isThroughOperation && lineData?.meta?.lineName) {
+                                    await handleLineSelectedForThroughOperation(lineData.meta.lineName, target, null, lineData);
+                                } else {
+                                    await applyRuntimeLineData(lineData);
+                                }
                             } catch (e) {
                                 console.error('[运控线路] 解析数据失败:', e);
                             }
@@ -1929,6 +1962,7 @@ export default {
                         localStorage.removeItem('runtimeLineData');
                         localStorage.removeItem('isRuntimeLine');
                         localStorage.removeItem('lineManagerSelectedLine');
+                        localStorage.removeItem('lineManagerSelectedTarget');
                     } else {
                         // 预设线路：正常处理
                         const lineName = event.newValue;
@@ -1951,10 +1985,16 @@ export default {
                     const isRuntimeLine = localStorage.getItem('isRuntimeLine') === 'true';
                     if (isRuntimeLine) {
                         const runtimeData = localStorage.getItem('runtimeLineData');
+                        const target = localStorage.getItem('lineManagerSelectedTarget');
+                        const isThroughOperation = target === 'lineA' || target === 'lineB' || (typeof target === 'string' && target.startsWith('segment-'));
                         if (runtimeData) {
                             try {
                                 const lineData = JSON.parse(runtimeData);
-                                applyRuntimeLineData(lineData);
+                                if (isThroughOperation && lineData?.meta?.lineName) {
+                                    handleLineSelectedForThroughOperation(lineData.meta.lineName, target, null, lineData);
+                                } else {
+                                    applyRuntimeLineData(lineData);
+                                }
                             } catch (e) {
                                 console.error('[运控线路] 解析数据失败:', e);
                             }
@@ -1963,6 +2003,7 @@ export default {
                         localStorage.removeItem('runtimeLineData');
                         localStorage.removeItem('isRuntimeLine');
                         localStorage.removeItem('lineManagerSelectedLine');
+                        localStorage.removeItem('lineManagerSelectedTarget');
                     } else {
                         // 预设线路：正常处理
                         const target = localStorage.getItem('lineManagerSelectedTarget');
@@ -2681,6 +2722,10 @@ export default {
             }
         } catch (e) {}
 
+        if (isElectronRuntime) {
+            return false;
+        }
+
         // 浏览器弹窗
         try {
             const currentDisplayConfig = currentDisplay.value;
@@ -3149,6 +3194,8 @@ export default {
             wallpaperOpacity: 0.35,
             // 仅显示器1使用的选项：线路名合并 / 显示全部站点 / C 型开关
             lineNameMerge: false, showAllStations: false,
+            // 显示器2：UI 样式（classic=当前UI, modern=新UI）
+            display2UiVariant: 'classic',
             // 显示器2：下一站/到站白屏时长
             nextStationDurationSeconds: 10,
             // 显示器3：出站页面显示时长
@@ -3217,8 +3264,12 @@ export default {
             if (!display) return;
             let nextStationDurationSeconds = 10;
             let departDurationSeconds = 8;
+            let display2UiVariant = 'classic';
             if (settings.display && settings.display.display2NextStationDuration != null) {
                 nextStationDurationSeconds = Math.round(settings.display.display2NextStationDuration / 1000);
+            }
+            if (settings.display && (settings.display.display2UiVariant === 'classic' || settings.display.display2UiVariant === 'modern')) {
+                display2UiVariant = settings.display.display2UiVariant;
             }
             if (settings.display && settings.display.display3DepartDuration != null) {
                 departDurationSeconds = Math.round(settings.display.display3DepartDuration / 1000);
@@ -3248,6 +3299,7 @@ export default {
                 displayEdit.wallpaperOpacity = 0.35;
             }
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
+            displayEdit.display2UiVariant = display2UiVariant;
             displayEdit.departDurationSeconds = departDurationSeconds;
             displayEdit.isSystem = display.isSystem === true;
             displayEdit.isDisplay1 = displayId === 'display-1';
@@ -3287,6 +3339,7 @@ export default {
             if (displayEdit.isSystem) {
                 const payload = displayEdit.isDisplay2
                     ? {
+                        display2UiVariant: displayEdit.display2UiVariant,
                         nextStationDuration: displayEdit.nextStationDurationSeconds * 1000,
                         isSystem: true,
                         isDisplay2: true
@@ -3348,6 +3401,7 @@ export default {
                 showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                 layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
                 isDisplay1: displayEdit.isDisplay1,
+                display2UiVariant: displayEdit.isDisplay2 ? displayEdit.display2UiVariant : undefined,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
                 // 非系统显示端的 display-3 也可以单独配置出站页面时长
                 departDuration: displayEdit.isDisplay3 ? displayEdit.departDurationSeconds * 1000 : undefined,
@@ -3445,7 +3499,7 @@ export default {
                 } catch (e) {
                     console.warn('切换显示端失败:', e);
                 }
-            } else if (typeof window !== 'undefined') {
+            } else if (typeof window !== 'undefined' && !isElectronRuntime) {
                 // 浏览器环境：如果有弹窗显示窗口，关闭并重新打开
                 if (window.__metro_pids_display_popup && !window.__metro_pids_display_popup.closed) {
                     try {
@@ -3670,6 +3724,9 @@ export default {
                             sync();
                         }
                     } else if (displayId === 'display-2') {
+                        if (displayData.display2UiVariant === 'classic' || displayData.display2UiVariant === 'modern') {
+                            settings.display.display2UiVariant = displayData.display2UiVariant;
+                        }
                         // 显示器2：更新"下一站"页面显示时长
                         if (displayData.nextStationDuration !== undefined) {
                             settings.display.display2NextStationDuration = displayData.nextStationDuration;
@@ -3709,8 +3766,13 @@ export default {
                         }
                     }
                     // 显示器2：更新"下一站"页面显示时长
-                    if (displayId === 'display-2' && displayData.nextStationDuration !== undefined) {
-                        settings.display.display2NextStationDuration = displayData.nextStationDuration;
+                    if (displayId === 'display-2') {
+                        if (displayData.display2UiVariant === 'classic' || displayData.display2UiVariant === 'modern') {
+                            settings.display.display2UiVariant = displayData.display2UiVariant;
+                        }
+                        if (displayData.nextStationDuration !== undefined) {
+                            settings.display.display2NextStationDuration = displayData.nextStationDuration;
+                        }
                     }
                     // 显示器3：更新“出站页面显示时长”
                     if (displayId === 'display-3' && displayData.departDuration !== undefined) {
@@ -3880,7 +3942,7 @@ export default {
                         if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openDisplay === 'function') {
                             await window.electronAPI.openDisplay(display.width, display.height, display.id);
                             openedCount++;
-                        } else {
+                        } else if (!isElectronRuntime) {
                             // 浏览器弹窗
                             let url;
                             // 如果配置了本地文件路径，使用该路径；否则使用默认路径
@@ -3895,15 +3957,19 @@ export default {
                             if (popup) {
                                 openedCount++;
                             }
+                        } else {
+                            skippedCount++;
                         }
                     } else if (display.source === 'online' || display.source === 'custom' || display.source === 'gitee') {
                         // 在线显示器、自定义URL或Gitee页面
                         const url = display.url;
-                        if (url) {
+                        if (url && !isElectronRuntime) {
                             const popup = window.open(url, `display_${display.id}`, `width=${display.width},height=${display.height}`);
                             if (popup) {
                                 openedCount++;
                             }
+                        } else if (isElectronRuntime) {
+                            skippedCount++;
                         }
                     }
                 } catch (e) {
@@ -4651,6 +4717,18 @@ export default {
                             </div>
                         </template>
                         <template v-if="displayEdit.isDisplay2">
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">显示器2 UI 样式</div>
+                                    <div class="se-display-option-desc">可在“当前UI”和“新UI”之间切换</div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <select v-model="displayEdit.display2UiVariant" class="se-input" style="width:160px; cursor:pointer;">
+                                        <option value="classic">当前UI</option>
+                                        <option value="modern">新UI</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
                                     <div class="se-label" style="margin-bottom:4px;">下一站 / 到站 页面显示时长</div>

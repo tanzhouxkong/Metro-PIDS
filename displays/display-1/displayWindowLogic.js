@@ -1226,6 +1226,7 @@ const displayStyleSheet = `
   align-items: flex-start;
   overflow: hidden;
   position: relative;
+  left: -150px;
 }
 #display-app .as-map-track {
     position: absolute;
@@ -2080,6 +2081,40 @@ function applyLinearEnglishWrap(node) {
   if (line) lines.push(line);
 
   // 用显式 <br> 替换原内容，让竖排下的英文按我们给的行切分
+  enEl.innerHTML = lines.length ? lines.join('<br>') : rawHtml;
+}
+
+// 环线模式：下一站页面英文换行逻辑（与 C 型一致）
+function applyLoopEnglishWrapLikeCType(node) {
+  if (!node) return;
+  const label = node.querySelector('.n-txt');
+  if (!label) return;
+  const enEl = label.querySelector('.en');
+  if (!enEl) return;
+
+  const rawHtml = (enEl.innerHTML || '').replace(/\u00A0/g, ' ');
+  const plain = rawHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!plain) return;
+
+  const words = plain.split(' ');
+  const maxCharsPerLine = 24;
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const next = line ? line + ' ' + w : w;
+    if (next.length <= maxCharsPerLine) {
+      line = next;
+    } else {
+      if (line) lines.push(line);
+      line = w;
+    }
+  }
+  if (line) lines.push(line);
+
+  enEl.style.display = 'block';
+  enEl.style.whiteSpace = 'normal';
+  enEl.style.wordBreak = 'normal';
+  enEl.style.overflowWrap = 'anywhere';
   enEl.innerHTML = lines.length ? lines.join('<br>') : rawHtml;
 }
 
@@ -3816,7 +3851,9 @@ export function initDisplayWindow(rootElement) {
     }
     mapPanel.style.display = 'block';
     mapPanel.style.padding = '0 20px';
-    mapPanel.style.overflowX = 'auto';
+    mapPanel.style.overflowX = 'hidden';
+    mapPanel.style.overflowY = 'hidden';
+    mapPanel.style.touchAction = 'none';
     mapPanel.style.alignItems = 'center';
     const box = document.createElement('div');
     box.className = 'l-box';
@@ -4118,10 +4155,10 @@ export function initDisplayWindow(rootElement) {
       box.style.overflow = 'visible';
       mapPanel.style.paddingLeft = arrivalLeftPadding + 'px';
       mapPanel.style.boxSizing = 'border-box';
-      box.style.transform = 'translateY(-70px)';
-      // 7 个站与线路条整体右移
-      const arrivalOffsetX = 20;
-      trackContainer.style.left = arrivalOffsetX + 'px';
+      mapPanel.style.overflowX = 'hidden';
+      box.style.transform = 'translateY(-90px)';
+      // 7 个站与线路条整体左移 50px
+      const arrivalOffsetX = -100;
       // 7 站站间距缩小：使用较小站宽，整体更紧凑
       const arrivalNodeWidth = 140;
       
@@ -4151,6 +4188,18 @@ export function initDisplayWindow(rootElement) {
       
       // 计算每个站点之间的间距（如果只有一个站点，间距为0）
       const spacing = displayStsCount > 1 ? availableWidth / (displayStsCount - 1) : 0;
+      const extensionLengthForLayout = spacing;
+      const leftRealIdxForLayout = displayStsCount > 0 ? sts.indexOf(displaySts[0]) : -1;
+      const rightRealIdxForLayout = displayStsCount > 0 ? sts.indexOf(displaySts[displayStsCount - 1]) : -1;
+      const showLeftExtensionForLayout = displayStsCount > 1 && !(leftRealIdxForLayout === minIdx || leftRealIdxForLayout === maxIdx);
+      const showRightExtensionForLayout = displayStsCount > 1 && !(rightRealIdxForLayout === minIdx || rightRealIdxForLayout === maxIdx);
+      const leftExtraForLayout = extensionLengthForLayout;
+      const rightExtraForLayout = extensionLengthForLayout;
+      const rightClipSafetyOffset = 20;
+      const contentOffsetX = arrivalOffsetX + leftExtraForLayout - rightClipSafetyOffset;
+      const extendedTrackWidth = trackWidth + leftExtraForLayout + rightExtraForLayout;
+      trackContainer.style.left = contentOffsetX + 'px';
+      trackContainer.style.width = extendedTrackWidth + 'px';
       
       displaySts.forEach((stNode, displayIdx) => {
         const realIdx = sts.indexOf(stNode);
@@ -4163,10 +4212,10 @@ export function initDisplayWindow(rootElement) {
         // 所有站点按均匀间距分布（含首尾），保证站间距一致
         const centerX = startCenter + (displayIdx * spacing);
         if (displayIdx === 0) {
-          node.style.left = arrivalOffsetX + 'px';
+          node.style.left = contentOffsetX + 'px';
           node.style.transform = 'none';
         } else {
-          node.style.left = (centerX + arrivalOffsetX) + 'px';
+          node.style.left = (centerX + contentOffsetX) + 'px';
           node.style.transform = 'translateX(-50%)';
         }
         // 强制覆盖 CSS 中的 width:160px，确保 arrivalNodeWidth 生效
@@ -4283,7 +4332,7 @@ export function initDisplayWindow(rootElement) {
       });
 
       // 设置track容器宽度
-      trackContainer.style.width = trackWidth + 'px';
+      trackContainer.style.width = extendedTrackWidth + 'px';
       
       // 为每个线段设置位置和宽度
       const segments = trackContainer.querySelectorAll('.track-segment');
@@ -4314,6 +4363,70 @@ export function initDisplayWindow(rootElement) {
         segment.style.left = segmentLeft + 'px';
         segment.style.width = segmentWidth + 'px';
       });
+
+      // 在左右无首末站时增加补充线路条（含同款箭头）
+      const leftRealIdx = leftRealIdxForLayout;
+      const rightRealIdx = rightRealIdxForLayout;
+      const leftHasTerminal = !showLeftExtensionForLayout;
+      const rightHasTerminal = !showRightExtensionForLayout;
+      const forwardToRight = !isReversed;
+      const leftExtensionColor = forwardToRight ? '#ccc' : 'var(--theme)';
+      const rightExtensionColor = forwardToRight ? 'var(--theme)' : '#ccc';
+      const extensionLength = extensionLengthForLayout;
+      const segmentArrowPairGap = 20;
+      const segmentArrowFontSize = '24px';
+
+      const appendSegmentArrowPair = (centerX) => {
+        for (let k = 0; k <= 1; k++) {
+          const wrapper = document.createElement('div');
+          wrapper.style.position = 'absolute';
+          const offset = (k === 0) ? -segmentArrowPairGap / 2 : segmentArrowPairGap / 2;
+          wrapper.style.left = (centerX + offset) + 'px';
+          wrapper.style.top = '50%';
+          wrapper.style.zIndex = '10';
+          let baseTransform = 'translate(-50%, -50%)';
+          if (isReversed) baseTransform += ' rotate(180deg)';
+          wrapper.style.transform = baseTransform;
+          const arrow = document.createElement('div');
+          arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+          const arrowI = arrow.firstElementChild;
+          if (arrowI) arrowI.classList.add('segment-arrow');
+          arrow.style.fontSize = segmentArrowFontSize;
+          wrapper.appendChild(arrow);
+          box.appendChild(wrapper);
+        }
+      };
+
+      const createSideExtension = (side, color) => {
+        const segment = document.createElement('div');
+        segment.className = 'track-segment track-segment-extension';
+        segment.style.position = 'absolute';
+        segment.style.height = '18px';
+        segment.style.borderTop = '5px solid transparent';
+        segment.style.borderBottom = '5px solid transparent';
+        segment.style.background = color;
+        segment.style.top = '50%';
+        segment.style.transform = 'translateY(-50%)';
+        segment.style.zIndex = '0';
+
+        if (side === 'left') {
+          segment.style.left = (contentOffsetX + startCenter - extensionLength) + 'px';
+        } else {
+          segment.style.left = (contentOffsetX + endCenter) + 'px';
+        }
+        segment.style.width = extensionLength + 'px';
+        box.appendChild(segment);
+
+        const arrowCenterBase = side === 'left'
+          ? (contentOffsetX + startCenter - extensionLength / 2)
+          : (contentOffsetX + endCenter + extensionLength / 2);
+        appendSegmentArrowPair(arrowCenterBase);
+      };
+
+      if (displaySts.length > 1) {
+        if (!leftHasTerminal) createSideExtension('left', leftExtensionColor);
+        if (!rightHasTerminal) createSideExtension('right', rightExtensionColor);
+      }
       
       // 如果没有箭头（站点数 <= 1），不显示线路条
       if (displaySts.length <= 1) {
@@ -4349,27 +4462,7 @@ export function initDisplayWindow(rootElement) {
           
           const arrowCenter = getArrowPosition(i);
           // 改为两个箭头，以节点中间为中心对称分布（与 7 站整体右移一致）
-          for (let k = 0; k <= 1; k++) {
-            const wrapper = document.createElement('div');
-            wrapper.style.position = 'absolute';
-            const offset = (k === 0) ? -20 / 2 : 20 / 2;
-            wrapper.style.left = (arrowCenter + offset + arrivalOffsetX) + 'px';
-            wrapper.style.top = '50%';
-            wrapper.style.zIndex = '10';
-            let baseTransform = 'translate(-50%, -50%)';
-            if (isReversed) baseTransform += ' rotate(180deg)';
-            wrapper.style.transform = baseTransform;
-            const arrow = document.createElement('div');
-            arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
-            const arrowI = arrow.firstElementChild;
-            if (arrowI) {
-              // 到达站页面的箭头都显示为白色
-              arrowI.classList.add('segment-arrow');
-            }
-            arrow.style.fontSize = '24px';
-            wrapper.appendChild(arrow);
-            box.appendChild(wrapper);
-          }
+          appendSegmentArrowPair(arrowCenter + contentOffsetX);
         }
       }
       mapPanel.replaceChildren(box);
@@ -6385,6 +6478,7 @@ export function initDisplayWindow(rootElement) {
       const dist = getStDist(i);
       const pt = measurePath.getPointAtLength(dist);
       const node = mkNode(st, i, 'loop', appData, rt);
+      applyLoopEnglishWrapLikeCType(node);
       node.style.left = `${pt.x}px`;
       node.style.top = `${pt.y}px`;
       const label = node.querySelector('.n-txt');

@@ -30,6 +30,8 @@ export default {
     const shortTurnEndDropdownRef = ref(null)
     const shortTurnStartDropdownOpenUp = ref(false)
     const shortTurnEndDropdownOpenUp = ref(false)
+    const throughStationDropdownIndex = ref(null)
+    const recordingDropdownOpenKey = ref(null)
     const dropdownThemeDark = ref(false)
     let dropdownThemeObserver = null
     let dropdownThemeMediaQuery = null
@@ -176,6 +178,153 @@ export default {
         zIndex: 9999
     }))
 
+    const throughStationLabelStyle = computed(() => ({
+        color: 'var(--muted)',
+        fontSize: '12px',
+        fontWeight: 600,
+        lineHeight: '1.2'
+    }))
+
+    const throughStationControlStyle = computed(() => ({
+        width: '100%',
+        padding: '8px 12px',
+        borderRadius: '8px',
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnTriggerBackdropFilter(),
+        WebkitBackdropFilter: shortTurnTriggerBackdropFilter(),
+        color: 'var(--text)',
+        fontSize: '12px',
+        minHeight: '32px',
+        boxShadow: shortTurnMenuShadow()
+    }))
+
+    const throughStationDropdownMenuStyle = computed(() => ({
+        position: 'absolute',
+        left: '0',
+        right: '0',
+        top: 'calc(100% + 8px)',
+        maxHeight: 'min(320px, 42vh)',
+        overflowY: 'auto',
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnMenuBackdropFilter(),
+        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        borderRadius: '12px',
+        boxShadow: shortTurnMenuShadow(),
+        padding: '6px',
+        zIndex: 9999
+    }))
+
+    const toggleThroughStationDropdown = (index) => {
+        throughStationDropdownIndex.value = (throughStationDropdownIndex.value === index) ? null : index
+    }
+
+    const selectThroughStation = (index, stationName) => {
+        if (throughLineSegments.value[index]) {
+            throughLineSegments.value[index].throughStationName = stationName || ''
+            saveCfg()
+        }
+        throughStationDropdownIndex.value = null
+    }
+
+    const recordingSelectStyle = computed(() => ({
+        width: '100%',
+        padding: '8px 10px',
+        borderRadius: '8px',
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnTriggerBackdropFilter(),
+        WebkitBackdropFilter: shortTurnTriggerBackdropFilter(),
+        color: 'var(--text)',
+        fontSize: '13px',
+        boxShadow: shortTurnMenuShadow()
+    }))
+
+    const recordingDropdownMenuStyle = computed(() => ({
+        position: 'absolute',
+        left: '0',
+        right: '0',
+        top: 'calc(100% + 8px)',
+        maxHeight: 'min(320px, 42vh)',
+        overflowY: 'auto',
+        background: shortTurnMenuBackground(),
+        backdropFilter: shortTurnMenuBackdropFilter(),
+        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
+        border: `1px solid ${shortTurnMenuBorder()}`,
+        borderRadius: '12px',
+        boxShadow: shortTurnMenuShadow(),
+        padding: '6px',
+        zIndex: 9999
+    }))
+
+    const recordingEncoderOptions = computed(() => {
+        const options = [
+            {
+                value: 'cpu',
+                label: recordingState.value.hardware.cpuModel
+                    ? (recordingState.value.hardware.cpuModel + ' CPU')
+                    : t('console.recordingEncoderCPU')
+            }
+        ]
+        if (recordingState.value.availableEncoders.gpu.length > 0) {
+            options.push({
+                value: 'gpu',
+                label: recordingState.value.hardware.gpuModel
+                    ? (recordingState.value.hardware.gpuModel + ' GPU')
+                    : t('console.recordingEncoderGPU')
+            })
+        }
+        return options
+    })
+
+    const recordingCodecOptions = computed(() => ([
+        { value: 'h264', label: t('console.recordingCodecH264') },
+        { value: 'h265', label: t('console.recordingCodecH265') },
+        { value: 'vp9', label: t('console.recordingCodecVP9') }
+    ]))
+
+    const recordingContainerOptions = computed(() => ([
+        { value: 'mp4', label: 'MP4' },
+        { value: 'avi', label: 'AVI' },
+        { value: 'mov', label: 'MOV' },
+        { value: 'wmv', label: 'WMV' },
+        { value: 'mkv', label: 'MKV' },
+        { value: 'webm', label: 'WEBM' }
+    ]))
+
+    const recordingFpsOptions = computed(() => ([
+        { value: 30, label: '30' },
+        { value: 60, label: '60' }
+    ]))
+
+    const recordingParallelismOptions = computed(() => ([
+        { value: 1, label: '1' },
+        { value: 2, label: '2' },
+        { value: 3, label: '3' },
+        { value: 4, label: '4' }
+    ]))
+
+    const getRecordingOptionLabel = (options, value) => {
+        const hit = (options || []).find((item) => String(item.value) === String(value))
+        return hit ? hit.label : ''
+    }
+
+    const toggleRecordingDropdown = (key) => {
+        if (recordingState.value.isRecording) return
+        recordingDropdownOpenKey.value = (recordingDropdownOpenKey.value === key) ? null : key
+    }
+
+    const selectRecordingDropdownValue = (key, value) => {
+        if (recordingState.value.isRecording) return
+        if (key === 'fps' || key === 'parallelism') {
+            recordingState.value[key] = Number(value)
+        } else {
+            recordingState.value[key] = value
+        }
+        recordingDropdownOpenKey.value = null
+    }
+
     const handleShortTurnDropdownOutsideClick = (event) => {
         const target = event.target
         if (
@@ -191,6 +340,18 @@ export default {
             !shortTurnEndDropdownRef.value.contains(target)
         ) {
             showShortTurnEndDropdown.value = false
+        }
+        if (
+            throughStationDropdownIndex.value !== null &&
+            !(target && typeof target.closest === 'function' && target.closest('.through-station-dropdown'))
+        ) {
+            throughStationDropdownIndex.value = null
+        }
+        if (
+            recordingDropdownOpenKey.value !== null &&
+            !(target && typeof target.closest === 'function' && target.closest('.recording-dropdown'))
+        ) {
+            recordingDropdownOpenKey.value = null
         }
     }
 
@@ -616,13 +777,13 @@ export default {
     // 处理从线路管理器返回的线路选择
     async function handleLineSelectedForThroughOperation(lineName, targetFromIPC, folderPath = null) {
         const meta = pidsState.appData.meta || {};
-        const target = targetFromIPC || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
+        const target = (targetFromIPC ?? lineSelectorTarget.value ?? localStorage.getItem('throughOperationSelectorTarget'));
         
         if (!lineName) {
             return;
         }
         
-        if (typeof target === 'number' || (target && target.startsWith('segment-'))) {
+        if (typeof target === 'number' || (typeof target === 'string' && target.startsWith('segment-'))) {
             if (!meta.throughLineSegments) {
                 meta.throughLineSegments = [];
             }
@@ -1632,12 +1793,12 @@ export default {
     // 处理线路切换请求
     async function handleSwitchLineRequest(lineName, target, folderPath = null) {
         console.log('[ConsolePage] handleSwitchLineRequest 被调用, lineName:', lineName, 'target:', target, 'folderPath:', folderPath);
-        const throughTarget = target || lineSelectorTarget.value || localStorage.getItem('throughOperationSelectorTarget');
+        const throughTarget = (target ?? lineSelectorTarget.value ?? localStorage.getItem('throughOperationSelectorTarget'));
         
         const isThroughOperation = throughTarget === 'lineA' || 
-                                   throughTarget === 'lineB' || 
-                                   (typeof throughTarget === 'number') ||
-                                   (throughTarget && throughTarget.startsWith('segment-'));
+                       throughTarget === 'lineB' || 
+                       (typeof throughTarget === 'number') ||
+                       (typeof throughTarget === 'string' && throughTarget.startsWith('segment-'));
         
         if (isThroughOperation) {
             await handleLineSelectedForThroughOperation(lineName, throughTarget, folderPath);
@@ -2504,6 +2665,23 @@ export default {
         shortTurnEndDropdownMenuStyle,
         shortTurnItemHoverBackground,
         shortTurnItemActiveBackground,
+        throughStationLabelStyle,
+        throughStationControlStyle,
+        throughStationDropdownMenuStyle,
+        throughStationDropdownIndex,
+        toggleThroughStationDropdown,
+        selectThroughStation,
+        recordingSelectStyle,
+        recordingDropdownMenuStyle,
+        recordingDropdownOpenKey,
+        recordingEncoderOptions,
+        recordingCodecOptions,
+        recordingContainerOptions,
+        recordingFpsOptions,
+        recordingParallelismOptions,
+        getRecordingOptionLabel,
+        toggleRecordingDropdown,
+        selectRecordingDropdownValue,
         shortTurnStartTitle,
         shortTurnEndTitle,
         selectShortTurnStart,
@@ -2840,18 +3018,53 @@ export default {
                         </button>
                     </div>
                     <div v-if="index < throughLineSegments.length - 1" style="display:grid; grid-template-columns: 60px 1fr; gap:8px; align-items:center; margin-top:8px;">
-                            <label style="color:var(--muted); font-size:11px;">{{ t('console.throughStation') }}</label>
-                        <select 
-                            v-if="segment.candidateThroughStations && segment.candidateThroughStations.length > 1"
-                            v-model="segment.throughStationName" 
-                            @change="saveCfg()"
-                            style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:11px; min-height:24px;">
-                            <option value="">请选择贯通站点</option>
-                            <option v-for="stationName in segment.candidateThroughStations" :key="stationName" :value="stationName">
-                                {{ stationName }}
-                            </option>
-                        </select>
-                        <div v-else style="padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:11px; min-height:24px; display:flex; align-items:center;">
+                            <label :style="throughStationLabelStyle">{{ t('console.throughStation') }}</label>
+                        <div v-if="segment.candidateThroughStations && segment.candidateThroughStations.length > 1" class="through-station-dropdown" style="position:relative;">
+                            <div
+                                @click="toggleThroughStationDropdown(index)"
+                                :style="[{ ...throughStationControlStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }]"
+                            >
+                                <span>{{ segment.throughStationName || '请选择贯通站点' }}</span>
+                                <i :class="throughStationDropdownIndex === index ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
+                            </div>
+                            <div v-if="throughStationDropdownIndex === index" :style="throughStationDropdownMenuStyle">
+                                <div
+                                    @click="selectThroughStation(index, '')"
+                                    :style="{
+                                        padding: '9px 10px',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        color: 'var(--text)',
+                                        fontSize: '13px',
+                                        fontWeight: !segment.throughStationName ? '700' : '500',
+                                        background: !segment.throughStationName ? shortTurnItemActiveBackground() : 'transparent'
+                                    }"
+                                    @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                    @mouseout="$event.currentTarget.style.background = (!segment.throughStationName ? shortTurnItemActiveBackground() : 'transparent')"
+                                >
+                                    请选择贯通站点
+                                </div>
+                                <div
+                                    v-for="stationName in segment.candidateThroughStations"
+                                    :key="stationName"
+                                    @click="selectThroughStation(index, stationName)"
+                                    :style="{
+                                        padding: '9px 10px',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        color: 'var(--text)',
+                                        fontSize: '13px',
+                                        fontWeight: segment.throughStationName === stationName ? '700' : '500',
+                                        background: segment.throughStationName === stationName ? shortTurnItemActiveBackground() : 'transparent'
+                                    }"
+                                    @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                    @mouseout="$event.currentTarget.style.background = (segment.throughStationName === stationName ? shortTurnItemActiveBackground() : 'transparent')"
+                                >
+                                    {{ stationName }}
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else :style="[{ ...throughStationControlStyle, display: 'flex', alignItems: 'center' }]">
                             {{ segment.throughStationName || t('console.throughNotDetected') }}
                         </div>
                     </div>
@@ -2913,36 +3126,102 @@ export default {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
             <div>
               <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingEncoder') }}</label>
-              <select v-model="recordingState.encoder" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                <option value="cpu">
-                  {{ recordingState.hardware.cpuModel ? (recordingState.hardware.cpuModel + ' CPU') : t('console.recordingEncoderCPU') }}
-                </option>
-                <option v-if="recordingState.availableEncoders.gpu.length > 0" value="gpu">
-                  {{ recordingState.hardware.gpuModel ? (recordingState.hardware.gpuModel + ' GPU') : t('console.recordingEncoderGPU') }}
-                </option>
-              </select>
+                            <div class="recording-dropdown" style="position:relative;">
+                                <div
+                                    @click="toggleRecordingDropdown('encoder')"
+                                    :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
+                                >
+                                    <span>{{ getRecordingOptionLabel(recordingEncoderOptions, recordingState.encoder) }}</span>
+                                    <i :class="recordingDropdownOpenKey === 'encoder' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
+                                </div>
+                                <div v-if="recordingDropdownOpenKey === 'encoder'" :style="recordingDropdownMenuStyle">
+                                    <div
+                                        v-for="opt in recordingEncoderOptions"
+                                        :key="'encoder-' + opt.value"
+                                        @click="selectRecordingDropdownValue('encoder', opt.value)"
+                                        :style="{
+                                            padding: '9px 10px',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            color: 'var(--text)',
+                                            fontSize: '13px',
+                                            fontWeight: recordingState.encoder === opt.value ? '700' : '500',
+                                            background: recordingState.encoder === opt.value ? shortTurnItemActiveBackground() : 'transparent'
+                                        }"
+                                        @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                        @mouseout="$event.currentTarget.style.background = (recordingState.encoder === opt.value ? shortTurnItemActiveBackground() : 'transparent')"
+                                    >
+                                        {{ opt.label }}
+                                    </div>
+                                </div>
+                            </div>
             </div>
             <div>
               <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingCodec') }}</label>
-              <select v-model="recordingState.codec" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                <option value="h264">{{ t('console.recordingCodecH264') }}</option>
-                <option value="h265">{{ t('console.recordingCodecH265') }}</option>
-                <option value="vp9">{{ t('console.recordingCodecVP9') }}</option>
-              </select>
+                            <div class="recording-dropdown" style="position:relative;">
+                                <div
+                                    @click="toggleRecordingDropdown('codec')"
+                                    :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
+                                >
+                                    <span>{{ getRecordingOptionLabel(recordingCodecOptions, recordingState.codec) }}</span>
+                                    <i :class="recordingDropdownOpenKey === 'codec' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
+                                </div>
+                                <div v-if="recordingDropdownOpenKey === 'codec'" :style="recordingDropdownMenuStyle">
+                                    <div
+                                        v-for="opt in recordingCodecOptions"
+                                        :key="'codec-' + opt.value"
+                                        @click="selectRecordingDropdownValue('codec', opt.value)"
+                                        :style="{
+                                            padding: '9px 10px',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            color: 'var(--text)',
+                                            fontSize: '13px',
+                                            fontWeight: recordingState.codec === opt.value ? '700' : '500',
+                                            background: recordingState.codec === opt.value ? shortTurnItemActiveBackground() : 'transparent'
+                                        }"
+                                        @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                        @mouseout="$event.currentTarget.style.background = (recordingState.codec === opt.value ? shortTurnItemActiveBackground() : 'transparent')"
+                                    >
+                                        {{ opt.label }}
+                                    </div>
+                                </div>
+                            </div>
             </div>
           </div>
 
           <!-- Container Selection -->
           <div style="margin-bottom:12px;">
             <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingContainer') }}</label>
-            <select v-model="recordingState.container" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-              <option value="mp4">MP4</option>
-              <option value="avi">AVI</option>
-              <option value="mov">MOV</option>
-              <option value="wmv">WMV</option>
-              <option value="mkv">MKV</option>
-              <option value="webm">WEBM</option>
-            </select>
+                        <div class="recording-dropdown" style="position:relative;">
+                            <div
+                                @click="toggleRecordingDropdown('container')"
+                                :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
+                            >
+                                <span>{{ getRecordingOptionLabel(recordingContainerOptions, recordingState.container) }}</span>
+                                <i :class="recordingDropdownOpenKey === 'container' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
+                            </div>
+                            <div v-if="recordingDropdownOpenKey === 'container'" :style="recordingDropdownMenuStyle">
+                                <div
+                                    v-for="opt in recordingContainerOptions"
+                                    :key="'container-' + opt.value"
+                                    @click="selectRecordingDropdownValue('container', opt.value)"
+                                    :style="{
+                                        padding: '9px 10px',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        color: 'var(--text)',
+                                        fontSize: '13px',
+                                        fontWeight: recordingState.container === opt.value ? '700' : '500',
+                                        background: recordingState.container === opt.value ? shortTurnItemActiveBackground() : 'transparent'
+                                    }"
+                                    @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                    @mouseout="$event.currentTarget.style.background = (recordingState.container === opt.value ? shortTurnItemActiveBackground() : 'transparent')"
+                                >
+                                    {{ opt.label }}
+                                </div>
+                            </div>
+                        </div>
           </div>
 
           <!-- Bitrate and FPS -->
@@ -2965,10 +3244,35 @@ export default {
             </div>
             <div>
               <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingFPS') }}</label>
-              <select v-model="recordingState.fps" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                <option :value="30">30</option>
-                <option :value="60">60</option>
-              </select>
+                            <div class="recording-dropdown" style="position:relative;">
+                                <div
+                                    @click="toggleRecordingDropdown('fps')"
+                                    :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
+                                >
+                                    <span>{{ getRecordingOptionLabel(recordingFpsOptions, recordingState.fps) }}</span>
+                                    <i :class="recordingDropdownOpenKey === 'fps' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
+                                </div>
+                                <div v-if="recordingDropdownOpenKey === 'fps'" :style="recordingDropdownMenuStyle">
+                                    <div
+                                        v-for="opt in recordingFpsOptions"
+                                        :key="'fps-' + opt.value"
+                                        @click="selectRecordingDropdownValue('fps', opt.value)"
+                                        :style="{
+                                            padding: '9px 10px',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            color: 'var(--text)',
+                                            fontSize: '13px',
+                                            fontWeight: Number(recordingState.fps) === Number(opt.value) ? '700' : '500',
+                                            background: Number(recordingState.fps) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent'
+                                        }"
+                                        @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                        @mouseout="$event.currentTarget.style.background = (Number(recordingState.fps) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent')"
+                                    >
+                                        {{ opt.label }}
+                                    </div>
+                                </div>
+                            </div>
             </div>
           </div>
 
@@ -3018,12 +3322,35 @@ export default {
             <div v-if="recordingState.parallelEnabled" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
               <div>
                 <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingParallelism') }}</label>
-                <select v-model.number="recordingState.parallelism" :disabled="recordingState.isRecording" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                  <option :value="1">1</option>
-                  <option :value="2">2</option>
-                  <option :value="3">3</option>
-                  <option :value="4">4</option>
-                </select>
+                                <div class="recording-dropdown" style="position:relative;">
+                                    <div
+                                        @click="toggleRecordingDropdown('parallelism')"
+                                        :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
+                                    >
+                                        <span>{{ getRecordingOptionLabel(recordingParallelismOptions, recordingState.parallelism) }}</span>
+                                        <i :class="recordingDropdownOpenKey === 'parallelism' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
+                                    </div>
+                                    <div v-if="recordingDropdownOpenKey === 'parallelism'" :style="recordingDropdownMenuStyle">
+                                        <div
+                                            v-for="opt in recordingParallelismOptions"
+                                            :key="'parallelism-' + opt.value"
+                                            @click="selectRecordingDropdownValue('parallelism', opt.value)"
+                                            :style="{
+                                                padding: '9px 10px',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                color: 'var(--text)',
+                                                fontSize: '13px',
+                                                fontWeight: Number(recordingState.parallelism) === Number(opt.value) ? '700' : '500',
+                                                background: Number(recordingState.parallelism) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent'
+                                            }"
+                                            @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
+                                            @mouseout="$event.currentTarget.style.background = (Number(recordingState.parallelism) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent')"
+                                        >
+                                            {{ opt.label }}
+                                        </div>
+                                    </div>
+                                </div>
               </div>
               <div>
                 <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingStepsPerSegment') }}</label>

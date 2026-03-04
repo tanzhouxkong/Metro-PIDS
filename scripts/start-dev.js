@@ -2,22 +2,36 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+function sanitizeDebugEnv(rawEnv) {
+  const env = { ...rawEnv };
+  const keepDebugAttach = env.METRO_PIDS_DEV_DEBUG_ATTACH === '1';
+  if (keepDebugAttach) return env;
+
+  delete env.VSCODE_INSPECTOR_OPTIONS;
+  // 在 VS Code JavaScript Debug Terminal 中，NODE_OPTIONS 常含复杂引号参数；
+  // 这里直接移除，避免出现 "invalid value for NODE_OPTIONS (unterminated string)"
+  delete env.NODE_OPTIONS;
+
+  return env;
+}
+
+const DEV_ENV = sanitizeDebugEnv(process.env);
+
 // 启动监控脚本
 const watchScript = path.join(__dirname, 'watch-main.js');
 const watchProcess = spawn('node', [watchScript], {
   detached: true,
-  stdio: 'ignore'
+  stdio: 'ignore',
+  env: DEV_ENV
 });
 watchProcess.unref();
 
 // 等待一小段时间确保监控脚本启动
 setTimeout(() => {
   // 启动 electron-vite
-  const env = { ...process.env };
+  const env = { ...DEV_ENV };
   if (!env.PIDS_DEV_SERVER_PORT) env.PIDS_DEV_SERVER_PORT = '5180';
-  // 方案B：Attach 调试需要主进程 inspector 端口
-  // electron-vite 会读取 VITE_ELECTRON_INSPECT；未设置时默认不开 inspect
-  if (!env.VITE_ELECTRON_INSPECT) env.VITE_ELECTRON_INSPECT = '9229';
+  // 默认不强制开启 inspect；需要时手动设置 METRO_PIDS_DEV_DEBUG_ATTACH=1 或 VITE_ELECTRON_INSPECT
   // 渲染进程调试（DevTools 协议端口），用于附加 pwa-chrome/msedge
   if (!env.VITE_REMOTE_DEBUGGING_PORT) env.VITE_REMOTE_DEBUGGING_PORT = '9222';
   // 开发环境下静默 Electron 安全提示（例如 Insecure Content-Security-Policy）

@@ -1,5 +1,23 @@
 import { Teleport, Transition } from 'vue'
 
+const LINE_MANAGER_DIALOG_STYLE_ID = 'line-manager-dialog-transition-style'
+
+function ensureLineManagerDialogStyles() {
+  if (typeof document === 'undefined') return
+  if (document.getElementById(LINE_MANAGER_DIALOG_STYLE_ID)) return
+  const styleEl = document.createElement('style')
+  styleEl.id = LINE_MANAGER_DIALOG_STYLE_ID
+  styleEl.textContent = `
+    .fade-enter-active, .fade-leave-active {
+      transition: opacity 0.3s ease;
+    }
+    .fade-enter-from, .fade-leave-to {
+      opacity: 0;
+    }
+  `
+  document.head.appendChild(styleEl)
+}
+
 export default {
   name: 'LineManagerDialog',
   components: { Teleport, Transition },
@@ -109,6 +127,7 @@ export default {
     }
   },
   mounted() {
+    ensureLineManagerDialogStyles();
     // 将对话框方法暴露到全局，供其他组件使用
     if (typeof window !== 'undefined') {
       window.__lineManagerDialog = {
@@ -224,15 +243,6 @@ export default {
         </div>
       </Transition>
     </Teleport>
-    
-    <style>
-      .fade-enter-active, .fade-leave-active {
-        transition: opacity 0.3s ease;
-      }
-      .fade-enter-from, .fade-leave-to {
-        opacity: 0;
-      }
-    </style>
   `
 }
 

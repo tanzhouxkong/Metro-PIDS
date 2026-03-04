@@ -75,8 +75,10 @@ export default {
         const getDisplaySize = () => {
             return currentDisplayInfo.value;
         };
-        const hasNativeDisplay =
+        const hasNativeDisplay = () =>
             typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.openDisplay === 'function'
+        const isElectronRuntime =
+            typeof navigator !== 'undefined' && /electron/i.test(navigator.userAgent || '')
         let displayWindowUrl = 'display_window.html'
         try {
             displayWindowUrl = new URL('../../display_window.html', import.meta.url).href
@@ -216,7 +218,10 @@ export default {
                 r: cloneDisplayState(state.rt),
                 settings: {
                     display: {
+                        display2UiVariant: (settings?.display?.display2UiVariant === 'modern' ? 'modern' : 'classic'),
                         display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000,
+                        display2FooterLED: settings?.display?.display2FooterLED || '',
+                        display2FooterWatermark: settings?.display?.display2FooterWatermark !== false,
                         display1LayoutMode: settings?.display?.displays?.['display-1']?.layoutMode ?? 'linear',
                         display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type'
                     }
@@ -441,7 +446,7 @@ export default {
                 return;
             }
             
-            if (hasNativeDisplay) {
+            if (hasNativeDisplay()) {
                 try {
                     // 确保 settings 对象也同步更新（虽然我们已经从 localStorage 读取，但为了保持一致性）
                     if (settings && settings.display && settings.display.currentDisplayId !== displayId) {
@@ -498,6 +503,14 @@ export default {
             }
 
             if (typeof window === 'undefined') return
+
+            if (isElectronRuntime) {
+                showNotification('显示端打开失败', '当前为 Electron 环境，但主进程显示端接口不可用，已阻止浏览器弹窗回退', {
+                    tag: 'display-open-blocked-fallback',
+                    urgency: 'normal'
+                });
+                return;
+            }
 
             if (uiState.showDisplay) {
                 closeBrowserDisplayWindow()
