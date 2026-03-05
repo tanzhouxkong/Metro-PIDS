@@ -32,11 +32,11 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #ffffff; /* 白色背景 */
+            background: transparent; /* 让 mica-electron 的透明/模糊背景透出 */
             font-family: var(--font-main);
         }
 
-        /* ================= 屏幕容器 (1500x400 适配) ================= */
+        /* ================= 屏幕容器 (1900x600 适配) ================= */
         #display-app {
             position: fixed;
             top: 0;
@@ -46,20 +46,51 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            background: #ffffff; /* 白色背景，与内容背景一致 */
+            background: transparent; /* 让标题栏区域能看到窗口原生模糊 */
             font-family: var(--font-main);
             overflow: hidden; /* 防止出现滚动条 */
+            --app-bg: transparent;
+        }
+        /* 用伪元素绘制背景，从标题栏下方开始，避免状态栏区域被涂白 */
+        #display-app::before {
+            content: '';
+            position: absolute;
+            top: 35px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--app-bg);
+            z-index: 0;
+            pointer-events: none;
         }
         #scaler {
-            width: 1500px;
-            height: 400px;
-            background: #ffffff; /* 白色背景 */
+            width: 1900px;
+            height: 600px;
+            background: transparent; /* 内容区域自行上色，顶部标题栏区域保持透出 */
             position: relative;
             display: flex;
             flex-direction: column;
             overflow: hidden;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
             transform-origin: center center;
+            z-index: 1;
+            --scaler-bg: #ffffff;
+        }
+        /* 同理：scaler 背景从标题栏下方开始绘制 */
+        #scaler::before {
+            content: '';
+            position: absolute;
+            top: 35px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--scaler-bg);
+            z-index: 0;
+            pointer-events: none;
+        }
+        #scaler > * {
+            position: relative;
+            z-index: 1;
         }
 
         /* ================= 自定义标题栏 ================= */
@@ -70,18 +101,20 @@
             height: 35px;
             width: 100%;
             z-index: 9999;
-            background: rgba(0, 0, 0, 0.3);
-            -webkit-backdrop-filter: blur(20px);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            color: #fff;
+            background: rgba(255, 255, 255, 0.38);
+            -webkit-backdrop-filter: blur(20px) saturate(1.2);
+            backdrop-filter: blur(20px) saturate(1.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            color: #000;
             padding-left: 12px;
+            padding-right: 140px; /* 为右侧窗口控制按钮预留空间 */
             font-size: 14px;
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
             -webkit-app-region: drag;
+            box-shadow: 0 1px 10px rgba(0, 0, 0, 0.05);
             position: absolute;
             top: 0;
             left: 0;
@@ -137,13 +170,15 @@
             display: flex;
             align-items: center;
             overflow: hidden;
-            position: relative;
-            min-width: 0; /* 允许flex收缩 */
+            position: absolute;
+            left: 20px;
+            right: 0;
+            z-index: 1;
         }
         
         .footer-led-content {
             white-space: nowrap;
-            font-size: 18px;
+            font-size: 26px;
             font-weight: 600;
             color: #fff;
             display: inline-block;
@@ -152,6 +187,7 @@
         
         .footer-led-content.scrolling {
             animation: footer-led-scroll 20s linear infinite;
+            padding-left: 100%;
         }
         
         @keyframes footer-led-scroll {
@@ -159,7 +195,7 @@
                 transform: translateX(0);
             }
             100% {
-                transform: translateX(-50%);
+                transform: translateX(calc(-100% - 40px));
             }
         }
         
@@ -172,6 +208,13 @@
             color: rgba(255, 255, 255, 0.6);
             flex-shrink: 0;
             margin-left: auto; /* 确保水印靠右显示 */
+            z-index: 2;
+            position: relative;
+            background: #162b75; 
+            height: 100%;
+            padding-left: 20px;
+            padding-right: 20px;
+            margin-right: -20px;
         }
         
         .footer-watermark .watermark-item {
@@ -189,16 +232,16 @@
             gap: 12px;
         }
         .header-route {
-            font-size: 20px;
+            font-size: 28px;
             font-weight: bold;
         }
         .header-end-station {
-            font-size: 16px;
+            font-size: 22px;
             font-weight: normal;
             color: #fff;
         }
         .header-direction {
-            font-size: 16px;
+            font-size: 22px;
             font-weight: normal;
         }
         .legend {
@@ -207,7 +250,7 @@
             transform: translateX(-50%);
             display: flex;
             gap: 15px;
-            font-size: 12px;
+            font-size: 16px;
         }
         .legend-item {
             display: flex;
@@ -215,8 +258,8 @@
             gap: 5px;
         }
         .legend-dot {
-            width: 10px;
-            height: 10px;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
         }
         .legend-dot.passed {
@@ -226,7 +269,7 @@
             background: #00e600; /* 绿色 */
         }
         .legend-text {
-            font-size: 12px;
+            font-size: 16px;
             color: #fff;
         }
 
@@ -248,7 +291,7 @@
             top: 50%;
             left: 5px;
             right: 20px;
-            height: 35px;
+            height: 34px;
             transform: translateY(-50%);
             z-index: 0;
         }
@@ -256,7 +299,7 @@
         /* 上排路线（从左到中间） */
         .track-line-top {
             height: 4px;
-            background-color: #a5f3bc;
+            background-color: #4ade80;
             position: absolute;
             top: 0;
             left: 0;
@@ -266,7 +309,7 @@
         /* 下排路线（从中间到右） */
         .track-line-bottom {
             height: 4px;
-            background-color: #a5f3bc;
+            background-color: #4ade80;
             position: absolute;
             bottom: 0;
             border-radius: 2px;
@@ -288,7 +331,7 @@
             height: 0; 
             border-top: 8px solid transparent;
             border-bottom: 8px solid transparent;
-            border-right: 15px solid #a5f3bc;
+            border-right: 15px solid #4ade80;
         }
 
         /* 站点列表容器 */
@@ -429,7 +472,165 @@
             align-items: center;
             gap: 20px;
         }
-        
+       /* 下一站页面 - 站点信息和路线图容器 */
+        .next-station-route-page {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: center;
+            padding: 24px 40px 18px;
+            position: relative;
+        }
+
+        .next-page-title {
+            position: absolute;
+            top: 24px;
+            left: 40px;
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            justify-content: flex-start;
+            margin-bottom: 26px;
+        }
+
+        .next-page-title-label {
+            font-size: 34px;
+            font-weight: 700;
+            color: #111827;
+            line-height: 1;
+        }
+
+        .next-page-title-name {
+            font-size: 46px;
+            font-weight: 800;
+            color: #16a34a;
+            line-height: 1;
+        }
+
+        .next-page-route-card {
+            position: relative;
+            margin-top: 4px;
+            padding-top: 22px;
+        }
+
+        .next-page-segments {
+            position: absolute;
+            left: 10%;
+            right: 10%;
+            top: 28px;
+            height: 6px;
+            z-index: 1;
+        }
+
+        .next-page-segment {
+            position: absolute;
+            top: 0;
+            height: 6px;
+            border-radius: 999px;
+        }
+
+        .next-page-segment.state-future {
+            background: repeating-linear-gradient(
+                to right,
+                #9ca3af 0,
+                #9ca3af 14px,
+                transparent 14px,
+                transparent 22px
+            );
+        }
+
+        .next-page-segment.state-passed {
+            background: repeating-linear-gradient(
+                to right,
+                #dc2626 0,
+                #dc2626 14px,
+                transparent 14px,
+                transparent 22px
+            );
+        }
+
+        .next-page-segment.force-solid-line.state-future {
+            background: #9ca3af;
+        }
+
+        .next-page-segment.force-solid-line.state-passed {
+            background: #dc2626;
+        }
+
+        .next-page-pulse-trail {
+            position: absolute;
+            top: 0;
+            height: 6px;
+            border-radius: 999px;
+            background: #dc2626;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .next-page-pulse-dot {
+            position: absolute;
+            top: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 3px solid #ffffff;
+            background: #dc2626;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+            transform: translate(-50%, -50%);
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .next-page-stations {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            column-gap: 14px;
+            align-items: start;
+        }
+
+        .next-page-station {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .next-page-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 3px solid #ffffff;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+            background: #9ca3af;
+        }
+
+        .next-page-station.state-passed .next-page-dot {
+            background: #dc2626;
+        }
+
+        .next-page-station.forced-left-red .next-page-dot {
+            background: #dc2626 !important;
+        }
+
+        .next-page-station-name {
+            font-size: 24px;
+            line-height: 1.2;
+            font-weight: 700;
+            text-align: center;
+            color: #111111;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .next-page-station.state-passed .next-page-station-name {
+            color: #111111;
+        }
+
         .next-station-label {
             font-size: 48px;
             font-weight: 600;
@@ -503,6 +704,601 @@
             border-left: 6px solid transparent;
             border-right: 6px solid transparent;
             border-top: 10px solid white;
+        }
+
+        /* ================= Display-2 老UI（classic）600高适配 ================= */
+        #display-app.ui-classic .track-lines {
+            height: 52px;
+        }
+
+        #display-app.ui-classic .station-row {
+            height: 200px;
+        }
+
+        #display-app.ui-classic .row-top {
+            margin-bottom: 24px;
+        }
+
+        #display-app.ui-classic .row-bottom {
+            margin-top: 24px;
+        }
+
+        #display-app.ui-classic .station-name {
+            height: 200px;
+            font-size: 18px;
+        }
+
+        #display-app.ui-classic .station-name.station-name-two-column {
+            height: 200px;
+            width: 36px;
+            gap: 2px;
+        }
+
+        #display-app.ui-classic .station:has(.station-name-two-column) {
+            width: 36px;
+        }
+
+        #display-app.ui-classic .station-name-col-1,
+        #display-app.ui-classic .station-name-col-2 {
+            height: 181px;
+        }
+
+        #display-app.ui-classic .station-name-col-1,
+        #display-app.ui-classic .station-name-col-2 {
+            width: 17px;
+        }
+
+        /* ================= Display-2 新UI（modern） ================= */
+        #display-app.ui-modern {
+            --app-bg: radial-gradient(1200px 360px at 50% 0%, #f4f8ff 0%, #eaf2ff 55%, #e3edff 100%);
+        }
+
+        #display-app.ui-modern #scaler {
+            box-shadow: 0 8px 28px rgba(20, 60, 140, 0.18);
+            --scaler-bg: #f8fbff;
+        }
+
+        #display-app.ui-modern .header,
+        #display-app.ui-modern .footer {
+            background: linear-gradient(90deg, #0f3f9a 0%, #1e5bc6 50%, #0f3f9a 100%);
+        }
+
+        #display-app.ui-modern .header {
+            margin-top: 35px;
+            height: 40px;
+            padding: 0 10px;
+            justify-content: flex-start;
+            background: linear-gradient(180deg, #9fd2ff 0%, #7cc0f8 46%, #5daeed 100%);
+            border-bottom: 1px solid #6eafde;
+            overflow: hidden;
+        }
+
+        #display-app.ui-modern .header::before,
+        #display-app.ui-modern .header::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            width: 36%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.38) 34%, rgba(255,255,255,0) 100%);
+        }
+
+        #display-app.ui-modern .header::before {
+            left: 0;
+            clip-path: polygon(0 0, 74% 0, 100% 100%, 0 100%);
+        }
+
+        #display-app.ui-modern .header::after {
+            right: 0;
+            clip-path: polygon(26% 0, 100% 0, 100% 100%, 0 100%);
+        }
+
+        #display-app.ui-modern .modern-header-left {
+            width: auto; /* 之前固定180px可能不够长 */
+            min-width: 180px;
+            display: flex;
+            flex-direction: row; /* 水平排布 */
+            align-items: baseline; /* 基线对齐 */
+            gap: 8px; /* 间距 */
+            line-height: 1;
+            color: #2e6595;
+            font-weight: 500;
+            z-index: 1;
+            position: relative;
+        }
+
+        #display-app.ui-modern .modern-header-date {
+            font-size: 15px; /* 略微调大一点使其一行显示时均衡 */
+            letter-spacing: 0;
+        }
+
+        #display-app.ui-modern .modern-header-time {
+            margin-top: 0; /* 移除之前用于竖排的margin */
+            font-size: 17px;
+            letter-spacing: 0.2px;
+        }
+
+        #display-app.ui-modern .modern-header-center {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+            color: #ffffff;
+            text-shadow: 0 1px 1px rgba(28, 81, 136, 0.5);
+            font-weight: 700;
+            z-index: 2;
+        }
+
+        #display-app.ui-modern .modern-header-line {
+            font-size: 33px;
+            line-height: 1;
+            font-weight: 600;
+        }
+
+        #display-app.ui-modern .modern-header-from,
+        #display-app.ui-modern .modern-header-to {
+            font-size: 24px;
+            line-height: 1;
+            font-weight: 700;
+        }
+
+        #display-app.ui-modern .modern-header-arrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
+            margin: 0 2px;
+            transform: translateY(-1px);
+        }
+
+        #display-app.ui-modern .modern-header-arrow-bar {
+            width: 26px; /* 将中间的矩形改短 */
+            height: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 2px 0 0 2px;
+        }
+
+        #display-app.ui-modern .modern-header-arrow-head {
+            width: 0;
+            height: 0;
+            border-top: 12px solid transparent;
+            border-bottom: 12px solid transparent;
+            border-left: 20px solid rgba(255, 255, 255, 0.95);
+        }
+
+        #display-app.ui-modern .route-map {
+            background: linear-gradient(180deg, #ecf7ff 0%, #dff2ff 100%);
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+
+        #display-app.ui-modern .legend-text,
+        #display-app.ui-modern .header-direction,
+        #display-app.ui-modern .header-end-station {
+            color: #e9f1ff;
+        }
+
+        #display-app.ui-modern .track-line-top,
+        #display-app.ui-modern .track-line-bottom,
+        #display-app.ui-modern .track-semicircle-svg path {
+            stroke: #84c8ff !important;
+            background-color: #84c8ff;
+        }
+
+        #display-app.ui-modern .row-top .station-dot,
+        #display-app.ui-modern .row-bottom .station-dot {
+            width: 16px;
+            height: 16px;
+            border-width: 2px;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.65);
+        }
+
+        #display-app.ui-modern .row-top .station-dot.passed,
+        #display-app.ui-modern .row-bottom .station-dot.passed {
+            background-color: #ff4d4f;
+        }
+
+        #display-app.ui-modern .row-top .station-dot.future,
+        #display-app.ui-modern .row-bottom .station-dot.future {
+            background-color: #33cc66;
+        }
+
+        #display-app.ui-modern .arrow-left-bottom {
+            bottom: -5px;
+            border-top: 10px solid transparent;
+            border-bottom: 10px solid transparent;
+            border-right: 17px solid #66c66f;
+        }
+
+        #display-app.ui-modern .station-name {
+            color: #1f2f4d;
+            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+        }
+
+        #display-app.ui-modern .next-station-page,
+        #display-app.ui-modern .arrival-page {
+            background: linear-gradient(180deg, #ffffff 0%, #eef5ff 100%);
+        }
+
+        #display-app.ui-modern .modern-next-wrapper {
+            width: 100%;
+            height: 100%;
+            padding: 12px 22px 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        #display-app.ui-modern .modern-next-header {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+
+        #display-app.ui-modern .modern-next-label {
+            font-size: 42px;
+            font-weight: 800;
+            color: #1e2d45;
+            line-height: 1;
+        }
+
+        #display-app.ui-modern .modern-next-name {
+            font-size: 56px;
+            font-weight: 900;
+            color: #0da34a;
+            line-height: 1;
+        }
+
+        #display-app.ui-modern .modern-next-track {
+            display: grid;
+            grid-auto-columns: minmax(0, 1fr);
+            grid-auto-flow: column;
+            align-items: start;
+            column-gap: 10px;
+            position: relative;
+            width: 100%;
+        }
+
+        #display-app.ui-modern .modern-next-wrapper-arrival {
+            justify-content: center;
+        }
+
+        #display-app.ui-modern .modern-next-wrapper-arrival .modern-next-track {
+            margin-top: 0;
+        }
+
+        #display-app.ui-modern .modern-next-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+            position: relative;
+        }
+
+        #display-app.ui-modern .modern-next-station-name {
+            font-size: 42px;
+            color: #2c3e56;
+            font-weight: 700;
+            line-height: 1.1;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        #display-app.ui-modern .modern-next-wrapper-arrival .modern-next-station-name {
+            font-size: 34px;
+        }
+
+        #display-app.ui-modern .modern-next-dot {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 4px solid rgba(0,0,0,0.18);
+            background: #f8f8f8;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.18);
+        }
+
+        #display-app.ui-modern .modern-next-node.state-current .modern-next-dot {
+            background: radial-gradient(circle at 30% 28%, #ffb0b0 0%, #ff6666 38%, #de2626 100%);
+        }
+
+        #display-app.ui-modern .modern-next-node.state-future .modern-next-dot {
+            background: radial-gradient(circle at 30% 28%, #f4ff9a 0%, #d1ef31 48%, #a7cb0f 100%);
+        }
+
+        #display-app.ui-modern .modern-next-arrow {
+            position: absolute;
+            right: -32px;
+            top: 66px;
+            font-size: 42px;
+            line-height: 1;
+            color: #57c463;
+            font-weight: 900;
+        }
+
+        #display-app.ui-modern .arrival-page .modern-next-arrow {
+            right: -26px;
+            top: 66px;
+            width: 122px;
+            height: 22px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0;
+            line-height: 0;
+            color: transparent;
+        }
+
+        #display-app.ui-modern .arrival-page .modern-next-arrow::before {
+            content: '';
+            width: 30px;
+            height: 10px;
+            background: #57c463;
+            border-radius: 1px 0 0 1px;
+            display: block;
+        }
+
+        #display-app.ui-modern .arrival-page .modern-next-arrow::after {
+            content: '';
+            width: 0;
+            height: 0;
+            border-top: 11px solid transparent;
+            border-bottom: 11px solid transparent;
+            border-left: 16px solid #57c463;
+            display: block;
+        }
+
+        #display-app.ui-modern .modern-arrival-wrapper {
+            width: 100%;
+            height: 100%;
+            padding: 4px 10px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            justify-content: flex-start;
+            position: relative;
+        }
+
+        #display-app.ui-modern .modern-arrival-wrapper-route {
+            padding: 12px 0 4px;
+            gap: 0;
+        }
+
+        #display-app.ui-modern .modern-arrival-row {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(0, 1fr);
+            align-items: start;
+            column-gap: 0;
+            position: relative;
+            min-height: 160px; /* 让每个 row 有足够的空间显示向下换行的站名 */
+        }
+
+        #display-app.ui-modern .modern-arrival-row-single {
+            min-height: 260px;
+            grid-auto-columns: minmax(0, 1fr);
+        }
+
+        #display-app.ui-modern .modern-arrival-row::before {
+            display: none;
+        }
+
+        #display-app.ui-modern .modern-arrival-row-top .modern-arrival-node {
+            flex-direction: column !important;
+        }
+
+        #display-app.ui-modern .modern-arrival-row-bottom .modern-arrival-node {
+            flex-direction: column;
+        }
+
+        #display-app.ui-modern .modern-arrival-node {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 0;
+            overflow: visible;
+            padding-top: 11px;
+        }
+
+        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-node {
+            flex-direction: column;
+        }
+
+        #display-app.ui-modern .modern-arrival-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 3px solid #63be6b;
+        }
+
+        #display-app.ui-modern .modern-arrival-arrow {
+            position: absolute;
+            top: 18px;
+            width: 16px;
+            height: 8px;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0.98;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-arrow {
+            top: 22px;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segments {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment {
+            position: absolute;
+            top: 21px;
+            height: 10px;
+            border-radius: 4px;
+            background: #66c66f;
+            pointer-events: none;
+            transform: translateY(-50%);
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 8px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.96);
+            transform: translate(-50%, -50%);
+            border-radius: 1px 0 0 1px;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment::after {
+            content: '';
+            position: absolute;
+            left: calc(50% + 4px);
+            top: 50%;
+            width: 0;
+            height: 0;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-left: 8px solid rgba(255, 255, 255, 0.96);
+            transform: translateY(-50%);
+        }
+
+        #display-app.ui-modern .modern-arrival-row-bottom {
+            margin-top: 20px;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-future {
+            background: #66c66f;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-passed {
+            background: #b8c8d8;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-current {
+            background: #b8c8d8;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-current::before {
+            background: #f14a4a;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-current::after {
+            border-left-color: #f14a4a;
+        }
+
+        #display-app.ui-modern .modern-arrival-arrow::before {
+            content: '';
+            width: 10px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 1px 0 0 1px;
+            display: block;
+        }
+
+        #display-app.ui-modern .modern-arrival-arrow::after {
+            content: '';
+            width: 0;
+            height: 0;
+            border-top: 4px solid transparent;
+            border-bottom: 4px solid transparent;
+            border-left: 6px solid rgba(255, 255, 255, 0.96);
+            display: block;
+        }
+
+        #display-app.ui-modern .modern-arrival-arrow-right {
+            right: -12px;
+        }
+
+        #display-app.ui-modern .modern-arrival-arrow-left {
+            left: -12px;
+            transform: rotate(180deg);
+        }
+
+        #display-app.ui-modern .modern-arrival-node.state-current .modern-arrival-dot {
+            background: #ffffff;
+            border-color: #e14848;
+        }
+
+        #display-app.ui-modern .modern-arrival-node.state-passed .modern-arrival-dot {
+            background: #ffffff;
+            border-color: #b9c8d8;
+        }
+
+        #display-app.ui-modern .modern-arrival-name {
+            font-size: 20px;
+            line-height: 1.1;
+            font-weight: 700;
+            color: #1d3250;
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            white-space: nowrap;
+            word-break: keep-all;
+            overflow-wrap: normal;
+            max-height: 220px;
+            overflow: visible;
+        }
+
+        #display-app.ui-modern .modern-arrival-node.state-current .modern-arrival-name {
+            color: #f03939;
+        }
+
+        #display-app.ui-modern .modern-arrival-node.state-passed .modern-arrival-name {
+            color: #8ea2b8;
+        }
+
+        #display-app.ui-modern .next-station-label {
+            color: #1d2f4f;
+        }
+
+        #display-app.ui-modern .next-station-name {
+            color: #0e57c7;
+        }
+
+        #display-app.ui-modern .footer-watermark {
+            color: rgba(255, 255, 255, 0.78);
+        }
+
+        #display-app.ui-modern .footer {
+            background: #ffffff;
+            border-top: 2px solid #58a8ea;
+            color: #1b1b1b;
+        }
+
+        #display-app.ui-modern .footer-led-content {
+            color: #1b1b1b;
+            font-size: 36px;
+            font-weight: 600;
+            line-height: 1; /* 修正line-height，避免字体增大后下沉 */
+            position: relative;
+            top: -5px; /* 强制向上偏移，根据需要微调数值，例如 -4px 到 -6px */
+        }
+
+        #display-app.ui-modern .footer-watermark {
+            color: rgba(40, 58, 84, 0.45);
+            background: #ffffff;
         }
     </style>
 </head>

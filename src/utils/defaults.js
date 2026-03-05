@@ -217,6 +217,7 @@ const FALLBACK_SYSTEM_DISPLAYS = {
 const FALLBACK_DISPLAY_DEFAULTS = {
   currentDisplayId: 'display-1',
   display2Mode: 'enabled',
+  display2UiVariant: 'classic',
   display2NextStationDuration: 10000,
   display2FooterLED: '',
   display2FooterWatermark: true
@@ -250,6 +251,7 @@ export const DEFAULT_SETTINGS = {
         height: 600,
         currentDisplayId: cfgDisplayDefaults.currentDisplayId ?? 'display-1',
         display2Mode: cfgDisplayDefaults.display2Mode ?? 'enabled',
+        display2UiVariant: cfgDisplayDefaults.display2UiVariant ?? 'classic',
         display2NextStationDuration: cfgDisplayDefaults.display2NextStationDuration ?? 10000,
         display2FooterLED: cfgDisplayDefaults.display2FooterLED ?? '',
         display2FooterWatermark: cfgDisplayDefaults.display2FooterWatermark !== false,

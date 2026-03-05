@@ -2580,4 +2580,17 @@ export default {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.2);
 }
+
+/* 兜底：放在样式末尾，避免被 prefers-color-scheme 深色规则覆盖 */
+:global(html.blur-disabled) .se-dialog {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16) !important;
+}
+:global(html.blur-disabled.dark) .se-dialog,
+:global(html.blur-disabled[data-theme="dark"]) .se-dialog {
+  background: #1c1c20 !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
+}
 </style>

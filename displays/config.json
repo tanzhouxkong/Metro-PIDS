@@ -18,8 +18,8 @@
       "name": "副显示器",
       "source": "builtin",
       "url": "",
-      "width": 1500,
-      "height": 400,
+      "width": 1600,
+      "height": 620,
       "enabled": true,
       "isSystem": true,
       "description": "辅助显示端，用于补充信息展示"

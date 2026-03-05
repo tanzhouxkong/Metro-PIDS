@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut } = require('electron');
 
 // 提前注册关键 IPC 占位处理器，避免渲染进程启动早于主进程完整初始化时出现 "No handler registered"
 // 后续在主流程中会 removeHandler 并注册正式实现。
@@ -318,8 +318,146 @@ try {
 let mainWin = null;
 let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
 let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
+let isAppShuttingDown = false;
+let orphanWindowWatchdog = null;
 const ENABLE_BACKGROUND_RENDER = process.env.METRO_PIDS_BACKGROUND_RENDER === '1';
 const WINDOW_BACKGROUND_THROTTLING = !ENABLE_BACKGROUND_RENDER;
+const AUTO_OPEN_DEVTOOLS = process.env.METRO_PIDS_AUTO_OPEN_DEVTOOLS !== '0';
+
+function getStoredThemeMode() {
+  try {
+    if (store) {
+      const currentSettings = store.get('settings', {});
+      return currentSettings && currentSettings.themeMode ? currentSettings.themeMode : 'system';
+    }
+  } catch (e) {
+    console.warn('[main] 读取主题模式失败，回退为 system:', e);
+  }
+  return 'system';
+}
+
+function startOrphanWindowWatchdog() {
+  if (orphanWindowWatchdog) return;
+  orphanWindowWatchdog = setInterval(() => {
+    if (process.platform === 'darwin') return;
+    if (!isAppShuttingDown && mainWin && !mainWin.isDestroyed()) return;
+    try {
+      const all = BrowserWindow.getAllWindows();
+      if (!all || all.length === 0) return;
+      for (const win of all) {
+        if (win && !win.isDestroyed()) {
+          try { win.destroy(); } catch (_) {}
+        }
+      }
+      try { app.quit(); } catch (_) {}
+      setTimeout(() => {
+        try { app.exit(0); } catch (_) {}
+      }, 60);
+    } catch (_) {}
+  }, 200);
+}
+
+async function isDevtoolsShortcutEnabled() {
+  if (!app.isPackaged) return true;
+  if (!mainWin || mainWin.isDestroyed()) return false;
+  try {
+    const enabled = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+        } catch(e) {
+          return false;
+        }
+      })();
+    `);
+    return enabled === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function registerDevtoolsGlobalShortcuts() {
+  try {
+    globalShortcut.register('F12', () => {
+      (async () => {
+        const enabled = await isDevtoolsShortcutEnabled();
+        if (!enabled) return;
+        const win = BrowserWindow.getFocusedWindow() || mainWin;
+        if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDevToolsOpened()) {
+          win.webContents.openDevTools();
+        }
+      })().catch(() => {});
+    });
+
+    globalShortcut.register('CommandOrControl+Shift+I', () => {
+      (async () => {
+        const enabled = await isDevtoolsShortcutEnabled();
+        if (!enabled) return;
+        const win = BrowserWindow.getFocusedWindow() || mainWin;
+        if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDevToolsOpened()) {
+          win.webContents.openDevTools();
+        }
+      })().catch(() => {});
+    });
+  } catch (e) {
+    console.warn('[main] 注册全局开发者快捷键失败:', e);
+  }
+}
+
+function isDarkThemeByMode(themeMode) {
+  if (themeMode === 'dark') return true;
+  if (themeMode === 'light') return false;
+  try {
+    return !!(nativeTheme && nativeTheme.shouldUseDarkColors);
+  } catch (e) {
+    return false;
+  }
+}
+
+function applyMicaThemeToWindow(win, themeMode) {
+  if (!win || win.isDestroyed() || MicaBrowserWindow === BrowserWindow) return;
+  if (themeMode === 'system') {
+    if (typeof win.setAutoTheme === 'function') win.setAutoTheme();
+    return;
+  }
+  if (themeMode === 'dark') {
+    if (typeof win.setDarkTheme === 'function') win.setDarkTheme();
+    return;
+  }
+  if (typeof win.setLightTheme === 'function') win.setLightTheme();
+}
+
+function applyNativeBlurStateToWindow(win, enable, themeMode = 'system') {
+  if (!win || win.isDestroyed()) return;
+
+  if (process.platform === 'win32') {
+    if (!enable) {
+      if (typeof win.setBackgroundMaterial === 'function') {
+        win.setBackgroundMaterial('none');
+      }
+      if (typeof win.setBackgroundColor === 'function') {
+        win.setBackgroundColor(isDarkThemeByMode(themeMode) ? '#1c1c20' : '#ffffff');
+      }
+      return;
+    }
+
+    if (typeof win.setBackgroundColor === 'function') {
+      win.setBackgroundColor('#00000000');
+    }
+    applyMicaThemeToWindow(win, themeMode);
+
+    if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
+      win.setMicaAcrylicEffect();
+    } else {
+      console.log('[main] ⚠️ 非 Windows 11 平台，跳过 Acrylic / backgroundMaterial');
+    }
+    return;
+  }
+
+  if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+    win.setVibrancy(enable ? 'fullscreen-ui' : 'none');
+  }
+}
 
 // WebSocket 局域网同步（用于跨设备的显示端/第三方显示器）
 let wsServer = null;
@@ -533,6 +671,9 @@ function notifyWsPortAutoSwitched(fromPort, toPort) {
 }
 
 async function switchDisplay(displayId, width, height, options = {}) {
+  if (isAppShuttingDown) {
+    return { ok: false, error: 'app-shutting-down' };
+  }
   const source = options.reason || 'ipc';
   console.log(`[main] switch-display requested (${source}), displayId=`, displayId, 'width=', width, 'height=', height);
 
@@ -796,7 +937,7 @@ async function switchDisplay(displayId, width, height, options = {}) {
         if (typeof width === 'number' && typeof height === 'number') {
           existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
         }
-        existingWin.focus();
+        bringDisplayWindowToFront(existingWin, displayId);
         console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦 (URL: ${currentUrl})`);
 
         // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
@@ -876,6 +1017,19 @@ async function switchDisplay(displayId, width, height, options = {}) {
 
   notifyWs(displayId);
   return true;
+}
+
+function bringDisplayWindowToFront(win, displayId = '') {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.focus();
+    try { win.moveTop(); } catch (_) {}
+    console.log(`[main] ${displayId || 'display'} 窗口已激活(restore/show/focus)`);
+  } catch (e) {
+    console.warn(`[main] 激活显示端窗口失败 ${displayId || ''}:`, e);
+  }
 }
 
 async function fetchAppDataSnapshot() {
@@ -1568,20 +1722,10 @@ function reapplyMicaEffect() {
   if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
   
   try {
-    // 确保背景透明
-    mainWin.setBackgroundColor('#00000000');
-    
-    // 延迟应用效果，确保背景色设置生效
     setTimeout(() => {
       try {
-        if (IS_WINDOWS_11 && typeof mainWin.setMicaAcrylicEffect === 'function') {
-          mainWin.setBackgroundColor('#00000000');
-          mainWin.setMicaAcrylicEffect();
-          console.log('[MainWindow] ✅ 重新应用 Mica Acrylic 效果');
-        } else {
-          // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
-          console.log('[MainWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 重新应用');
-        }
+        applyNativeBlurStateToWindow(mainWin, true, getStoredThemeMode());
+        console.log('[MainWindow] ✅ 重新应用原生窗口效果');
       } catch (e) {
         console.warn('[MainWindow] ⚠️ 重新应用效果失败:', e);
       }
@@ -1595,6 +1739,12 @@ function reapplyMicaEffect() {
 function forceReapplyMicaEffect() {
   if (!mainWin || mainWin.isDestroyed()) return;
   if (!MAIN_BLUR_ENABLED) return;
+  // 仅在主窗口当前处于焦点时重应用；避免点击侧边栏打开显示端时触发无意义重应用
+  try {
+    if (typeof mainWin.isFocused === 'function' && !mainWin.isFocused()) return;
+  } catch (e) {
+    return;
+  }
   
   const isWindows = process.platform === 'win32';
   if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
@@ -1606,13 +1756,7 @@ function forceReapplyMicaEffect() {
   // 只调用一次，不使用多个延迟
   try {
     if (!mainWin || mainWin.isDestroyed()) return;
-    mainWin.setBackgroundColor('#00000000');
-    if (IS_WINDOWS_11 && typeof mainWin.setMicaAcrylicEffect === 'function') {
-      mainWin.setMicaAcrylicEffect();
-    } else {
-      // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
-      console.log('[MainWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 强制重新应用');
-    }
+    applyNativeBlurStateToWindow(mainWin, true, getStoredThemeMode());
   } catch (e) {
     // 静默失败，不输出日志
   }
@@ -1867,68 +2011,12 @@ function createWindow() {
     console.log('[MainWindow] 窗口对象已创建:', mainWin !== null);
     console.log('[MainWindow] 窗口是否可见:', mainWin && mainWin.isVisible());
     
-    // 按照官方示例：窗口创建后立即设置主题和效果
-    if (isWindows && mainWin && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
+    // 窗口创建后立即按“模糊开关 + 主题模式”统一应用原生效果
+    if (isWindows && mainWin && MicaBrowserWindow !== BrowserWindow) {
       try {
-        // 读取当前主题设置（从 electron-store 或默认值）
-        let themeMode = 'system';
-        try {
-          if (store) {
-            const currentSettings = store.get('settings', {});
-            themeMode = currentSettings.themeMode || 'system';
-          }
-        } catch (e) {
-          console.warn('[MainWindow] 读取主题设置失败，使用默认值:', e);
-        }
-        
-        // 按照官方示例：先设置主题，然后设置效果
-        if (IS_WINDOWS_11) {
-          // Windows 11: 使用 Mica Acrylic Effect（Acrylic for Windows 11）
-          // 根据用户设置的主题模式来设置
-          if (themeMode === 'system') {
-            if (typeof mainWin.setAutoTheme === 'function') {
-              mainWin.setAutoTheme();
-              console.log('[MainWindow] ✅ 已设置自动主题（跟随系统）');
-            }
-          } else if (themeMode === 'dark') {
-            if (typeof mainWin.setDarkTheme === 'function') {
-              mainWin.setDarkTheme();
-              console.log('[MainWindow] ✅ 已设置深色主题');
-            }
-          } else {
-            // light mode
-            if (typeof mainWin.setLightTheme === 'function') {
-              mainWin.setLightTheme();
-              console.log('[MainWindow] ✅ 已设置浅色主题');
-            }
-          }
-          
-          if (typeof mainWin.setMicaAcrylicEffect === 'function') {
-            mainWin.setMicaAcrylicEffect();
-            console.log('[MainWindow] ✅ 已启用 Mica Acrylic 效果');
-          }
-        } else if (WIN10) {
-          // Windows 10: 使用 Acrylic 效果
-          // Windows 10 也支持主题设置
-          if (themeMode === 'dark') {
-            if (typeof mainWin.setDarkTheme === 'function') {
-              mainWin.setDarkTheme();
-              console.log('[MainWindow] ✅ Windows 10: 已设置深色主题');
-            }
-          } else if (themeMode === 'light') {
-            if (typeof mainWin.setLightTheme === 'function') {
-              mainWin.setLightTheme();
-              console.log('[MainWindow] ✅ Windows 10: 已设置浅色主题');
-            }
-          }
-          
-          if (typeof mainWin.setAcrylic === 'function') {
-            mainWin.setAcrylic();
-            console.log('[MainWindow] ✅ 已启用 Acrylic 效果');
-          }
-        }
+        applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, getStoredThemeMode());
       } catch (e) {
-        console.error('[MainWindow] ❌ 应用效果失败:', e);
+        console.error('[MainWindow] ❌ 应用原生窗口效果失败:', e);
       }
     }
     
@@ -2004,9 +2092,10 @@ function createWindow() {
     mainWin.on('blur', () => {
       if (mainWin && !mainWin.isDestroyed()) {
         try {
-          mainWin.setBackgroundColor('#00000000'); // 设置透明背景
-          // 主窗口失去焦点时，强制重新应用模糊效果（防止侧边栏模糊消失）
-          forceReapplyMicaEffect();
+          if (MAIN_BLUR_ENABLED) {
+            // 模糊开启时维持透明背景以承载原生材质
+            mainWin.setBackgroundColor('#00000000');
+          }
         } catch (e) {
           console.warn('[MainWindow] ⚠️ 设置透明背景失败:', e);
         }
@@ -2189,7 +2278,7 @@ function createWindow() {
 
   // 开启 DevTools 控制台（用于调试）
   // 仅在开发模式下自动打开
-  if (!app.isPackaged) {
+  if (!app.isPackaged && AUTO_OPEN_DEVTOOLS) {
     mainWin.webContents.openDevTools();
   }
   
@@ -2277,22 +2366,11 @@ function createWindow() {
   // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
   // 仅在创建时生效
 
-  // 拦截 renderer 的 window.open 来创建受控窗口
-  mainWin.webContents.setWindowOpenHandler(({ url, features, disposition }) => {
-    try {
-      const u = url.toString();
-      if (u.endsWith('display_window.html') || u.includes('display_window.html')) {
-        createDisplayWindow();
-        return { action: 'deny' };
-      }
-    } catch (e) {
-      // 忽略错误
-    }
-    return { action: 'allow' };
-  });
-
   // 暴露 IPC 供渲染层打开显示窗口
   ipcMain.handle('open-display', (event, opts) => {
+    if (isAppShuttingDown) {
+      return false;
+    }
     const w = opts && typeof opts.width === 'number' ? opts.width : undefined;
     const h = opts && typeof opts.height === 'number' ? opts.height : undefined;
     const displayId = opts && opts.displayId ? opts.displayId : 'display-1';
@@ -2312,48 +2390,21 @@ function createWindow() {
         store.set('settings', settings);
         console.log('[main] 设置已同步到 electron-store');
         
-        // 检查主题模式是否变化，如果变化则同步到 mica-electron
+        // 同步主题模式 + 模糊开关到原生窗口效果
         const oldThemeMode = oldSettings.themeMode || 'system';
         const newThemeMode = settings.themeMode || 'system';
-        
-        if (oldThemeMode !== newThemeMode && mainWin && !mainWin.isDestroyed() && MicaBrowserWindow !== BrowserWindow) {
+        const oldBlurEnabled = oldSettings ? oldSettings.blurEnabled !== false : true;
+        const newBlurEnabled = settings.blurEnabled !== false;
+        MAIN_BLUR_ENABLED = newBlurEnabled;
+
+        if (oldThemeMode !== newThemeMode || oldBlurEnabled !== newBlurEnabled) {
           try {
-            if (IS_WINDOWS_11) {
-              if (newThemeMode === 'system') {
-                // 系统模式：使用自动主题
-                if (typeof mainWin.setAutoTheme === 'function') {
-                  mainWin.setAutoTheme();
-                  console.log('[main] ✅ 主题模式已切换为系统模式，已设置自动主题');
-                }
-              } else if (newThemeMode === 'dark') {
-                // 深色模式
-                if (typeof mainWin.setDarkTheme === 'function') {
-                  mainWin.setDarkTheme();
-                  console.log('[main] ✅ 主题模式已切换为深色模式');
-                }
-              } else {
-                // 浅色模式
-                if (typeof mainWin.setLightTheme === 'function') {
-                  mainWin.setLightTheme();
-                  console.log('[main] ✅ 主题模式已切换为浅色模式');
-                }
-              }
-            } else if (WIN10) {
-              // Windows 10 也支持主题切换（虽然效果可能不如 Windows 11）
-              if (newThemeMode === 'dark') {
-                if (typeof mainWin.setDarkTheme === 'function') {
-                  mainWin.setDarkTheme();
-                  console.log('[main] ✅ Windows 10: 主题模式已切换为深色模式');
-                }
-              } else {
-                if (typeof mainWin.setLightTheme === 'function') {
-                  mainWin.setLightTheme();
-                  console.log('[main] ✅ Windows 10: 主题模式已切换为浅色模式');
-                }
-              }
-            }
+            [mainWin, lineManagerWin]
+              .filter((win) => win && !win.isDestroyed())
+              .forEach((win) => applyNativeBlurStateToWindow(win, newBlurEnabled, newThemeMode));
+            console.log('[main] ✅ 已同步原生窗口效果:', { themeMode: newThemeMode, blurEnabled: newBlurEnabled });
           } catch (e) {
-            console.warn('[main] ⚠️ 同步主题到 mica-electron 失败:', e);
+            console.warn('[main] ⚠️ 同步原生窗口效果失败:', e);
           }
         }
         
@@ -2473,7 +2524,7 @@ function createWindow() {
   // 暴露 IPC 供渲染层打开线路管理器
   ipcMain.handle('open-line-manager', (event, target) => {
     // target 可能是 'lineA' 或 'lineB'，用于贯通线路设置
-    throughOperationTarget = target || null;
+    throughOperationTarget = (target === undefined || target === null) ? null : target;
     createLineManagerWindow();
     return true;
   });
@@ -2491,7 +2542,7 @@ function createWindow() {
       devWin = null;
       
       // 清除主窗口 localStorage 中的开发者按钮标记
-      if (mainWin && !mainWin.isDestroyed()) {
+      if (!isAppShuttingDown && mainWin && !mainWin.isDestroyed()) {
         try {
           await mainWin.webContents.executeJavaScript(`
             (function() {
@@ -2752,7 +2803,7 @@ function createWindow() {
         // 如果还是没有，使用硬编码的默认值
         const defaultConfigs = {
           'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
-          'display-2': { width: 1500, height: 400, source: 'builtin', url: '', name: '副显示器' },
+          'display-2': { width: 1900, height: 600, source: 'builtin', url: '', name: '副显示器' },
           'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
         };
         if (defaultConfigs[displayId]) {
@@ -3297,7 +3348,7 @@ function createWindow() {
     if (!displayConfig) {
       const defaultConfigs = {
         'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
-        'display-2': { width: 1500, height: 400, source: 'builtin', url: '', name: '副显示器' },
+        'display-2': { width: 1900, height: 600, source: 'builtin', url: '', name: '副显示器' },
         'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
       };
       if (defaultConfigs[displayId]) displayConfig = defaultConfigs[displayId];
@@ -3940,38 +3991,9 @@ function createWindow() {
     if (!windows.length) return { ok: false, error: 'no-window' };
 
     try {
+      const themeMode = getStoredThemeMode();
       for (const win of windows) {
-        // 关闭模糊：退回无材质，避免深色模式下 Mica 残留
-        if (!MAIN_BLUR_ENABLED) {
-          if (process.platform === 'win32') {
-            if (typeof win.setBackgroundMaterial === 'function') {
-              win.setBackgroundMaterial('none');
-            }
-            if (typeof win.setBackgroundColor === 'function') {
-              win.setBackgroundColor('#00000000');
-            }
-          } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
-            win.setVibrancy('none');
-          }
-          continue;
-        }
-
-        // 开启模糊：根据平台恢复 Mica（Windows 11），不再在 Windows 10 上主动调用 Acrylic
-        if (process.platform === 'win32') {
-          if (typeof win.setBackgroundColor === 'function') {
-            win.setBackgroundColor('#00000000');
-          }
-          if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
-            win.setMicaAcrylicEffect();
-          } else {
-            // 2026-02: 由于 mica-electron 在 Windows 10 上兼容性较差，这里不再主动调用 setAcrylic 或背景材质
-            console.log('[effects/main-blur] ⚠️ 非 Windows 11 平台，跳过 Acrylic / backgroundMaterial');
-          }
-        } else if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
-          win.setVibrancy('fullscreen-ui');
-        } else {
-          // no-op
-        }
+        applyNativeBlurStateToWindow(win, MAIN_BLUR_ENABLED, themeMode);
       }
 
       return { ok: true };
@@ -4089,9 +4111,34 @@ function createWindow() {
   });
 
   mainWin.on('closed', () => {
-    // 主窗口关闭时，关闭所有其他窗口
-    closeAllWindows();
-    mainWin = null;
+    isAppShuttingDown = true;
+    const forceTerminate = () => {
+      try {
+        const remaining = BrowserWindow.getAllWindows();
+        for (const win of remaining) {
+          if (win && !win.isDestroyed()) {
+            try { win.destroy(); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      if (process.platform !== 'darwin') {
+        try { app.quit(); } catch (_) {}
+        setTimeout(() => {
+          try { app.exit(0); } catch (_) {}
+        }, 80);
+      }
+    };
+
+    try {
+      closeAllWindows();
+    } catch (e) {
+      console.warn('[main] 主窗口 closed 清理异常:', e);
+    } finally {
+      mainWin = null;
+      setTimeout(forceTerminate, 20);
+      setTimeout(forceTerminate, 260);
+    }
   });
 }
 
@@ -4275,7 +4322,7 @@ function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height:
   }
   
   // 开发模式下打开 DevTools
-  if (!app.isPackaged) {
+  if (!app.isPackaged && AUTO_OPEN_DEVTOOLS) {
     console.log(`[BrowserView:${viewId}] 🔧 打开 DevTools`);
     view.webContents.openDevTools();
   }
@@ -6561,12 +6608,11 @@ ipcMain.handle('mica/set-light-theme', async () => {
       return { ok: false, error: 'Mica Electron 未加载' };
     }
     
-    if (typeof mainWin.setLightTheme === 'function') {
-      mainWin.setLightTheme();
-      return { ok: true };
+    applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, 'light');
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      applyNativeBlurStateToWindow(lineManagerWin, MAIN_BLUR_ENABLED, 'light');
     }
-    
-    return { ok: false, error: 'setLightTheme 方法不可用' };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -6582,12 +6628,11 @@ ipcMain.handle('mica/set-dark-theme', async () => {
       return { ok: false, error: 'Mica Electron 未加载' };
     }
     
-    if (typeof mainWin.setDarkTheme === 'function') {
-      mainWin.setDarkTheme();
-      return { ok: true };
+    applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, 'dark');
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      applyNativeBlurStateToWindow(lineManagerWin, MAIN_BLUR_ENABLED, 'dark');
     }
-    
-    return { ok: false, error: 'setDarkTheme 方法不可用' };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -6603,12 +6648,11 @@ ipcMain.handle('mica/set-auto-theme', async () => {
       return { ok: false, error: 'Mica Electron 未加载' };
     }
     
-    if (typeof mainWin.setAutoTheme === 'function') {
-      mainWin.setAutoTheme();
-      return { ok: true };
+    applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, 'system');
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      applyNativeBlurStateToWindow(lineManagerWin, MAIN_BLUR_ENABLED, 'system');
     }
-    
-    return { ok: false, error: 'setAutoTheme 方法不可用' };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -7375,7 +7419,36 @@ ipcMain.handle('window/toggleMax', (event) => {
 ipcMain.handle('window/close', (event) => {
   try {
     const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    const senderUrl = (() => {
+      try { return event && event.sender ? event.sender.getURL() : 'unknown'; } catch (_) { return 'unknown'; }
+    })();
+    console.log('[main] IPC window/close 收到请求:', {
+      senderUrl,
+      hasMainWin: !!(mainWin && !mainWin.isDestroyed()),
+      targetIsMain: !!(mainWin && win === mainWin)
+    });
+
+    if (!win || win.isDestroyed()) {
+      console.warn('[main] IPC window/close 未找到可关闭窗口');
+      return { ok: false, error: 'no-window' };
+    }
+
+    const isMainWindowClose = !!(mainWin && !mainWin.isDestroyed() && win === mainWin);
+    if (isMainWindowClose) {
+      isAppShuttingDown = true;
+      try { closeAllWindows(); } catch (_) {}
+      try { mainWin && !mainWin.isDestroyed() && mainWin.close(); } catch (_) {}
+      if (process.platform !== 'darwin') {
+        try { app.quit(); } catch (_) {}
+        setTimeout(() => {
+          try { app.exit(0); } catch (_) {}
+        }, 100);
+      }
+      return { ok: true, cascaded: true };
+    }
+
     if (win) win.close();
+    console.log('[main] IPC window/close 已触发 win.close()');
     return { ok: true };
   } catch (e) { return { ok: false, error: String(e) }; }
 });
@@ -7757,6 +7830,7 @@ async function checkAndInstallPendingUpdate() {
 }
 
 app.whenReady().then(async () => {
+  startOrphanWindowWatchdog();
   console.log('[main] ✅ Electron 应用已准备就绪');
   console.log('[main] 应用路径:', app.getAppPath());
   console.log('[main] 是否打包:', app.isPackaged);
@@ -7804,6 +7878,18 @@ app.whenReady().then(async () => {
   setTimeout(() => {
     cleanupAllUnlockedFolders().catch((e) => console.warn('[main] cleanupAllUnlockedFolders 失败:', e));
   }, 2000);
+
+  // 启动时从持久化设置恢复主窗口模糊开关，避免首屏与用户设置不一致
+  try {
+    if (store) {
+      const startupSettings = store.get('settings', {});
+      MAIN_BLUR_ENABLED = startupSettings ? startupSettings.blurEnabled !== false : true;
+      console.log('[main] 启动时恢复 blurEnabled:', MAIN_BLUR_ENABLED);
+    }
+  } catch (e) {
+    console.warn('[main] 启动时恢复 blurEnabled 失败，使用默认开启:', e);
+    MAIN_BLUR_ENABLED = true;
+  }
   
   // 在创建窗口之前检查并安装待安装的更新
   // 如果有待安装的更新，会自动安装并重启，不会创建窗口
@@ -7902,7 +7988,9 @@ app.whenReady().then(async () => {
   try {
     const currentSettings = store ? store.get('settings', {}) : {};
     const shouldEnableApiServer = currentSettings.enableApiServer === true;
-    const shouldEnableWsBridge = true;
+    const shouldEnableWsBridge =
+      process.env.METRO_PIDS_ENABLE_WS_BRIDGE === '1' ||
+      currentSettings.enableWebSocketBridge === true;
     const wsPortSetting = currentSettings.wsPort || currentSettings.wsPortOverride || null;
     
     if (shouldEnableApiServer && displayApiServer) {
@@ -8223,9 +8311,66 @@ function closeAllWindows() {
   console.log('[main] 所有窗口关闭完成');
 }
 
+function forceCloseAllOpenWindows(reason = 'unknown', options = {}) {
+  const excludeMain = !!options.excludeMain;
+  const allWindows = BrowserWindow.getAllWindows();
+  for (const win of allWindows) {
+    if (!win || win.isDestroyed()) continue;
+    if (excludeMain && mainWin && win === mainWin) continue;
+    try {
+      win.destroy();
+    } catch (e) {
+      try {
+        win.close();
+      } catch (_) {
+        console.warn('[main] 全量窗口清理失败:', e);
+      }
+    }
+  }
+}
+
+function resolveDisplayIdFromUrl(rawUrl) {
+  const url = String(rawUrl || '');
+  const fromPath = url.match(/displays\/([^/]+)\/display_window\.html/i);
+  if (fromPath && fromPath[1]) return fromPath[1];
+  const fromQuery = url.match(/[?&]displayId=([^&#]+)/i);
+  if (fromQuery && fromQuery[1]) {
+    try { return decodeURIComponent(fromQuery[1]); } catch (_) { return fromQuery[1]; }
+  }
+  return 'display-1';
+}
+
+function installGlobalDisplayWindowOpenRouting() {
+  app.on('web-contents-created', (_event, contents) => {
+    try {
+      contents.setWindowOpenHandler(({ url }) => {
+        const target = String(url || '');
+        const isDisplayWindow = /display_window\.html/i.test(target);
+        if (!isDisplayWindow) return { action: 'allow' };
+
+        if (!isAppShuttingDown) {
+          const displayId = resolveDisplayIdFromUrl(target);
+          setTimeout(() => {
+            if (isAppShuttingDown) return;
+            createDisplayWindow(undefined, undefined, displayId).catch((e) => {
+              console.warn('[main] 全局 window.open 显示端路由失败:', e);
+            });
+          }, 0);
+        }
+        return { action: 'deny' };
+      });
+    } catch (e) {
+      console.warn('[main] 安装 window.open 路由失败:', e);
+    }
+  });
+}
+
+installGlobalDisplayWindowOpenRouting();
+
 // 应用程序退出前处理：确保所有窗口都已关闭
 app.on('before-quit', (event) => {
   console.log('[main] before-quit 事件触发');
+  isAppShuttingDown = true;
   stopWebSocketBridge();
   stopMultiScreenHttpServer();
   // 如果还有窗口未关闭，先关闭所有窗口
@@ -8255,6 +8400,7 @@ app.on('before-quit', (event) => {
 
 app.on('window-all-closed', () => {
   console.log('[main] window-all-closed 事件触发');
+  isAppShuttingDown = true;
   // 确保所有窗口都已关闭
   closeAllWindows();
   if (process.platform !== 'darwin') {
@@ -9038,6 +9184,9 @@ async function scheduleAutoUpdateCheck() {
 }
 
 async function createDisplayWindow(width, height, displayId = 'display-1') {
+  if (isAppShuttingDown) {
+    return null;
+  }
   // 检查是否已存在该显示端窗口
   if (displayWindows.has(displayId)) {
     const existingWin = displayWindows.get(displayId);
@@ -9046,7 +9195,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         if (typeof width === 'number' && typeof height === 'number') {
           existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
         }
-        existingWin.focus();
+        bringDisplayWindowToFront(existingWin, displayId);
         // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
         forceReapplyMicaEffect();
       } catch (e) {
@@ -9094,11 +9243,11 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   // 这样可以确保在所有缩放比例下，显示的内容范围都是一样的
   let logicalWidth, logicalHeight;
   
-  // 对于 display-2，强制使用 1500x400，忽略所有其他值
+  // 对于 display-2，强制使用 1900x600，忽略所有其他值
   if (displayId === 'display-2') {
-    // 强制使用 1500x400，无论配置或传入的参数是什么
-    logicalWidth = 1500;
-    logicalHeight = 400;
+    // 强制使用 1900x600，无论配置或传入的参数是什么
+    logicalWidth = 1900;
+    logicalHeight = 600;
     console.log(`[main] display-2 强制使用固定尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, '和配置值)');
     
     // 同时更新 store 中的配置，确保配置正确
@@ -9110,10 +9259,10 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         if (!settings.display.displays['display-2']) {
           settings.display.displays['display-2'] = {};
         }
-        settings.display.displays['display-2'].width = 1500;
-        settings.display.displays['display-2'].height = 400;
+        settings.display.displays['display-2'].width = 1900;
+        settings.display.displays['display-2'].height = 600;
         store.set('settings', settings);
-        console.log(`[main] display-2 配置已更新为: 1500x400`);
+        console.log(`[main] display-2 配置已更新为: 1900x600`);
       }
     } catch (e) {
       console.warn('[main] display-2 更新配置失败:', e);
@@ -9349,7 +9498,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       height: adjustedHeight,
       useContentSize: false,
       frame: false, // 隐藏默认框架
-      transparent: false, // 如果使用 Mica，启用透明；否则不透明
+      transparent: !!useMica, // Mica 需要透明窗口才能让原生效果透出
       backgroundColor: useMica ? '#00000000' : '#090d12', // Mica 时透明，否则使用深色背景
       resizable: false,
       maximizable: false, // 禁用最大化
@@ -9362,7 +9511,8 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       // 注意：height 设置为 0 或很小，让自定义状态栏完全控制拖动区域
       titleBarOverlay: {
       // 使用与自定义状态栏相同的白色背景，确保系统最小化/关闭按钮在悬停时有清晰的高亮遮罩
-      color: isWindows ? '#ffffff' : undefined,
+      // 启用 Mica 时必须透明，否则右侧系统按钮区域会变成一整块白色
+      color: isWindows ? (useMica ? '#00000000' : '#ffffff') : undefined,
       symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色（与控制面板一致，使用黑色）
       height: 32 // 控制按钮高度，与自定义状态栏高度一致（32px）
       },
@@ -9382,10 +9532,18 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     };
   }
 
-  const displayWin = new BrowserWindow(opts);
+  const displayWin = new MicaBrowserWindow(opts);
+
+  if (process.platform === 'win32' && MicaBrowserWindow !== BrowserWindow) {
+    try {
+      applyNativeBlurStateToWindow(displayWin, true, getStoredThemeMode());
+    } catch (e) { 
+      console.warn('[main] 无法应用显示器的Mica效果: ', e);
+    }
+  }
   
   // 立即确保窗口尺寸正确（防止某些情况下尺寸被错误设置）
-  // 对于 display-2，强制使用 1500x400
+  // 对于 display-2，强制使用 1900x600
   let finalWidth = adjustedWidth;
   let finalHeight = adjustedHeight;
   if (displayId === 'display-2') {
@@ -9550,7 +9708,24 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   console.log(`[main] createDisplayWindow: displayId=${displayId}, dispPath=${dispPath}`);
 
   // 在窗口准备好后再显示，避免黑屏
+  let readyToShowHandled = false;
+  const readyToShowFallbackTimer = setTimeout(() => {
+    try {
+      if (!displayWin || displayWin.isDestroyed()) return;
+      if (readyToShowHandled) return;
+      if (!displayWin.isVisible()) {
+        console.warn(`[main] ${displayId} ready-to-show 超时，执行兜底显示`);
+        displayWin.show();
+      }
+      bringDisplayWindowToFront(displayWin, displayId);
+    } catch (e) {
+      console.warn(`[main] ${displayId} 兜底显示失败:`, e);
+    }
+  }, 3000);
+
   displayWin.once('ready-to-show', () => {
+    readyToShowHandled = true;
+    clearTimeout(readyToShowFallbackTimer);
     // 再次确保窗口尺寸正确（特别是 display-2）
     // 对于 display-2，再次从配置读取确保使用正确尺寸
     let expectedWidth = finalWidth;
@@ -9607,8 +9782,9 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       console.log(`[main] ${displayId} ✅ 窗口尺寸正确:`, expectedWidth, 'x', expectedHeight);
     }
     displayWin.show();
-    // 在开发模式下自动打开开发者工具
-    if (!app.isPackaged) {
+    bringDisplayWindowToFront(displayWin, displayId);
+    // 显示端开发模式默认自动打开开发者工具；可通过环境变量显式关闭
+    if (!app.isPackaged && process.env.METRO_PIDS_OPEN_DISPLAY_DEVTOOLS !== '0') {
       displayWin.webContents.openDevTools();
     }
     
@@ -9658,6 +9834,20 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   // 监听缩放变化事件，确保始终保持1.0缩放
   displayWin.webContents.on('did-finish-load', () => {
     displayWin.webContents.setZoomFactor(1.0);
+    // 某些机器上 ready-to-show 触发偏慢，did-finish-load 到达后先行显示，减少“第二次打开明显慢”
+    if (!readyToShowHandled) {
+      readyToShowHandled = true;
+      clearTimeout(readyToShowFallbackTimer);
+      try {
+        if (!displayWin.isDestroyed()) {
+          if (!displayWin.isVisible()) displayWin.show();
+          bringDisplayWindowToFront(displayWin, displayId);
+          console.log(`[main] ${displayId} did-finish-load 提前显示窗口`);
+        }
+      } catch (e) {
+        console.warn(`[main] ${displayId} did-finish-load 提前显示失败:`, e);
+      }
+    }
     // 页面加载完成后，强制重新应用主窗口的模糊效果
     forceReapplyMicaEffect();
   });
@@ -9730,6 +9920,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
 
   // 性能优化：窗口关闭时彻底清理资源，避免内存泄漏
   displayWin.on('closed', () => {
+    clearTimeout(readyToShowFallbackTimer);
     displayWindows.delete(displayId);
     // 确保窗口引用被清理
     if (displayWin && !displayWin.isDestroyed()) {
@@ -9909,25 +10100,8 @@ function createLineManagerWindow() {
   // 应用 Mica 模糊效果（与主窗口相同，仅在 Windows 11 上启用 Mica）
   if (isWindows && lineManagerWin && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
     try {
-      // 设置主题
-      if (IS_WINDOWS_11) {
-        if (typeof lineManagerWin.setAutoTheme === 'function') {
-          lineManagerWin.setAutoTheme();
-          console.log('[LineManagerWindow] ✅ 已设置自动主题');
-        } else if (typeof lineManagerWin.setDarkTheme === 'function') {
-          lineManagerWin.setDarkTheme();
-          console.log('[LineManagerWindow] ✅ 已设置深色主题');
-        }
-        
-        // 应用 Mica Acrylic Effect（Windows 11）
-        if (typeof lineManagerWin.setMicaAcrylicEffect === 'function') {
-          lineManagerWin.setMicaAcrylicEffect();
-          console.log('[LineManagerWindow] ✅ 已应用 Mica Acrylic 效果');
-        }
-      } else {
-        // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
-        console.log('[LineManagerWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 效果');
-      }
+      applyNativeBlurStateToWindow(lineManagerWin, true, getStoredThemeMode());
+      console.log('[LineManagerWindow] ✅ 已按当前设置应用原生窗口效果');
     } catch (e) {
       console.warn('[LineManagerWindow] ⚠️ 应用 Mica 效果失败:', e);
     }
@@ -9936,12 +10110,7 @@ function createLineManagerWindow() {
   // 模糊关闭时，确保线路管理器窗口也关闭原生材质
   if (isWindows && lineManagerWin && !MAIN_BLUR_ENABLED) {
     try {
-      if (typeof lineManagerWin.setBackgroundMaterial === 'function') {
-        lineManagerWin.setBackgroundMaterial('none');
-      }
-      if (typeof lineManagerWin.setBackgroundColor === 'function') {
-        lineManagerWin.setBackgroundColor('#00000000');
-      }
+      applyNativeBlurStateToWindow(lineManagerWin, false, getStoredThemeMode());
       console.log('[LineManagerWindow] 模糊关闭，已禁用原生材质');
     } catch (e) {
       console.warn('[LineManagerWindow] 禁用原生材质失败:', e);
@@ -10033,7 +10202,7 @@ function createDevWindow() {
     devWin = null;
     
     // 清除主窗口 localStorage 中的开发者按钮标记
-    if (mainWin && !mainWin.isDestroyed()) {
+    if (!isAppShuttingDown && mainWin && !mainWin.isDestroyed()) {
       try {
         await mainWin.webContents.executeJavaScript(`
           (function() {
@@ -10081,6 +10250,16 @@ ipcMain.handle('line-manager/switch-line', async (event, lineName, options) => {
 ipcMain.handle('line-manager/switch-runtime-line', async (event, lineData) => {
   try {
     if (mainWin && !mainWin.isDestroyed()) {
+      const target = throughOperationTarget;
+      if (target === 'lineA' || target === 'lineB' || typeof target === 'number' || (typeof target === 'string' && target.startsWith('segment-'))) {
+        mainWin.webContents.send('switch-runtime-line', {
+          lineData,
+          target,
+          forThroughOperation: true
+        });
+        throughOperationTarget = null;
+        return { ok: true, target, forThroughOperation: true };
+      }
       mainWin.webContents.send('switch-runtime-line', lineData);
       // 不自动关闭线路管理器，方便用户确认主窗口已应用后再手动关闭
       return { ok: true };

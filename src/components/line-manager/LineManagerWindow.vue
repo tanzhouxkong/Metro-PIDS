@@ -781,12 +781,18 @@ export default {
             await window.__lineManagerDialog.alert(t('lineManagerWindow.applicationFailed') + result.error, '错误')
           }
         } else {
+          const target = localStorage.getItem('throughOperationSelectorTarget')
           localStorage.setItem('runtimeLineData', JSON.stringify(payload))
           localStorage.setItem('lineManagerSelectedLine', lineName)
           localStorage.setItem('isRuntimeLine', 'true')
+          if (target) {
+            localStorage.setItem('lineManagerSelectedTarget', target)
+          } else {
+            localStorage.removeItem('lineManagerSelectedTarget')
+          }
           if (window.opener && !window.opener.closed) {
             window.opener.postMessage(
-              { type: 'switch-runtime-line', lineName, lineData: payload },
+              { type: 'switch-runtime-line', lineName, lineData: payload, target },
               '*'
             )
           }

@@ -47,6 +47,8 @@ export function useController() {
             r: rtToSend,
             settings: {
                 display: {
+                    // 显示器2：UI版本（classic/modern）
+                    display2UiVariant: settings?.display?.display2UiVariant === 'modern' ? 'modern' : 'classic',
                     // 显示器2：下一站/到站白屏相关配置
                     display2NextStationDuration: settings?.display?.display2NextStationDuration || 10000,
                     display2FooterLED: settings?.display?.display2FooterLED || '',
