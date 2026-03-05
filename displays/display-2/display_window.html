@@ -32,11 +32,11 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #ffffff; /* 白色背景 */
+            background: transparent; /* 让 mica-electron 的透明/模糊背景透出 */
             font-family: var(--font-main);
         }
 
-        /* ================= 屏幕容器 (1500x400 适配) ================= */
+        /* ================= 屏幕容器 (1900x600 适配) ================= */
         #display-app {
             position: fixed;
             top: 0;
@@ -46,20 +46,51 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            background: #ffffff; /* 白色背景，与内容背景一致 */
+            background: transparent; /* 让标题栏区域能看到窗口原生模糊 */
             font-family: var(--font-main);
             overflow: hidden; /* 防止出现滚动条 */
+            --app-bg: transparent;
+        }
+        /* 用伪元素绘制背景，从标题栏下方开始，避免状态栏区域被涂白 */
+        #display-app::before {
+            content: '';
+            position: absolute;
+            top: 35px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--app-bg);
+            z-index: 0;
+            pointer-events: none;
         }
         #scaler {
-            width: 1500px;
-            height: 400px;
-            background: #ffffff; /* 白色背景 */
+            width: 1900px;
+            height: 600px;
+            background: transparent; /* 内容区域自行上色，顶部标题栏区域保持透出 */
             position: relative;
             display: flex;
             flex-direction: column;
             overflow: hidden;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
             transform-origin: center center;
+            z-index: 1;
+            --scaler-bg: #ffffff;
+        }
+        /* 同理：scaler 背景从标题栏下方开始绘制 */
+        #scaler::before {
+            content: '';
+            position: absolute;
+            top: 35px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--scaler-bg);
+            z-index: 0;
+            pointer-events: none;
+        }
+        #scaler > * {
+            position: relative;
+            z-index: 1;
         }
 
         /* ================= 自定义标题栏 ================= */
@@ -70,18 +101,20 @@
             height: 35px;
             width: 100%;
             z-index: 9999;
-            background: rgba(0, 0, 0, 0.3);
-            -webkit-backdrop-filter: blur(20px);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            color: #fff;
+            background: rgba(255, 255, 255, 0.38);
+            -webkit-backdrop-filter: blur(20px) saturate(1.2);
+            backdrop-filter: blur(20px) saturate(1.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            color: #000;
             padding-left: 12px;
+            padding-right: 140px; /* 为右侧窗口控制按钮预留空间 */
             font-size: 14px;
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
             -webkit-app-region: drag;
+            box-shadow: 0 1px 10px rgba(0, 0, 0, 0.05);
             position: absolute;
             top: 0;
             left: 0;
@@ -137,13 +170,15 @@
             display: flex;
             align-items: center;
             overflow: hidden;
-            position: relative;
-            min-width: 0; /* 允许flex收缩 */
+            position: absolute;
+            left: 20px;
+            right: 0;
+            z-index: 1;
         }
         
         .footer-led-content {
             white-space: nowrap;
-            font-size: 18px;
+            font-size: 26px;
             font-weight: 600;
             color: #fff;
             display: inline-block;
@@ -173,6 +208,13 @@
             color: rgba(255, 255, 255, 0.6);
             flex-shrink: 0;
             margin-left: auto; /* 确保水印靠右显示 */
+            z-index: 2;
+            position: relative;
+            background: #162b75; 
+            height: 100%;
+            padding-left: 20px;
+            padding-right: 20px;
+            margin-right: -20px;
         }
         
         .footer-watermark .watermark-item {
@@ -190,16 +232,16 @@
             gap: 12px;
         }
         .header-route {
-            font-size: 20px;
+            font-size: 28px;
             font-weight: bold;
         }
         .header-end-station {
-            font-size: 16px;
+            font-size: 22px;
             font-weight: normal;
             color: #fff;
         }
         .header-direction {
-            font-size: 16px;
+            font-size: 22px;
             font-weight: normal;
         }
         .legend {
@@ -208,7 +250,7 @@
             transform: translateX(-50%);
             display: flex;
             gap: 15px;
-            font-size: 12px;
+            font-size: 16px;
         }
         .legend-item {
             display: flex;
@@ -216,8 +258,8 @@
             gap: 5px;
         }
         .legend-dot {
-            width: 10px;
-            height: 10px;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
         }
         .legend-dot.passed {
@@ -227,7 +269,7 @@
             background: #00e600; /* 绿色 */
         }
         .legend-text {
-            font-size: 12px;
+            font-size: 16px;
             color: #fff;
         }
 
@@ -249,7 +291,7 @@
             top: 50%;
             left: 5px;
             right: 20px;
-            height: 35px;
+            height: 34px;
             transform: translateY(-50%);
             z-index: 0;
         }
@@ -430,16 +472,20 @@
             align-items: center;
             gap: 20px;
         }
-
+       /* 下一站页面 - 站点信息和路线图容器 */
         .next-station-route-page {
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            justify-content: flex-start;
+            justify-content: center;
             padding: 24px 40px 18px;
+            position: relative;
         }
 
         .next-page-title {
+            position: absolute;
+            top: 24px;
+            left: 40px;
             display: flex;
             align-items: baseline;
             gap: 10px;
@@ -660,14 +706,56 @@
             border-top: 10px solid white;
         }
 
+        /* ================= Display-2 老UI（classic）600高适配 ================= */
+        #display-app.ui-classic .track-lines {
+            height: 52px;
+        }
+
+        #display-app.ui-classic .station-row {
+            height: 200px;
+        }
+
+        #display-app.ui-classic .row-top {
+            margin-bottom: 24px;
+        }
+
+        #display-app.ui-classic .row-bottom {
+            margin-top: 24px;
+        }
+
+        #display-app.ui-classic .station-name {
+            height: 200px;
+            font-size: 18px;
+        }
+
+        #display-app.ui-classic .station-name.station-name-two-column {
+            height: 200px;
+            width: 36px;
+            gap: 2px;
+        }
+
+        #display-app.ui-classic .station:has(.station-name-two-column) {
+            width: 36px;
+        }
+
+        #display-app.ui-classic .station-name-col-1,
+        #display-app.ui-classic .station-name-col-2 {
+            height: 181px;
+        }
+
+        #display-app.ui-classic .station-name-col-1,
+        #display-app.ui-classic .station-name-col-2 {
+            width: 17px;
+        }
+
         /* ================= Display-2 新UI（modern） ================= */
         #display-app.ui-modern {
-            background: radial-gradient(1200px 360px at 50% 0%, #f4f8ff 0%, #eaf2ff 55%, #e3edff 100%);
+            --app-bg: radial-gradient(1200px 360px at 50% 0%, #f4f8ff 0%, #eaf2ff 55%, #e3edff 100%);
         }
 
         #display-app.ui-modern #scaler {
-            background: #f8fbff;
             box-shadow: 0 8px 28px rgba(20, 60, 140, 0.18);
+            --scaler-bg: #f8fbff;
         }
 
         #display-app.ui-modern .header,
@@ -708,10 +796,12 @@
         }
 
         #display-app.ui-modern .modern-header-left {
-            width: 180px;
+            width: auto; /* 之前固定180px可能不够长 */
+            min-width: 180px;
             display: flex;
-            flex-direction: column;
-            justify-content: center;
+            flex-direction: row; /* 水平排布 */
+            align-items: baseline; /* 基线对齐 */
+            gap: 8px; /* 间距 */
             line-height: 1;
             color: #2e6595;
             font-weight: 500;
@@ -720,12 +810,12 @@
         }
 
         #display-app.ui-modern .modern-header-date {
-            font-size: 11px;
+            font-size: 15px; /* 略微调大一点使其一行显示时均衡 */
             letter-spacing: 0;
         }
 
         #display-app.ui-modern .modern-header-time {
-            margin-top: 1px;
+            margin-top: 0; /* 移除之前用于竖排的margin */
             font-size: 17px;
             letter-spacing: 0.2px;
         }
@@ -767,7 +857,7 @@
         }
 
         #display-app.ui-modern .modern-header-arrow-bar {
-            width: 56px;
+            width: 26px; /* 将中间的矩形改短 */
             height: 10px;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 2px 0 0 2px;
@@ -783,8 +873,8 @@
 
         #display-app.ui-modern .route-map {
             background: linear-gradient(180deg, #ecf7ff 0%, #dff2ff 100%);
-            padding-left: 0;
-            padding-right: 0;
+            padding-left: 10px;
+            padding-right: 10px;
         }
 
         #display-app.ui-modern .legend-text,
@@ -816,6 +906,13 @@
         #display-app.ui-modern .row-top .station-dot.future,
         #display-app.ui-modern .row-bottom .station-dot.future {
             background-color: #33cc66;
+        }
+
+        #display-app.ui-modern .arrow-left-bottom {
+            bottom: -5px;
+            border-top: 10px solid transparent;
+            border-bottom: 10px solid transparent;
+            border-right: 17px solid #66c66f;
         }
 
         #display-app.ui-modern .station-name {
@@ -860,14 +957,20 @@
 
         #display-app.ui-modern .modern-next-track {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-auto-columns: minmax(0, 1fr);
+            grid-auto-flow: column;
             align-items: start;
             column-gap: 10px;
             position: relative;
+            width: 100%;
+        }
+
+        #display-app.ui-modern .modern-next-wrapper-arrival {
+            justify-content: center;
         }
 
         #display-app.ui-modern .modern-next-wrapper-arrival .modern-next-track {
-            margin-top: 60px;
+            margin-top: 0;
         }
 
         #display-app.ui-modern .modern-next-node {
@@ -924,7 +1027,7 @@
 
         #display-app.ui-modern .arrival-page .modern-next-arrow {
             right: -26px;
-            top: 72px;
+            top: 66px;
             width: 122px;
             height: 22px;
             display: inline-flex;
@@ -973,32 +1076,20 @@
         #display-app.ui-modern .modern-arrival-row {
             display: grid;
             grid-auto-flow: column;
-            grid-auto-columns: minmax(58px, 1fr);
+            grid-auto-columns: minmax(0, 1fr);
             align-items: start;
             column-gap: 0;
             position: relative;
-            min-height: 112px;
+            min-height: 160px; /* 让每个 row 有足够的空间显示向下换行的站名 */
         }
 
         #display-app.ui-modern .modern-arrival-row-single {
             min-height: 260px;
-            grid-auto-columns: minmax(48px, 1fr);
-        }
-
-        #display-app.ui-modern .modern-arrival-row-single::before {
-            display: none;
+            grid-auto-columns: minmax(0, 1fr);
         }
 
         #display-app.ui-modern .modern-arrival-row::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 16px;
-            height: 10px;
-            border-radius: 10px;
-            background: #66c66f;
-            z-index: 0;
+            display: none;
         }
 
         #display-app.ui-modern .modern-arrival-row-top .modern-arrival-node {
@@ -1049,7 +1140,7 @@
             top: 22px;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segments {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segments {
             position: absolute;
             left: 0;
             right: 0;
@@ -1059,7 +1150,7 @@
             pointer-events: none;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment {
             position: absolute;
             top: 21px;
             height: 10px;
@@ -1069,7 +1160,7 @@
             transform: translateY(-50%);
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment::before {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment::before {
             content: '';
             position: absolute;
             left: 50%;
@@ -1081,7 +1172,7 @@
             border-radius: 1px 0 0 1px;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment::after {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment::after {
             content: '';
             position: absolute;
             left: calc(50% + 4px);
@@ -1094,23 +1185,27 @@
             transform: translateY(-50%);
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment.state-future {
+        #display-app.ui-modern .modern-arrival-row-bottom {
+            margin-top: 20px;
+        }
+
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-future {
             background: #66c66f;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment.state-passed {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-passed {
             background: #b8c8d8;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment.state-current {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-current {
             background: #b8c8d8;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment.state-current::before {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-current::before {
             background: #f14a4a;
         }
 
-        #display-app.ui-modern .modern-arrival-row-single .modern-arrival-segment.state-current::after {
+        #display-app.ui-modern .modern-arrival-row .modern-arrival-segment.state-current::after {
             border-left-color: #f14a4a;
         }
 
@@ -1194,12 +1289,16 @@
 
         #display-app.ui-modern .footer-led-content {
             color: #1b1b1b;
-            font-size: 28px;
+            font-size: 36px;
             font-weight: 600;
+            line-height: 1; /* 修正line-height，避免字体增大后下沉 */
+            position: relative;
+            top: -5px; /* 强制向上偏移，根据需要微调数值，例如 -4px 到 -6px */
         }
 
         #display-app.ui-modern .footer-watermark {
             color: rgba(40, 58, 84, 0.45);
+            background: #ffffff;
         }
     </style>
 </head>

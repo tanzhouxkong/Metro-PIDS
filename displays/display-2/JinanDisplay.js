@@ -37,6 +37,9 @@ export default {
     const display2UiVariant = ref('classic') // classic=当前UI, modern=新UI
     const display2UiVariantClass = computed(() => display2UiVariant.value === 'modern' ? 'ui-modern' : 'ui-classic')
     const isModernUi = computed(() => display2UiVariant.value === 'modern')
+    const useTwoRowLayout = computed(() => {
+      return stations.value && stations.value.length > 39
+    })
 
     const FOOTER_TIPS = [
       '请为老、弱、病、残、孕、需要帮助的乘客让座谢谢。',
@@ -425,6 +428,82 @@ export default {
       }
     }
 
+    const modernTwoRowStations = computed(() => {
+      const list = stations.value || []
+      if (list.length === 0) return { top: [], bottom: [] }
+
+      const current = Math.max(0, Math.min(activeStationIdx.value, list.length - 1))
+      const highlight = (rt.value.state === 1 && nextStationIdx.value >= 0)
+        ? Math.max(0, Math.min(nextStationIdx.value, list.length - 1))
+        : current
+      
+      const mapped = list.map((st, idx) => {
+        let state = 'future'
+        if (idx < highlight) state = 'passed'
+        else if (idx === highlight) state = 'current'
+        return {
+          idx,
+          name: st?.name || '--',
+          state
+        }
+      })
+
+      const split = Math.ceil(mapped.length / 2)
+      return {
+        top: mapped.slice(0, split),
+        bottom: mapped.slice(split)
+      }
+    })
+
+    const modernTwoRowSegments = computed(() => {
+      const { top, bottom } = modernTwoRowStations.value
+      const list = stations.value || []
+      const current = Math.max(0, Math.min(activeStationIdx.value, list.length - 1))
+      const movingSegmentIdx = (rt.value.state === 1 && current >= 0 && current < list.length - 1)
+        ? current
+        : -1
+      
+      const getSegmentState = (segIdx) => {
+        if (segIdx < current) return 'passed'
+        if (segIdx === movingSegmentIdx) return 'current'
+        return 'future'
+      }
+
+      const topSegments = top.slice(0, -1).map((node, i) => {
+        const segIdx = node.idx
+        return {
+          key: `top-seg-${i}`,
+          idx: i,
+          state: getSegmentState(segIdx)
+        }
+      })
+
+      const bottomSegments = bottom.slice(0, -1).map((node, i) => {
+        const segIdx = node.idx
+        return {
+          key: `bot-seg-${i}`,
+          idx: i,
+          state: getSegmentState(segIdx)
+        }
+      })
+
+      return {
+        top: topSegments,
+        bottom: bottomSegments
+      }
+    })
+
+    function getModernTwoRowSegmentStyle(segmentIdx, rowType) {
+      const counts = modernTwoRowStations.value
+      const count = rowType === 'top' ? counts.top.length : counts.bottom.length
+      if (count <= 1) return { left: '0%', width: '0%' }
+      const cell = 100 / count
+      return {
+        left: `${(segmentIdx + 0.5) * cell}%`,
+        width: `${cell}%`
+      }
+    }
+
     function advanceFooterMessage() {
       const len = footerMessageQueue.value.length
       if (len <= 1) return
@@ -771,10 +850,10 @@ export default {
         return new URLSearchParams('')
       }
     })()
-    const queryWidth = Number(displayQuery.get('dw') || displayQuery.get('designWidth') || 1500)
-    const queryHeight = Number(displayQuery.get('dh') || displayQuery.get('designHeight') || 400)
-    const SCREEN_WIDTH = Number.isFinite(queryWidth) && queryWidth > 0 ? Math.round(queryWidth) : 1500 // 屏幕宽度
-    const SCREEN_HEIGHT = Number.isFinite(queryHeight) && queryHeight > 0 ? Math.round(queryHeight) : 400
+    const queryWidth = Number(displayQuery.get('dw') || displayQuery.get('designWidth') || 1900)
+    const queryHeight = Number(displayQuery.get('dh') || displayQuery.get('designHeight') || 600)
+    const SCREEN_WIDTH = Number.isFinite(queryWidth) && queryWidth > 0 ? Math.round(queryWidth) : 1900 // 屏幕宽度
+    const SCREEN_HEIGHT = Number.isFinite(queryHeight) && queryHeight > 0 ? Math.round(queryHeight) : 600
 
     // 地图相关计算
     const PADDING = 40 // 左右内边距
@@ -827,7 +906,11 @@ export default {
 
     // 使用显示器1的环线实现方式
     // 计算半圆的半径和位置（参考显示器1的cornerR和trackGap）
-    const trackGap = 35 // 上排到下排的距离（与 .track-lines 的高度一致）
+    const trackGap = computed(() => {
+      const isClassicLargeLayout = !isModernUi.value && SCREEN_HEIGHT >= 600
+      if (isClassicLargeLayout) return 52
+      return 34
+    }) // 上排到下排的距离（与 .track-lines 的高度一致）
     const cornerR = 5 // 半圆半径（间隙约5像素）
     const semicircleRadius = computed(() => {
       return cornerR
@@ -845,7 +928,7 @@ export default {
       const lineHeight = 4
       const lineCenterOffset = lineHeight / 2 // 2px
       const yTop = lineCenterOffset                  // 上侧直线中心：2
-      const yBottom = trackGap - lineCenterOffset    // 下侧直线中心：35 - 2 = 33
+      const yBottom = trackGap.value - lineCenterOffset    // 下侧直线中心
       
       // 计算半圆的半径（从上侧直线中心到下侧直线中心的距离的一半）
       const semicircleRadius = (yBottom - yTop) / 2  // (33 - 2) / 2 = 15.5
@@ -881,9 +964,9 @@ export default {
       return index < activeStationIdx.value
     }
 
-    // 处理站名：根据图片中的逻辑
-    // - 单列模式：2-6个字符，垂直均匀分布
-    // - 两列换行模式：超过6个字符（≥7个字符）时，第一列固定4个字符，第二列剩余字符，优先在"街"或"路"处换行
+    // 处理站名：根据显示尺寸自适应
+    // - 单列模式：默认2-6个字符；在 classic + 600高分辨率下扩展为2-8个字符
+    // - 两列换行模式：超过单列阈值时分两列；在 classic + 600高分辨率下第一列固定5个字符，其余进第二列
     // 注意：此函数对所有站点都适用，包括仅在上行或下行停靠的站点
     function formatStationName(name, station = null) {
       if (!name || typeof name !== 'string') return ''
@@ -921,34 +1004,38 @@ export default {
         }).join('')
       }
       
-      // 如果站名不超过6个字，单列模式：垂直均匀分布
-      if (chars.length <= 6) {
+      const isClassicLargeLayout = !isModernUi.value && SCREEN_HEIGHT >= 600
+      const singleColumnLimit = isClassicLargeLayout ? 8 : 6
+      const firstColumnCount = isClassicLargeLayout ? 5 : 4
+
+      // 如果站名不超过阈值，单列模式：垂直均匀分布
+      if (chars.length <= singleColumnLimit) {
         return formatCharsSingle(chars)
       }
       
-      // 如果站名超过7个字，需要换行分成两栏
-      // 第一列固定4个字符，第二列剩余字符
+      // 如果站名超过阈值，需要换行分成两栏
+      // 第一列固定字符数，第二列剩余字符
       const breakChars = ['街', '路']
       let breakIndex = -1
       
       // 优先在"街"或"路"处换行（检查所有字符，从后往前找）
-      // 第一列固定4个字符，所以检查位置4及之后是否有"街"或"路"
-      // 如果找到"街"或"路"，第一列仍然是4个字符，第二列从位置4开始
-      for (let i = chars.length - 1; i >= 4; i--) {
+      // 第一列为固定字符数，所以检查该位置及之后是否有"街"或"路"
+      // 如果找到"街"或"路"，第一列仍然固定，第二列从固定位置开始
+      for (let i = chars.length - 1; i >= firstColumnCount; i--) {
         if (breakChars.includes(chars[i])) {
-          // 找到"街"或"路"，但第一列固定为4个字符
-          // 所以无论"街"或"路"在哪里，都从位置4分割
-          breakIndex = 4
+          // 找到"街"或"路"，但第一列固定为固定字符数
+          // 所以无论"街"或"路"在哪里，都从固定位置分割
+          breakIndex = firstColumnCount
           break
         }
       }
       
-      // 如果找到了"街"或"路"，使用4+剩余字符的分割方式
+      // 如果找到了"街"或"路"，使用固定+剩余字符的分割方式
       if (breakIndex > 0) {
-        // 第一部分：第一列固定4个字符
-        const part1 = chars.slice(0, 4)
-        // 第二部分：从位置4开始的所有剩余字符
-        const part2 = chars.slice(4)
+        // 第一部分：第一列固定字符数
+        const part1 = chars.slice(0, firstColumnCount)
+        // 第二部分：从固定位置开始的所有剩余字符
+        const part2 = chars.slice(firstColumnCount)
         
         // 如果两部分都有内容，用两列容器包装
         if (part1.length > 0 && part2.length > 0) {
@@ -960,9 +1047,9 @@ export default {
         }
       }
       
-      // 如果没有找到"街"或"路"，或者位置不合适，第一列固定4个字符，第二列剩余字符
-      const part1 = chars.slice(0, 4)
-      const part2 = chars.slice(4)
+      // 如果没有找到"街"或"路"，或者位置不合适，第一列固定字符数，第二列剩余字符
+      const part1 = chars.slice(0, firstColumnCount)
+      const part2 = chars.slice(firstColumnCount)
       
       if (part2.length > 0) {
         return `<span class="station-name-col station-name-col-1">${formatCharsColumn(part1)}</span><span class="station-name-col station-name-col-2">${formatCharsColumn(part2)}</span>`
@@ -1556,7 +1643,11 @@ export default {
       modernSingleRowStations,
       modernSingleRowSegments,
       getModernSingleSegmentStyle,
+      modernTwoRowStations,
+      modernTwoRowSegments,
+      getModernTwoRowSegmentStyle,
       displayedFooterLED,
+      useTwoRowLayout,
       footerWatermark,
       display2UiVariantClass,
       nextPageFiveStations,
@@ -1581,13 +1672,13 @@ export default {
             padding: 0 8px;
           ">
             <i class="fas fa-subway" style="
-              color: #fff;
+              color: currentColor;
               font-size: 14px;
             "></i>
             <span style="
               font-size: 13px;
               font-weight: 600;
-              color: #fff;
+              color: currentColor;
               white-space: nowrap;
             ">Metro PIDS - Display 2</span>
           </div>
@@ -1723,29 +1814,74 @@ export default {
         </div>
 
         <!-- 线路区域：正常显示线路图 -->
-        <div v-else class="route-map">
+        <div v-else class="route-map" :class="{ 'use-two-rows': useTwoRowLayout }">
           <template v-if="isModernUi">
             <div class="modern-arrival-wrapper modern-arrival-wrapper-route">
-              <div class="modern-arrival-row modern-arrival-row-single">
-                <div class="modern-arrival-segments" aria-hidden="true">
-                  <span
-                    v-for="seg in modernSingleRowSegments"
-                    :key="'route-seg-' + seg.key"
-                    class="modern-arrival-segment"
-                    :class="'state-' + seg.state"
-                    :style="getModernSingleSegmentStyle(seg.idx)"
-                  ></span>
+              <template v-if="!useTwoRowLayout">
+                <div class="modern-arrival-row modern-arrival-row-single">
+                  <div class="modern-arrival-segments" aria-hidden="true">
+                    <span
+                      v-for="seg in modernSingleRowSegments"
+                      :key="'route-seg-' + seg.key"
+                      class="modern-arrival-segment"
+                      :class="'state-' + seg.state"
+                      :style="getModernSingleSegmentStyle(seg.idx)"
+                    ></span>
+                  </div>
+                  <div
+                    v-for="(node, idx) in modernSingleRowStations"
+                    :key="'route-single-' + node.idx"
+                    class="modern-arrival-node"
+                    :class="'state-' + node.state"
+                  >
+                    <div class="modern-arrival-dot"></div>
+                    <div class="modern-arrival-name">{{ node.name }}</div>
+                  </div>
                 </div>
-                <div
-                  v-for="(node, idx) in modernSingleRowStations"
-                  :key="'route-single-' + node.idx"
-                  class="modern-arrival-node"
-                  :class="'state-' + node.state"
-                >
-                  <div class="modern-arrival-dot"></div>
-                  <div class="modern-arrival-name">{{ node.name }}</div>
+              </template>
+              <template v-else>
+                <div class="modern-arrival-row modern-arrival-row-top">
+                  <div class="modern-arrival-segments" aria-hidden="true">
+                    <span
+                      v-for="seg in modernTwoRowSegments.top"
+                      :key="'top-seg-' + seg.key"
+                      class="modern-arrival-segment"
+                      :class="'state-' + seg.state"
+                      :style="getModernTwoRowSegmentStyle(seg.idx, 'top')"
+                    ></span>
+                  </div>
+                  <div
+                    v-for="(node, idx) in modernTwoRowStations.top"
+                    :key="'route-top-' + node.idx"
+                    class="modern-arrival-node"
+                    :class="'state-' + node.state"
+                  >
+                    <div class="modern-arrival-dot"></div>
+                    <div class="modern-arrival-name">{{ node.name }}</div>
+                  </div>
                 </div>
-              </div>
+
+                <div class="modern-arrival-row modern-arrival-row-bottom">
+                  <div class="modern-arrival-segments" aria-hidden="true">
+                    <span
+                      v-for="seg in modernTwoRowSegments.bottom"
+                      :key="'bot-seg-' + seg.key"
+                      class="modern-arrival-segment"
+                      :class="'state-' + seg.state"
+                      :style="getModernTwoRowSegmentStyle(seg.idx, 'bottom')"
+                    ></span>
+                  </div>
+                  <div
+                    v-for="(node, idx) in modernTwoRowStations.bottom"
+                    :key="'route-bot-' + node.idx"
+                    class="modern-arrival-node"
+                    :class="'state-' + node.state"
+                  >
+                    <div class="modern-arrival-dot"></div>
+                    <div class="modern-arrival-name">{{ node.name }}</div>
+                  </div>
+                </div>
+              </template>
             </div>
           </template>
           <template v-else>

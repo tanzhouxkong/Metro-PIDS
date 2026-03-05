@@ -2803,7 +2803,7 @@ function createWindow() {
         // 如果还是没有，使用硬编码的默认值
         const defaultConfigs = {
           'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
-          'display-2': { width: 1500, height: 400, source: 'builtin', url: '', name: '副显示器' },
+          'display-2': { width: 1900, height: 600, source: 'builtin', url: '', name: '副显示器' },
           'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
         };
         if (defaultConfigs[displayId]) {
@@ -3348,7 +3348,7 @@ function createWindow() {
     if (!displayConfig) {
       const defaultConfigs = {
         'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
-        'display-2': { width: 1500, height: 400, source: 'builtin', url: '', name: '副显示器' },
+        'display-2': { width: 1900, height: 600, source: 'builtin', url: '', name: '副显示器' },
         'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
       };
       if (defaultConfigs[displayId]) displayConfig = defaultConfigs[displayId];
@@ -9243,11 +9243,11 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   // 这样可以确保在所有缩放比例下，显示的内容范围都是一样的
   let logicalWidth, logicalHeight;
   
-  // 对于 display-2，强制使用 1500x400，忽略所有其他值
+  // 对于 display-2，强制使用 1900x600，忽略所有其他值
   if (displayId === 'display-2') {
-    // 强制使用 1500x400，无论配置或传入的参数是什么
-    logicalWidth = 1500;
-    logicalHeight = 400;
+    // 强制使用 1900x600，无论配置或传入的参数是什么
+    logicalWidth = 1900;
+    logicalHeight = 600;
     console.log(`[main] display-2 强制使用固定尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, '和配置值)');
     
     // 同时更新 store 中的配置，确保配置正确
@@ -9259,10 +9259,10 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
         if (!settings.display.displays['display-2']) {
           settings.display.displays['display-2'] = {};
         }
-        settings.display.displays['display-2'].width = 1500;
-        settings.display.displays['display-2'].height = 400;
+        settings.display.displays['display-2'].width = 1900;
+        settings.display.displays['display-2'].height = 600;
         store.set('settings', settings);
-        console.log(`[main] display-2 配置已更新为: 1500x400`);
+        console.log(`[main] display-2 配置已更新为: 1900x600`);
       }
     } catch (e) {
       console.warn('[main] display-2 更新配置失败:', e);
@@ -9498,7 +9498,7 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       height: adjustedHeight,
       useContentSize: false,
       frame: false, // 隐藏默认框架
-      transparent: false, // 如果使用 Mica，启用透明；否则不透明
+      transparent: !!useMica, // Mica 需要透明窗口才能让原生效果透出
       backgroundColor: useMica ? '#00000000' : '#090d12', // Mica 时透明，否则使用深色背景
       resizable: false,
       maximizable: false, // 禁用最大化
@@ -9511,7 +9511,8 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
       // 注意：height 设置为 0 或很小，让自定义状态栏完全控制拖动区域
       titleBarOverlay: {
       // 使用与自定义状态栏相同的白色背景，确保系统最小化/关闭按钮在悬停时有清晰的高亮遮罩
-      color: isWindows ? '#ffffff' : undefined,
+      // 启用 Mica 时必须透明，否则右侧系统按钮区域会变成一整块白色
+      color: isWindows ? (useMica ? '#00000000' : '#ffffff') : undefined,
       symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色（与控制面板一致，使用黑色）
       height: 32 // 控制按钮高度，与自定义状态栏高度一致（32px）
       },
@@ -9531,10 +9532,18 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
     };
   }
 
-  const displayWin = new BrowserWindow(opts);
+  const displayWin = new MicaBrowserWindow(opts);
+
+  if (process.platform === 'win32' && MicaBrowserWindow !== BrowserWindow) {
+    try {
+      applyNativeBlurStateToWindow(displayWin, true, getStoredThemeMode());
+    } catch (e) { 
+      console.warn('[main] 无法应用显示器的Mica效果: ', e);
+    }
+  }
   
   // 立即确保窗口尺寸正确（防止某些情况下尺寸被错误设置）
-  // 对于 display-2，强制使用 1500x400
+  // 对于 display-2，强制使用 1900x600
   let finalWidth = adjustedWidth;
   let finalHeight = adjustedHeight;
   if (displayId === 'display-2') {

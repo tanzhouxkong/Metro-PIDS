@@ -307,7 +307,8 @@ const displayStyleSheet = `
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #090d12;
+    background: transparent;
+    --app-bg: #090d12;
     /* 确保在高DPI下正确显示 */
     position: fixed;
     top: 0;
@@ -318,6 +319,23 @@ const displayStyleSheet = `
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+/* 通过伪元素绘制内容背景，从标题栏下方开始，避免状态栏区域被涂满 */
+#display-app::before {
+  content: "";
+  position: absolute;
+  top: 35px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--app-bg);
+  z-index: 0;
+  pointer-events: none;
+}
+/* 确保内容层在背景伪元素之上，否则顶栏/头部会被遮住 */
+#display-app > * {
+  position: relative;
+  z-index: 1;
 }
 #display-statusbar {
   position: absolute;
@@ -349,6 +367,7 @@ const displayStyleSheet = `
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-left: 12px;
   font-size: 13px;
   font-weight: 700;
   color: var(--text, #333);
@@ -403,7 +422,8 @@ const displayStyleSheet = `
 #display-app #scaler {
     width: 1900px;
     height: 600px;
-    background: #fff;
+    background: transparent;
+    --scaler-bg: #fff;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -413,6 +433,23 @@ const displayStyleSheet = `
     /* 确保在高DPI下渲染清晰 */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+/* scaler 的背景也从标题栏下方开始绘制，保证 Mica 能透出到顶部条 */
+#display-app #scaler::before {
+  content: "";
+  position: absolute;
+  top: 35px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--scaler-bg);
+  z-index: 0;
+  pointer-events: none;
+}
+/* 同理：scaler 内部各块内容需要盖在 ::before 之上 */
+#display-app #scaler > * {
+  position: relative;
+  z-index: 1;
 }
 #display-app .header {
   height: 100px;
@@ -2302,54 +2339,11 @@ function createStatusBar(root, options) {
   // 检查是否在 Electron 环境中
   const isElectron = typeof window !== 'undefined' && window.electronAPI;
   const platform = isElectron && window.electronAPI.platform ? window.electronAPI.platform : 'unknown';
-  
-  // 只在 Windows 和 MacOS 上显示窗口控制按钮（Linux 使用系统框架）
-  if (isElectron && platform !== 'linux') {
-    const controls = document.createElement('div');
-    controls.style.display = 'flex';
-    controls.style.gap = '4px';
-    controls.style.marginLeft = 'auto';
-    controls.style.pointerEvents = 'auto';
-    // 按钮区域不允许拖动窗口
-    controls.style.webkitAppRegion = 'no-drag';
-    controls.style.cursor = 'default';
-    
-    // 最小化按钮
-    const minimizeBtn = document.createElement('div');
-    minimizeBtn.className = 'win-btn';
-    minimizeBtn.innerHTML = '<i class="fas fa-minus"></i>';
-    minimizeBtn.title = '最小化';
-    minimizeBtn.style.pointerEvents = 'auto';
-    minimizeBtn.style.cursor = 'pointer';
-    minimizeBtn.style.webkitAppRegion = 'no-drag';
-    minimizeBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.minimize) {
-        window.electronAPI.windowControls.minimize();
-      }
-    };
-    
-    // 最大化/还原按钮
-    const maximizeBtn = document.createElement('div');
-    maximizeBtn.className = 'win-btn';
-    maximizeBtn.innerHTML = '<i class="fas fa-square"></i>';
-    maximizeBtn.title = '最大化';
-    maximizeBtn.style.pointerEvents = 'auto';
-    maximizeBtn.style.cursor = 'pointer';
-    maximizeBtn.style.webkitAppRegion = 'no-drag';
-    maximizeBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (window.electronAPI && window.electronAPI.windowControls && window.electronAPI.windowControls.toggleMax) {
-        window.electronAPI.windowControls.toggleMax();
-      }
-    };
-    
-    // 注意：关闭按钮由 Electron 的 titleBarOverlay 提供，不需要自定义
-    
-    controls.appendChild(minimizeBtn);
-    controls.appendChild(maximizeBtn);
-    inner.appendChild(controls);
-  }
+
+  // 旧版自定义窗口控制按钮（最小化/最大化/关闭）已移除：
+  // - Windows 由 Electron 的 titleBarOverlay 提供系统按钮
+  // - Linux 使用系统框架
+  // 此处仅保留可拖动的标题区域
   
   statusbar.appendChild(inner);
   

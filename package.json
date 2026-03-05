@@ -87,7 +87,8 @@
     "asar": true,
     "asarUnpack": [
       "preset-lines/**/*",
-      "node_modules/@ffmpeg-installer/**"
+      "node_modules/@ffmpeg-installer/**",
+      "node_modules/mica-electron/src/*.node"
     ],
     "electronLanguages": [
       "zh-CN",
