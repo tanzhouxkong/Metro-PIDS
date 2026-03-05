@@ -215,6 +215,49 @@ export default {
             zIndex: 9999
         }))
 
+        
+        const showUiVariantDropdown = ref(false);
+        const uiVariantDropdownOpenUp = ref(false)
+        const uiVariantDropdownRef = ref(null);
+        function toggleUiVariantDropdown() {
+            if (!showUiVariantDropdown.value) {
+                uiVariantDropdownOpenUp.value = resolveDropdownDirection(uiVariantDropdownRef, 160)
+            }
+            showUiVariantDropdown.value = !showUiVariantDropdown.value;
+        }
+        function selectUiVariant(val) {
+            // displayEdit 是 reactive，不是 ref；这里不能用 displayEdit.value
+            displayEdit.display2UiVariant = val;
+            showUiVariantDropdown.value = false;
+        }
+
+        const uiVariantDropdownMenuStyle = computed(() => ({
+            position: 'absolute',
+            left: '0',
+            right: '0',
+            top: uiVariantDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+            bottom: uiVariantDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+            background: glassMenuBackground(),
+            backdropFilter: glassBackdropFilter(),
+            WebkitBackdropFilter: glassBackdropFilter(),
+            border: `1px solid ${glassMenuBorder()}`,
+            borderRadius: '12px',
+            boxShadow: glassMenuShadow(),
+            maxHeight: 'min(260px, 38vh)',
+            overflowY: 'auto',
+            padding: '6px',
+            zIndex: 25001
+        }))
+        onMounted(() => {
+            const h = (e) => {
+                if (uiVariantDropdownRef.value && !uiVariantDropdownRef.value.contains(e.target)) {
+                    showUiVariantDropdown.value = false;
+                }
+            };
+            document.addEventListener('click', h);
+            onUnmounted(() => document.removeEventListener('click', h));
+        });
+
         const dropdownTriggerStyle = computed(() => ({
             width: '100%',
             padding: '10px 12px',
@@ -4085,7 +4128,9 @@ export default {
             showThemeModeDropdown, toggleThemeModeDropdown, themeModeOptions, currentThemeModeTitle, selectThemeMode, themeModeDropdownMenuStyle,
             currentLocale, languageOptions, changeLanguage,
             showLanguageDropdown, toggleLanguageDropdown, currentLanguageTitle, selectLanguage, languageDropdownMenuStyle,
-            dropdownTriggerStyle,
+              dropdownTriggerStyle,
+              showUiVariantDropdown, toggleUiVariantDropdown, selectUiVariant, uiVariantDropdownRef,
+                            uiVariantDropdownMenuStyle,
             glassMenuBackground, glassMenuBorder, glassMenuShadow, glassItemHoverBackground, glassItemActiveBackground, glassDividerColor,
             contextMenuBackdropFilter
         };
@@ -4456,29 +4501,10 @@ export default {
                 <button class="btn" style="padding:8px 10px; background:#27ae60; color:white;" @click="openMultiScreenQrDialog">
                     <i class="fas fa-qrcode"></i> {{ $t('multiScreen.showQr') }}
                 </button>
-                <button class="btn" style="padding:8px 10px; background:#16a085; color:white;" @click="openWsClientsDialog">
-                    <i class="fas fa-network-wired"></i> 查看已连接设备
-                </button>
             </div>
 
-            <div style="margin-top:8px; display:flex; flex-direction:column; gap:10px; font-size:12px; color:var(--muted);">
-                <div style="color:var(--text); font-weight:bold;">{{ $t('multiScreen.localIp') }}</div>
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <span v-for="ip in lanIpsResolved" :key="ip" style="background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25); color:var(--text);">{{ ip }}</span>
-                    <button class="btn" style="padding:4px 8px; background:var(--btn-gray-bg); color:var(--text);" @click="loadLanIps()"><i class="fas fa-sync"></i> {{ $t('multiScreen.refreshIp') }}</button>
-                </div>
-
-                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                    <span style="color:var(--text); font-weight:bold;">{{ $t('multiScreen.wsPort') }}</span>
-                    <input type="number" min="1" max="65535" v-model.number="settings.wsPort" @change="saveSettings()" style="width:96px; padding:6px 8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);">
-                    <span style="color:var(--muted);">{{ $t('multiScreen.wsAddress') }}</span>
-                    <span v-for="ip in lanIpsResolved" :key="ip + '-ws'" style="color:var(--text); background:rgba(39,174,96,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.25);">ws://{{ ip }}:{{ wsPortDisplay }}</span>
-                </div>
-
-                <div style="color:var(--muted); line-height:1.6;">
-                    {{ $t('multiScreen.tips1') }}
-                    <br>{{ $t('multiScreen.thirdPartyTemplate') }}http://{{ lanIpsResolved[0] }}:5173/examples/third-party-display-template.html
-                </div>
+            <div style="margin-top:8px; font-size:12px; color:var(--muted); line-height:1.6;">
+                {{ $t('multiScreen.tips1') }}
             </div>
         </div>
 
@@ -4618,7 +4644,7 @@ export default {
                                 <i class="fas fa-edit"></i>
                             </div>
                             <div class="se-titles">
-                                <div class="se-title">编辑显示端</div>
+                                <div class="se-title">{{ $t("display.editTitle") }}</div>
                                 <div class="se-subtitle">{{ displayEdit.name || 'Edit Display' }}</div>
                             </div>
                         </div>
@@ -4630,7 +4656,7 @@ export default {
                     <div class="se-content" style="display:flex; flex-direction:column; gap:12px;">
                         <template v-if="!displayEdit.isSystem">
                             <div>
-                                <label class="se-label">显示端名称</label>
+                                <label class="se-label">{{ $t("display.editName") }}</label>
                                 <input v-model="displayEdit.name" type="text" class="se-input" placeholder="例如：主显示器">
                             </div>
                             <div>
@@ -4663,8 +4689,8 @@ export default {
                         <template v-if="displayEdit.isDisplay1">
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
-                                    <div class="se-label" style="margin-bottom:4px;">线路名合并</div>
-                                    <div class="se-display-option-desc">显示端左侧按多段线路名拼接展示</div>
+                                    <div class="se-label" style="margin-bottom:4px;">{{ $t("display.lineNameMerge") }}</div>
+                                    <div class="se-display-option-desc">{{ $t("display.lineNameMergeDesc") }}</div>
                                 </div>
                                 <label class="se-toggle-wrap">
                                     <input v-model="displayEdit.lineNameMerge" type="checkbox" class="se-toggle-input">
@@ -4719,20 +4745,63 @@ export default {
                         <template v-if="displayEdit.isDisplay2">
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
-                                    <div class="se-label" style="margin-bottom:4px;">显示器2 UI 样式</div>
-                                    <div class="se-display-option-desc">可在“当前UI”和“新UI”之间切换</div>
+                                    <div class="se-label" style="margin-bottom:4px;">{{ $t("display.display2UiVariant") }}</div>
+                                    <div class="se-display-option-desc">{{ $t("display.display2UiVariantDesc") }}</div>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:8px;">
-                                    <select v-model="displayEdit.display2UiVariant" class="se-input" style="width:160px; cursor:pointer;">
-                                        <option value="classic">当前UI</option>
-                                        <option value="modern">新UI</option>
-                                    </select>
+                                    <div ref="uiVariantDropdownRef" style="position:relative; width:160px;" class="custom-dropdown-container">
+                                        <div
+                                            @click.stop="toggleUiVariantDropdown"
+                                            class="se-input"
+                                            :style="dropdownTriggerStyle"
+                                        >
+                                            <span style="font-size:13px; font-weight:500;">{{ displayEdit.display2UiVariant === 'classic' ? $t('display.display2UiVariantClassic') : $t('display.display2UiVariantModern') }}</span>
+                                            <i class="fas fa-chevron-down" style="font-size:12px; color:var(--muted); transition: transform 0.2s" 
+                                               :style="{ transform: showUiVariantDropdown ? 'rotate(180deg)' : 'rotate(0deg)' }"></i>
+                                        </div>
+                                        <transition name="dropdown-fade">
+                                            <div
+                                                v-show="showUiVariantDropdown"
+                                                :style="uiVariantDropdownMenuStyle"
+                                                @click.stop
+                                            >
+                                                <div 
+                                                    @click.stop="selectUiVariant('classic')"
+                                                    style="padding:8px 12px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;"
+                                                    :style="{ 
+                                                        fontWeight: displayEdit.display2UiVariant === 'classic' ? '700' : '500',
+                                                        background: displayEdit.display2UiVariant === 'classic' ? glassItemActiveBackground() : 'transparent',
+                                                        color: 'var(--text)'
+                                                    }"
+                                                    @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                                                    @mouseout="$event.currentTarget.style.background=(displayEdit.display2UiVariant === 'classic' ? glassItemActiveBackground() : 'transparent')"
+                                                >
+                                                    <span style="font-size:13px">{{ $t('display.display2UiVariantClassic') }}</span>
+                                                    <i v-if="displayEdit.display2UiVariant === 'classic'" class="fas fa-check" style="color:var(--muted); font-size:12px;"></i>
+                                                </div>
+                                                <div 
+                                                    @click.stop="selectUiVariant('modern')"
+                                                    style="padding:8px 12px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;"
+                                                    :style="{ 
+                                                        fontWeight: displayEdit.display2UiVariant === 'modern' ? '700' : '500',
+                                                        background: displayEdit.display2UiVariant === 'modern' ? glassItemActiveBackground() : 'transparent',
+                                                        color: 'var(--text)'
+                                                    }"
+                                                    @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                                                    @mouseout="$event.currentTarget.style.background=(displayEdit.display2UiVariant === 'modern' ? glassItemActiveBackground() : 'transparent')"
+                                                >
+                                                    <span style="font-size:13px">{{ $t('display.display2UiVariantModern') }}</span>
+                                                    <i v-if="displayEdit.display2UiVariant === 'modern'" class="fas fa-check" style="color:var(--muted); font-size:12px;"></i>
+                                                </div>
+                                            </div>
+                                        </transition>
+                                    </div>
                                 </div>
                             </div>
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
-                                    <div class="se-label" style="margin-bottom:4px;">下一站 / 到站 页面显示时长</div>
-                                    <div class="se-display-option-desc">“下一站”白屏和“到站”白屏显示时长（秒）</div>
+                                    <div class="se-label" style="margin-bottom:4px;">{{ $t("display.nextStationDuration") }}</div>
+                                    <div class="se-display-option-desc">{{ $t("display.nextStationDurationDesc") }}</div>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <input v-model.number="displayEdit.nextStationDurationSeconds" type="number" min="1" max="60" step="1" class="se-input" style="width:100px; text-align:right;">
@@ -4755,8 +4824,8 @@ export default {
                     </div>
 
                     <div class="se-footer">
-                        <button type="button" class="se-btn se-btn-gray" @click="closeDisplayEditDialog">取消</button>
-                        <button type="button" class="se-btn se-btn-green" @click="saveDisplayEdit">保存</button>
+                        <button type="button" class="se-btn se-btn-gray" @click="closeDisplayEditDialog">{{ $t("display.btnCancel") }}</button>
+                        <button type="button" class="se-btn se-btn-green" @click="saveDisplayEdit">{{ $t("display.btnSave") }}</button>
                     </div>
                 </div>
             </div>

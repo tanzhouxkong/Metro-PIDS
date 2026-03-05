@@ -28,7 +28,31 @@
     "openAttempted": "已尝试打开 {count} 个显示端",
     "openSkipped": ",已跳过 {count} 个显示端（不符合显示条件）",
     "closeCommandSent": "已发送关闭命令到所有显示端",
-    "closeError": "关闭显示端时发生错误"
+    "closeError": "关闭显示端时发生错误",
+    "editTitle": "编辑显示端",
+    "editName": "显示端名称",
+    "lineNameMerge": "线路名合并",
+    "lineNameMergeDesc": "显示端左侧按多段线路名拼接展示",
+    "showAllStations": "横向拉伸适配（显示全部站点）",
+    "showAllStationsDesc": "无视站点数量，使完整线路图在一屏内全部显示（拉伸）",
+    "wallpaperSelect": "壁纸背景",
+    "wallpaperHint": "为下一站/到站以及结束页面添加背景图片壁纸",
+    "wallpaperUpload": "点击上传壁纸",
+    "wallpaperClear": "清除壁纸",
+    "wallpaperOpacity": "背景透明度 / 亮度覆盖",
+    "cTypeDisplay": "C 型显示器布局模式",
+    "cTypeDisplayDesc": "模拟在不同比例显示屏的布局（C 型仅有右侧半屏）",
+    "display2UiVariant": "显示器2 UI 样式",
+    "display2UiVariantDesc": "可在“1.0”和“2.0”之间切换",
+    "nextStationDuration": "下一站 / 到站 页面显示时长",
+    "nextStationDurationDesc": "“下一站”白屏和“到站”白屏显示时长（秒）",
+    "departDuration": "出站 页面显示时长",
+    "departDurationDesc": "列车刚起步时的提示页面，包含“欢迎乘坐”以及下一站名称等（秒）",
+    "secondsUnit": "秒",
+    "btnCancel": "取消",
+    "btnSave": "保存",
+    "display2UiVariantClassic": "1.0",
+    "display2UiVariantModern": "2.0"
   },
   "api": {
     "title": "API 服务器",
@@ -160,9 +184,9 @@
     "throughNotSelected": "未选择",
     "throughSelect": "选择",
     "throughStation": "贯通站点",
-    "throughNotDetected": "未检测到",    
-    "throughNoSegments": "暂无线路段，点击\"\u6dfb\u52a0\"\u6dfb\u52a0第一条线路",
-    "throughLineLabel": "线路",    
+    "throughNotDetected": "未检测到",
+    "throughNoSegments": "暂无线路段，点击\"添加\"添加第一条线路",
+    "throughLineLabel": "线路",
     "autoplayTitle": "自动播放",
     "autoplayEnable": "自动播放",
     "autoplayInterval": "启用间隔:",
@@ -222,7 +246,6 @@
     "btnCut": "剪切",
     "btnPaste": "粘贴",
     "btnDelete": "删除",
-
     "searchPlaceholder": "搜索线路、首站、末站 ...",
     "currentFolder": "当前文件夹",
     "defaultFolder": "默认",
@@ -230,7 +253,6 @@
     "newFolder": "新建文件夹",
     "open": "打开",
     "rename": "重命名",
-
     "ctxFolderOpen": "打开文件夹",
     "ctxRefresh": "刷新",
     "ctxFolderNewFolder": "新建文件夹",
@@ -253,25 +275,20 @@
     "saveNewFileError": "保存新文件失败",
     "deleteOldFileWarning": "删除旧文件失败，但新文件已保存",
     "renameLineError": "重命名线路失败",
-
     "dialogPromptTitle": "提示",
     "dialogInputFolderName": "请输入文件夹名称",
     "dialogCancel": "取消",
     "dialogConfirm": "确定",
-
     "dialogDeleteLine": "确定删除线路「{lineName}」吗？",
     "dialogInputPresetName": "请输入预设名称（留空使用建议名称）",
     "dialogDeletePreset": "确定要删除预设「{presetName}」吗？",
-
     "shortTurnLoadedPreset": "已加载预设: {presetName}",
     "shortTurnStart": "起点: {start}",
     "shortTurnEnd": "终点: {end}",
-
     "throughSavingBannerTitle": "正在保存贯通线路",
     "throughSavingLineName": "线路名称: {lineName}",
     "throughSavingSegmentCount": "线路段数: {count}",
     "throughSavingHint": "请点击右下角的“保存贯通线路”按钮，将保存到当前选中的文件夹",
-
     "emptyCloudLines": "暂无云控线路",
     "emptyFolder": "当前文件夹暂无线路",
     "noSearchResult": "无匹配结果",
@@ -283,6 +300,18 @@
     "throughSaveButton": "保存贯通线路",
     "saveLineButton": "保存当前线路",
     "saveZipButton": "保存为压缩包"
+  },
+  "colorPicker": {
+    "title": "取色",
+    "hexLabel": "十六进制 (Hex)",
+    "rgbLabel": "RGB",
+    "rgbRLabel": "R",
+    "rgbGLabel": "G",
+    "rgbBLabel": "B",
+    "pickFromScreen": "从屏幕取色",
+    "btnCancel": "取消",
+    "btnConfirm": "确定",
+    "closeLabel": "关闭"
   },
   "lineManagerWindow": {
     "noAvailableFolders": "当前没有可用文件夹，请先创建一个文件夹用于保存贯通线路：",
@@ -333,35 +362,28 @@
     "titleEdit": "站点编辑",
     "subtitleNew": "New Station",
     "subtitleEdit": "Edit Station",
-
     "nameZhLabel": "中文站名",
     "nameZhPlaceholder": "例如: 人民广场",
     "nameEnLabel": "英文站名",
     "nameEnPlaceholder": "例如: People's Square",
-
     "statusLabel": "站点状态",
     "statusNormal": "正常运营",
     "statusSuspended": "暂缓开通",
-
     "doorLabel": "开门方向",
     "doorLeft": "左侧",
     "doorRight": "右侧",
     "doorBoth": "双侧",
-
     "dockLabel": "停靠方向",
     "dockUp": "仅上行",
     "dockDown": "仅下行",
     "dockBoth": "双向",
-
     "turnbackLabel": "折返位置",
     "turnbackNone": "无",
     "turnbackPre": "站前折返",
     "turnbackPost": "站后折返",
-
     "expressLabel": "大站停靠",
     "expressStop": "停靠",
     "expressSkip": "跳过",
-
     "xferSectionTitle": "换乘线路",
     "audioSectionTitle": "车站音频",
     "audioCommonTitle": "通用音频",
@@ -412,7 +434,6 @@
     "xferExitBadge": "出站换乘",
     "xferSuspendedBadge": "暂缓开通",
     "xferColorTitle": "颜色（右键菜单可改）",
-
     "menuEditName": "编辑名称",
     "menuCopy": "复制",
     "menuPaste": "粘贴",
@@ -423,10 +444,8 @@
     "menuDelete": "删除",
     "menuCopyAll": "复制全部",
     "menuAddXfer": "添加换乘",
-
     "xferNameDialogTitle": "编辑线路名称",
     "xferNamePlaceholder": "线路名称/编号",
-
     "btnCancel": "取消",
     "btnConfirm": "确定",
     "btnSave": "保存"
@@ -441,5 +460,3 @@
     "inner": "内环"
   }
 }
-
-

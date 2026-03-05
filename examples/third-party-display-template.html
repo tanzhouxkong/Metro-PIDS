@@ -350,6 +350,25 @@
             wsRetryMs: 1500,
         };
 
+        // URL 参数覆盖：用于多屏协同入口下发 WS 端口/主机
+        try {
+            const sp = new URLSearchParams(window.location.search);
+            const qWsUrl = (sp.get('wsUrl') || '').trim();
+            if (qWsUrl) CONFIG.wsUrl = qWsUrl;
+
+            const qWsPort = (sp.get('wsPort') || sp.get('port') || '').trim();
+            const portNum = Number(qWsPort);
+            if (Number.isFinite(portNum) && portNum > 0 && portNum <= 65535) {
+                CONFIG.wsPort = Math.trunc(portNum);
+            }
+
+            const qWsHost = (sp.get('wsHost') || sp.get('host') || '').trim();
+            if (qWsHost) {
+                const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                CONFIG.wsUrl = `${proto}//${qWsHost}:${CONFIG.wsPort || 9400}`;
+            }
+        } catch (e) {}
+
         // ==================== 站点计算 API 配置 ====================
         // 注意：如果您的第三方显示器与 Metro-PIDS 主程序在同一项目中，
         // 可以使用 ES6 模块导入站点计算 API：

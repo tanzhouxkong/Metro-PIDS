@@ -34,7 +34,7 @@ export default {
     const footerLED = ref('') // LED滚动文字
     const footerWatermark = ref(true) // 是否显示水印
     const footerRotateIndex = ref(0)
-    const display2UiVariant = ref('classic') // classic=当前UI, modern=新UI
+    const display2UiVariant = ref('classic') // classic=1.0, modern=2.0
     const display2UiVariantClass = computed(() => display2UiVariant.value === 'modern' ? 'ui-modern' : 'ui-classic')
     const isModernUi = computed(() => display2UiVariant.value === 'modern')
     const useTwoRowLayout = computed(() => {

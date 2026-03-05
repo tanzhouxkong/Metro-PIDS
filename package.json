@@ -143,6 +143,7 @@
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
     "extract-zip": "^2.0.1",
+    "glob": "^13.0.6",
     "mica-electron": "^1.5.9",
     "photoviewer": "^3.11.1",
     "vue": "^3.5.26",

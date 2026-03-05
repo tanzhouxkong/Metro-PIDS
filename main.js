@@ -1095,6 +1095,7 @@ async function fetchDisplaySyncSettingsSnapshot() {
           return {
             display: {
               currentDisplayId: d.currentDisplayId || null,
+              display2UiVariant: d.display2UiVariant === 'modern' ? 'modern' : 'classic',
               display2NextStationDuration: d.display2NextStationDuration || 10000,
               display2FooterLED: d.display2FooterLED || '',
               display2FooterWatermark: d.display2FooterWatermark !== false,
@@ -2423,20 +2424,12 @@ function createWindow() {
         }
 
         // WebSocket Bridge 开关/端口变化时重启
-        const oldEnableWs = oldSettings.enableWebSocketBridge || false;
-        const newEnableWs = settings.enableWebSocketBridge || false;
+        const oldEnableWs = true; // 强制开启
+        const newEnableWs = true; // 强制开启
         const oldWsPort = parseInt(oldSettings.wsPort || 9400, 10);
         const newWsPort = parseInt(settings.wsPort || 9400, 10);
 
-        if (oldEnableWs !== newEnableWs) {
-          if (newEnableWs) {
-            console.log('[main] 用户启用了 WebSocket Bridge，端口:', newWsPort);
-            startWebSocketBridge(newWsPort);
-          } else {
-            console.log('[main] 用户禁用了 WebSocket Bridge');
-            stopWebSocketBridge();
-          }
-        } else if (newEnableWs && oldWsPort !== newWsPort) {
+        if (oldWsPort !== newWsPort) {
           console.log('[main] WebSocket Bridge 端口变更，重启:', newWsPort);
           startWebSocketBridge(newWsPort);
         }
@@ -7987,11 +7980,27 @@ app.whenReady().then(async () => {
   // 默认使用 BroadcastChannel 进行通信，如需使用 Python 等第三方客户端可启用 API 服务器
   try {
     const currentSettings = store ? store.get('settings', {}) : {};
+    // 我们强制开启WebSocket
+    try {
+      if (store && currentSettings && typeof currentSettings === 'object') {
+        if (currentSettings.enableWebSocketBridge !== true) {
+          currentSettings.enableWebSocketBridge = true;
+          store.set('settings', currentSettings);
+          console.log('[main] ✅ 强制启用 WebSocket Bridge');
+        }
+      }
+    } catch (e) {
+      console.warn('[main] ⚠️ WebSocket Bridge 迁移失败（忽略）:', e && e.message ? e.message : e);
+    }
     const shouldEnableApiServer = currentSettings.enableApiServer === true;
-    const shouldEnableWsBridge =
-      process.env.METRO_PIDS_ENABLE_WS_BRIDGE === '1' ||
-      currentSettings.enableWebSocketBridge === true;
-    const wsPortSetting = currentSettings.wsPort || currentSettings.wsPortOverride || null;
+    const shouldEnableWsBridge = process.env.METRO_PIDS_DISABLE_WS_BRIDGE === '1' ? false : true; // 强制始终开启
+    let wsPortSetting = currentSettings.wsPort || currentSettings.wsPortOverride || 9400;
+    const httpPortTarget = process.env.PIDS_MULTI_HTTP_PORT || 9517;
+    if (wsPortSetting == httpPortTarget) {
+      wsPortSetting = 9400;
+      currentSettings.wsPort = 9400;
+      try { store.set('settings', currentSettings); } catch(e) {}
+    }
     
     if (shouldEnableApiServer && displayApiServer) {
       console.log('[main] 检测到用户已启用 API 服务器，正在启动...');

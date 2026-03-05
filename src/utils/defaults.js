@@ -239,7 +239,7 @@ export const DEFAULT_SETTINGS = {
     blurEnabled: true,
     lineNameMerge: false,
     enableApiServer: false,
-    enableWebSocketBridge: false,
+  enableWebSocketBridge: true,
     wsPort: 9400,
     vehicleAudioEnabled: true,
     keys: { arrdep: "Enter", prev: "ArrowLeft", next: "ArrowRight" },

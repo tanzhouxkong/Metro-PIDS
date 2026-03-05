@@ -185,7 +185,7 @@
           <label for="host">桥接地址</label>
           <input id="host" placeholder="192.168.x.x" />
         </div>
-        <div>
+        <div style="display:none;">
           <label for="port">端口</label>
           <input id="port" type="number" min="1" max="65535" value="9400" />
         </div>
@@ -592,8 +592,19 @@
     els.connect.addEventListener('click', connectWs);
     els.disconnect.addEventListener('click', disconnectWs);
 
-    // 初始化默认主机
-    els.host.value = window.location.hostname || '';
+    // 初始化默认主机/端口（支持从 URL 参数覆盖，便于端口自动切换或自定义端口）
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const qHost = (sp.get('wsHost') || sp.get('host') || '').trim();
+      const qPort = (sp.get('wsPort') || sp.get('port') || '').trim();
+      els.host.value = qHost || (window.location.hostname || '');
+      const portNum = Number(qPort);
+      if (Number.isFinite(portNum) && portNum > 0 && portNum <= 65535) {
+        els.port.value = String(Math.trunc(portNum));
+      }
+    } catch (_) {
+      els.host.value = window.location.hostname || '';
+    }
     autoRedirectIfNeeded().then((redirected) => {
       if (!redirected) {
         loadDisplays();
