@@ -107,6 +107,18 @@
     "qqGroupName": "Metro-PIDS 交流グループ",
     "githubIssue": "GitHub Issue：",
     "githubIssueDesc": "問題や提案を送信",
+    "releaseNotes": {
+      "title": "リリースノート",
+      "source": "データソース：{source}",
+      "sourceWorker": "サーバー",
+      "sourceGithub": "GitHub",
+      "loading": "リリースノートを読み込み中...",
+      "emptyTitle": "リリースノートはありません",
+      "emptySubtitle": "後でもう一度お試しになるか、ネットワーク接続をご確認ください",
+      "preRelease": "プレリリース",
+      "draft": "ドラフト",
+      "noBody": "リリースノートの説明はありません"
+    },
     "update": {
       "checking": "確認中...",
       "error": "エラー：{error}",
@@ -121,7 +133,11 @@
       "clearCacheAndRedownload": "キャッシュをクリアして再ダウンロード",
       "githubManualDownload": "GitHubから手動ダウンロード",
       "skipThisVersion": "このバージョンをスキップ",
-      "updateReadyHint": "更新の準備が整いました。ボタンをクリックしてアプリを再起動すると、インストール手順なしで自動的に更新が完了します。"
+      "updateReadyHint": "更新の準備が整いました。ボタンをクリックしてアプリを再起動すると、インストール手順なしで自動的に更新が完了します。",
+      "promptTitle": "新しいバージョン {version} が見つかりました",
+      "promptForce": "このバージョンは強制更新です。できるだけ早く更新してください。",
+      "promptOptional": "最新の機能と修正を利用するため、今すぐの更新をおすすめします。",
+      "promptBody": "更新内容は下のリリースノートをご確認ください。"
     }
   },
   "console": {
@@ -238,6 +254,7 @@
   },
   "lineManager": {
     "title": "路線マネージャー",
+    "folderAndLines": "フォルダと路線管理",
     "stationManager": "駅管理",
     "stationManagerHint": "駅のバーをドラッグして順序を変更できます。駅を右クリックして編集、削除、コピー、カット、ペーストができ、空白部分を右クリックして新しい駅を作成できます",
     "btnNew": "新規",

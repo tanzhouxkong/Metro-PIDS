@@ -107,6 +107,18 @@
     "qqGroupName": "Metro-PIDS 交流群",
     "githubIssue": "GitHub Issue：",
     "githubIssueDesc": "提交問題或建議",
+    "releaseNotes": {
+      "title": "更新日誌",
+      "source": "資料來源：{source}",
+      "sourceWorker": "伺服器",
+      "sourceGithub": "GitHub",
+      "loading": "正在載入更新日誌...",
+      "emptyTitle": "暫無更新日誌",
+      "emptySubtitle": "請稍後再試或檢查網路連線",
+      "preRelease": "預發布",
+      "draft": "草稿",
+      "noBody": "暫無更新說明"
+    },
     "update": {
       "checking": "檢查中...",
       "error": "錯誤：{error}",
@@ -121,7 +133,11 @@
       "clearCacheAndRedownload": "清除快取並重新下載",
       "githubManualDownload": "從 GitHub 手動下載",
       "skipThisVersion": "跳過此版本",
-      "updateReadyHint": "更新已準備就緒，點選按鈕重新啟動應用即可自動完成更新，無需走安裝流程。"
+      "updateReadyHint": "更新已準備就緒，點選按鈕重新啟動應用即可自動完成更新，無需走安裝流程。",
+      "promptTitle": "發現新版本 {version}",
+      "promptForce": "此版本為強制更新版本，請儘快完成更新。",
+      "promptOptional": "建議立即更新以獲得最新功能和修復。",
+      "promptBody": "更新內容請查看下方更新日誌。"
     }
   },
   "console": {
@@ -238,6 +254,7 @@
   },
   "lineManager": {
     "title": "路線管理員",
+    "folderAndLines": "資料夾與路線管理",
     "stationManager": "站點管理",
     "stationManagerHint": "拖曳站點條可改變順序，右鍵站點可進行編輯、刪除、複製、剪下、貼上操作，右鍵空白處可新增站點",
     "btnNew": "新增",

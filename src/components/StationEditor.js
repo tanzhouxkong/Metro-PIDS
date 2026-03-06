@@ -268,8 +268,9 @@ export default {
         /* 对齐更新日志弹窗：外阴影 + 内描边 */
         box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset;
         background: rgba(255,255,255,0.85);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        /* 强化毛玻璃，和右键菜单一致的强度 */
+        backdrop-filter: blur(24px) saturate(190%);
+        -webkit-backdrop-filter: blur(24px) saturate(190%);
         border: 1px solid rgba(255,255,255,0.3);
       }
 
@@ -277,7 +278,9 @@ export default {
         display:flex; align-items:center; justify-content:space-between;
         padding: 24px 28px;
         border-bottom: 1px solid rgba(0,0,0,0.08);
-        background: rgba(255,255,255,0.40);
+        background: rgba(255,255,255,0.85);
+        backdrop-filter: blur(24px) saturate(190%);
+        -webkit-backdrop-filter: blur(24px) saturate(190%);
       }
       .se-header-left{ display:flex; align-items:center; gap:12px; min-width:0; }
       .se-icon{
@@ -307,7 +310,9 @@ export default {
         flex:1;
         overflow:auto;
         padding:24px 28px;
-        background: rgba(255,255,255,0.35);
+        background: rgba(255,255,255,0.85);
+        backdrop-filter: blur(24px) saturate(190%);
+        -webkit-backdrop-filter: blur(24px) saturate(190%);
       }
 
       .se-grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
@@ -444,7 +449,9 @@ export default {
       .se-footer{
         padding: 20px 28px;
         border-top: 1px solid rgba(0,0,0,0.08);
-        background: rgba(255,255,255,0.40);
+        background: rgba(255,255,255,0.85);
+        backdrop-filter: blur(24px) saturate(190%);
+        -webkit-backdrop-filter: blur(24px) saturate(190%);
         display:flex; gap:12px; justify-content:flex-end;
       }
       .se-btn{
@@ -466,17 +473,17 @@ export default {
       /* Dark mode */
       @media (prefers-color-scheme: dark) {
         .se-dialog{ background: rgba(30,30,30,0.85) !important; border: 1px solid rgba(255,255,255,0.1); }
-        .se-header{ background: rgba(30,30,30,0.40) !important; border-bottom-color: rgba(255,255,255,0.1); }
-        .se-content{ background: rgba(30,30,30,0.30) !important; }
-        .se-footer{ background: rgba(30,30,30,0.40) !important; border-top-color: rgba(255,255,255,0.1); }
+        .se-header{ background: rgba(30,30,30,0.85) !important; border-bottom-color: rgba(255,255,255,0.1); }
+        .se-content{ background: rgba(30,30,30,0.85) !important; }
+        .se-footer{ background: rgba(30,30,30,0.85) !important; border-top-color: rgba(255,255,255,0.1); }
         .se-input, .se-seg, .se-mini, .se-tag{ background: rgba(50,50,50,0.60); border-color: rgba(255,255,255,0.12); }
         .se-color-swatch{ border-color: rgba(255,255,255,0.12); }
         .se-close:hover{ background: rgba(255,255,255,0.06); }
       }
       :global(.dark) .se-dialog, :global([data-theme="dark"]) .se-dialog { background: rgba(30,30,30,0.85) !important; border: 1px solid rgba(255,255,255,0.1); }
-      :global(.dark) .se-header, :global([data-theme="dark"]) .se-header { background: rgba(30,30,30,0.40) !important; border-bottom-color: rgba(255,255,255,0.1) !important; }
-      :global(.dark) .se-content, :global([data-theme="dark"]) .se-content { background: rgba(30,30,30,0.30) !important; }
-      :global(.dark) .se-footer, :global([data-theme="dark"]) .se-footer { background: rgba(30,30,30,0.40) !important; border-top-color: rgba(255,255,255,0.1) !important; }
+      :global(.dark) .se-header, :global([data-theme="dark"]) .se-header { background: rgba(30,30,30,0.85) !important; border-bottom-color: rgba(255,255,255,0.1) !important; }
+      :global(.dark) .se-content, :global([data-theme="dark"]) .se-content { background: rgba(30,30,30,0.85) !important; }
+      :global(.dark) .se-footer, :global([data-theme="dark"]) .se-footer { background: rgba(30,30,30,0.85) !important; border-top-color: rgba(255,255,255,0.1) !important; }
       :global(.dark) .se-input, :global([data-theme="dark"]) .se-input,
       :global(.dark) .se-seg, :global([data-theme="dark"]) .se-seg,
       :global(.dark) .se-mini, :global([data-theme="dark"]) .se-mini,

@@ -107,6 +107,18 @@
     "qqGroupName": "Metro-PIDS Group",
     "githubIssue": "GitHub Issue:",
     "githubIssueDesc": "Submit issues or suggestions",
+    "releaseNotes": {
+      "title": "Release Notes",
+      "source": "Source: {source}",
+      "sourceWorker": "Server",
+      "sourceGithub": "GitHub",
+      "loading": "Loading release notes...",
+      "emptyTitle": "No release notes",
+      "emptySubtitle": "Please try again later or check your network connection",
+      "preRelease": "Pre-release",
+      "draft": "Draft",
+      "noBody": "No release notes description"
+    },
     "update": {
       "checking": "Checking...",
       "error": "Error: {error}",
@@ -121,7 +133,11 @@
       "clearCacheAndRedownload": "Clear Cache & Redownload",
       "githubManualDownload": "Download Manually from GitHub",
       "skipThisVersion": "Skip This Version",
-      "updateReadyHint": "Update is ready. Click the button to restart the app and complete the update automatically – no installation steps required."
+      "updateReadyHint": "Update is ready. Click the button to restart the app and complete the update automatically – no installation steps required.",
+      "promptTitle": "New version {version} found",
+      "promptForce": "This version is mandatory. Please update as soon as possible.",
+      "promptOptional": "We recommend updating now to get the latest features and fixes.",
+      "promptBody": "Please see the release notes below for update details."
     }
   },
   "console": {
@@ -238,6 +254,7 @@
   },
   "lineManager": {
     "title": "Line Manager",
+    "folderAndLines": "Folders & Lines",
     "stationManager": "Station Manager",
     "stationManagerHint": "Drag station bars to reorder. Right‑click a station to edit, delete, copy, cut, or paste. Right‑click empty area to create a new station.",
     "btnNew": "New",

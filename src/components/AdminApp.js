@@ -896,31 +896,35 @@ export default {
                     <div class="item-txt" style="display:flex; align-items:center; gap:8px;">
                         <div class="drag-handle" style="color:var(--muted); cursor:grab; padding-right:8px;"><i class="fas fa-bars"></i></div>
                         <span style="font-weight:bold; color:var(--muted); width:30px;">[{{i+1}}]</span>
-                        <div style="display:flex; flex-direction:column;">
-                            <span style="font-weight:bold;">{{ st.name }} <span style="font-weight:normal; font-size:12px; color:var(--muted); margin-left:4px;">{{ st.en }}</span></span>
-                            <div v-if="st.xfer && st.xfer.length" style="display:flex; gap:4px; margin-top:2px;">
-                                <span v-for="(x, xi) in st.xfer" :key="xi" class="badge" :style="{
-                                    background: x.suspended ? '#ccc' : x.color, 
-                                    color: x.suspended ? '#666' : '#fff', 
-                                    padding:'1px 4px', 
-                                    borderRadius:'2px', 
-                                    fontSize:'10px',
-                                    border: x.suspended ? '1px solid #999' : 'none',
-                                    display: (x.suspended || x.exitTransfer) ? 'inline-flex' : 'inline',
-                                    alignItems: 'center',
-                                    gap: '2px'
-                                }">
-                                    {{ x.line }}
-                                    <span v-if="x.suspended" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">{{ $t('stationEditor.statusSuspended') }}</span>
-                                    <span v-else-if="x.exitTransfer" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">{{ $t('stationEditor.menuExitTransfer') }}</span>
+                        <div style="display:flex; flex-direction:column; gap:4px; min-width:0;">
+                            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; min-width:0;">
+                                <span style="font-weight:bold; display:flex; align-items:center; gap:6px; min-width:0;">
+                                    <span style="white-space:nowrap;">{{ st.name }}</span>
+                                    <span style="font-weight:normal; font-size:12px; color:var(--muted);">{{ st.en }}</span>
                                 </span>
-                            </div>
-                            <!-- 双向上行下行站台停靠-->
-                            <div style="margin-top:6px; display:flex; gap:6px; align-items:center;">
-                                <span v-if="st.dock && st.dock === 'up'" class="badge" style="background:#3498db; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.dockUp') }}</span>
-                                <span v-if="st.dock && st.dock === 'down'" class="badge" style="background:#2ecc71; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.dockDown') }}</span>
-                                <span v-if="st.expressStop !== false" class="badge" style="background:#ffa502; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.expressLabel') }}</span>
-                                <!-- 不显示 '两向' 标签于控制面板 -->
+                                <div v-if="st.xfer && st.xfer.length" style="display:flex; flex-wrap:wrap; gap:4px;">
+                                    <span v-for="(x, xi) in st.xfer" :key="xi" class="badge" :style="{
+                                        background: x.suspended ? '#ccc' : x.color,
+                                        color: x.suspended ? '#666' : '#fff',
+                                        padding:'1px 4px',
+                                        borderRadius:'2px',
+                                        fontSize:'14px',
+                                        border: x.suspended ? '1px solid #999' : 'none',
+                                        display: (x.suspended || x.exitTransfer) ? 'inline-flex' : 'inline',
+                                        alignItems: 'center',
+                                        gap: '2px'
+                                    }">
+                                        {{ x.line }}
+                                        <span v-if="x.suspended" style="font-size:8px; background:#999; color:#fff; padding:0 2px; border-radius:2px; margin-left:2px;">{{ $t('stationEditor.statusSuspended') }}</span>
+                                        <span v-else-if="x.exitTransfer" style="font-size:8px; background:rgba(0,0,0,0.4); color:#fff; padding:0 2px; border-radius:2px; margin-left:2px; font-weight:bold;">{{ $t('stationEditor.menuExitTransfer') }}</span>
+                                    </span>
+                                </div>
+                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                    <span v-if="st.dock && st.dock === 'up'" class="badge" style="background:#3498db; color:#fff; font-size:14px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.dockUp') }}</span>
+                                    <span v-if="st.dock && st.dock === 'down'" class="badge" style="background:#2ecc71; color:#fff; font-size:14px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.dockDown') }}</span>
+                                    <span v-if="st.expressStop !== false" class="badge" style="background:#ffa502; color:#fff; font-size:14px; padding:2px 6px; border-radius:3px;">{{ $t('stationEditor.expressLabel') }}</span>
+                                    <!-- 不显示 '两向' 标签于控制面板 -->
+                                </div>
                             </div>
                         </div>
                         <span v-if="st.skip" class="badge" style="background:var(--btn-org-bg); font-size:10px; padding:2px 4px; border-radius:2px;">{{ $t('stationEditor.statusSuspended') }}</span>

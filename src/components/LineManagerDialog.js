@@ -111,19 +111,30 @@ export default {
       return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)';
     },
     getDialogBackdrop() {
-      return this.isBlurEnabled() ? 'blur(20px) saturate(180%)' : 'none';
+      return this.isBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none';
     },
     getDialogBorder() {
       if (!this.isBlurEnabled()) {
         return this.isDarkTheme() ? '1px solid rgba(255,255,255,0.16)' : '1px solid rgba(15,23,42,0.16)';
       }
-      return '1px solid rgba(255,255,255,0.1)';
+      return '1px solid rgba(255,255,255,0.3)';
     },
     getDialogContentBg() {
       if (!this.isBlurEnabled()) {
         return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
       }
       return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)';
+    },
+    getHeaderBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
+      return this.isDarkTheme() ? 'rgba(30,30,30,0.40)' : 'rgba(255,255,255,0.40)';
+    },
+    getDialogShadow() {
+      return this.isBlurEnabled()
+        ? '0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset'
+        : '0 20px 60px rgba(0,0,0,0.3)';
     }
   },
   mounted() {
@@ -154,15 +165,17 @@ export default {
              }" 
              @click.self="handleCancel">
           <div @click.stop 
-            :style="{ background: getGlassBg(), backdropFilter: getDialogBackdrop(), WebkitBackdropFilter: getDialogBackdrop(), border: getDialogBorder(), borderRadius:'16px', padding:'0', width:'420px', maxWidth:'90%', boxShadow:'0 20px 60px rgba(0,0,0,0.4)', overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">
+            :style="{ background: getGlassBg(), backdropFilter: getDialogBackdrop(), WebkitBackdropFilter: getDialogBackdrop(), border: getDialogBorder(), borderRadius:'20px', padding:'0', width:'420px', maxWidth:'90%', boxShadow: getDialogShadow(), overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">
             <!-- Header -->
             <div :style="{ 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center', 
               padding: '24px 28px', 
-              borderBottom: '1px solid var(--divider, rgba(0,0,0,0.1))', 
-              background: 'linear-gradient(135deg, ' + getDialogColor() + '15 0%, ' + getDialogColor() + '08 100%)' 
+              borderBottom: '1px solid rgba(0,0,0,0.08)', 
+              background: getHeaderBg(), 
+              backdropFilter: getDialogBackdrop(),
+              WebkitBackdropFilter: getDialogBackdrop()
             }">
               <div style="display:flex; align-items:center; gap:12px;">
                 <div :style="{ 
@@ -190,7 +203,7 @@ export default {
             </div>
             
             <!-- Content -->
-            <div :style="{ padding:'24px 28px', background: getDialogContentBg() }">
+            <div :style="{ padding:'24px 28px', background: getDialogContentBg(), backdropFilter: getDialogBackdrop(), WebkitBackdropFilter: getDialogBackdrop() }">
               <!-- 提示信息 -->
               <div v-if="message" style="margin-bottom:20px; color:var(--text, #333); font-size:14px; line-height:1.7;">{{ message }}</div>
               
@@ -203,6 +216,12 @@ export default {
                 @focus="$event.target.select(); $event.target.style.borderColor='var(--accent, #1677ff)'"
                 @blur="$event.target.style.borderColor='var(--divider, rgba(0,0,0,0.1))'"
                 style="width:100%; padding:12px 16px; margin-bottom:20px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;"
+                :style="{
+                  width:'100%', padding:'12px 16px', marginBottom:'20px', border:'2px solid var(--divider, rgba(0,0,0,0.1))', borderRadius:'8px',
+                  background: isDarkTheme() ? 'rgba(50,50,50,0.70)' : 'var(--input-bg, #ffffff)',
+                  color: isDarkTheme() ? '#f3f3f3' : 'var(--text, #333)',
+                  fontSize:'14px', transition:'all 0.2s', outline:'none', boxSizing:'border-box'
+                }"
                 autofocus
               />
               
@@ -211,9 +230,20 @@ export default {
                 <button 
                   v-if="type !== 'alert'"
                   @click="handleCancel"
-                  style="padding:10px 20px; background:var(--btn-gray-bg, #f5f5f5); color:var(--btn-gray-text, #666); border:none; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.2s; min-width:80px;"
-                  @mouseover="$event.target.style.background='var(--bg, #e5e5e5)'"
-                  @mouseout="$event.target.style.background='var(--btn-gray-bg, #f5f5f5)'"
+                  :style="{
+                    padding:'10px 20px',
+                    background: isDarkTheme() ? 'rgba(255,255,255,0.10)' : 'var(--btn-gray-bg, #f5f5f5)',
+                    color: isDarkTheme() ? '#f0f0f0' : 'var(--btn-gray-text, #666)',
+                    border:'none',
+                    borderRadius:'8px',
+                    fontSize:'14px',
+                    fontWeight:'500',
+                    cursor:'pointer',
+                    transition:'all 0.2s',
+                    minWidth:'80px'
+                  }"
+                  @mouseover="$event.target.style.background = isDarkTheme() ? 'rgba(255,255,255,0.16)' : 'var(--bg, #e5e5e5)'"
+                  @mouseout="$event.target.style.background = isDarkTheme() ? 'rgba(255,255,255,0.10)' : 'var(--btn-gray-bg, #f5f5f5)'"
                 >
                   取消
                 </button>

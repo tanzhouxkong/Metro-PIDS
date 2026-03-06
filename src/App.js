@@ -613,10 +613,10 @@ export default {
                     </div>
                     <div>
                       <h2 style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">
-                        发现新版本 {{ updatePromptInfo && updatePromptInfo.version ? updatePromptInfo.version : '' }}
+                        {{ $t('about.update.promptTitle', { version: updatePromptInfo && updatePromptInfo.version ? updatePromptInfo.version : '' }) }}
                       </h2>
                       <div style="font-size:12px; color:var(--muted, #999); margin-top:2px;">
-                        {{ updatePromptForce ? '此版本为强制更新版本，请尽快完成更新。' : '建议立即更新以获得最新功能和修复。' }}
+                        {{ updatePromptForce ? $t('about.update.promptForce') : $t('about.update.promptOptional') }}
                       </div>
                     </div>
                   </div>
@@ -624,7 +624,7 @@ export default {
                 <!-- Content -->
                 <div class="release-notes-content" style="flex:1; padding:18px 24px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); display:flex; flex-direction:column; gap:14px;">
                   <div style="font-size:13px; color:var(--text, #333); line-height:1.8;">
-                    更新内容可在“设置 &gt; 版本与更新 &gt; 查看更新日志”中查看。
+                    {{ $t('about.update.promptBody') }}
                   </div>
                   <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:4px;">
                     <button 
@@ -633,7 +633,7 @@ export default {
                       style="min-width:120px; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
                       @click="handleUpdatePromptCancel"
                     >
-                      取消
+                      关闭
                     </button>
                     <button 
                       v-else
@@ -648,7 +648,7 @@ export default {
                       style="min-width:140px; background:#3b82f6; color:white; border:none; padding:9px 18px; border-radius:999px; font-weight:700; font-size:13px; cursor:pointer;"
                       @click="handleUpdatePromptUpdate"
                     >
-                      <i class="fas fa-download" style="margin-right:6px;"></i>立即更新
+                      <i class="fas fa-download" style="margin-right:6px;"></i>立即重启
                     </button>
                   </div>
                 </div>

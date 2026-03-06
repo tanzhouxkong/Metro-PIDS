@@ -107,6 +107,18 @@
     "qqGroupName": "Metro-PIDS 교류 그룹",
     "githubIssue": "GitHub Issue:",
     "githubIssueDesc": "문제 또는 제안 제출",
+    "releaseNotes": {
+      "title": "릴리스 노트",
+      "source": "데이터 출처: {source}",
+      "sourceWorker": "서버",
+      "sourceGithub": "GitHub",
+      "loading": "릴리스 노트를 불러오는 중...",
+      "emptyTitle": "릴리스 노트가 없습니다",
+      "emptySubtitle": "잠시 후 다시 시도하거나 네트워크 연결을 확인하세요",
+      "preRelease": "프리릴리스",
+      "draft": "초안",
+      "noBody": "릴리스 노트 설명이 없습니다"
+    },
     "update": {
       "checking": "확인 중...",
       "error": "오류: {error}",
@@ -121,7 +133,11 @@
       "clearCacheAndRedownload": "캐시 지우고 다시 다운로드",
       "githubManualDownload": "GitHub에서 수동 다운로드",
       "skipThisVersion": "이 버전 건너뛰기",
-      "updateReadyHint": "업데이트 준비가 완료되었습니다. 버튼을 클릭하여 앱을 다시 시작하면 설치 절차 없이 자동으로 업데이트가 완료됩니다."
+      "updateReadyHint": "업데이트 준비가 완료되었습니다. 버튼을 클릭하여 앱을 다시 시작하면 설치 절차 없이 자동으로 업데이트가 완료됩니다.",
+      "promptTitle": "새 버전 {version}을(를) 찾았습니다",
+      "promptForce": "이 버전은 강제 업데이트입니다. 가능한 한 빨리 업데이트하세요.",
+      "promptOptional": "최신 기능과 수정 사항을 위해 지금 업데이트하는 것을 권장합니다.",
+      "promptBody": "업데이트 내용은 아래 릴리스 노트를 확인하세요."
     }
   },
   "console": {
@@ -238,6 +254,7 @@
   },
   "lineManager": {
     "title": "노선 관리자",
+    "folderAndLines": "폴더 및 노선 관리",
     "stationManager": "역 관리",
     "stationManagerHint": "역 바를 드래그하여 순서를 변경할 수 있습니다. 역을 마우스 오른쪽 버튼으로 클릭하여 편집, 삭제, 복사, 잘라내기, 붙여넣기를 할 수 있으며, 빈 곳을 마우스 오른쪽 버튼으로 클릭하여 새 역을 만들 수 있습니다.",
     "btnNew": "새로 만들기",

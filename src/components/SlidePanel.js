@@ -160,21 +160,21 @@ export default {
 
         const isDarkThemeActive = () => dropdownThemeDark.value
         const isGlassBlurEnabled = () => settings.blurEnabled !== false
-        const glassBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(22px) saturate(180%)' : 'none')
-        const glassTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(18px) saturate(170%)' : 'none')
-        const contextMenuBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%) contrast(1.06)' : 'none')
+        const glassBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none')
+        const glassTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none')
+        const contextMenuBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none')
 
         const glassMenuBackground = () => {
             if (!isGlassBlurEnabled()) return isDarkThemeActive() ? '#1c1c20' : '#ffffff'
-            return isDarkThemeActive() ? 'rgba(28, 28, 32, 0.78)' : 'rgba(255,255,255,0.58)'
+            return isDarkThemeActive() ? 'rgba(30, 30, 30, 0.40)' : 'rgba(255,255,255,0.40)'
         }
         const glassMenuBorder = () => {
             if (!isGlassBlurEnabled()) return isDarkThemeActive() ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.16)'
-            return isDarkThemeActive() ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)'
+            return 'rgba(255,255,255,0.30)'
         }
-        const glassMenuShadow = () => (isDarkThemeActive()
-            ? '0 14px 36px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(255,255,255,0.06)'
-            : '0 14px 36px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.5)')
+        const glassMenuShadow = () => (
+            '0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset'
+        )
         const glassItemHoverBackground = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.32)')
         const glassItemActiveBackground = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.38)')
         const glassDividerColor = () => (isDarkThemeActive() ? 'rgba(255,255,255,0.14)' : 'rgba(224,224,224,0.5)')
@@ -189,7 +189,7 @@ export default {
             backdropFilter: glassBackdropFilter(),
             WebkitBackdropFilter: glassBackdropFilter(),
             border: `1px solid ${glassMenuBorder()}`,
-            borderRadius: '12px',
+            borderRadius: '20px',
             boxShadow: glassMenuShadow(),
             maxHeight: 'min(460px, 56vh)',
             overflowY: 'auto',
@@ -207,7 +207,7 @@ export default {
             backdropFilter: glassBackdropFilter(),
             WebkitBackdropFilter: glassBackdropFilter(),
             border: `1px solid ${glassMenuBorder()}`,
-            borderRadius: '12px',
+            borderRadius: '20px',
             boxShadow: glassMenuShadow(),
             maxHeight: 'min(460px, 56vh)',
             overflowY: 'auto',
@@ -2960,6 +2960,11 @@ export default {
         const releaseNotes = ref([]);
         const loadingNotes = ref(false);
         const releaseNotesSource = ref(''); // 'worker' | 'github' | ''
+        const releaseNotesSourceText = computed(() => {
+            if (!releaseNotesSource.value) return '';
+            const key = releaseNotesSource.value === 'worker' ? 'sourceWorker' : 'sourceGithub';
+            return i18n.global.t(`about.releaseNotes.${key}`);
+        });
 
         // 加载更新日志（仅从服务器 Worker 获取，不降级到 GitHub）
         const loadReleaseNotes = async () => {
@@ -3036,7 +3041,7 @@ export default {
 
         // 格式化更新日志内容（将Markdown转换为简单的HTML）
         const formatReleaseBody = (body, release) => {
-            if (!body) return '<div style="color:var(--muted, #999); font-style:italic;">暂无更新说明</div>';
+            if (!body) return `<div style="color:var(--muted, #999); font-style:italic;">${i18n.global.t('about.releaseNotes.noBody')}</div>`;
             const githubRepo = 'tanzhouxkong/Metro-PIDS-';
             const githubBaseUrl = 'https://github.com';
             const githubRawBaseUrl = 'https://raw.githubusercontent.com';
@@ -4098,7 +4103,7 @@ export default {
             showColorPicker, colorPickerInitialColor, onColorConfirm,
             startWithLock, stopWithUnlock, startRecordingWithCheck,
             changeServiceMode, serviceModeLabel,
-            showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
+            showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, releaseNotesSourceText, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             presetContextMenu, showPresetContextMenu, closePresetContextMenu, applyPresetFromMenu, deletePresetFromMenu, sharePresetOffline, importPresetFromShareCode, generateShareId,
             openLineManagerWindow, openLineManagerForSave,
@@ -4933,14 +4938,14 @@ export default {
                 <div style="border-radius:20px; padding:0; max-width:900px; max-height:85vh; width:92%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset; overflow:hidden; transform:scale(1); transition:transform 0.2s;" 
                      class="release-notes-dialog">
                     <!-- Header -->
-                    <div class="release-notes-header" style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid rgba(0,0,0,0.08); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
+                    <div class="release-notes-header" style="display:flex; justify-content:space-between; align-items:center; padding:24px 28px; border-bottom:1px solid rgba(0,0,0,0.08); background: rgba(255,255,255,0.40); backdrop-filter:blur(24px) saturate(190%); -webkit-backdrop-filter:blur(24px) saturate(190%);">
                         <div style="display:flex; align-items:center; gap:12px;">
                             <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #1677ff 0%, #FF9F43 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(22,119,255,0.3);">
                                 <i class="fas fa-newspaper" style="color:white; font-size:18px;"></i>
                             </div>
                             <div>
-                                <h2 style="margin:0; font-size:22px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">更新日志</h2>
-                                <div v-if="releaseNotesSource" style="font-size:11px; color:var(--muted, #888); margin-top:2px;">数据来源：{{ releaseNotesSource === 'worker' ? '服务器' : 'GitHub' }}</div>
+                                <h2 style="margin:0; font-size:22px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">{{ $t('about.releaseNotes.title') }}</h2>
+                                <div v-if="releaseNotesSourceText" style="font-size:11px; color:var(--muted, #888); margin-top:2px;">{{ $t('about.releaseNotes.source', { source: releaseNotesSourceText }) }}</div>
                             </div>
                         </div>
                         <button @click="closeReleaseNotes" 
@@ -4952,20 +4957,20 @@ export default {
                     </div>
                     
                     <!-- Content -->
-                    <div class="release-notes-content" style="flex:1; overflow-y:auto; padding:24px 28px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
+                    <div class="release-notes-content" style="flex:1; overflow-y:auto; padding:24px 28px; background: rgba(255,255,255,0.35); backdrop-filter:blur(24px) saturate(190%); -webkit-backdrop-filter:blur(24px) saturate(190%);">
                         <!-- Loading State -->
                         <div v-if="loadingNotes" style="text-align:center; padding:60px 20px;">
                             <div style="display:inline-block; width:48px; height:48px; border:4px solid var(--divider, rgba(0,0,0,0.1)); border-top-color:var(--accent, #1677ff); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:16px;"></div>
-                            <div style="color:var(--muted, #999); font-size:14px;">正在加载更新日志...</div>
+                            <div style="color:var(--muted, #999); font-size:14px;">{{ $t('about.releaseNotes.loading') }}</div>
                         </div>
                         
                         <!-- Empty State -->
                         <div v-else-if="releaseNotes.length === 0" style="text-align:center; padding:60px 20px;">
-                            <div class="release-notes-empty-icon" style="width:80px; height:80px; margin:0 auto 20px; border-radius:50%; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                            <div class="release-notes-empty-icon" style="width:80px; height:80px; margin:0 auto 20px; border-radius:50%; backdrop-filter:blur(24px) saturate(190%); -webkit-backdrop-filter:blur(24px) saturate(190%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
                                 <i class="fas fa-inbox" style="font-size:32px; color:var(--muted, #999);"></i>
                             </div>
-                            <div style="color:var(--muted, #999); font-size:14px; margin-bottom:8px;">暂无更新日志</div>
-                            <div style="color:var(--muted, #ccc); font-size:12px;">请稍后再试或检查网络连接</div>
+                            <div style="color:var(--muted, #999); font-size:14px; margin-bottom:8px;">{{ $t('about.releaseNotes.emptyTitle') }}</div>
+                            <div style="color:var(--muted, #ccc); font-size:12px;">{{ $t('about.releaseNotes.emptySubtitle') }}</div>
                         </div>
                         
                         <!-- Release List -->
@@ -4973,7 +4978,7 @@ export default {
                             <div v-for="(release, index) in releaseNotes" 
                                  :key="index" 
                                  class="release-note-card"
-                                 style="backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s;"
+                                 style="backdrop-filter:blur(24px) saturate(190%); -webkit-backdrop-filter:blur(24px) saturate(190%); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s;"
                                  @mouseover="$event.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.15)'; $event.currentTarget.style.transform='translateY(-2px)'"
                                  @mouseout="$event.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'; $event.currentTarget.style.transform='translateY(0)'">
                                 <!-- Release Header -->
@@ -4981,13 +4986,13 @@ export default {
                                     <div style="flex:1; min-width:0;">
                                         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
                                             <h3 style="margin:0; font-size:18px; font-weight:700; color:var(--text, #333); letter-spacing:-0.3px;">{{ release.name || release.tag_name }}</h3>
-                                            <span v-if="release.prerelease" 
-                                                  style="background:linear-gradient(135deg, #ffa502 0%, #ff6348 100%); color:white; padding:3px 10px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; box-shadow:0 2px 6px rgba(255,165,2,0.3);">
-                                                预发布
+                                                                                        <span v-if="release.prerelease" 
+                                                                                                    style="background:linear-gradient(135deg, #ffa502 0%, #ff6348 100%); color:white; padding:3px 10px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; box-shadow:0 2px 6px rgba(255,165,2,0.3);">
+                                                                                                {{ $t('about.releaseNotes.preRelease') }}
                                             </span>
-                                            <span v-if="release.draft" 
-                                                  style="background:#95a5a6; color:white; padding:3px 10px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
-                                                草稿
+                                                                                        <span v-if="release.draft" 
+                                                                                                    style="background:#95a5a6; color:white; padding:3px 10px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+                                                                                                {{ $t('about.releaseNotes.draft') }}
                                             </span>
                                         </div>
                                         <div style="display:flex; align-items:center; gap:12px; font-size:12px; color:var(--muted, #999);">
@@ -5169,12 +5174,12 @@ export default {
         
         /* 预设右键菜单样式 - 参照站点菜单风格 */
         .preset-context-menu {
-            background: rgba(255, 255, 255, 0.56);
-            backdrop-filter: blur(24px) saturate(190%) contrast(1.06);
-            -webkit-backdrop-filter: blur(24px) saturate(190%) contrast(1.06);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            border-radius: 8px;
-            box-shadow: 0 14px 36px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.5), 0 0 0 1px rgba(255,255,255,0.16);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(24px) saturate(190%);
+            -webkit-backdrop-filter: blur(24px) saturate(190%);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset;
             min-width: 140px;
             padding: 6px 0;
             z-index: 9999;
@@ -5192,7 +5197,7 @@ export default {
         }
         
         .preset-context-menu-item:hover {
-            background: rgba(255,255,255,0.34);
+            background: rgba(255,255,255,0.50);
         }
         
         .preset-context-menu-item.danger {
@@ -5217,7 +5222,7 @@ export default {
         /* 暗色模式支持 */
         @media (prefers-color-scheme: dark) {
             .preset-context-menu {
-                background: rgba(30, 30, 30, 0.95);
+                background: rgba(30, 30, 30, 0.85);
                 border-color: rgba(255, 255, 255, 0.1);
             }
             
@@ -5232,7 +5237,7 @@ export default {
         
         :global(.dark) .preset-context-menu,
         :global([data-theme="dark"]) .preset-context-menu {
-            background: rgba(30, 30, 30, 0.95);
+            background: rgba(30, 30, 30, 0.40);
             border-color: rgba(255, 255, 255, 0.1);
         }
         
@@ -5267,31 +5272,43 @@ export default {
             background: rgba(255,255,255,0.08);
         }
         
-        /* iOS 风格毛玻璃效果 - 亮色模式 */
+        /* iOS 风格毛玻璃效果 - 亮色模式（与站点编辑弹窗保持一致的玻璃模糊强度） */
         .release-notes-dialog {
             background: rgba(255, 255, 255, 0.85) !important;
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            backdrop-filter: blur(24px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
             border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset;
         }
         .release-notes-header {
             background: rgba(255, 255, 255, 0.4) !important;
+            backdrop-filter: blur(24px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
         }
         .release-notes-content {
-            background: rgba(255, 255, 255, 0.3) !important;
+            background: rgba(255, 255, 255, 0.35) !important;
+            backdrop-filter: blur(24px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
         }
         /* iOS 风格毛玻璃效果 - 暗色模式 */
         @media (prefers-color-scheme: dark) {
             .release-notes-dialog {
                 background: rgba(30, 30, 30, 0.85) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(24px) saturate(190%) !important;
+                -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.42), 0 0 0 0.5px rgba(255,255,255,0.1) inset;
             }
             .release-notes-header {
                 background: rgba(30, 30, 30, 0.4) !important;
                 border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+                backdrop-filter: blur(24px) saturate(190%) !important;
+                -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
             }
             .release-notes-content {
-                background: rgba(30, 30, 30, 0.3) !important;
+                background: rgba(30, 30, 30, 0.35) !important;
+                backdrop-filter: blur(24px) saturate(190%) !important;
+                -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
             }
         }
         /* 如果应用有暗色模式类 */
@@ -5299,20 +5316,29 @@ export default {
         :global([data-theme="dark"]) .release-notes-dialog {
             background: rgba(30, 30, 30, 0.85) !important;
             border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(24px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.42), 0 0 0 0.5px rgba(255,255,255,0.1) inset;
         }
         :global(.dark) .release-notes-header,
         :global([data-theme="dark"]) .release-notes-header {
             background: rgba(30, 30, 30, 0.4) !important;
             border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+            backdrop-filter: blur(24px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
         }
         :global(.dark) .release-notes-content,
         :global([data-theme="dark"]) .release-notes-content {
-            background: rgba(30, 30, 30, 0.3) !important;
+            background: rgba(30, 30, 30, 0.35) !important;
+            backdrop-filter: blur(24px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
         }
         /* 更新日志卡片样式 */
         .release-note-card {
             background: rgba(255, 255, 255, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(24px) saturate(190%);
+            -webkit-backdrop-filter: blur(24px) saturate(190%);
         }
         @media (prefers-color-scheme: dark) {
             .release-note-card {
