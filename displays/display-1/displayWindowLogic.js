@@ -136,6 +136,50 @@ const DISPLAY_SNAPSHOT_KEY = 'metro_pids_display_snapshot';
 // =========================
 const DISPLAY3_DEV_FLAGS_KEY = 'metro-pids:display3:devFlags';
 const DISPLAY1_WALLPAPER_KEY = 'metro-pids:display1:wallpaper';
+const DISPLAY1_VIRTUAL_POSITION_KEY = 'metro-pids:display1:virtualPosition';
+
+function normalizeDisplay1VirtualPosition(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (['left', 'l', '左', '左侧'].includes(text)) return 'left';
+  if (['right', 'r', '右', '右侧'].includes(text)) return 'right';
+  if (['center', 'middle', 'c', 'mid', '中', '中间', '居中'].includes(text)) return 'center';
+  return 'center';
+}
+
+let display1VirtualPosition = 'center';
+
+function applyDisplay1VirtualPosition(value) {
+  display1VirtualPosition = normalizeDisplay1VirtualPosition(value);
+  try {
+    window.localStorage.setItem(DISPLAY1_VIRTUAL_POSITION_KEY, display1VirtualPosition);
+    console.log('[Display-1] 已应用屏幕虚拟位置：', {
+      raw: value,
+      normalized: display1VirtualPosition
+    });
+  } catch (e) {
+    // ignore persistence errors
+  }
+
+  // 通知 UI（状态栏控件）刷新
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('metroPids:display1:virtualPosition', {
+        detail: { virtualPosition: display1VirtualPosition }
+      }));
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function restoreDisplay1VirtualPositionPreference() {
+  try {
+    const saved = window.localStorage.getItem(DISPLAY1_VIRTUAL_POSITION_KEY);
+    applyDisplay1VirtualPosition(saved || 'center');
+  } catch (e) {
+    display1VirtualPosition = 'center';
+  }
+}
 
 function _parseBoolLike(v) {
   if (v === null || v === undefined) return null;
@@ -1071,32 +1115,93 @@ const displayStyleSheet = `
   justify-content: center;
   margin-top: 6px;
 }
-#display-app .as-door-img {
-    font-size: 120px;
-    color: var(--theme);
-    filter: drop-shadow(0 5px 15px rgba(0,0,0,0.2));
-    animation: pulse-door 2s infinite;
-    z-index: 2;
+#display-app .as-door-img.door-indicator {
+  width: 300px;
+  height: 200px;
+  filter: drop-shadow(0 5px 15px rgba(0,0,0,0.2));
+  z-index: 2;
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 10px;
+  box-sizing: content-box;
 }
-#display-app .door-arrow {
-    font-size: 80px;
-    color: #ddd;
-    opacity: 0.3;
-    transition: 0.3s;
-    margin: 0 20px;
+
+#display-app .as-door-img .door-arrow-svg {
+  width: 100%;
+  height: 100%;
 }
-#display-app .door-arrow.active {
-    color: var(--theme);
-    opacity: 1;
+#display-app .as-door-img .door-panel-icon .leaf-body {
+  fill: var(--theme);
+  stroke: transparent;
+  stroke-width: 0;
 }
-#display-app .door-arrow.l-arrow.active { animation: arrow-move-left 2s infinite; }
-#display-app .door-arrow.r-arrow.active { animation: arrow-move-right 2s infinite; }
-@keyframes arrow-move-left { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-20px); } }
-@keyframes arrow-move-right { 0%,100% { transform: translateX(0); } 50% { transform: translateX(20px); } }
-@keyframes pulse-door { 0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.1); opacity: 0.8; }
-    100% { transform: scale(1); opacity: 1; }
+#display-app .as-door-img .door-panel-icon .leaf-window {
+  fill: #ffffff;
+}
+#display-app .as-door-img .door-panel-icon .door-center-line {
+  stroke: transparent;
+  stroke-width: 1.6;
+}
+
+/* 门片开启动画（对齐显示器3 的视觉效果） */
+#display-app .as-door-img.door-indicator.mode-this .door-leaf,
+#display-app .as-door-img.door-indicator.mode-both .door-leaf,
+#display-app .as-door-img.door-indicator.mode-left .door-leaf.left,
+#display-app .as-door-img.door-indicator.mode-right .door-leaf.right {
+  opacity: 1;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.35));
+}
+
+#display-app .as-door-img.door-indicator.mode-this .door-leaf.left,
+#display-app .as-door-img.door-indicator.mode-both .door-leaf.left {
+  animation: door-open-left 1.4s linear infinite alternate;
+}
+
+#display-app .as-door-img.door-indicator.mode-this .door-leaf.right,
+#display-app .as-door-img.door-indicator.mode-both .door-leaf.right {
+  animation: door-open-right 1.4s linear infinite alternate;
+}
+
+#display-app .as-door-img.door-indicator.mode-left .door-leaf.left {
+  animation: door-open-left 1.4s linear infinite alternate;
+}
+
+#display-app .as-door-img.door-indicator.mode-right .door-leaf.right {
+  animation: door-open-right 1.4s linear infinite alternate;
+}
+
+#display-app .as-door-img.door-indicator.mode-opposite .door-leaf {
+  opacity: 0.72;
+}
+
+#display-app .as-door-img .door-no-open-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 114px;
+  height: 114px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: no-open-pulse 1.2s linear infinite alternate;
+  display: none;
+}
+
+@keyframes door-open-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-8px); }
+}
+
+@keyframes door-open-right {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(8px); }
+}
+
+@keyframes no-open-pulse {
+  0% { transform: translate(-50%, -50%) scale(0.92); }
+  100% { transform: translate(-50%, -50%) scale(1.08); }
 }
 #display-app #watermark {
     position: fixed;
@@ -2560,6 +2665,10 @@ export function initDisplayWindow(rootElement) {
   if (!root) return () => {};
 
   let display1WallpaperState = null;
+  if (typeof window !== 'undefined') {
+    // 恢复显示器1 的虚拟定位偏好（缺省居中）
+    restoreDisplay1VirtualPositionPreference();
+  }
   try {
     const pathname = window.location && window.location.pathname ? window.location.pathname : '';
     if (typeof pathname === 'string' && pathname.includes('/display-1/')) {
@@ -2693,8 +2802,118 @@ export function initDisplayWindow(rootElement) {
   const wsHost = (wsQuery.get('wsHost') || window.location.hostname || 'localhost').trim();
   const wsPort = (wsQuery.get('wsPort') || '9400').trim();
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProto}//${wsHost}:${wsPort}`;
+  // 可选鉴权：与主进程 WebSocket Bridge 的 METRO_PIDS_WS_TOKEN 对应。
+  // 支持在 URL 中传 wsToken 或 token：?ws=1&wsHost=...&wsPort=...&wsToken=xxx
+  const wsToken = String(wsQuery.get('wsToken') || wsQuery.get('token') || '').trim();
+  const wsUrl = (() => {
+    const base = `${wsProto}//${wsHost}:${wsPort}`;
+    if (!wsToken) return base;
+    try {
+      const u = new URL(base);
+      u.searchParams.set('token', wsToken);
+      return u.toString();
+    } catch (e) {
+      return `${base}/?token=${encodeURIComponent(wsToken)}`;
+    }
+  })();
   const isExternalBrowserRenderMode = wsEnabled && !(typeof window !== 'undefined' && window.electronAPI);
+
+  // 浏览器环境下，多屏协同依赖 WS 与主程序同步；连接失败时显示提示弹窗
+  let wsFirstSyncReceived = false;
+  let wsPromptTimer = null;
+  let wsPromptMutedUntil = 0;
+  const ensureWsAccessPrompt = () => {
+    const container = root;
+    if (!container) return null;
+    let overlay = container.querySelector('#ws-access-prompt');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'ws-access-prompt';
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '10002';
+    overlay.style.display = 'none';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.background = 'rgba(0,0,0,0.45)';
+    overlay.style.pointerEvents = 'auto';
+
+    const card = document.createElement('div');
+    card.style.width = 'min(860px, calc(100vw - 64px))';
+    card.style.borderRadius = '12px';
+    card.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+    card.style.background = 'rgba(255,255,255,0.98)';
+    card.style.color = '#333';
+    card.style.fontFamily = '"Microsoft YaHei", sans-serif';
+    card.style.padding = '18px 20px';
+    card.style.userSelect = 'none';
+
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="font-size:22px;font-weight:900;color:#ff5722;line-height:1;">⚠</div>
+        <div style="flex:1;">
+          <div style="font-size:16px;font-weight:900;">无法连接到客户端</div>
+          <div id="ws-access-prompt-reason" style="margin-top:4px;font-size:13px;color:#666;line-height:1.45;">正在等待客户端同步数据...</div>
+        </div>
+        <button id="ws-access-prompt-close" style="width:32px;height:28px;border:0;border-radius:6px;background:rgba(0,0,0,0.06);cursor:pointer;font-size:18px;line-height:28px;color:#333;">×</button>
+      </div>
+      <div style="margin-top:12px;font-size:13px;color:#333;line-height:1.6;">
+        <div>此显示页运行在浏览器中，需要启动客户端。</div>
+        <div style="margin-top:6px;color:#666;">检查项：1、 客户端是否正常运行。 2、 设备在同一局域网。 3、 多屏协同 IP 地址正确。 </div>
+      </div>
+    `;
+
+    overlay.appendChild(card);
+    container.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector('#ws-access-prompt-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        overlay.style.display = 'none';
+        // 静默一段时间，避免频繁弹出
+        wsPromptMutedUntil = Date.now() + 30_000;
+      });
+    }
+    return overlay;
+  };
+
+  const setWsAccessPromptVisible = (visible, reasonText) => {
+    if (!isExternalBrowserRenderMode) return;
+    if (Date.now() < wsPromptMutedUntil) return;
+    const overlay = ensureWsAccessPrompt();
+    if (!overlay) return;
+    if (visible) {
+      const reasonEl = overlay.querySelector('#ws-access-prompt-reason');
+      if (reasonEl && typeof reasonText === 'string' && reasonText.trim()) {
+        reasonEl.textContent = reasonText.trim();
+      }
+      overlay.style.display = 'flex';
+    } else {
+      overlay.style.display = 'none';
+    }
+  };
+
+  const startWsAccessPromptWatchdog = () => {
+    if (!isExternalBrowserRenderMode || !wsEnabled) return;
+    if (wsPromptTimer) return;
+
+    // 首次进入时给一点时间建立连接/同步
+    setTimeout(() => {
+      if (wsFirstSyncReceived) return;
+      setWsAccessPromptVisible(true, '尚未收到主程序同步数据（SYNC），请检查 WebSocket 连接/鉴权/网络。');
+    }, 2500);
+
+    wsPromptTimer = setInterval(() => {
+      if (wsFirstSyncReceived) {
+        setWsAccessPromptVisible(false);
+        clearInterval(wsPromptTimer);
+        wsPromptTimer = null;
+        return;
+      }
+      setWsAccessPromptVisible(true, '仍未收到主程序同步数据（SYNC）。');
+    }, 8000);
+  };
   const getAdaptiveRenderMetrics = () => {
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || SCALER_W;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || SCALER_H;
@@ -2755,6 +2974,10 @@ export function initDisplayWindow(rootElement) {
     }
 
     wsClient.addEventListener('open', () => {
+      // 若服务端启用了 token 鉴权：优先 HELLO(携带 token) 以兼容“消息级鉴权”，同时 URL 中也会带 token 做连接级鉴权。
+      if (wsToken) {
+        try { wsClient.send(JSON.stringify({ t: 'HELLO', token: wsToken, meta: { system: 'browser-display' } })); } catch (e) {}
+      }
       try { wsClient.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
     });
 
@@ -2766,6 +2989,16 @@ export function initDisplayWindow(rootElement) {
         msg = null;
       }
       if (!msg || !msg.t) return;
+
+      if (msg.t === 'SYNC') {
+        wsFirstSyncReceived = true;
+        setWsAccessPromptVisible(false);
+      }
+
+      if (msg.t === 'AUTH_REQUIRED') {
+        console.warn('[WS] 需要鉴权：请在 URL 添加 wsToken=... 或关闭主程序 METRO_PIDS_WS_TOKEN');
+        setWsAccessPromptVisible(true, 'WebSocket 需要鉴权：请在 URL 添加 wsToken=...');
+      }
       handleBroadcastMessage({ data: msg });
     });
 
@@ -2774,11 +3007,17 @@ export function initDisplayWindow(rootElement) {
       if (wsManualClose) return;
       if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
       wsReconnectTimer = setTimeout(connectWsBridgeClient, 1500);
+      if (!wsFirstSyncReceived) {
+        setWsAccessPromptVisible(true, 'WebSocket 已断开，正在重连...');
+      }
     });
 
     wsClient.addEventListener('error', () => {
       if (wsClient) {
         try { wsClient.close(); } catch (e) {}
+      }
+      if (!wsFirstSyncReceived) {
+        setWsAccessPromptVisible(true, 'WebSocket 连接错误，正在重试...');
       }
     });
   };
@@ -3037,6 +3276,122 @@ export function initDisplayWindow(rootElement) {
 
   // 创建状态栏
   createStatusBar(root);
+
+  // 显示器1：点击顶栏左侧“Metro PIDS”弹窗选择屏幕虚拟位置（left/center/right）
+  const setupDisplay1VirtualPositionPopup = () => {
+    if (!root.classList.contains('display-1')) return;
+    const titleEl = root.querySelector('.header .app-title');
+    if (!titleEl) return;
+    if (titleEl.dataset && titleEl.dataset.vposBound === '1') return;
+    if (titleEl.dataset) titleEl.dataset.vposBound = '1';
+
+    const ensureModal = () => {
+      let overlay = root.querySelector('#display1-vpos-modal');
+      if (overlay) return overlay;
+
+      overlay = document.createElement('div');
+      overlay.id = 'display1-vpos-modal';
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.zIndex = '10003';
+      overlay.style.display = 'none';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.background = 'rgba(0,0,0,0.45)';
+      overlay.style.pointerEvents = 'auto';
+
+      const card = document.createElement('div');
+      card.style.width = 'min(680px, calc(100vw - 64px))';
+      card.style.borderRadius = '12px';
+      card.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+      card.style.background = 'rgba(255,255,255,0.98)';
+      card.style.color = '#333';
+      card.style.fontFamily = '"Microsoft YaHei", sans-serif';
+      card.style.padding = '16px 18px';
+      card.style.userSelect = 'none';
+
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="font-size:18px;font-weight:900;color:#333;">屏幕虚拟位置</div>
+          <div style="flex:1;"></div>
+          <button id="display1-vpos-close" style="width:32px;height:28px;border:0;border-radius:6px;background:rgba(0,0,0,0.06);cursor:pointer;font-size:18px;line-height:28px;color:#333;">×</button>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;">
+          <button data-v="left" class="display1-vpos-btn" style="height:34px;min-width:120px;padding:0 14px;border:1px solid rgba(0,0,0,0.12);border-radius:10px;background:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;font-weight:900;color:#333;">左侧屏幕</button>
+          <button data-v="center" class="display1-vpos-btn" style="height:34px;min-width:120px;padding:0 14px;border:1px solid rgba(0,0,0,0.12);border-radius:10px;background:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;font-weight:900;color:#333;">中间屏幕</button>
+          <button data-v="right" class="display1-vpos-btn" style="height:34px;min-width:120px;padding:0 14px;border:1px solid rgba(0,0,0,0.12);border-radius:10px;background:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;font-weight:900;color:#333;">右侧屏幕</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#666;line-height:1.6;">用于多屏协同：选择当前显示器在实际屏幕墙上的虚拟位置（左/中/右）。</div>
+      `;
+
+      overlay.appendChild(card);
+      root.appendChild(overlay);
+
+      const closeBtn = overlay.querySelector('#display1-vpos-close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          overlay.style.display = 'none';
+        });
+      }
+
+      overlay.addEventListener('click', () => {
+        overlay.style.display = 'none';
+      });
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
+      const refreshButtons = () => {
+        const v = display1VirtualPosition || 'center';
+        const btns = overlay.querySelectorAll('.display1-vpos-btn');
+        btns.forEach((b) => {
+          const active = b && b.getAttribute('data-v') === v;
+          b.style.background = active ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.7)';
+          b.style.borderColor = active ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.12)';
+        });
+      };
+
+      overlay._refreshButtons = refreshButtons;
+      refreshButtons();
+
+      const btns = overlay.querySelectorAll('.display1-vpos-btn');
+      btns.forEach((b) => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const next = b.getAttribute('data-v') || 'center';
+          applyDisplay1VirtualPosition(next);
+          try { renderDisp(); } catch (err) {}
+          try { postRealtimeMessage({ t: 'CMD', cmd: 'SET_VIRTUAL_POSITION', displayId: 'display-1', virtualPosition: next }); } catch (err) {}
+          try { overlay._refreshButtons && overlay._refreshButtons(); } catch (err) {}
+          overlay.style.display = 'none';
+        });
+      });
+
+      try {
+        window.addEventListener('metroPids:display1:virtualPosition', () => {
+          try { overlay._refreshButtons && overlay._refreshButtons(); } catch (e) {}
+        });
+      } catch (e) {}
+
+      return overlay;
+    };
+
+    const openModal = () => {
+      const overlay = ensureModal();
+      if (!overlay) return;
+      try { overlay._refreshButtons && overlay._refreshButtons(); } catch (e) {}
+      overlay.style.display = 'flex';
+    };
+
+    titleEl.style.cursor = 'pointer';
+    titleEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openModal();
+    });
+  };
+
+  setupDisplay1VirtualPositionPopup();
 
   // display-1：壁纸（由主程序“编辑显示端”下发；本地 localStorage 作为兜底缓存）
   if (root.classList.contains('display-1')) {
@@ -3761,13 +4116,12 @@ export function initDisplayWindow(rootElement) {
     
     const doorCn = locateId('as-door-msg-cn');
     const doorEn = locateId('as-door-msg-en');
-    const doorIcon = root.querySelector('.as-door-img i');
+    const doorPanel = root.querySelector('.as-door-img.door-indicator');
+    const doorNoOpenIcon = root.querySelector('.as-door-img .door-no-open-icon');
     const lArrow = root.querySelector('.l-arrow');
     const rArrow = root.querySelector('.r-arrow');
-    if (doorIcon) {
-      doorIcon.className = 'fas fa-door-open';
-      doorIcon.style.transform = 'none';
-    }
+
+    // 旧版箭头样式统一清理（模板中已移除，保留防御性代码）
     if (lArrow) lArrow.classList.remove('active');
     if (rArrow) rArrow.classList.remove('active');
     // 根据车站 turnback 设置计算有效开门侧
@@ -3793,22 +4147,106 @@ export function initDisplayWindow(rootElement) {
       }
     }
 
-    if (effectiveDoor === 'right') {
-      if (doorCn) doorCn.innerText = '右侧开门';
-      if (doorEn) doorEn.innerText = 'Doors will be opened on the right side';
-      if (doorIcon) doorIcon.style.transform = 'scaleX(-1)';
-      if (rArrow) rArrow.classList.add('active');
-    } else if (effectiveDoor === 'both') {
-      if (doorCn) doorCn.innerText = '双侧开门';
-      if (doorEn) doorEn.innerText = 'Doors will be opened on both sides';
-      if (doorIcon) doorIcon.className = 'fas fa-dungeon';
-      if (lArrow) lArrow.classList.add('active');
-      if (rArrow) rArrow.classList.add('active');
+    // === 虚拟定位 + 开门提示（与显示器3 对齐的门逻辑） ===
+    const actualSide = effectiveDoor; // 真实有效开门侧：left / right / both
+    const virtualSide = display1VirtualPosition || 'center'; // 屏幕虚拟朝向：left / right / center
+
+    let doorPresentation = {
+      mode: 'this',        // this / both / left / right / opposite
+      layout: 'left',      // left / right / center
+      cn: '本侧开门',
+      en: 'Doors will be opened on this side',
+      showForbidden: false // 是否显示禁用图标
+    };
+
+    if (actualSide === 'both') {
+      doorPresentation = {
+        mode: 'both',
+        layout: 'center',
+        cn: '双侧开门',
+        en: 'Doors will be opened on both sides',
+        showForbidden: false
+      };
+    } else if (virtualSide === 'center') {
+      if (actualSide === 'left') {
+        doorPresentation = {
+          mode: 'left',
+          layout: 'left',
+          cn: '左侧开门',
+          en: 'Doors will be opened on the left side',
+          showForbidden: false
+        };
+      } else if (actualSide === 'right') {
+        doorPresentation = {
+          mode: 'right',
+          layout: 'right',
+          cn: '右侧开门',
+          en: 'Doors will be opened on the right side',
+          showForbidden: false
+        };
+      } else {
+        doorPresentation = {
+          mode: 'this',
+          layout: 'center',
+          cn: '本侧开门',
+          en: 'Doors will be opened on this side',
+          showForbidden: false
+        };
+      }
+    } else if (actualSide === 'left' || actualSide === 'right') {
+      const sameSide = actualSide === virtualSide;
+      if (sameSide) {
+        doorPresentation = {
+          mode: 'this',
+          layout: actualSide,
+          cn: '本侧开门',
+          en: 'Doors will be opened on this side',
+          showForbidden: false
+        };
+      } else {
+        doorPresentation = {
+          mode: 'opposite',
+          layout: actualSide,
+          cn: '对侧开门',
+          en: 'Doors will be opened on the opposite side',
+          showForbidden: true
+        };
+      }
     } else {
-      if (doorCn) doorCn.innerText = '左侧开门';
-      if (doorEn) doorEn.innerText = 'Doors will be opened on this side';
-      if (lArrow) lArrow.classList.add('active');
+      doorPresentation = {
+        mode: 'this',
+        layout: virtualSide === 'right' ? 'right' : 'left',
+        cn: '本侧开门',
+        en: 'Doors will be opened on this side',
+        showForbidden: false
+      };
     }
+
+    if (doorCn) doorCn.innerText = doorPresentation.cn;
+    if (doorEn) doorEn.innerText = doorPresentation.en;
+
+    // 按模式切换门片动画 class
+    if (doorPanel) {
+      doorPanel.classList.remove('mode-this', 'mode-both', 'mode-left', 'mode-right', 'mode-opposite');
+      const modeClass = `mode-${doorPresentation.mode}`;
+      doorPanel.classList.add(modeClass);
+    }
+
+    // 禁用图标显示控制（对侧开门时高亮“禁止开门”标记）
+    if (doorNoOpenIcon) {
+      doorNoOpenIcon.style.display = doorPresentation.showForbidden ? 'block' : 'none';
+    }
+    // 车门主体区域填充逻辑（已关闭，统一使用 CSS 默认样式）
+    // try {
+    //   if (doorPanel) {
+    //     const leafBodies = doorPanel.querySelectorAll('.leaf-body');
+    //     leafBodies.forEach((el) => {
+    //       el.style.fill = 'var(--theme)';
+    //     });
+    //   }
+    // } catch (e) {
+    //   // 忽略车门填充异常，避免影响主流程
+    // }
     // 上下行提示
     if (st.dock && st.dock !== 'both') {
       if (st.dock === 'up') {
@@ -5406,14 +5844,8 @@ export function initDisplayWindow(rootElement) {
           };
           const dotThemeColor = getDotThemeColor();
 
-          // 暂缓停靠车站：缩小为灰色空心圆
-          if (st.skip) {
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#ccc';
-            dot.style.width = C3_TUNING.dotSizeSkip + 'px';
-            dot.style.height = C3_TUNING.dotSizeSkip + 'px';
-          } else if (isPassedNode) {
-            // 已过站：显示灰色（对齐显示器1：保持 passed 类语义，并用 important 压过贯通段色）
+          // 暂缓停靠车站 & 已过站：统一为灰色空心圆，尺寸等参数保持一致
+          if (st.skip || isPassedNode) {
             dot.style.background = '#fff';
             dot.style.setProperty('border-color', '#ccc', 'important');
             dot.style.boxShadow = 'none';
@@ -6740,6 +7172,12 @@ export function initDisplayWindow(rootElement) {
         if (root.classList.contains('display-1') && data.settings && data.settings.display) {
           const wpUrl = data.settings.display.display1WallpaperDataUrl;
           const wpOpacity = data.settings.display.display1WallpaperOpacity;
+          const vPos =
+            (data.settings.display.displays &&
+              data.settings.display.displays['display-1'] &&
+              data.settings.display.displays['display-1'].virtualPosition) ||
+            data.settings.display.display1VirtualPosition ||
+            data.settings.display1VirtualPosition;
           if (wpUrl !== undefined || wpOpacity !== undefined) {
             if (!display1WallpaperState) display1WallpaperState = loadDisplay1WallpaperState() || { dataUrl: '', opacity: 0.35 };
             const next = { ...display1WallpaperState };
@@ -6751,6 +7189,9 @@ export function initDisplayWindow(rootElement) {
             display1WallpaperState = next;
             applyDisplay1Wallpaper(root, display1WallpaperState);
             saveDisplay1WallpaperState(display1WallpaperState);
+          }
+          if (vPos !== undefined) {
+            applyDisplay1VirtualPosition(vPos);
           }
         }
       } catch (e) {
@@ -6867,6 +7308,7 @@ export function initDisplayWindow(rootElement) {
   if (wsEnabled) {
     wsManualClose = false;
     connectWsBridgeClient();
+    startWsAccessPromptWatchdog();
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('message', handleWindowMessage);
@@ -6900,6 +7342,10 @@ export function initDisplayWindow(rootElement) {
     stopWsBridgeClient();
     if (typeof window !== 'undefined') {
       window.removeEventListener('message', handleWindowMessage);
+    }
+    if (wsPromptTimer) {
+      clearInterval(wsPromptTimer);
+      wsPromptTimer = null;
     }
     if (clockTimer) clearInterval(clockTimer);
     cleanupArrivalTimer();
