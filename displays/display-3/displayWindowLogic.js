@@ -1,4 +1,4 @@
-﻿// 判断站点是否因运营模式被跳过
+// 判断站点是否因运营模式被跳过
 /**
  * 解析颜色标记文本，将 <color>文字</> 转换为带颜色的HTML
  * 支持颜色名称、十六进制、RGB格式
@@ -2584,8 +2584,116 @@ export function initDisplayWindow(rootElement) {
   const wsHost = (wsQuery.get('wsHost') || window.location.hostname || 'localhost').trim();
   const wsPort = (wsQuery.get('wsPort') || '9400').trim();
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProto}//${wsHost}:${wsPort}`;
+  // 可选鉴权：与主进程 WebSocket Bridge 的 METRO_PIDS_WS_TOKEN 对应。
+  // 支持在 URL 中传 wsToken 或 token：?ws=1&wsHost=...&wsPort=...&wsToken=xxx
+  const wsToken = String(wsQuery.get('wsToken') || wsQuery.get('token') || '').trim();
+  const wsUrl = (() => {
+    const base = `${wsProto}//${wsHost}:${wsPort}`;
+    if (!wsToken) return base;
+    try {
+      const u = new URL(base);
+      u.searchParams.set('token', wsToken);
+      return u.toString();
+    } catch (e) {
+      return `${base}/?token=${encodeURIComponent(wsToken)}`;
+    }
+  })();
   const isExternalBrowserRenderMode = wsEnabled && !(typeof window !== 'undefined' && window.electronAPI);
+
+  // 浏览器环境下，多屏协同依赖 WS 与主程序同步；连接失败时显示提示弹窗
+  let wsFirstSyncReceived = false;
+  let wsPromptTimer = null;
+  let wsPromptMutedUntil = 0;
+  const ensureWsAccessPrompt = () => {
+    const container = root;
+    if (!container) return null;
+    let overlay = container.querySelector('#ws-access-prompt');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'ws-access-prompt';
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '10002';
+    overlay.style.display = 'none';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.background = 'rgba(0,0,0,0.45)';
+    overlay.style.pointerEvents = 'auto';
+
+    const card = document.createElement('div');
+    card.style.width = 'min(860px, calc(100vw - 64px))';
+    card.style.borderRadius = '12px';
+    card.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+    card.style.background = 'rgba(255,255,255,0.98)';
+    card.style.color = '#333';
+    card.style.fontFamily = '"Microsoft YaHei", sans-serif';
+    card.style.padding = '18px 20px';
+    card.style.userSelect = 'none';
+
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="font-size:22px;font-weight:900;color:#ff5722;line-height:1;">⚠</div>
+        <div style="flex:1;">
+          <div style="font-size:16px;font-weight:900;">无法连接到客户端</div>
+          <div id="ws-access-prompt-reason" style="margin-top:4px;font-size:13px;color:#666;line-height:1.45;">正在等待客户端同步数据...</div>
+        </div>
+        <button id="ws-access-prompt-close" style="width:32px;height:28px;border:0;border-radius:6px;background:rgba(0,0,0,0.06);cursor:pointer;font-size:18px;line-height:28px;color:#333;">×</button>
+      </div>
+      <div style="margin-top:12px;font-size:13px;color:#333;line-height:1.6;">
+        <div>此显示页运行在浏览器中，需要启动客户端。</div>
+        <div style="margin-top:6px;color:#666;">检查项：1、 客户端是否正常运行。 2、 设备在同一局域网。 3、 多屏协同 IP 地址正确。 </div>
+      </div>
+    `;
+
+    overlay.appendChild(card);
+    container.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector('#ws-access-prompt-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        overlay.style.display = 'none';
+        wsPromptMutedUntil = Date.now() + 30_000;
+      });
+    }
+    return overlay;
+  };
+
+  const setWsAccessPromptVisible = (visible, reasonText) => {
+    if (!isExternalBrowserRenderMode) return;
+    if (Date.now() < wsPromptMutedUntil) return;
+    const overlay = ensureWsAccessPrompt();
+    if (!overlay) return;
+    if (visible) {
+      const reasonEl = overlay.querySelector('#ws-access-prompt-reason');
+      if (reasonEl && typeof reasonText === 'string' && reasonText.trim()) {
+        reasonEl.textContent = reasonText.trim();
+      }
+      overlay.style.display = 'flex';
+    } else {
+      overlay.style.display = 'none';
+    }
+  };
+
+  const startWsAccessPromptWatchdog = () => {
+    if (!isExternalBrowserRenderMode || !wsEnabled) return;
+    if (wsPromptTimer) return;
+
+    setTimeout(() => {
+      if (wsFirstSyncReceived) return;
+      setWsAccessPromptVisible(true, '尚未收到主程序同步数据（SYNC），请检查 WebSocket 连接/鉴权/网络。');
+    }, 2500);
+
+    wsPromptTimer = setInterval(() => {
+      if (wsFirstSyncReceived) {
+        setWsAccessPromptVisible(false);
+        clearInterval(wsPromptTimer);
+        wsPromptTimer = null;
+        return;
+      }
+      setWsAccessPromptVisible(true, '仍未收到主程序同步数据（SYNC）。');
+    }, 8000);
+  };
   const getAdaptiveRenderMetrics = () => {
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || SCALER_W;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || SCALER_H;
@@ -2646,6 +2754,9 @@ export function initDisplayWindow(rootElement) {
     }
 
     wsClient.addEventListener('open', () => {
+      if (wsToken) {
+        try { wsClient.send(JSON.stringify({ t: 'HELLO', token: wsToken, meta: { system: 'browser-display' } })); } catch (e) {}
+      }
       try { wsClient.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
     });
 
@@ -2657,6 +2768,16 @@ export function initDisplayWindow(rootElement) {
         msg = null;
       }
       if (!msg || !msg.t) return;
+
+      if (msg.t === 'SYNC') {
+        wsFirstSyncReceived = true;
+        setWsAccessPromptVisible(false);
+      }
+
+      if (msg.t === 'AUTH_REQUIRED') {
+        console.warn('[WS] 需要鉴权：请在 URL 添加 wsToken=... 或关闭主程序 METRO_PIDS_WS_TOKEN');
+        setWsAccessPromptVisible(true, 'WebSocket 需要鉴权：请在 URL 添加 wsToken=...');
+      }
       handleBroadcastMessage({ data: msg });
     });
 
@@ -2665,11 +2786,17 @@ export function initDisplayWindow(rootElement) {
       if (wsManualClose) return;
       if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
       wsReconnectTimer = setTimeout(connectWsBridgeClient, 1500);
+      if (!wsFirstSyncReceived) {
+        setWsAccessPromptVisible(true, 'WebSocket 已断开，正在重连...');
+      }
     });
 
     wsClient.addEventListener('error', () => {
       if (wsClient) {
         try { wsClient.close(); } catch (e) {}
+      }
+      if (!wsFirstSyncReceived) {
+        setWsAccessPromptVisible(true, 'WebSocket 连接错误，正在重试...');
       }
     });
   };
@@ -5227,14 +5354,8 @@ export function initDisplayWindow(rootElement) {
           };
           const dotThemeColor = getDotThemeColor();
 
-          // 暂缓停靠车站：缩小为灰色空心圆
-          if (st.skip) {
-            dot.style.background = '#fff';
-            dot.style.borderColor = '#ccc';
-            dot.style.width = C3_TUNING.dotSizeSkip + 'px';
-            dot.style.height = C3_TUNING.dotSizeSkip + 'px';
-          } else if (isPassedNode) {
-            // 已过站：显示灰色（对齐显示器1：保持 passed 类语义，并用 important 压过贯通段色）
+          // 暂缓停靠车站 & 已过站：统一为灰色空心圆，尺寸等参数保持一致
+          if (st.skip || isPassedNode) {
             dot.style.background = '#fff';
             dot.style.setProperty('border-color', '#ccc', 'important');
             dot.style.boxShadow = 'none';
@@ -6639,6 +6760,7 @@ export function initDisplayWindow(rootElement) {
   if (wsEnabled) {
     wsManualClose = false;
     connectWsBridgeClient();
+    startWsAccessPromptWatchdog();
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('message', handleWindowMessage);
@@ -6673,6 +6795,10 @@ export function initDisplayWindow(rootElement) {
     if (typeof window !== 'undefined') {
       window.removeEventListener('message', handleWindowMessage);
     }
+    if (wsPromptTimer) {
+      clearInterval(wsPromptTimer);
+      wsPromptTimer = null;
+    }
     if (clockTimer) clearInterval(clockTimer);
     cleanupArrivalTimer();
     stopRec();
@@ -6681,7 +6807,7 @@ export function initDisplayWindow(rootElement) {
 }
 
 /**
- * Display-3: 北京地铁出站指示屏 (Exit Indicator Screen)
+ * Display-3: LCD 弧形布局出站指示屏 (Exit Indicator Screen)
  * 分辨率: 1900×600 LCD屏幕
  * 显示线路、下一站、换乘线路、出门指引等信息
  */

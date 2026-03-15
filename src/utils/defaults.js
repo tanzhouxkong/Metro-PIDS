@@ -203,14 +203,14 @@ const FALLBACK_SYSTEM_DISPLAYS = {
   },
   'display-3': {
     id: 'display-3',
-    name: '北京地铁LCD',
+    name: 'LCD弧形布局',
     source: 'builtin',
     url: '',
     width: 1900,
     height: 600,
     enabled: true,
     isSystem: true,
-    description: '北京地铁风格 LCD 线路图显示端'
+    description: '通用 LCD 弧形线路图显示端'
   }
 };
 

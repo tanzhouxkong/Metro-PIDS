@@ -50,10 +50,10 @@ export default {
             padding: '0 8px'
         }
 
-        const iconStyle = {
-            color: 'var(--accent, #00b894)',
+        const iconStyle = computed(() => ({
+            color: titleTextStyle.value.color,
             fontSize: '16px'
-        }
+        }))
 
         const titleTextStyle = computed(() => ({
             fontSize: '13px',
@@ -64,15 +64,15 @@ export default {
 
         const versionChipStyle = computed(() => ({
             fontSize: '11px',
-            color: isDarkTheme.value ? '#9FE7D8' : '#00b894',
+            color: titleTextStyle.value.color,
             padding: '2px 8px',
             background: isDarkTheme.value ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.06)',
             borderRadius: '999px',
             marginLeft: '6px',
             fontWeight: 600,
             border: isDarkTheme.value
-                ? '1px solid rgba(122, 235, 210, 0.55)'
-                : '1px solid rgba(34, 193, 163, 0.5)'
+                ? '1px solid rgba(255, 255, 255, 0.22)'
+                : '1px solid rgba(0, 0, 0, 0.18)'
         }))
 
         onMounted(() => {

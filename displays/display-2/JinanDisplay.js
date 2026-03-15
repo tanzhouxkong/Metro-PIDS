@@ -2,7 +2,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import {
   getFilteredStations,
   calculateDisplayStationInfo
-} from '../shared/displayStationCalculator.js'
+} from '../../src/utils/displayStationCalculator.js'
 
 export default {
   name: 'JinanDisplay',
@@ -1173,6 +1173,8 @@ export default {
       if (!data) return
       
       if (data.t === 'SYNC') {
+        wsFirstSyncReceived = true
+        setWsAccessPromptVisible(false)
         appData.value = data.d
         if (data.r) {
           rt.value = { ...data.r }
@@ -1193,6 +1195,8 @@ export default {
           }
         }
       } else if (data.type === 'update_all') {
+        wsFirstSyncReceived = true
+        setWsAccessPromptVisible(false)
         appData.value = data.data
         if (data.rt) {
           rt.value = { ...data.rt }
@@ -1232,9 +1236,9 @@ export default {
         }
       }
 
-      // 同步后统一刷新底栏滚动状态（避免仅靠footerLED值变化触发）
+      // 同步后刷新底栏滚动状态（仅做“布局/存在性”刷新，避免频繁 SYNC 导致跑马灯反复从头开始）
       nextTick(() => {
-        updateLEDScroll()
+        updateLEDScroll({ restart: false })
       })
     }
     
@@ -1324,7 +1328,10 @@ export default {
     )
 
     // 更新LED滚动效果
-    function updateLEDScroll() {
+    // restart=true: 强制从头开始（用于进/出站信号或文案切换）
+    // restart=false: 仅保证元素/事件存在，不打断当前滚动（用于页面切换/水印/resize 等布局变化）
+    function updateLEDScroll(options = {}) {
+      const { restart = true } = options
       nextTick(() => {
         const ledContent = document.querySelector('.footer-led-content')
         if (!ledContent) return
@@ -1332,30 +1339,60 @@ export default {
         const ledContainer = document.querySelector('.footer-led')
         if (!ledContainer) return
         
-        // 移除之前的滚动类
+        const text = displayedFooterLED.value || ''
+        if (!text.trim()) {
+          ledContent.onanimationiteration = null
+          ledContent.classList.remove('scrolling')
+          ledContent.style.animation = ''
+          ledContent.style.animationDuration = ''
+          ledContent.style.transform = ''
+          ledContent.innerHTML = ''
+          return
+        }
+
+        if (!restart) {
+          // 不打断当前动画：只确保文案已渲染 + iteration 回调存在
+          // 注意：避免修改 animationDuration（部分浏览器会导致动画重启）
+          if (!ledContent.innerHTML) {
+            ledContent.innerHTML = parseColorMarkup(text)
+          }
+          if (ledContent.classList.contains('scrolling') && !ledContent.onanimationiteration) {
+            ledContent.onanimationiteration = () => {
+              advanceFooterMessage()
+            }
+          }
+          return
+        }
+
+        // restart: 移除之前的滚动类，并强制重置动画（确保每次从右侧重新出现）
+        ledContent.onanimationiteration = null
         ledContent.classList.remove('scrolling')
+        ledContent.style.animation = 'none'
         ledContent.style.animationDuration = ''
         ledContent.style.transform = ''
 
         // 每次先恢复为当前文案，避免历史拼接内容影响宽度计算
-        const text = displayedFooterLED.value || ''
         ledContent.innerHTML = parseColorMarkup(text)
 
-        if (!text.trim()) return
-        
-        // 有文案就从右到左穿屏滚动（短文案也滚动）
-        ledContent.classList.add('scrolling')
-
-        // LED风格：每滚完一整屏再切下一句，避免中途换句
-        ledContent.onanimationiteration = () => {
-          advanceFooterMessage()
-        }
+        // 强制 reflow：确保上面 classList/remove + animation=none 被浏览器应用
+        // eslint-disable-next-line no-unused-expressions
+        ledContent.offsetHeight
+        ledContent.style.animation = ''
 
         const contentWidth = ledContent.scrollWidth
         const containerWidth = ledContainer.offsetWidth
         const scrollSpeed = 50 // 像素/秒
         const duration = (contentWidth + containerWidth + 40) / scrollSpeed
         ledContent.style.animationDuration = `${Math.max(8, Math.min(30, duration))}s`
+
+        // 下一帧再加回滚动类，确保动画从 0% 重新开始（文字从右侧重新出现）
+        requestAnimationFrame(() => {
+          ledContent.classList.add('scrolling')
+          // LED风格：每滚完一整屏再切下一句，避免中途换句
+          ledContent.onanimationiteration = () => {
+            advanceFooterMessage()
+          }
+        })
       })
     }
     
@@ -1381,14 +1418,14 @@ export default {
     watch(() => rt.value.state, () => {
       footerRotateIndex.value = 0
       nextTick(() => {
-        updateLEDScroll()
+        updateLEDScroll({ restart: true })
       })
     })
 
     // 底栏布局变化时也刷新滚动（例如页面切换/水印显示变化）
     watch([footerWatermark, showNextStationPage, showArrivalPage], () => {
       nextTick(() => {
-        updateLEDScroll()
+        updateLEDScroll({ restart: false })
       })
     })
     
@@ -1453,20 +1490,128 @@ export default {
     let wsReconnectTimer = null
     let wsShouldRun = false
 
+    // 浏览器环境下，多屏协同依赖 WS 与主程序同步；连接失败时显示提示弹窗
+    let wsFirstSyncReceived = false
+    let wsPromptTimer = null
+    let wsPromptMutedUntil = 0
+    const isExternalBrowserRenderMode = !(window && window.electronAPI)
+
+    const ensureWsAccessPrompt = () => {
+      let overlay = document.getElementById('display2-ws-access-prompt')
+      if (overlay) return overlay
+
+      overlay = document.createElement('div')
+      overlay.id = 'display2-ws-access-prompt'
+      overlay.style.position = 'fixed'
+      overlay.style.inset = '0'
+      overlay.style.zIndex = '10002'
+      overlay.style.display = 'none'
+      overlay.style.alignItems = 'center'
+      overlay.style.justifyContent = 'center'
+      overlay.style.background = 'rgba(0,0,0,0.45)'
+      overlay.style.pointerEvents = 'auto'
+
+      const card = document.createElement('div')
+      card.style.width = 'min(860px, calc(100vw - 64px))'
+      card.style.borderRadius = '12px'
+      card.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)'
+      card.style.background = 'rgba(255,255,255,0.98)'
+      card.style.color = '#333'
+      card.style.fontFamily = '"Microsoft YaHei", sans-serif'
+      card.style.padding = '18px 20px'
+      card.style.userSelect = 'none'
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="font-size:22px;font-weight:900;color:#ff5722;line-height:1;">⚠</div>
+          <div style="flex:1;">
+            <div style="font-size:16px;font-weight:900;">无法连接到客户端</div>
+            <div id="display2-ws-access-prompt-reason" style="margin-top:4px;font-size:13px;color:#666;line-height:1.45;">正在等待客户端同步数据...</div>
+          </div>
+          <button id="display2-ws-access-prompt-close" style="width:32px;height:28px;border:0;border-radius:6px;background:rgba(0,0,0,0.06);cursor:pointer;font-size:18px;line-height:28px;color:#333;">×</button>
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:#333;line-height:1.6;">
+          <div>此显示页运行在浏览器中，需要启动客户端。</div>
+          <div style="margin-top:6px;color:#666;">检查项：1、 客户端是否正常运行。 2、 设备在同一局域网。 3、 多屏协同 IP 地址正确。 </div>
+        </div>
+      `
+      overlay.appendChild(card)
+      document.body.appendChild(overlay)
+
+      const closeBtn = overlay.querySelector('#display2-ws-access-prompt-close')
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          overlay.style.display = 'none'
+          wsPromptMutedUntil = Date.now() + 30000
+        })
+      }
+      return overlay
+    }
+
+    const setWsAccessPromptVisible = (visible, reasonText) => {
+      if (!isExternalBrowserRenderMode) return
+      if (Date.now() < wsPromptMutedUntil) return
+      const overlay = ensureWsAccessPrompt()
+      if (!overlay) return
+      if (visible) {
+        const reasonEl = overlay.querySelector('#display2-ws-access-prompt-reason')
+        if (reasonEl && typeof reasonText === 'string' && reasonText.trim()) {
+          reasonEl.textContent = reasonText.trim()
+        }
+        overlay.style.display = 'flex'
+      } else {
+        overlay.style.display = 'none'
+      }
+    }
+
+    const startWsAccessPromptWatchdog = () => {
+      if (!isExternalBrowserRenderMode || !wsShouldRun) return
+      if (wsPromptTimer) return
+      setTimeout(() => {
+        if (wsFirstSyncReceived) return
+        setWsAccessPromptVisible(true, '尚未收到主程序同步数据（SYNC），请检查 WebSocket 连接/鉴权/网络。')
+      }, 2500)
+      wsPromptTimer = setInterval(() => {
+        if (wsFirstSyncReceived) {
+          setWsAccessPromptVisible(false)
+          clearInterval(wsPromptTimer)
+          wsPromptTimer = null
+          return
+        }
+        setWsAccessPromptVisible(true, '仍未收到主程序同步数据（SYNC）。')
+      }, 8000)
+    }
+
     const connectWs = () => {
       if (!wsShouldRun) return
       const wsHost = (displayQuery.get('wsHost') || window.location.hostname || 'localhost').trim()
       const wsPort = (displayQuery.get('wsPort') || '9400').trim()
+      const wsToken = String(displayQuery.get('wsToken') || displayQuery.get('token') || '').trim()
       if (!wsHost) return
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${wsProto}//${wsHost}:${wsPort}`
+      const wsUrl = (() => {
+        const base = `${wsProto}//${wsHost}:${wsPort}`
+        if (!wsToken) return base
+        try {
+          const u = new URL(base)
+          u.searchParams.set('token', wsToken)
+          return u.toString()
+        } catch (e) {
+          return `${base}/?token=${encodeURIComponent(wsToken)}`
+        }
+      })()
       try {
         wsClient = new WebSocket(wsUrl)
       } catch (e) {
         wsClient = null
+        if (!wsFirstSyncReceived) {
+          setWsAccessPromptVisible(true, 'WebSocket 创建失败，请检查 wsHost/wsPort/网络。')
+        }
         return
       }
       wsClient.onopen = () => {
+        if (wsToken) {
+          try { wsClient.send(JSON.stringify({ t: 'HELLO', token: wsToken, meta: { system: 'browser-display' } })) } catch (e) {}
+        }
         try { wsClient.send(JSON.stringify({ t: 'REQ' })) } catch (e) {}
       }
       wsClient.onmessage = (event) => {
@@ -1477,6 +1622,10 @@ export default {
           data = null
         }
         if (data) {
+          if (data.t === 'AUTH_REQUIRED') {
+            console.warn('[WS] 需要鉴权：请在 URL 添加 wsToken=... 或关闭主程序 METRO_PIDS_WS_TOKEN')
+            setWsAccessPromptVisible(true, 'WebSocket 需要鉴权：请在 URL 添加 wsToken=...')
+          }
           handleBroadcastMessage({ data })
         }
       }
@@ -1485,9 +1634,15 @@ export default {
         if (!wsShouldRun) return
         if (wsReconnectTimer) clearTimeout(wsReconnectTimer)
         wsReconnectTimer = setTimeout(connectWs, 1500)
+        if (!wsFirstSyncReceived) {
+          setWsAccessPromptVisible(true, 'WebSocket 已断开，正在重连...')
+        }
       }
       wsClient.onerror = () => {
         try { wsClient && wsClient.close() } catch (e) {}
+        if (!wsFirstSyncReceived) {
+          setWsAccessPromptVisible(true, 'WebSocket 连接错误，正在重试...')
+        }
       }
     }
 
@@ -1530,6 +1685,7 @@ export default {
       if (wsEnabled) {
         wsShouldRun = true
         connectWs()
+        startWsAccessPromptWatchdog()
       }
       
       // 监听 window.postMessage（用于接收主程序发送的数据）
@@ -1549,7 +1705,7 @@ export default {
 
       // 初始化时触发一次底栏滚动计算
       nextTick(() => {
-        updateLEDScroll()
+        updateLEDScroll({ restart: true })
       })
       
       // 初始化时检查是否需要显示"下一站"或"到站"页面
@@ -1558,7 +1714,7 @@ export default {
       console.log('[Display-2] 屏幕适配完成，缩放比例:', scaleRatio.value)
       window.addEventListener('resize', () => {
         fitScreen()
-        updateLEDScroll() // 窗口大小变化时重新检测LED滚动
+        updateLEDScroll({ restart: false }) // 窗口大小变化时仅做布局刷新，避免跑马灯跳回开头
         console.log('[Display-2] 窗口大小变化，新尺寸:', window.innerWidth, 'x', window.innerHeight, '缩放比例:', scaleRatio.value)
       })
       document.addEventListener('keydown', handleKeyDown)
@@ -1595,6 +1751,11 @@ export default {
       closeWs()
       window.removeEventListener('resize', fitScreen)
       document.removeEventListener('keydown', handleKeyDown)
+
+      if (wsPromptTimer) {
+        clearInterval(wsPromptTimer)
+        wsPromptTimer = null
+      }
     })
 
     return {
@@ -1806,7 +1967,7 @@ export default {
               <span class="next-station-label">到站：</span>
               <span class="next-station-name">{{ currentStationName }}</span>
             </div>
-            <div style="margin-top: 16px; font-size: 28px; color: #000000; font-weight: 500; text-align: center;">
+            <div class="arrival-tip">
               请停稳后再起身，下车注意观察后方
             </div>
           </div>

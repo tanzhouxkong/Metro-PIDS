@@ -36,19 +36,37 @@
           <div class="as-panel-left">
             <div class="as-door-area">
               <div class="as-door-graphic">
-                <div class="door-arrow l-arrow">
-                  <i class="fas fa-chevron-left"></i>
-                </div>
-                <div class="as-door-img">
-                  <i class="fas fa-door-open"></i>
-                </div>
-                <div class="door-arrow r-arrow">
-                  <i class="fas fa-chevron-right"></i>
+                <div class="as-door-img door-indicator">
+                  <svg viewBox="-10 0 120 78" class="door-arrow-svg door-panel-icon" aria-hidden="true">
+                    <defs>
+                      <!-- 占位渐变：方向改为竖直，实际 stop 由 JS 按贯通段颜色动态重建 -->
+                      <linearGradient id="display1DoorGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="var(--theme)" />
+                        <stop offset="100%" stop-color="var(--theme)" />
+                      </linearGradient>
+                    </defs>
+                    <g class="door-leaf left">
+                      <rect class="leaf-body" x="4" y="4" width="43" height="70" rx="4.5" />
+                      <rect class="leaf-window" x="11" y="11" width="27" height="29" rx="4.5" />
+                    </g>
+                    <g class="door-leaf right">
+                      <rect class="leaf-body" x="53" y="4" width="43" height="70" rx="4.5" />
+                      <rect class="leaf-window" x="60" y="11" width="27" height="29" rx="4.5" />
+                    </g>
+                  </svg>
+                  <svg
+                    viewBox="0 0 100 100"
+                    class="door-no-open-icon"
+                    aria-hidden="true"
+                  >
+                    <circle cx="50" cy="50" r="38" fill="none" stroke="#ff1b12" stroke-width="12" />
+                    <path d="M24 24L76 76" fill="none" stroke="#ff1b12" stroke-width="12" stroke-linecap="round" />
+                  </svg>
                 </div>
               </div>
               <div class="as-door-text">
-                <div id="as-door-msg-cn" class="as-door-t-cn">左侧开门</div>
-                <div id="as-door-msg-en" class="as-door-t-en">Left side doors open</div>
+                <div id="as-door-msg-cn" class="as-door-t-cn">本侧开门</div>
+                <div id="as-door-msg-en" class="as-door-t-en">Doors will be opened on this side</div>
               </div>
             </div>
             <div class="as-car-area">

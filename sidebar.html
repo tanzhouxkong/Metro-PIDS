@@ -6,6 +6,31 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;">
     <title>Sidebar - Metro PIDS</title>
     <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Sidebar] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+    <script>
+      // 兜底：有时 CSS 200 但字体文件未生效（CSP/路径/加载时序），会导致图标空白且不会触发 link.onerror
+      (function () {
+        function ensureLocalIconsFallback() {
+          try {
+            if (document.fonts && typeof document.fonts.check === 'function') {
+              // 任意一个族命中即可视为可用（Free 用于 fas，Brands 用于 fab）
+              if (
+                document.fonts.check('12px "Font Awesome 6 Free"') ||
+                document.fonts.check('12px "Font Awesome 6 Brands"')
+              ) return;
+            }
+          } catch (e) {}
+          if (!document.querySelector('link[href="assets/local-icons.css"]')) {
+            console.warn('[Sidebar] Font Awesome 字体未就绪，启用本地备用图标');
+            var fallback = document.createElement('link');
+            fallback.rel = 'stylesheet';
+            fallback.href = 'assets/local-icons.css';
+            document.head.appendChild(fallback);
+          }
+        }
+        window.addEventListener('load', function () { setTimeout(ensureLocalIconsFallback, 800); });
+        setTimeout(ensureLocalIconsFallback, 1800);
+      })();
+    </script>
     <style>
         :root { 
             --theme: #00b894; 

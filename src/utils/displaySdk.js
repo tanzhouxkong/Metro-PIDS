@@ -26,13 +26,24 @@ export function createDisplaySdk(options = {}) {
   let usingBC = false;
   // WebSocket 可选：用于跨设备同步（局域网）
   const preferWs = options.enableWebSocket !== false;
+  const wsToken = (options.wsToken !== undefined && options.wsToken !== null)
+    ? String(options.wsToken).trim()
+    : '';
   const resolveWsUrl = () => {
     if (options.wsUrl) return options.wsUrl;
     if (typeof window === 'undefined') return null;
     const host = options.wsHost || window.location.hostname || 'localhost';
     const port = options.wsPort || 9400;
     const proto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
-    return `${proto}//${host}:${port}`;
+    const base = `${proto}//${host}:${port}`;
+    if (!wsToken) return base;
+    try {
+      const u = new URL(base);
+      u.searchParams.set('token', wsToken);
+      return u.toString();
+    } catch (e) {
+      return `${base}/?token=${encodeURIComponent(wsToken)}`;
+    }
   };
   const wsUrl = preferWs ? resolveWsUrl() : null;
   const wsRetryMs = typeof options.wsRetryMs === 'number' ? options.wsRetryMs : 1600;
@@ -179,6 +190,9 @@ export function createDisplaySdk(options = {}) {
     wsReady = false;
     ws.addEventListener('open', () => {
       wsReady = true;
+      if (wsToken) {
+        try { ws.send(JSON.stringify({ t: 'HELLO', token: wsToken })); } catch (e) {}
+      }
       try { ws.send(JSON.stringify({ t: 'REQ' })); } catch (e) {}
     });
 

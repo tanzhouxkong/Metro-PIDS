@@ -1,5 +1,6 @@
 <script>
 import { computed, ref, watch, nextTick, Teleport } from 'vue'
+import { getEffectiveViewportRect } from '../../utils/effectiveViewportRect.js'
 
 export default {
   name: 'ContextMenu',
@@ -32,15 +33,16 @@ export default {
 
       if (typeof window !== 'undefined' && el) {
         const rect = el.getBoundingClientRect()
-        const vw = window.innerWidth || document.documentElement.clientWidth
-        const vh = window.innerHeight || document.documentElement.clientHeight
+        const vp = getEffectiveViewportRect(el)
+        const vw = (vp.right - vp.left) || window.innerWidth || document.documentElement.clientWidth
+        const vh = (vp.bottom - vp.top) || window.innerHeight || document.documentElement.clientHeight
         const margin = 8
 
-        if (x + rect.width > vw - margin) {
-          x = Math.max(margin, vw - rect.width - margin)
+        if (((x - (vp.left || 0)) + rect.width) > vw - margin) {
+          x = Math.max((vp.left || 0) + margin, (vp.left || 0) + vw - rect.width - margin)
         }
-        if (y + rect.height > vh - margin) {
-          y = Math.max(margin, vh - rect.height - margin)
+        if (((y - (vp.top || 0)) + rect.height) > vh - margin) {
+          y = Math.max((vp.top || 0) + margin, (vp.top || 0) + vh - rect.height - margin)
         }
       }
 

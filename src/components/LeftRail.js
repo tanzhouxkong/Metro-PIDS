@@ -827,10 +827,10 @@ export default {
         }
     },
     template: `
-    <div id="leftRail" class="left-rail-blur" style="position:relative; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:48px; padding-bottom:20px;">
+    <div id="leftRail" class="left-rail-blur" style="position:relative; width:100%; height:100%; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:60px; padding-bottom:20px; overflow:hidden;">
       
       <!-- Top Section -->
-      <div id="railInner" style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:16px; flex:1;">
+      <div id="railInner" style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:16px; flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding-bottom:8px; -webkit-overflow-scrolling:touch;">
         
         <button 
             class="ft-btn" 
@@ -874,7 +874,7 @@ export default {
       </div>
 
       <!-- Bottom Section -->
-      <div style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:12px; margin-top:auto;">
+      <div style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:12px; margin-top:auto; flex:0 0 auto;">
          <div style="position:relative;">
             <button 
                 class="ft-btn" 

@@ -510,11 +510,12 @@
             align-items: center;
         }
         .admin-section-title {
-            font-weight: bold;
+            /* 与站名文字一致的渲染参数，减少彩色小号粗体的锯齿感 */
+            font-weight: 700;
             font-size: 15px;
-            color: #FF9F43;
+            color: var(--text);
         }
-        html.dark .admin-section-title { color: #FF9F43; }
+        html.dark .admin-section-title { color: var(--text); }
         .admin-section-hint {
             font-size: 12px;
             color: var(--muted);

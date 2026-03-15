@@ -641,6 +641,24 @@
                         currentIdx: rtState?.idx ?? 0
                     });
                     
+                    // 显示器3相关：当前车厢号与屏幕虚拟位置（若有下发）
+                    if (data.settings && data.settings.display) {
+                        const d = data.settings.display;
+                        const activeCar =
+                            (typeof d.display3ActiveCarNo === 'number' ? d.display3ActiveCarNo : null) ??
+                            (appData && appData.meta && typeof appData.meta.display3ActiveCarNo === 'number'
+                                ? appData.meta.display3ActiveCarNo
+                                : null);
+                        const virtualPos = d.display3VirtualPosition || null;
+                        console.log('[Display][Client] SYNC 显示器3状态:', {
+                            display3ActiveCarNo: activeCar,
+                            display3VirtualPosition: virtualPos
+                        });
+                        updateDebugInfo(
+                            `显示器3: 当前车厢=${activeCar ?? '无'}, 虚拟位置=${virtualPos ?? '未配置'}`
+                        );
+                    }
+                    
                     // 保存快照到 localStorage
                     saveSnapshot(data);
                     

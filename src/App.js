@@ -18,6 +18,19 @@ import dialogService from './utils/dialogService.js'
 
 const COMMON_APPLY_KEYS = ['1','2','3','4','5','6','7','8','9','0','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']
 
+function isDevBuild() {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && typeof import.meta.env.DEV === 'boolean') {
+      return !!import.meta.env.DEV;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
+}
+
+const IS_DEV_BUILD = isDevBuild();
+
 export default {
   name: 'App',
   components: { AdminApp, Topbar, LeftRail, SlidePanel, ConsolePage, SettingsPage, UnifiedDialogs, Teleport, Transition },
@@ -30,6 +43,8 @@ export default {
     const cloudConfig = useCloudConfig(CLOUD_API_BASE);
     const { playArrive, playDepart } = useStationAudio(pidState);
     let commonPreview = null;
+    const _lastCmdKey = new Map();
+    const _CMD_KEY_DEDUPE_MS = 300;
 
     const getLineDirOrFilePath = () => {
       const metaLine = (pidState.appData?.meta?.lineName || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
@@ -233,6 +248,16 @@ export default {
       }
       // 远端按键指令（支持命令格式和按键格式）
       if (data && data.t === 'CMD_KEY') {
+        // 去重：短时间内重复的 CMD_KEY 忽略（防止显示端通过多通道重复发送）
+        try {
+          const dedupeKey = `${data.code || data.key}::${data.key || data.code}`
+          const nowt = Date.now()
+          const last = _lastCmdKey.get(dedupeKey) || 0
+          if (nowt - last < _CMD_KEY_DEDUPE_MS) return
+          _lastCmdKey.set(dedupeKey, nowt)
+        } catch (e) {}
+        
+         
          const code = data.code || data.key;
          const key = data.key || data.code;
          const command = data.command; // 支持命令格式：'next', 'prev', 'arrive', 'depart'
@@ -326,13 +351,10 @@ export default {
 
     // 兜底：处理显示端弹窗的 postMessage
     const handleWindowMsg = (ev) => {
-      // 调试：记录指向 App 的 postMessage
-      try { console.log('[debug][postMessage] window.message received in App.js', ev.origin, ev.data); } catch(e) {}
       const data = ev.data;
       if (!data) return;
       // 安全：忽略其他窗口通过 postMessage 发送的 CMD_UI
       if (data.t === 'CMD_UI') {
-        try { console.log('[debug][postMessage] Ignoring CMD_UI from postMessage', ev.origin, data); } catch(e) {}
         return;
       }
       return;
@@ -420,6 +442,12 @@ export default {
 
     // 从云端获取显示端功能开关（逻辑在 useCloudConfig.syncDisplayFlags）
     async function syncDisplayFlags() {
+      // 开发环境下：不从云端拉取显示端开关，避免云控干预本地调试
+      if (IS_DEV_BUILD) {
+        uiState.showSystemDisplayOption = true;
+        uiState.displayFlags = null;
+        return;
+      }
       if (cloudConfig && typeof cloudConfig.syncDisplayFlags === 'function') {
         await cloudConfig.syncDisplayFlags(uiState);
       }

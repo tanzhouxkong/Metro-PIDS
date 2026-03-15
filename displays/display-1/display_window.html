@@ -6,6 +6,38 @@
   <title>Metro PIDS - Display 1 (主显示器)</title>
   <!-- 从 displays/display-1/ 相对到项目 assets 目录 -->
   <link rel="stylesheet" href="../../assets/fontawesome/css/all.min.css" onerror="console.warn('[Display1] Font Awesome 加载失败'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = '../../assets/local-icons.css'; document.head.appendChild(fallback);">
+  <script>
+    // 同 display_window.html：CSS 可能加载成功但字体文件加载失败，导致图标空白且不报错。
+    (function () {
+      function ensureLocalIcons(reason) {
+        if (document.getElementById('local-icons-css')) return;
+        console.warn('[Display1] Font Awesome 字体不可用，启用本地备用图标：' + (reason || 'unknown'));
+        var fallback = document.createElement('link');
+        fallback.id = 'local-icons-css';
+        fallback.rel = 'stylesheet';
+        fallback.href = '../../assets/local-icons.css';
+        document.head.appendChild(fallback);
+      }
+
+      function checkFontAwesome() {
+        try {
+          if (!document.fonts || !document.fonts.load) return;
+          document.fonts.load('900 16px "Font Awesome 5 Free"').then(function (fonts) {
+            if (!fonts || fonts.length === 0) ensureLocalIcons('webfont load returned empty');
+          }).catch(function () {
+            ensureLocalIcons('webfont load rejected');
+          });
+        } catch (e) {
+          ensureLocalIcons('exception');
+        }
+      }
+
+      window.addEventListener('load', function () {
+        setTimeout(checkFontAwesome, 600);
+        setTimeout(checkFontAwesome, 2000);
+      });
+    })();
+  </script>
   <script type="importmap">
   {
     "imports": {

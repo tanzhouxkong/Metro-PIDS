@@ -6,6 +6,41 @@
   <meta name="app-version" content="1.3.9" />
   <title>Metro PIDS V2 - Display</title>
   <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Display] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+  <script>
+    // Font Awesome 的 CSS 可能加载成功，但 webfonts 在部分浏览器/部署环境下缺失或被拦截，导致图标空白且不报错。
+    // 这里做一次字体可用性检测，失败则注入本地 fallback（Unicode/emoji）。
+    (function () {
+      function ensureLocalIcons(reason) {
+        if (document.getElementById('local-icons-css')) return;
+        console.warn('[Display] Font Awesome 字体不可用，启用本地备用图标：' + (reason || 'unknown'));
+        var fallback = document.createElement('link');
+        fallback.id = 'local-icons-css';
+        fallback.rel = 'stylesheet';
+        fallback.href = 'assets/local-icons.css';
+        document.head.appendChild(fallback);
+      }
+
+      function checkFontAwesome() {
+        try {
+          if (!document.fonts || !document.fonts.load) return;
+          // Font Awesome 5 Free (Solid) 通常使用 900 weight。
+          document.fonts.load('900 16px "Font Awesome 5 Free"').then(function (fonts) {
+            if (!fonts || fonts.length === 0) ensureLocalIcons('webfont load returned empty');
+          }).catch(function () {
+            ensureLocalIcons('webfont load rejected');
+          });
+        } catch (e) {
+          ensureLocalIcons('exception');
+        }
+      }
+
+      window.addEventListener('load', function () {
+        // 给字体一点加载时间，避免误判
+        setTimeout(checkFontAwesome, 600);
+        setTimeout(checkFontAwesome, 2000);
+      });
+    })();
+  </script>
   <style>
     * {
       margin: 0;

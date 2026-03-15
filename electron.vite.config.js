@@ -10,6 +10,8 @@ const DEV_SERVER_PORT = Number(process.env.PIDS_DEV_SERVER_PORT || '5180')
 const outDir = resolve(__dirname, 'out', 'main')
 const target = join(outDir, 'main.js')
 const source = resolve(__dirname, 'main.js')
+const mainModulesSourceDir = resolve(__dirname, 'main')
+const mainModulesTargetDir = join(outDir, 'main')
 
 if (!existsSync(outDir)) {
   mkdirSync(outDir, { recursive: true })
@@ -22,6 +24,12 @@ if (existsSync(source)) {
     if (existsSync(target)) {
       const stat = require('fs').statSync(target)
       console.log('[electron-vite-config] ✅ File verified, size:', stat.size, 'bytes')
+    }
+
+    // 同时确保解耦出来的主进程模块目录可在 out/main 运行时被 require
+    if (existsSync(mainModulesSourceDir)) {
+      cpSync(mainModulesSourceDir, mainModulesTargetDir, { recursive: true, force: true })
+      console.log('[electron-vite-config] ✅ Ensured main/ exists at', mainModulesTargetDir)
     }
   } catch (e) {
     console.error('[electron-vite-config] ❌ Failed to copy main.js:', e)
@@ -39,6 +47,11 @@ const ensureMainFile = () => {
       try {
         copyFileSync(source, target)
         console.log('[vite-plugin] ✅ Ensured main.js exists at', target)
+
+        if (existsSync(mainModulesSourceDir)) {
+          cpSync(mainModulesSourceDir, mainModulesTargetDir, { recursive: true, force: true })
+          console.log('[vite-plugin] ✅ Ensured main/ exists at', mainModulesTargetDir)
+        }
       } catch (e) {
         console.error('[vite-plugin] ❌ Failed to copy main.js:', e)
       }
@@ -185,8 +198,12 @@ export default defineConfig({
     root: __dirname,
     // 配置 base 路径，确保资源路径在开发和生产环境一致
     base: './',
-    // 配置 publicDir，确保静态资源被正确复制
-    publicDir: 'assets',
+    // 关闭 Vite 的 publicDir 映射：
+    // - 本项目的静态资源本身就在仓库根目录的 `assets/` 下（HTML 里也以 `assets/...` 引用）
+    // - 若把 publicDir 设为 'assets'，Vite 会把它映射到站点根 `/`，导致 `/assets/...` 在开发环境 404，
+    //   进而出现 FontAwesome 图标缺失、importmap 指向的 `./assets/vue.esm-browser.js` 取到错误内容等问题
+    // - 生产构建的拷贝由 copyAssets() 插件负责
+    publicDir: false,
     plugins: [
       // Vue 插件配置：确保模板在构建时预编译
       vue({

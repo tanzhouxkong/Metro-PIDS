@@ -523,6 +523,30 @@ function startMultiScreenHttpServer(portOverride) {
             return;
           }
 
+          // 开发模式：显示器3已切为纯 Vue（依赖 Vite 编译 .vue）。
+          // 9517 静态服务无法处理 .vue/模块图，因此将 display-3 目录下的请求统一跳转到 Vite dev server。
+          if (!app.isPackaged && typeof pathname === 'string' && pathname.startsWith('/displays/display-3/')) {
+            const hostHeader = String(req.headers.host || '127.0.0.1').trim();
+            const hostName = hostHeader.includes(':') ? hostHeader.split(':')[0] : hostHeader;
+            const vitePort = Number(process.env.PIDS_DEV_SERVER_PORT || process.env.VITE_DEV_SERVER_PORT || '5180');
+            const redirectUrl = `http://${hostName}:${vitePort}${pathname}${reqUrl.search || ''}`;
+            res.statusCode = 302;
+            res.setHeader('Location', redirectUrl);
+            res.end();
+            return;
+          }
+
+          // 浏览器模式不支持直接加载 .vue（需要 Vite/SFC 编译）。
+          // 若用户误打开 DisplayWindow.vue，则重定向到静态入口页。
+          const vueDisplayWindowMatch = pathname.match(/^\/displays\/(display-[^/]+)\/DisplayWindow\.vue$/);
+          if (vueDisplayWindowMatch) {
+            const displayId = vueDisplayWindowMatch[1];
+            res.statusCode = 302;
+            res.setHeader('Location', `/displays/${displayId}/display_window.html`);
+            res.end();
+            return;
+          }
+
           const safeRelativePath = pathname.replace(/^\/+/, '');
           const filePath = path.resolve(rootDir, safeRelativePath);
           const normalizedRoot = path.resolve(rootDir) + path.sep;
@@ -941,7 +965,7 @@ async function switchDisplay(displayId, width, height, options = {}) {
         console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦 (URL: ${currentUrl})`);
 
         // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
-        forceReapplyMicaEffect();
+        forceReapplyMicaEffect({ ignoreFocus: true });
 
         // 即使 URL 相同，也发送一个消息通知显示端切换（确保数据同步）
         try {
@@ -1006,14 +1030,14 @@ async function switchDisplay(displayId, width, height, options = {}) {
   // 如果关闭了窗口，立即强制重新应用主窗口的模糊效果（防止因关闭窗口导致模糊消失）
   if (windowsToClose.length > 0) {
     console.log(`[main] switch-display: 已关闭 ${windowsToClose.length} 个其他显示窗口，立即重新应用主窗口模糊效果`);
-    forceReapplyMicaEffect();
+    forceReapplyMicaEffect({ ignoreFocus: true });
   }
 
   // 创建新的显示窗口（如果不存在或需要重新加载）
   createDisplayWindow(width, height, displayId);
 
   // 创建新窗口后，强制重新应用主窗口的模糊效果（防止因创建窗口导致模糊消失）
-  forceReapplyMicaEffect();
+  forceReapplyMicaEffect({ ignoreFocus: true });
 
   notifyWs(displayId);
   return true;
@@ -1092,6 +1116,9 @@ async function fetchDisplaySyncSettingsSnapshot() {
           if (!settings || !settings.display) return null;
           const d = settings.display || {};
           const displays = d.displays || {};
+          const rawD3Depart = (d && Object.prototype.hasOwnProperty.call(d, 'display3DepartDuration')) ? d.display3DepartDuration : null;
+          const d3DepartNum = Number(rawD3Depart);
+          const d3DepartMs = Number.isFinite(d3DepartNum) ? Math.max(0, d3DepartNum) : 8000;
           return {
             display: {
               currentDisplayId: d.currentDisplayId || null,
@@ -1105,7 +1132,7 @@ async function fetchDisplaySyncSettingsSnapshot() {
               display1WallpaperOpacity: (displays['display-1'] && Number.isFinite(displays['display-1'].wallpaperOpacity))
                 ? displays['display-1'].wallpaperOpacity
                 : 0.35,
-              display3DepartDuration: d.display3DepartDuration || 8000,
+              display3DepartDuration: d3DepartMs,
               display1LineNameMerge: !!(displays['display-1'] && displays['display-1'].lineNameMerge),
               display3LineNameMerge: !!(displays['display-3'] && displays['display-3'].lineNameMerge)
             }
@@ -1282,11 +1309,28 @@ function startWebSocketBridge(portOverride) {
 
   let wsBridgeReady = false;
 
+  // 可选鉴权：设置 METRO_PIDS_WS_TOKEN 后，要求客户端在连接 URL 或 HELLO 消息中携带 token。
+  // 未设置 token 时保持原行为（兼容旧客户端）。
+  const requiredToken = (process.env.METRO_PIDS_WS_TOKEN || '').trim();
+
   wsServer.on('connection', (socket, req) => {
     wsClients.add(socket);
     const clientMeta = ensureWsClientMeta(socket, req);
+
+    // 连接级鉴权：支持 ws://host:port/?token=xxx
+    socket.__metroPidsAuthed = requiredToken.length === 0;
+    if (!socket.__metroPidsAuthed && req && typeof req.url === 'string') {
+      try {
+        const u = new URL(req.url, 'http://127.0.0.1');
+        const t = String(u.searchParams.get('token') || '').trim();
+        if (t && t === requiredToken) socket.__metroPidsAuthed = true;
+      } catch (e) { /* ignore */ }
+    }
+
     console.log('[WS] 客户端已连接:', req && req.socket && req.socket.remoteAddress);
-    sendSyncToWsClient(socket);
+    if (socket.__metroPidsAuthed) {
+      sendSyncToWsClient(socket);
+    }
 
     socket.on('message', async (raw) => {
       let msg = null;
@@ -1297,6 +1341,23 @@ function startWebSocketBridge(portOverride) {
         return;
       }
       if (!msg || typeof msg !== 'object') return;
+
+      // 如启用 WS Token 鉴权：仅允许 PING + HELLO(携带 token) 在未认证时通过
+      if (requiredToken.length > 0 && socket.__metroPidsAuthed !== true) {
+        const tokenFromMsg = (msg && (msg.token || (msg.meta && msg.meta.token))) ? String(msg.token || (msg.meta && msg.meta.token) || '').trim() : '';
+        if (msg.t === 'PING') {
+          try { socket.send(JSON.stringify({ t: 'PONG', ts: Date.now() })); } catch (e) {}
+          return;
+        }
+        if (msg.t === 'HELLO' && tokenFromMsg && tokenFromMsg === requiredToken) {
+          socket.__metroPidsAuthed = true;
+          try { socket.send(JSON.stringify({ t: 'AUTH_OK' })); } catch (e) {}
+          await sendSyncToWsClient(socket);
+          return;
+        }
+        try { socket.send(JSON.stringify({ t: 'AUTH_REQUIRED' })); } catch (e) {}
+        return;
+      }
 
       if (msg.t === 'PING') {
         const latencyMs = (typeof msg.ts === 'number' && Number.isFinite(msg.ts)) ? Number((Date.now() - msg.ts).toFixed(2)) : null;
@@ -1737,14 +1798,18 @@ function reapplyMicaEffect() {
 }
 
 // 强制重新应用模糊效果（用于打开显示器窗口时）
-function forceReapplyMicaEffect() {
+function forceReapplyMicaEffect(opts = {}) {
   if (!mainWin || mainWin.isDestroyed()) return;
   if (!MAIN_BLUR_ENABLED) return;
-  // 仅在主窗口当前处于焦点时重应用；避免点击侧边栏打开显示端时触发无意义重应用
-  try {
-    if (typeof mainWin.isFocused === 'function' && !mainWin.isFocused()) return;
-  } catch (e) {
-    return;
+  const ignoreFocus = !!(opts && opts.ignoreFocus);
+
+  // 默认仅在主窗口当前处于焦点时重应用；但“打开/切换显示端”会导致主窗口失焦，仍需要强制重应用
+  if (!ignoreFocus) {
+    try {
+      if (typeof mainWin.isFocused === 'function' && !mainWin.isFocused()) return;
+    } catch (e) {
+      return;
+    }
   }
   
   const isWindows = process.platform === 'win32';
@@ -4144,10 +4209,11 @@ function createWindow() {
  */
 function updateBrowserViewsLayout() {
   if (!mainWin || mainWin.isDestroyed()) return;
-  
-  const bounds = mainWin.getBounds();
-  const titleBarHeight = 32; // 标题栏高度
-  const contentHeight = bounds.height - titleBarHeight;
+
+  // BrowserView.setBounds 使用的是“内容区坐标系”，在无边框/有阴影/系统边框存在时
+  // 用 getBounds()（外框尺寸）会导致高度计算偏差，表现为侧边栏底部按钮不随窗口高度变化。
+  const bounds = (typeof mainWin.getContentBounds === 'function') ? mainWin.getContentBounds() : mainWin.getBounds();
+  const titleBarHeight = Math.max(0, Math.min(32, bounds.height));
   
   for (const [viewId, viewData] of browserViews.entries()) {
     // 安全检查：确保 viewData 和 view 存在，并且 view 有 isDestroyed 方法
@@ -4182,20 +4248,25 @@ function updateBrowserViewsLayout() {
       x = 0;
       y = 0;
       width = bounds.width;
-      height = 32;
+      height = titleBarHeight;
     } else if (viewId === 'sidebar') {
       // 侧边栏：覆盖左侧 60px，从顶部栏下方开始到窗口底部
       x = 0;
-      y = 32; // 从顶部栏下方开始（顶部栏高度 32px）
+      y = titleBarHeight; // 从顶部栏下方开始
       width = 60;
-      height = bounds.height - 32; // 剩余高度（总高度减去顶部栏高度）
+      height = Math.max(0, bounds.height - titleBarHeight); // 剩余高度
     }
-    
+
+    // 注意：topbar/sidebar 是固定尺寸（32px/60px），不能被通用的 min=100 规则“放大”，
+    // 否则会导致布局错位、裁切，从而出现“底部图标不跟随窗口高度”的问题。
+    const minWidth = viewId === 'sidebar' ? 60 : (viewId === 'topbar' ? 1 : 100);
+    const minHeight = viewId === 'topbar' ? 1 : (viewId === 'sidebar' ? 1 : 100);
+
     viewData.view.setBounds({
       x: Math.max(0, x),
       y: Math.max(0, y),
-      width: Math.max(100, width),
-      height: Math.max(100, height)
+      width: Math.max(minWidth, width),
+      height: Math.max(minHeight, height)
     });
   }
 }
@@ -4237,6 +4308,23 @@ function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height:
   };
   
   const view = new BrowserView(viewOptions);
+
+  // 让 BrowserView 自身跟随窗口尺寸变化（特别是 sidebar 的高度），避免偶发 resize 时序/事件丢失导致布局不更新。
+  try {
+    if (typeof view.setAutoResize === 'function') {
+      if (viewId === 'topbar') {
+        // 顶部栏：宽度随窗口变化，高度由 setBounds 控制为 32px
+        view.setAutoResize({ width: true, height: false, horizontal: true, vertical: false });
+      } else if (viewId === 'sidebar') {
+        // 侧边栏：高度随窗口变化，宽度固定 60px（宽度仍由 setBounds 控制）
+        view.setAutoResize({ width: false, height: true, horizontal: false, vertical: true });
+      } else {
+        view.setAutoResize({ width: true, height: true, horizontal: true, vertical: true });
+      }
+    }
+  } catch (e) {
+    // 忽略：部分 Electron 版本/壳可能不支持
+  }
   
   // 设置 BrowserView 背景为透明（让 mica-electron 的 Mica 效果透出）
   try {
@@ -5472,6 +5560,75 @@ ipcMain.handle('lines/openFolder', async (event, dir) => {
   }
 });
 
+// ==================== 线路音频安全辅助（防路径穿越/任意读写） ====================
+
+// 仅允许渲染进程通过主进程解析后的 local-audio URL 访问文件，避免直接拼任意路径。
+const allowedLocalAudioPaths = new Map(); // normalizedAbsPath -> expiresAtMs
+const LOCAL_AUDIO_TTL_MS = 5 * 60 * 1000;
+
+function normalizeAbsPath(p) {
+  if (!p || typeof p !== 'string') return null;
+  try {
+    const normalized = path.normalize(p);
+    if (!path.isAbsolute(normalized)) return null;
+    return path.resolve(normalized);
+  } catch (e) {
+    return null;
+  }
+}
+
+function isPathUnderRoot(targetPath, rootPath) {
+  const target = normalizeAbsPath(targetPath);
+  const root = normalizeAbsPath(rootPath);
+  if (!target || !root) return false;
+  const sep = path.sep;
+  return target === root || target.startsWith(root + sep);
+}
+
+function allowLocalAudioPath(p, ttlMs = LOCAL_AUDIO_TTL_MS) {
+  const abs = normalizeAbsPath(p);
+  if (!abs) return false;
+  const ttl = Math.max(10_000, Number(ttlMs) || LOCAL_AUDIO_TTL_MS);
+  allowedLocalAudioPaths.set(abs, Date.now() + ttl);
+  return true;
+}
+
+function isLocalAudioPathAllowed(p) {
+  const abs = normalizeAbsPath(p);
+  if (!abs) return false;
+  const expiresAt = allowedLocalAudioPaths.get(abs);
+  if (!expiresAt) return false;
+  if (Date.now() > expiresAt) {
+    allowedLocalAudioPaths.delete(abs);
+    return false;
+  }
+  return true;
+}
+
+function getAllowedLineRoots() {
+  const roots = new Set();
+  try { roots.add(path.join(app.getPath('userData'), 'lines')); } catch (e) {}
+  try { roots.add(path.join(app.getPath('temp'), 'metro-pids-import')); } catch (e) {}
+  try {
+    if (typeof getLinesFolders === 'function') {
+      const folders = getLinesFolders();
+      Object.values(folders || {}).forEach((f) => {
+        const p = f && f.path;
+        if (p && typeof p === 'string' && p.trim()) roots.add(p.trim());
+      });
+    }
+  } catch (e) {}
+  return Array.from(roots).map((p) => normalizeAbsPath(p)).filter(Boolean);
+}
+
+function isLineDirAllowed(lineDir) {
+  const abs = normalizeAbsPath(lineDir);
+  if (!abs) return false;
+  if (process.env.METRO_PIDS_ALLOW_EXTERNAL_LINE_DIR === '1') return true;
+  const roots = getAllowedLineRoots();
+  return roots.some((r) => isPathUnderRoot(abs, r));
+}
+
 // 根据线路文件路径获取其所在目录（用于车站音频 resolve/copy）
 ipcMain.handle('lines/getLineDir', async (event, lineFilePath) => {
   if (!lineFilePath || typeof lineFilePath !== 'string') return { ok: false, error: 'invalid-path' };
@@ -5479,6 +5636,7 @@ ipcMain.handle('lines/getLineDir', async (event, lineFilePath) => {
   if (!path.isAbsolute(normalized)) return { ok: false, error: 'path-must-be-absolute' };
   try {
     const dir = path.dirname(normalized);
+    if (!isLineDirAllowed(dir)) return { ok: false, error: 'forbidden-line-dir' };
     return { ok: true, dir };
   } catch (e) {
     return { ok: false, error: String(e) };
@@ -5489,6 +5647,8 @@ ipcMain.handle('lines/getLineDir', async (event, lineFilePath) => {
 // 相同 MD5 不重复复制，直接返回已有路径
 ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, sourceFilePath) => {
   if (!sourceFilePath || typeof sourceFilePath !== 'string') return { ok: false, error: 'invalid-source' };
+  const sourceAbs = normalizeAbsPath(sourceFilePath);
+  if (!sourceAbs) return { ok: false, error: 'source-must-be-absolute' };
   let lineDir = null;
   const raw = lineDirOrLineFilePath;
   if (raw != null && typeof raw === 'string' && raw.trim()) {
@@ -5507,14 +5667,17 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
       return { ok: false, error: 'no-line-dir' };
     }
   }
+  lineDir = normalizeAbsPath(lineDir);
+  if (!lineDir) return { ok: false, error: 'line-dir-must-be-absolute' };
+  if (!isLineDirAllowed(lineDir)) return { ok: false, error: 'forbidden-line-dir' };
   // 统一使用 nested 布局：音频文件放在 audio/ 子目录
-  const audioDir = path.join(path.normalize(lineDir), 'audio');
+  const audioDir = path.join(lineDir, 'audio');
   await ensureDir(audioDir);
   await hideDirOnWindows(audioDir); // 创建后标记为隐藏，避免在线路管理器中显示
   const hashCachePath = path.join(audioDir, '.audio-hashes.json');
   let sourceMd5 = '';
   try {
-    const buf = await fsPromises.readFile(sourceFilePath);
+    const buf = await fsPromises.readFile(sourceAbs);
     sourceMd5 = crypto.createHash('md5').update(buf).digest('hex');
   } catch (e) {
     return { ok: false, error: 'read-source-failed' };
@@ -5552,7 +5715,7 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
     }
   }
   try {
-    await fsPromises.copyFile(sourceFilePath, destPath);
+    await fsPromises.copyFile(sourceAbs, destPath);
     const newBuf = await fsPromises.readFile(destPath);
     const newMd5 = crypto.createHash('md5').update(newBuf).digest('hex');
     cache[relPath] = newMd5;
@@ -5567,18 +5730,36 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
 // lineFilePath 可以是线路文件路径或线路目录路径
 ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePath) => {
   if (!lineFilePath || !relativePath || typeof relativePath !== 'string') return { ok: false, error: 'invalid-args' };
-  const normalized = path.normalize(lineFilePath);
-  const relSafe = relativePath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^(\.\.\/|\.\.\\)+/, '');
+  const normalized = path.normalize(String(lineFilePath));
+  if (!path.isAbsolute(normalized)) return { ok: false, error: 'line-path-must-be-absolute' };
+  const relSafe = String(relativePath)
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^\.(?:\.?\/)+/, '')
+    .replace(/^(\.\.\/|\.\.\\)+/, '');
   const isMpl = normalized.toLowerCase().endsWith('.mpl');
   const lineDir = (normalized.endsWith('.json') || isMpl) ? path.dirname(normalized) : normalized;
-  let playableDir = lineDir;
+  const lineDirAbs = normalizeAbsPath(lineDir);
+  if (!lineDirAbs) return { ok: false, error: 'invalid-line-dir' };
+  if (!isLineDirAllowed(lineDirAbs)) return { ok: false, error: 'forbidden-line-dir' };
+
+  let playableDir = lineDirAbs;
   if (isMpl) {
     const extracted = await ensureMplExtracted(normalized);
-    if (extracted && extracted.dir) playableDir = extracted.dir;
+    if (extracted && extracted.dir) {
+      const extractedAbs = normalizeAbsPath(extracted.dir);
+      if (extractedAbs) playableDir = extractedAbs;
+    }
   }
-  const fullPath = path.join(playableDir, relSafe.split('/').join(path.sep));
+  const fullPath = path.resolve(playableDir, relSafe.split('/').join(path.sep));
+
+  // 防止相对路径逃逸到 playableDir 之外
+  if (!isPathUnderRoot(fullPath, playableDir)) return { ok: false, error: 'path-traversal-blocked' };
+
   try {
-    await fsPromises.access(fullPath);
+    const st = await fsPromises.stat(fullPath);
+    if (!st.isFile()) return { ok: false, error: 'not-a-file' };
+    allowLocalAudioPath(fullPath);
     const playableUrl = 'local-audio://file/' + encodeURIComponent(fullPath);
     return { ok: true, path: fullPath, playableUrl };
   } catch (e) {
@@ -6980,10 +7161,11 @@ ipcMain.handle('app/relaunch', () => {
 
 // 获取环境变量中的 Gitee Token
 ipcMain.handle('env/get-gitee-token', () => {
-  // 优先从环境变量读取，支持多种命名方式
-  return process.env.GITEE_TOKEN || 
-         process.env.GITEE_ACCESS_TOKEN || 
-         null;
+  // 安全：不要把私密 Token 暴露给渲染进程。
+  // 如确有需要，仅在开发模式且显式允许时返回。
+  if (app.isPackaged) return null;
+  if (process.env.METRO_PIDS_ALLOW_RENDERER_TOKENS !== '1') return null;
+  return process.env.GITEE_TOKEN || process.env.GITEE_ACCESS_TOKEN || null;
 });
 
 // 更新主窗口进度条（用于任务栏图标）
@@ -7845,6 +8027,12 @@ app.whenReady().then(async () => {
         if (!path.isAbsolute(normalized)) {
           return callback({ error: -2 });
         }
+
+        // 仅允许访问经主进程校验后短期放行的路径
+        if (!isLocalAudioPathAllowed(normalized)) {
+          return callback({ error: -2 });
+        }
+
         callback({ path: normalized });
       } catch (e) {
         callback({ error: -1 });
@@ -9802,6 +9990,20 @@ async function createDisplayWindow(width, height, displayId = 'display-1') {
   });
   
   displayWin.loadURL(dispPath);
+
+  // 转发显示端控制台日志，便于排查黑屏
+  try {
+    displayWin.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      const prefix = `[DisplayWindow:${displayId}]`;
+      const at = sourceId ? `(${sourceId}:${line})` : '';
+      if (level === 0) console.log(prefix, message, at);
+      else if (level === 1) console.warn(prefix, message, at);
+      else if (level === 2) console.error(prefix, message, at);
+      else console.error(prefix, `[console:${level}]`, message, at);
+    });
+  } catch (e) {
+    // ignore
+  }
   
   // 监听加载失败事件，特别是第三方显示器
   displayWin.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {

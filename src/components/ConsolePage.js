@@ -1,4 +1,4 @@
-﻿import { useUIState } from '../composables/useUIState.js'
+import { useUIState } from '../composables/useUIState.js'
 import { useAutoplay } from '../composables/useAutoplay.js'
 import { showNotification } from '../utils/notificationService.js'
 import { useFileIO } from '../composables/useFileIO.js'
@@ -9,6 +9,7 @@ import { useStationAudio } from '../composables/useStationAudio.js'
 import dialogService from '../utils/dialogService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
+import { getEffectiveViewportRect } from '../utils/effectiveViewportRect.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
@@ -67,8 +68,9 @@ export default {
     const resolveDropdownDirection = (containerRef, estimatedMenuHeight = 360) => {
         if (typeof window === 'undefined' || !containerRef || !containerRef.value) return false
         const rect = containerRef.value.getBoundingClientRect()
-        const spaceBelow = window.innerHeight - rect.bottom
-        const spaceAbove = rect.top
+        const vp = getEffectiveViewportRect(containerRef.value)
+        const spaceBelow = (vp.bottom - rect.bottom)
+        const spaceAbove = (rect.top - vp.top)
         return spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow
     }
 
@@ -1416,27 +1418,28 @@ export default {
             const menuElement = document.querySelector('[data-preset-context-menu]');
             if (menuElement) {
                 const rect = menuElement.getBoundingClientRect();
-                const viewportWidth = window.innerWidth;
-                const viewportHeight = window.innerHeight;
+                const vp = getEffectiveViewportRect(event && event.target ? event.target : menuElement)
+                const viewportWidth = (vp.right - vp.left) || window.innerWidth
+                const viewportHeight = (vp.bottom - vp.top) || window.innerHeight
                 
                 let x = event.clientX;
                 let y = event.clientY;
                 
                 // 如果菜单会在右侧被截断，调整到左侧
-                if (x + rect.width > viewportWidth) {
+                if (((x - (vp.left || 0)) + rect.width) > viewportWidth) {
                     x = event.clientX - rect.width;
                 }
                 
                 // 如果菜单会在底部被截断，调整到上方
-                if (y + rect.height > viewportHeight) {
+                if (((y - (vp.top || 0)) + rect.height) > viewportHeight) {
                     y = event.clientY - rect.height;
                 }
                 
                 // 确保不会超出左边界
-                if (x < 0) x = 10;
+                if (x < (vp.left || 0)) x = (vp.left || 0) + 10;
                 
                 // 确保不会超出上边界
-                if (y < 0) y = 10;
+                if (y < (vp.top || 0)) y = (vp.top || 0) + 10;
                 
                 // 更新位置
                 presetContextMenu.value.x = x;
@@ -2027,6 +2030,31 @@ export default {
     const autoplay = useAutoplay(controllerNextWithAudio, shouldStop)
     const { isPlaying, isPaused, nextIn, start, stop, togglePause } = autoplay
 
+    function normalizeAutoplayIntervalSec(raw) {
+        const n = Number(raw)
+        if (!Number.isFinite(n)) return 8
+        return Math.max(1, Math.min(3600, Math.round(n)))
+    }
+
+    function getAutoplayIntervalSec() {
+        try {
+            if (!settings.autoplay) settings.autoplay = { ...DEFAULT_SETTINGS.autoplay }
+            const safe = normalizeAutoplayIntervalSec(settings.autoplay.intervalSec)
+            settings.autoplay.intervalSec = safe
+            return safe
+        } catch (e) {
+            return 8
+        }
+    }
+
+    function applyAutoplayIntervalSec() {
+        const safe = getAutoplayIntervalSec()
+        try { saveSettings() } catch (e) {}
+        if (isPlaying.value) {
+            try { start(safe) } catch (e) {}
+        }
+    }
+
     // 开启自动播放时确保当前选中的显示器已打开
     async function ensureDisplayOpen() {
         try {
@@ -2052,9 +2080,9 @@ export default {
     }
 
     // 自动播放控制函数（与 SlidePanel 一致：确认弹窗 + 锁定弹窗 + 自动打开当前显示器）
-    async function startWithLock(interval = 8) {
+    async function startWithLock(interval = null) {
         if (uiState.autoLocked) return;
-        const ok = await askUser('开启自动播放将锁定控制面板，期间请不要操作控制界面，是否继续？');
+        const ok = await askUser(t('console.autoplayLockConfirm'));
         if (!ok) return;
         uiState.autoLocked = true;
         uiState.autoplayTogglePause = togglePause;
@@ -2062,7 +2090,13 @@ export default {
         try {
             await ensureDisplayOpen();
             try { sync(); } catch (e) {}
-            start(interval);
+            const safe = normalizeAutoplayIntervalSec(interval ?? getAutoplayIntervalSec());
+            try {
+                if (!settings.autoplay) settings.autoplay = { ...DEFAULT_SETTINGS.autoplay }
+                settings.autoplay.intervalSec = safe
+                saveSettings()
+            } catch (e) {}
+            start(safe);
         } catch (e) {
             uiState.autoLocked = false;
             uiState.autoplayTogglePause = null;
@@ -2076,7 +2110,7 @@ export default {
         uiState.autoLocked = false;
         uiState.autoplayTogglePause = null;
         uiState.autoplayIsPausedRef = null;
-        showNotification('自动播放已停止', '自动播放已结束，控制面板已解锁', {
+        showNotification(t('console.autoplayStoppedTitle'), t('console.autoplayStoppedMsg'), {
             tag: 'autoplay-stopped',
             urgency: 'low'
         });
@@ -2192,15 +2226,19 @@ export default {
                     const folderLabel = result.folderName || result.folderId || '';
                     const targetLabel = folderLabel ? ` -> ${folderLabel}` : '';
                     const modeLabel = mode === 'zip' ? '保存为压缩包' : '保存当前线路';
-                    showNotification('保存成功', `${modeLabel}：${payload.lineName || cleanName}${targetLabel}`);
+                    showNotification(t('console.saveSuccessTitle'), t('console.saveSuccessMsg', {
+                        mode: mode === 'zip' ? t('console.saveAsZip') : t('console.saveCurrentLine'),
+                        lineName: payload.lineName || cleanName,
+                        folder: folderLabel ? ` -> ${folderLabel}` : ''
+                    }));
                 } catch (e) {}
             } else {
-                const errMsg = (result && result.error) ? String(result.error) : '未知错误';
+                const errMsg = (result && result.error) ? String(result.error) : t('console.saveUnknownError');
                 const isCancelled = !!(result && result.cancelled) || errMsg === 'window-closed' || errMsg === 'cancelled';
                 if (isCancelled) {
-                    await showMsg('已取消保存', '提示');
+                    await showMsg(t('console.saveCancelled'), t('console.saveHint'));
                 } else {
-                    await showMsg('保存失败：' + errMsg, '错误');
+                    await showMsg(t('console.saveFail', { err: errMsg }), t('console.saveError'));
                 }
             }
         }, 400);
@@ -2210,7 +2248,7 @@ export default {
         const cur = pidsState.appData;
         const lineName = cur && cur.meta ? (cur.meta.lineName || '') : '';
         if (!cur || !cur.meta || !lineName) {
-            await showMsg('当前线路数据无效，无法保存');
+            await showMsg(t('console.saveInvalid'), t('console.saveError'));
             return;
         }
 
@@ -2218,7 +2256,7 @@ export default {
         try {
             serializable = JSON.parse(JSON.stringify(cur));
         } catch (e) {
-            await showMsg('保存失败：线路数据无法序列化');
+            await showMsg(t('console.saveSerializeFail'), t('console.saveError'));
             return;
         }
 
@@ -2635,12 +2673,14 @@ export default {
     return {
         pidsState,
         fileIO,
+        settings,
         isPlaying,
         isPaused,
         nextIn,
         startWithLock,
         stopWithUnlock,
         togglePause,
+        applyAutoplayIntervalSec,
         openLineManagerWindow,
         openLineManagerForSave,
         saveCfg,
@@ -3084,7 +3124,7 @@ export default {
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
               <span style="color:var(--text);">{{ t('console.autoplayEnable') }}</span>
               <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
-                  <input type="checkbox" :checked="isPlaying" @change="isPlaying ? stopWithUnlock() : startWithLock(8)" style="opacity:0; width:0; height:0;">
+                  <input type="checkbox" :checked="isPlaying" @change="isPlaying ? stopWithUnlock() : startWithLock(settings.autoplay.intervalSec)" style="opacity:0; width:0; height:0;">
                   <span :style="{
                       position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
                       backgroundColor: isPlaying ? 'var(--accent)' : '#ccc', 
@@ -3100,7 +3140,7 @@ export default {
           
           <div style="display:flex; align-items:center; gap:12px;">
               <span style="color:var(--muted); font-size:14px;">{{ t('console.autoplayInterval') }}</span>
-              <input type="number" :value="8" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
+              <input type="number" v-model.number="settings.autoplay.intervalSec" min="1" max="3600" @change="applyAutoplayIntervalSec()" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
               <span v-if="isPlaying" style="font-size:12px; color:var(--muted);">({{ nextIn }}s)</span>
           </div>
         </div>

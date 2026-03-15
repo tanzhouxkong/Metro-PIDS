@@ -2,6 +2,7 @@
 import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, onErrorCaptured, Teleport, Transition } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
+import { getEffectiveViewportRect } from '../utils/effectiveViewportRect.js'
 
 export default {
   name: 'StationEditor',
@@ -363,22 +364,26 @@ export default {
         const menuEl = document.querySelector('[data-xfer-context-menu]')
         if (!menuEl) return
         const rect = menuEl.getBoundingClientRect()
-        const vw = window.innerWidth
-        const vh = window.innerHeight
+        const anchor = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('admin-app') : null
+        const vp = getEffectiveViewportRect(anchor || menuEl)
+        const vw = (vp.right - vp.left) || window.innerWidth
+        const vh = (vp.bottom - vp.top) || window.innerHeight
         const margin = 10
         let x = clientX
         let y = clientY
 
         // 横向优先向左展开
-        if (x + rect.width > vw - margin) x = clientX - rect.width
+        if (((x - (vp.left || 0)) + rect.width) > vw - margin) x = clientX - rect.width
         // 纵向优先向上展开
-        if (y + rect.height > vh - margin) y = clientY - rect.height
+        if (((y - (vp.top || 0)) + rect.height) > vh - margin) y = clientY - rect.height
 
         // 夹紧，确保不越界；菜单过高时仍可滚动
         const maxX = Math.max(margin, vw - rect.width - margin)
         const maxY = Math.max(margin, vh - rect.height - margin)
-        x = Math.min(Math.max(x, margin), maxX)
-        y = Math.min(Math.max(y, margin), maxY)
+        const baseX = (vp.left || 0) + margin
+        const baseY = (vp.top || 0) + margin
+        x = Math.min(Math.max(x, baseX), (vp.left || 0) + maxX)
+        y = Math.min(Math.max(y, baseY), (vp.top || 0) + maxY)
 
         menuX.value = x
         menuY.value = y
@@ -1249,60 +1254,67 @@ export default {
           </div>
 
             <div class="se-content">
-            <div class="se-grid2">
-              <div class="se-field">
-                <label class="se-label">{{ t('stationEditor.nameZhLabel') }}</label>
-                <input v-model="form.name" class="se-input" :placeholder="t('stationEditor.nameZhPlaceholder')" />
+            <div class="se-section-head se-station-page-head">
+              <div class="se-section-toggle">
+                <button type="button" class="se-seg-btn se-mini on" @click.prevent>{{ t('stationEditor.stationInfoPage') }}</button>
               </div>
-              <div class="se-field">
-                <label class="se-label">{{ t('stationEditor.nameEnLabel') }}</label>
-                <input v-model="form.en" class="se-input" :placeholder="t('stationEditor.nameEnPlaceholder')" />
-              </div>
+              <span class="se-section-hint">{{ t('stationEditor.stationInfoHint') }}</span>
             </div>
 
-            <div class="se-grid3 se-mt">
-              <div class="se-field">
-                <div class="se-label">{{ t('stationEditor.statusLabel') }}</div>
-                <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: !form.skip }" @click="form.skip = false">{{ t('stationEditor.statusNormal') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.skip, warn: form.skip }" @click="form.skip = true">{{ t('stationEditor.statusSuspended') }}</button>
+              <div class="se-grid2">
+                <div class="se-field">
+                  <label class="se-label">{{ t('stationEditor.nameZhLabel') }}</label>
+                  <input v-model="form.name" class="se-input" :placeholder="t('stationEditor.nameZhPlaceholder')" />
+                </div>
+                <div class="se-field">
+                  <label class="se-label">{{ t('stationEditor.nameEnLabel') }}</label>
+                  <input v-model="form.en" class="se-input" :placeholder="t('stationEditor.nameEnPlaceholder')" />
                 </div>
               </div>
-              <div class="se-field">
-                <div class="se-label">{{ t('stationEditor.doorLabel') }}</div>
-                <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.door === 'left' }" @click="form.door = 'left'">{{ t('stationEditor.doorLeft') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.door === 'right' }" @click="form.door = 'right'">{{ t('stationEditor.doorRight') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.door === 'both' }" @click="form.door = 'both'">{{ t('stationEditor.doorBoth') }}</button>
-                </div>
-              </div>
-              <div class="se-field">
-                <div class="se-label">{{ t('stationEditor.dockLabel') }}</div>
-                <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.dock === 'up' }" @click="form.dock = 'up'">{{ t('stationEditor.dockUp') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.dock === 'down' }" @click="form.dock = 'down'">{{ t('stationEditor.dockDown') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.dock === 'both' }" @click="form.dock = 'both'">{{ t('stationEditor.dockBoth') }}</button>
-                </div>
-              </div>
-            </div>
 
-            <div class="se-grid2 se-mt">
-              <div class="se-field">
-                <div class="se-label">{{ t('stationEditor.turnbackLabel') }}</div>
-                <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.turnback === 'none' }" @click="form.turnback = 'none'">{{ t('stationEditor.turnbackNone') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.turnback === 'pre' }" @click="form.turnback = 'pre'">{{ t('stationEditor.turnbackPre') }}</button>
-                  <button class="se-seg-btn" :class="{ on: form.turnback === 'post' }" @click="form.turnback = 'post'">{{ t('stationEditor.turnbackPost') }}</button>
+              <div class="se-grid3 se-mt">
+                <div class="se-field">
+                  <div class="se-label">{{ t('stationEditor.statusLabel') }}</div>
+                  <div class="se-seg">
+                    <button class="se-seg-btn" :class="{ on: !form.skip }" @click="form.skip = false">{{ t('stationEditor.statusNormal') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.skip, warn: form.skip }" @click="form.skip = true">{{ t('stationEditor.statusSuspended') }}</button>
+                  </div>
+                </div>
+                <div class="se-field">
+                  <div class="se-label">{{ t('stationEditor.doorLabel') }}</div>
+                  <div class="se-seg">
+                    <button class="se-seg-btn" :class="{ on: form.door === 'left' }" @click="form.door = 'left'">{{ t('stationEditor.doorLeft') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.door === 'right' }" @click="form.door = 'right'">{{ t('stationEditor.doorRight') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.door === 'both' }" @click="form.door = 'both'">{{ t('stationEditor.doorBoth') }}</button>
+                  </div>
+                </div>
+                <div class="se-field">
+                  <div class="se-label">{{ t('stationEditor.dockLabel') }}</div>
+                  <div class="se-seg">
+                    <button class="se-seg-btn" :class="{ on: form.dock === 'up' }" @click="form.dock = 'up'">{{ t('stationEditor.dockUp') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.dock === 'down' }" @click="form.dock = 'down'">{{ t('stationEditor.dockDown') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.dock === 'both' }" @click="form.dock = 'both'">{{ t('stationEditor.dockBoth') }}</button>
+                  </div>
                 </div>
               </div>
-              <div class="se-field se-field-narrow">
-                <div class="se-label">{{ t('stationEditor.expressLabel') }}</div>
-                <div class="se-seg">
-                  <button class="se-seg-btn" :class="{ on: form.expressStop }" @click="form.expressStop = true">{{ t('stationEditor.expressStop') }}</button>
-                  <button class="se-seg-btn" :class="{ on: !form.expressStop }" @click="form.expressStop = false">{{ t('stationEditor.expressSkip') }}</button>
+
+              <div class="se-grid2 se-mt">
+                <div class="se-field">
+                  <div class="se-label">{{ t('stationEditor.turnbackLabel') }}</div>
+                  <div class="se-seg">
+                    <button class="se-seg-btn" :class="{ on: form.turnback === 'none' }" @click="form.turnback = 'none'">{{ t('stationEditor.turnbackNone') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.turnback === 'pre' }" @click="form.turnback = 'pre'">{{ t('stationEditor.turnbackPre') }}</button>
+                    <button class="se-seg-btn" :class="{ on: form.turnback === 'post' }" @click="form.turnback = 'post'">{{ t('stationEditor.turnbackPost') }}</button>
+                  </div>
+                </div>
+                <div class="se-field se-field-narrow">
+                  <div class="se-label">{{ t('stationEditor.expressLabel') }}</div>
+                  <div class="se-seg">
+                    <button class="se-seg-btn" :class="{ on: form.expressStop }" @click="form.expressStop = true">{{ t('stationEditor.expressStop') }}</button>
+                    <button class="se-seg-btn" :class="{ on: !form.expressStop }" @click="form.expressStop = false">{{ t('stationEditor.expressSkip') }}</button>
+                  </div>
                 </div>
               </div>
-            </div>
 
             <div class="se-section" @contextmenu.prevent="openSectionMenu($event)">
               <div class="se-section-head">
@@ -1917,11 +1929,67 @@ export default {
 .se-field-narrow {
   max-width: 260px;
 }
+.se-image-field {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.se-image-preview {
+  width: 180px;
+  height: 132px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.se-image-preview.empty {
+  border-style: dashed;
+}
+.se-image-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.se-image-empty {
+  padding: 0 18px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted, #999);
+}
+.se-image-meta {
+  min-width: 0;
+}
+.se-image-path {
+  margin-bottom: 10px;
+}
+.se-image-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.se-btn-inline {
+  min-width: 88px;
+  padding: 8px 16px;
+}
+.se-image-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted, #888);
+}
 .se-label {
   display: block;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
+  /* 与站名/输入框文字同一套渲染参数：减少小号粗体 + 低对比度带来的锯齿感 */
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.72;
   margin-bottom: 6px;
 }
 
@@ -1975,6 +2043,9 @@ export default {
   padding-bottom: 8px;
   border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
   margin-bottom: 12px;
+}
+.se-station-page-head {
+  margin-bottom: 16px;
 }
 .se-section-toggle {
   display: flex;

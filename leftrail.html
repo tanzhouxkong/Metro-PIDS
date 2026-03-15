@@ -5,6 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Left Rail - Metro PIDS</title>
     <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[LeftRail] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+    <script>
+      // 兜底：有时 CSS 200 但字体文件未生效（CSP/路径/加载时序），会导致图标空白且不会触发 link.onerror
+      (function () {
+        function ensureLocalIconsFallback() {
+          try {
+            if (document.fonts && typeof document.fonts.check === 'function') {
+              if (
+                document.fonts.check('12px "Font Awesome 6 Free"') ||
+                document.fonts.check('12px "Font Awesome 6 Brands"')
+              ) return;
+            }
+          } catch (e) {}
+          if (!document.querySelector('link[href="assets/local-icons.css"]')) {
+            console.warn('[LeftRail] Font Awesome 字体未就绪，启用本地备用图标');
+            var fallback = document.createElement('link');
+            fallback.rel = 'stylesheet';
+            fallback.href = 'assets/local-icons.css';
+            document.head.appendChild(fallback);
+          }
+        }
+        window.addEventListener('load', function () { setTimeout(ensureLocalIconsFallback, 800); });
+        setTimeout(ensureLocalIconsFallback, 1800);
+      })();
+    </script>
     <style>
         :root { 
             --theme: #00b894; 
@@ -36,6 +60,10 @@
             background: transparent; 
             font-family: var(--font); 
             color: var(--text); 
+        }
+        #leftrail-app {
+            width: 100%;
+            height: 100%;
         }
         /* 按钮悬停效果 */
         .ft-btn { 
@@ -80,6 +108,21 @@
             const app = createApp(LeftRail)
             app.mount('#leftrail-app')
             console.log('[LeftRail] 组件挂载成功')
+
+            // 诊断：观察窗口高度/容器高度是否随 resize 变化
+            const logHeights = () => {
+                try {
+                    const root = document.getElementById('leftRail')
+                    const inner = document.getElementById('railInner')
+                    console.log('[LeftRail][resize]', {
+                        innerHeight: window.innerHeight,
+                        rootClientHeight: root ? root.clientHeight : null,
+                        innerClientHeight: inner ? inner.clientHeight : null
+                    })
+                } catch (e) {}
+            }
+            window.addEventListener('resize', logHeights)
+            setTimeout(logHeights, 200)
             
             // 延迟检查 DOM
             setTimeout(() => {

@@ -6,6 +6,10 @@ const outDir = path.join(__dirname, '..', 'out', 'main');
 const target = path.join(outDir, 'main.js');
 const source = path.join(__dirname, '..', 'main.js');
 
+// 同时确保解耦模块目录被带到 out/main：main/ -> out/main/main/
+const sourceMainDir = path.join(__dirname, '..', 'main');
+const targetMainDir = path.join(outDir, 'main');
+
 if (!fs.existsSync(outDir)) {
   fs.mkdirSync(outDir, { recursive: true });
 }
@@ -15,6 +19,10 @@ const copyMainFile = () => {
   if (fs.existsSync(source)) {
     try {
       fs.copyFileSync(source, target);
+
+      if (fs.existsSync(sourceMainDir)) {
+        fs.cpSync(sourceMainDir, targetMainDir, { recursive: true, force: true });
+      }
       return true;
     } catch (e) {
       console.error('[watch-main] ❌ Failed to copy main.js:', e);

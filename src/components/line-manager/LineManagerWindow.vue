@@ -1,4 +1,4 @@
-﻿<script>
+<script>
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,6 +7,7 @@ import LineManagerTopbar from '../LineManagerTopbar.js'
 import { useCloudConfig, CLOUD_API_BASE } from '../../composables/useCloudConfig.js'
 import dialogService from '../../utils/dialogService.js'
 import ContextMenu from './ContextMenu.vue'
+import { getEffectiveViewportRect } from '../../utils/effectiveViewportRect.js'
 
 // 去除颜色标记，返回纯文本（用于搜索）
 function stripColorMarkup(text) {
@@ -957,19 +958,20 @@ export default {
         const menuElement = document.querySelector('[data-line-context-menu]')
         if (!menuElement) return
         const rect = menuElement.getBoundingClientRect()
-        const viewportWidth = window.innerWidth
-        const viewportHeight = window.innerHeight
+        const vp = getEffectiveViewportRect(event && event.target ? event.target : menuElement)
+        const viewportWidth = (vp.right - vp.left) || window.innerWidth
+        const viewportHeight = (vp.bottom - vp.top) || window.innerHeight
         let x = event.clientX
         let y = event.clientY
-        if (x + rect.width > viewportWidth) {
+        if (((x - (vp.left || 0)) + rect.width) > viewportWidth) {
           x = event.clientX - rect.width
-          if (x < 0) x = Math.max(0, viewportWidth - rect.width - 10)
+          if (x < (vp.left || 0)) x = Math.max((vp.left || 0), (vp.left || 0) + viewportWidth - rect.width - 10)
         }
-        if (y + rect.height > viewportHeight) {
+        if (((y - (vp.top || 0)) + rect.height) > viewportHeight) {
           y = event.clientY - rect.height
-          if (y < 0) y = Math.max(0, viewportHeight - rect.height - 10)
+          if (y < (vp.top || 0)) y = Math.max((vp.top || 0), (vp.top || 0) + viewportHeight - rect.height - 10)
         }
-        if (x < 0) x = 10
+        if (x < (vp.left || 0)) x = (vp.left || 0) + 10
         lineContextMenu.value.x = x
         lineContextMenu.value.y = y
       })

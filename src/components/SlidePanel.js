@@ -7,6 +7,7 @@ import { useSettings } from '../composables/useSettings.js'
 import { useCloudConfig, CLOUD_API_BASE } from '../composables/useCloudConfig.js'
 import { useStationAudio } from '../composables/useStationAudio.js'
 import { DEFAULT_SETTINGS } from '../utils/defaults.js'
+import { createDisplaySdk } from '../utils/displaySdk.js'
 import dialogService from '../utils/dialogService.js'
 import { showNotification } from '../utils/notificationService.js'
 import { applyThroughOperation as mergeThroughLines } from '../utils/throughOperation.js'
@@ -16,6 +17,30 @@ import { langs, setLocale, i18n } from '../locales/index.js'
 
 const ENABLE_SLIDE_LOG = false;
 const ENABLE_MAIN_LOG_BRIDGE = false; // 关闭主进程日志转发到渲染层
+
+function isDevBuild() {
+    try {
+        if (typeof import.meta !== 'undefined' && import.meta.env && typeof import.meta.env.DEV === 'boolean') {
+            return !!import.meta.env.DEV;
+        }
+    } catch (e) {
+        // ignore
+    }
+    return false;
+}
+
+const IS_DEV_BUILD = isDevBuild();
+
+let _slidePanelDisplaySdk = null;
+function getSlidePanelDisplaySdk() {
+  if (_slidePanelDisplaySdk) return _slidePanelDisplaySdk;
+  try {
+    _slidePanelDisplaySdk = createDisplaySdk({ enableWebSocket: true });
+  } catch (e) {
+    _slidePanelDisplaySdk = null;
+  }
+  return _slidePanelDisplaySdk;
+}
 
 export default {
   name: 'SlidePanel',
@@ -74,6 +99,33 @@ export default {
 
         const autoplay = useAutoplay(controllerNextWithAudio, shouldStop)
         const { isPlaying, isPaused, nextIn, start, stop, togglePause } = autoplay
+
+        function normalizeAutoplayIntervalSec(raw) {
+            const n = Number(raw)
+            if (!Number.isFinite(n)) return 8
+            // 合理范围：1s ~ 3600s
+            return Math.max(1, Math.min(3600, Math.round(n)))
+        }
+
+        function getAutoplayIntervalSec() {
+            try {
+                if (!settings.autoplay) settings.autoplay = { ...DEFAULT_SETTINGS.autoplay }
+                const safe = normalizeAutoplayIntervalSec(settings.autoplay.intervalSec)
+                settings.autoplay.intervalSec = safe
+                return safe
+            } catch (e) {
+                return 8
+            }
+        }
+
+        function applyAutoplayIntervalSec() {
+            const safe = getAutoplayIntervalSec()
+            try { saveSettings() } catch (e) {}
+            // 若正在播放，立即用新间隔重启计时（保持锁定状态不变）
+            if (isPlaying.value) {
+                try { start(safe) } catch (e) {}
+            }
+        }
     const fileIO = useFileIO(pidsState)
 
     // 国际化：当前语言（简体 / 繁体 / 英文）
@@ -87,8 +139,19 @@ export default {
         const dropdownThemeDark = ref(false)
         let dropdownThemeObserver = null
         let dropdownThemeMediaQuery = null
+        
+        // 显示器3：车辆编组 / 当前车厢 / 屏幕位置下拉
+        const showTrainFormationDropdown = ref(false)
+        const showActiveCarDropdown = ref(false)
+        const showVirtualPosDropdown = ref(false)
+        const trainFormationDropdownOpenUp = ref(false)
+        const activeCarDropdownOpenUp = ref(false)
+        const virtualPosDropdownOpenUp = ref(false)
+        const trainFormationDropdownRef = ref(null)
+        const activeCarDropdownRef = ref(null)
+        const virtualPosDropdownRef = ref(null)
 
-    const languageOptions = langs
+        const languageOptions = langs
 
         const themeModeOptions = computed(() => [
             { key: 'system', title: i18n.global.t('settings.themeSystem') },
@@ -107,11 +170,40 @@ export default {
             showThemeModeDropdown.value = false
         }
 
+        const getEffectiveViewportRect = (anchorEl) => {
+            // SlidePanel 运行在一个被限制尺寸的容器内（如 #admin-app），
+            // 直接用 window.innerHeight 会导致“剩余高度”判断不准，从而出现下拉被截断/方向反了。
+            try {
+                if (typeof window === 'undefined') return { top: 0, bottom: 0, left: 0, right: 0 }
+                const vv = window.visualViewport
+                const docEl = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement : null
+
+                // 优先基于当前元素所在的面板容器来计算可视边界
+                const panel =
+                    (anchorEl && typeof anchorEl.closest === 'function' && (anchorEl.closest('.panel-body') || anchorEl.closest('#admin-app'))) ||
+                    (typeof document !== 'undefined' ? document.getElementById('admin-app') : null) ||
+                    null
+                if (panel && typeof panel.getBoundingClientRect === 'function') {
+                    return panel.getBoundingClientRect()
+                }
+
+                // 兜底：使用 VisualViewport / documentElement 的可视尺寸
+                const w = (vv && Number.isFinite(vv.width) ? vv.width : (docEl ? docEl.clientWidth : window.innerWidth)) || window.innerWidth
+                const h = (vv && Number.isFinite(vv.height) ? vv.height : (docEl ? docEl.clientHeight : window.innerHeight)) || window.innerHeight
+                return { top: 0, left: 0, right: w, bottom: h }
+            } catch (e) {
+                const w = (typeof window !== 'undefined' ? (window.innerWidth || 0) : 0)
+                const h = (typeof window !== 'undefined' ? (window.innerHeight || 0) : 0)
+                return { top: 0, left: 0, right: w, bottom: h }
+            }
+        }
+
         const resolveDropdownDirection = (containerRef, estimatedMenuHeight = 340) => {
             if (typeof window === 'undefined' || !containerRef || !containerRef.value) return false
             const rect = containerRef.value.getBoundingClientRect()
-            const spaceBelow = window.innerHeight - rect.bottom
-            const spaceAbove = rect.top
+            const vp = getEffectiveViewportRect(containerRef.value)
+            const spaceBelow = (vp.bottom - rect.bottom)
+            const spaceAbove = (rect.top - vp.top)
             return spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow
         }
 
@@ -138,6 +230,50 @@ export default {
                 languageDropdownOpenUp.value = resolveDropdownDirection(languageDropdownRef, 340)
             }
             showLanguageDropdown.value = !showLanguageDropdown.value
+        }
+
+        const toggleTrainFormationDropdown = () => {
+            if (!showTrainFormationDropdown.value) {
+                trainFormationDropdownOpenUp.value = resolveDropdownDirection(trainFormationDropdownRef, 260)
+            }
+            showTrainFormationDropdown.value = !showTrainFormationDropdown.value
+        }
+
+        const selectTrainFormation = (value) => {
+            const text = String(value || '').trim()
+            const opt = display3TrainFormationOptions.find((o) => o.value === text)
+            displayEdit.trainFormation = opt ? opt.value : '6'
+            showTrainFormationDropdown.value = false
+        }
+
+        const toggleActiveCarDropdown = () => {
+            if (!showActiveCarDropdown.value) {
+                activeCarDropdownOpenUp.value = resolveDropdownDirection(activeCarDropdownRef, 260)
+            }
+            showActiveCarDropdown.value = !showActiveCarDropdown.value
+        }
+
+        const selectActiveCar = (n) => {
+            const num = Number(n)
+            if (Number.isFinite(num) && num > 0) {
+                displayEdit.activeCarNo = Math.floor(num)
+            }
+            showActiveCarDropdown.value = false
+        }
+
+        const toggleVirtualPosDropdown = () => {
+            if (!showVirtualPosDropdown.value) {
+                virtualPosDropdownOpenUp.value = resolveDropdownDirection(virtualPosDropdownRef, 260)
+            }
+            showVirtualPosDropdown.value = !showVirtualPosDropdown.value
+        }
+
+        const selectVirtualPos = (value) => {
+            const text = String(value || '').trim().toLowerCase()
+            if (['left', 'center', 'right'].includes(text)) {
+                displayEdit.virtualPosition = text
+            }
+            showVirtualPosDropdown.value = false
         }
 
         const updateDropdownThemeState = () => {
@@ -248,6 +384,42 @@ export default {
             padding: '6px',
             zIndex: 25001
         }))
+
+        const activeCarDropdownMenuStyle = computed(() => ({
+            position: 'absolute',
+            left: '0',
+            right: '0',
+            top: activeCarDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+            bottom: activeCarDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+            background: glassMenuBackground(),
+            backdropFilter: glassBackdropFilter(),
+            WebkitBackdropFilter: glassBackdropFilter(),
+            border: `1px solid ${glassMenuBorder()}`,
+            borderRadius: '12px',
+            boxShadow: glassMenuShadow(),
+            maxHeight: 'min(260px, 38vh)',
+            overflowY: 'auto',
+            padding: '6px',
+            zIndex: 25001
+        }))
+
+        const virtualPosDropdownMenuStyle = computed(() => ({
+            position: 'absolute',
+            left: '0',
+            right: '0',
+            top: virtualPosDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+            bottom: virtualPosDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+            background: glassMenuBackground(),
+            backdropFilter: glassBackdropFilter(),
+            WebkitBackdropFilter: glassBackdropFilter(),
+            border: `1px solid ${glassMenuBorder()}`,
+            borderRadius: '12px',
+            boxShadow: glassMenuShadow(),
+            maxHeight: 'min(260px, 38vh)',
+            overflowY: 'auto',
+            padding: '6px',
+            zIndex: 25001
+        }))
         onMounted(() => {
             const h = (e) => {
                 if (uiVariantDropdownRef.value && !uiVariantDropdownRef.value.contains(e.target)) {
@@ -274,6 +446,43 @@ export default {
             boxShadow: glassMenuShadow()
         }))
 
+        const display3TrainFormationOptions = [
+            { value: '3', labelKey: 'display.display3Formation3', groups: [3] },
+            { value: '4', labelKey: 'display.display3Formation4', groups: [4] },
+            { value: '5', labelKey: 'display.display3Formation5', groups: [5] },
+            { value: '3+3', labelKey: 'display.display3Formation3x3', groups: [3, 3] },
+            { value: '6', labelKey: 'display.display3Formation6', groups: [6] },
+            { value: '7', labelKey: 'display.display3Formation7', groups: [7] },
+            { value: '8', labelKey: 'display.display3Formation8', groups: [8] },
+            { value: '4+4', labelKey: 'display.display3Formation4x4', groups: [4, 4] }
+        ]
+
+        const virtualPosOptions = [
+            { value: 'left', labelKey: 'display.display3VirtualPosLeft' },
+            { value: 'center', labelKey: 'display.display3VirtualPosCenter' },
+            { value: 'right', labelKey: 'display.display3VirtualPosRight' }
+        ]
+
+        const trainFormationTitle = computed(() => {
+            const opt = display3TrainFormationOptions.find((o) => o.value === displayEdit.trainFormation)
+            return opt ? i18n.global.t(opt.labelKey) : i18n.global.t('display.display3Formation6')
+        })
+
+        function normalizeDisplay3TrainFormation(value) {
+            const text = String(value ?? '').trim()
+            const compact = text
+                .toLowerCase()
+                .replace(/编组|重联|consist|cars?|节/g, '')
+                .replace(/\s+/g, '')
+            const matched = display3TrainFormationOptions.find((item) => item.value === text || item.value === compact)
+            return matched ? matched.value : '6'
+        }
+
+        const virtualPosTitle = computed(() => {
+            const opt = virtualPosOptions.find((o) => o.value === displayEdit.virtualPosition)
+            return opt ? i18n.global.t(opt.labelKey) : i18n.global.t('display.display3VirtualPosCenter')
+        })
+
         const handlePreferencesDropdownOutsideClick = (event) => {
             const target = event.target
             if (
@@ -289,6 +498,27 @@ export default {
                 !languageDropdownRef.value.contains(target)
             ) {
                 showLanguageDropdown.value = false
+            }
+            if (
+                showTrainFormationDropdown.value &&
+                trainFormationDropdownRef.value &&
+                !trainFormationDropdownRef.value.contains(target)
+            ) {
+                showTrainFormationDropdown.value = false
+            }
+            if (
+                showActiveCarDropdown.value &&
+                activeCarDropdownRef.value &&
+                !activeCarDropdownRef.value.contains(target)
+            ) {
+                showActiveCarDropdown.value = false
+            }
+            if (
+                showVirtualPosDropdown.value &&
+                virtualPosDropdownRef.value &&
+                !virtualPosDropdownRef.value.contains(target)
+            ) {
+                showVirtualPosDropdown.value = false
             }
         }
 
@@ -1588,27 +1818,28 @@ export default {
             const menuElement = document.querySelector('[data-preset-context-menu]');
             if (menuElement) {
                 const rect = menuElement.getBoundingClientRect();
-                const viewportWidth = window.innerWidth;
-                const viewportHeight = window.innerHeight;
+                const vp = getEffectiveViewportRect(event && event.target ? event.target : null);
+                const viewportWidth = (vp.right - vp.left) || window.innerWidth;
+                const viewportHeight = (vp.bottom - vp.top) || window.innerHeight;
                 
                 let x = event.clientX;
                 let y = event.clientY;
                 
                 // 如果菜单会在右侧被截断，调整到左侧
-                if (x + rect.width > viewportWidth) {
+                if ((x - (vp.left || 0)) + rect.width > viewportWidth) {
                     x = event.clientX - rect.width;
                 }
                 
                 // 如果菜单会在底部被截断，调整到上方
-                if (y + rect.height > viewportHeight) {
+                if ((y - (vp.top || 0)) + rect.height > viewportHeight) {
                     y = event.clientY - rect.height;
                 }
                 
                 // 确保不会超出左边界
-                if (x < 0) x = 10;
+                if (x < (vp.left || 0)) x = (vp.left || 0) + 10;
                 
                 // 确保不会超出上边界
-                if (y < 0) y = 10;
+                if (y < (vp.top || 0)) y = (vp.top || 0) + 10;
                 
                 // 更新位置
                 presetContextMenu.value.x = x;
@@ -2802,9 +3033,9 @@ export default {
         }
     }
 
-    async function startWithLock(intervalSec = 8) {
+    async function startWithLock(intervalSec = null) {
         if (uiState.autoLocked) return;
-        const ok = await askUser('开启自动播放将锁定控制面板，期间请不要操作控制界面，是否继续？');
+        const ok = await askUser(i18n.global.t('console.autoplayLockConfirm'));
         if (!ok) return;
         uiState.autoLocked = true;
         uiState.autoplayTogglePause = togglePause;
@@ -2816,7 +3047,13 @@ export default {
             // 发送初次同步，确保显示端状态最新
             try { sync(); } catch(e){}
 
-            start(intervalSec);
+            const safe = normalizeAutoplayIntervalSec(intervalSec ?? getAutoplayIntervalSec());
+            try {
+                if (!settings.autoplay) settings.autoplay = { ...DEFAULT_SETTINGS.autoplay }
+                settings.autoplay.intervalSec = safe
+                saveSettings()
+            } catch (e) {}
+            start(safe);
         } catch (e) {
             uiState.autoLocked = false;
             uiState.autoplayTogglePause = null;
@@ -2881,7 +3118,7 @@ export default {
         uiState.autoplayTogglePause = null;
         uiState.autoplayIsPausedRef = null;
         // 发送自动播放结束通知
-        showNotification('自动播放已停止', '自动播放已结束，控制面板已解锁', {
+        showNotification(i18n.global.t('console.autoplayStoppedTitle'), i18n.global.t('console.autoplayStoppedMsg'), {
             tag: 'autoplay-stopped',
             urgency: 'low'
         });
@@ -3179,6 +3416,11 @@ export default {
         function shouldShowDisplay(display, displayId) {
             if (!display) return false;
 
+            // 开发环境下：完全忽略云控对显示端的限制
+            if (IS_DEV_BUILD) {
+                return true;
+            }
+
             // 检查云控配置：服务器显式关闭的显示器不显示（系统显示器也遵守）
             const flags = uiState.displayFlags;
             if (flags && flags.displays && typeof flags.displays === 'object') {
@@ -3246,8 +3488,11 @@ export default {
             display2UiVariant: 'classic',
             // 显示器2：下一站/到站白屏时长
             nextStationDurationSeconds: 10,
-            // 显示器3：出站页面显示时长
+            // 显示器3：车辆编组图标 + 当前车厢 + 虚拟位置
             departDurationSeconds: 8,
+            trainFormation: '6',
+            activeCarNo: null,
+            virtualPosition: 'center',
             isSystem: false, isDisplay1: false, isDisplay2: false, isDisplay3: false
         });
 
@@ -3311,16 +3556,12 @@ export default {
             const display = settings.display.displays[displayId];
             if (!display) return;
             let nextStationDurationSeconds = 10;
-            let departDurationSeconds = 8;
             let display2UiVariant = 'classic';
             if (settings.display && settings.display.display2NextStationDuration != null) {
                 nextStationDurationSeconds = Math.round(settings.display.display2NextStationDuration / 1000);
             }
             if (settings.display && (settings.display.display2UiVariant === 'classic' || settings.display.display2UiVariant === 'modern')) {
                 display2UiVariant = settings.display.display2UiVariant;
-            }
-            if (settings.display && settings.display.display3DepartDuration != null) {
-                departDurationSeconds = Math.round(settings.display.display3DepartDuration / 1000);
             }
             displayEdit.displayId = displayId;
             displayEdit.name = display.name || '';
@@ -3348,7 +3589,36 @@ export default {
             }
             displayEdit.nextStationDurationSeconds = nextStationDurationSeconds;
             displayEdit.display2UiVariant = display2UiVariant;
-            displayEdit.departDurationSeconds = departDurationSeconds;
+            displayEdit.trainFormation = normalizeDisplay3TrainFormation(display.trainFormation);
+
+            // 显示器3：出站页面显示时长（秒）
+            if (displayId === 'display-3') {
+                const rawMs = settings && settings.display && settings.display.display3DepartDuration != null
+                    ? Number(settings.display.display3DepartDuration)
+                    : 8000;
+                const ms = Number.isFinite(rawMs) ? rawMs : 8000;
+                displayEdit.departDurationSeconds = Math.max(0, Math.round(ms / 1000));
+            }
+            // 当前车厢默认值：已有配置优先，否则按编组选中中间一节
+            const formationOption = display3TrainFormationOptions.find((o) => o.value === displayEdit.trainFormation);
+            const totalCars = formationOption ? formationOption.groups.reduce((sum, g) => sum + g, 0) : 6;
+            const rawActive = display.activeCarNo;
+            const numActive = Number(rawActive);
+            if (Number.isFinite(numActive) && numActive >= 1 && numActive <= totalCars) {
+                displayEdit.activeCarNo = Math.floor(numActive);
+            } else {
+                displayEdit.activeCarNo = Math.ceil(totalCars / 2);
+            }
+            // 显示器1/3：屏幕虚拟位置（left / center / right）
+            const rawVirtual = (display && display.virtualPosition) || 'center';
+            const textVirtual = String(rawVirtual || '').trim().toLowerCase();
+            if (['left', 'l', '左', '左侧'].includes(textVirtual)) {
+                displayEdit.virtualPosition = 'left';
+            } else if (['right', 'r', '右', '右侧'].includes(textVirtual)) {
+                displayEdit.virtualPosition = 'right';
+            } else {
+                displayEdit.virtualPosition = 'center';
+            }
             displayEdit.isSystem = display.isSystem === true;
             displayEdit.isDisplay1 = displayId === 'display-1';
             displayEdit.isDisplay2 = displayId === 'display-2';
@@ -3385,6 +3655,29 @@ export default {
         async function saveDisplayEdit() {
             const id = displayEdit.displayId;
             if (displayEdit.isSystem) {
+                // 同步系统显示器的内存设置（特别是 display-3 的虚拟位置与当前车厢），确保保存到 pids_settings_v1
+                try {
+                        if (settings.display && settings.display.displays && settings.display.displays[id]) {
+                            const target = settings.display.displays[id];
+                            if (displayEdit.isDisplay3) {
+                                // 显示器3：出站时长 / 编组 / 当前车厢 / 虚拟位置
+                                target.trainFormation = displayEdit.trainFormation;
+                                target.activeCarNo = displayEdit.activeCarNo;
+                                target.virtualPosition = displayEdit.virtualPosition;
+                                if (!settings.display) settings.display = {};
+                                const departSec = Number(displayEdit.departDurationSeconds);
+                                const departMs = Number.isFinite(departSec) ? Math.max(0, Math.round(departSec * 1000)) : 8000;
+                                settings.display.display3DepartDuration = departMs;
+                            }
+                            if (displayEdit.isDisplay1) {
+                                // 显示器1：屏幕虚拟位置
+                                target.virtualPosition = displayEdit.virtualPosition;
+                            }
+                        }
+                } catch (e) {
+                    console.warn('[Display-3][SlidePanel] 同步系统显示器设置到本地 settings 失败:', e);
+                }
+
                 const payload = displayEdit.isDisplay2
                     ? {
                         display2UiVariant: displayEdit.display2UiVariant,
@@ -3401,9 +3694,20 @@ export default {
                         wallpaperOpacity: displayEdit.isDisplay1 ? displayEdit.wallpaperOpacity : undefined,
                         showAllStations: displayEdit.isDisplay1 ? displayEdit.showAllStations : undefined,
                         layoutMode: displayEdit.isDisplay1 ? displayEdit.layoutMode : undefined,
-                        // 显示器3：出站页面显示时长（毫秒）
+                        // 显示器3：出站页面显示时长（毫秒）+ 编组 / 当前车厢 / 虚拟位置
                         departDuration: displayEdit.isDisplay3
-                            ? displayEdit.departDurationSeconds * 1000
+                            ? (Number.isFinite(Number(displayEdit.departDurationSeconds))
+                                ? Math.max(0, Math.round(Number(displayEdit.departDurationSeconds) * 1000))
+                                : 8000)
+                            : undefined,
+                        trainFormation: displayEdit.isDisplay3
+                            ? displayEdit.trainFormation
+                            : undefined,
+                        activeCarNo: displayEdit.isDisplay3
+                            ? displayEdit.activeCarNo
+                            : undefined,
+                        virtualPosition: (displayEdit.isDisplay3 || displayEdit.isDisplay1)
+                            ? displayEdit.virtualPosition
                             : undefined,
                         isSystem: true,
                         isDisplay1: displayEdit.isDisplay1 === true,
@@ -3411,6 +3715,51 @@ export default {
                     };
                 const updateResult = await editDisplayInternal(id, payload);
                 if (updateResult && updateResult.ok) {
+                    // 将更新后的系统显示器设置持久化到本地与主进程（pids_settings_v1）
+                    try {
+                        await saveSettings();
+                    } catch (e) {
+                        console.warn('[Display-3][SlidePanel] saveDisplayEdit(系统) 保存全局设置失败:', e);
+                    }
+                    // 若为系统显示器3：同步当前车厢号到共享 localStorage，并广播给显示端 / 客户端
+                    if (displayEdit.isDisplay3) {
+                        try {
+                            if (typeof window !== 'undefined' && window.localStorage) {
+                                const v = displayEdit.activeCarNo != null ? Math.floor(displayEdit.activeCarNo) : '';
+                                window.localStorage.setItem('metro_pids_display3_active_car_no', String(v));
+                                console.log('[Display-3][SlidePanel] saveDisplayEdit(系统) 写入当前车厢到 localStorage:', {
+                                    displayId: id,
+                                    activeCarNo: v
+                                });
+                                // BroadcastChannel 通知显示端3
+                                try {
+                                    const CHANNEL_NAME = 'metro_pids_v3';
+                                    const bc = new BroadcastChannel(CHANNEL_NAME);
+                                    bc.postMessage({
+                                        t: 'DISPLAY3_ACTIVE_CAR',
+                                        d: v
+                                    });
+                                    console.log('[Display-3][SlidePanel] (系统) 已通过 BroadcastChannel 发送 DISPLAY3_ACTIVE_CAR：', v);
+                                } catch (e) {
+                                    console.warn('[Display-3][SlidePanel] (系统) 通过 BroadcastChannel 推送 DISPLAY3_ACTIVE_CAR 失败', e);
+                                }
+                                // WebSocket 通知第三方客户端
+                                try {
+                                    const sdk = getSlidePanelDisplaySdk();
+                                    if (sdk && typeof sdk.sendCmd === 'function') {
+                                        sdk.sendCmd('DISPLAY3_ACTIVE_CAR', { d: v });
+                                        console.log('[Display-3][SlidePanel] (系统) 已通过 WebSocket 发送 DISPLAY3_ACTIVE_CAR：', v);
+                                    }
+                                } catch (e) {
+                                    console.warn('[Display-3][SlidePanel] (系统) 通过 WebSocket 推送 DISPLAY3_ACTIVE_CAR 失败', e);
+                                }
+                            } else {
+                                console.log('[Display-3][SlidePanel] saveDisplayEdit(系统) 无法访问 window.localStorage');
+                            }
+                        } catch (e) {
+                            console.warn('[Display-3][SlidePanel] saveDisplayEdit(系统) 写入 display-3 当前车厢到 localStorage 失败', e);
+                        }
+                    }
                     closeDisplayEditDialog();
                     await showMsg(`显示端 "${displayEdit.name}" 已更新`);
                 }
@@ -3438,7 +3787,7 @@ export default {
                     return;
                 }
             }
-            const result = {
+                const result = {
                 name, source, url, description,
                 // 仅显示器1支持这些开关
                 lineNameMerge: displayEdit.isDisplay1 ? displayEdit.lineNameMerge : undefined,
@@ -3451,13 +3800,61 @@ export default {
                 isDisplay1: displayEdit.isDisplay1,
                 display2UiVariant: displayEdit.isDisplay2 ? displayEdit.display2UiVariant : undefined,
                 nextStationDuration: displayEdit.isDisplay2 ? displayEdit.nextStationDurationSeconds * 1000 : undefined,
-                // 非系统显示端的 display-3 也可以单独配置出站页面时长
-                departDuration: displayEdit.isDisplay3 ? displayEdit.departDurationSeconds * 1000 : undefined,
+                // 显示器3：编组、当前车厢与屏幕虚拟位置
+                trainFormation: displayEdit.isDisplay3 ? displayEdit.trainFormation : undefined,
+                activeCarNo: displayEdit.isDisplay3 ? displayEdit.activeCarNo : undefined,
+                // 显示器1/3：屏幕虚拟位置
+                virtualPosition: (displayEdit.isDisplay3 || displayEdit.isDisplay1) ? displayEdit.virtualPosition : undefined,
                 isDisplay2: displayEdit.isDisplay2,
                 isDisplay3: displayEdit.isDisplay3
             };
             const updateResult = await editDisplayInternal(id, result);
             if (updateResult && updateResult.ok) {
+                // 若为系统显示器3：同步当前车厢号到共享 localStorage，供显示端直接读取，并打日志
+                if (displayEdit.isDisplay3) {
+                    try {
+                        if (typeof window !== 'undefined' && window.localStorage) {
+                            const v = displayEdit.activeCarNo != null ? Math.floor(displayEdit.activeCarNo) : '';
+                            window.localStorage.setItem('metro_pids_display3_active_car_no', String(v));
+                            console.log('[Display-3][SlidePanel] saveDisplayEdit 写入当前车厢到 localStorage:', {
+                                displayId: id,
+                                activeCarNo: v,
+                                rawDisplayActiveCarNo: result.activeCarNo
+                            });
+
+                            // 直接通过 BroadcastChannel 将新的当前车厢号推送给显示器3
+                            try {
+                                const CHANNEL_NAME = 'metro_pids_v3';
+                                const bc = new BroadcastChannel(CHANNEL_NAME);
+                                bc.postMessage({
+                                    t: 'DISPLAY3_ACTIVE_CAR',
+                                    d: v
+                                });
+                                console.log('[Display-3][SlidePanel] 已通过 BroadcastChannel 发送 DISPLAY3_ACTIVE_CAR：', v);
+                            } catch (e) {
+                                console.warn('[Display-3][SlidePanel] 通过 BroadcastChannel 推送 DISPLAY3_ACTIVE_CAR 失败', e);
+                            }
+                            
+                            // 同步当前车厢号给 WebSocket 客户端（例如 Python/硬件客户端）
+                            try {
+                                const sdk = getSlidePanelDisplaySdk();
+                                if (sdk && typeof sdk.sendCmd === 'function') {
+                                    sdk.sendCmd('DISPLAY3_ACTIVE_CAR', { d: v });
+                                    console.log('[Display-3][SlidePanel] 已通过 WebSocket 发送 DISPLAY3_ACTIVE_CAR：', v);
+                                }
+                            } catch (e) {
+                                console.warn('[Display-3][SlidePanel] 通过 WebSocket 推送 DISPLAY3_ACTIVE_CAR 失败', e);
+                            }
+                        } else {
+                            console.log('[Display-3][SlidePanel] saveDisplayEdit 无法访问 window.localStorage');
+                        }
+                    } catch (e) {
+                        console.warn('[Display-3][SlidePanel] 写入 display-3 当前车厢到 localStorage 失败', e);
+                    }
+                } else {
+                    console.log('[Display-3][SlidePanel] saveDisplayEdit 更新的不是系统 display-3，id =', id);
+                }
+
                 closeDisplayEditDialog();
                 await showMsg(`显示端 "${name}" 已更新`);
             }
@@ -3756,9 +4153,16 @@ export default {
                                     display.wallpaperOpacity = Number.isFinite(op) ? Math.max(0, Math.min(1, op)) : 0.35;
                                 }
                             }
-                        // 显示器3：更新“出站页面显示时长”
+                        // 显示器3：编组 / 当前车厢
                         if (displayId === 'display-3' && displayData.departDuration !== undefined) {
                             settings.display.display3DepartDuration = displayData.departDuration;
+                        }
+                        if (displayId === 'display-3' && displayData.trainFormation !== undefined) {
+                            display.trainFormation = normalizeDisplay3TrainFormation(displayData.trainFormation);
+                        }
+                        if (displayId === 'display-3' && displayData.activeCarNo !== undefined) {
+                            const num = Number(displayData.activeCarNo);
+                            display.activeCarNo = Number.isFinite(num) && num > 0 ? Math.floor(num) : null;
                         }
                         // 如果这是当前活动的显示端，同步设置到线路数据
                         if (displayId === settings.display.currentDisplayId) {
@@ -3825,6 +4229,9 @@ export default {
                     // 显示器3：更新“出站页面显示时长”
                     if (displayId === 'display-3' && displayData.departDuration !== undefined) {
                         settings.display.display3DepartDuration = displayData.departDuration;
+                    }
+                    if (displayId === 'display-3' && displayData.trainFormation !== undefined) {
+                        display.trainFormation = normalizeDisplay3TrainFormation(displayData.trainFormation);
                     }
                 }
                 
@@ -4133,9 +4540,14 @@ export default {
             showThemeModeDropdown, toggleThemeModeDropdown, themeModeOptions, currentThemeModeTitle, selectThemeMode, themeModeDropdownMenuStyle,
             currentLocale, languageOptions, changeLanguage,
             showLanguageDropdown, toggleLanguageDropdown, currentLanguageTitle, selectLanguage, languageDropdownMenuStyle,
-              dropdownTriggerStyle,
-              showUiVariantDropdown, toggleUiVariantDropdown, selectUiVariant, uiVariantDropdownRef,
-                            uiVariantDropdownMenuStyle,
+            dropdownTriggerStyle,
+            showUiVariantDropdown, toggleUiVariantDropdown, selectUiVariant, uiVariantDropdownRef, uiVariantDropdownMenuStyle,
+            display3TrainFormationOptions,
+            // 显示器3：车辆编组 / 当前车厢 / 屏幕位置下拉
+            trainFormationTitle, showTrainFormationDropdown, toggleTrainFormationDropdown, selectTrainFormation, trainFormationDropdownRef,
+            showActiveCarDropdown, toggleActiveCarDropdown, selectActiveCar, activeCarDropdownRef, activeCarDropdownMenuStyle,
+            showVirtualPosDropdown, toggleVirtualPosDropdown, selectVirtualPos, virtualPosDropdownRef, virtualPosDropdownMenuStyle,
+            virtualPosOptions, virtualPosTitle,
             glassMenuBackground, glassMenuBorder, glassMenuShadow, glassItemHoverBackground, glassItemActiveBackground, glassDividerColor,
             contextMenuBackdropFilter
         };
@@ -4192,7 +4604,7 @@ export default {
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
                 <span style="color:var(--text);">自动播放</span>
                 <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
-                    <input type="checkbox" :checked="isPlaying" @change="isPlaying ? stopWithUnlock() : startWithLock(8)" style="opacity:0; width:0; height:0;">
+                    <input type="checkbox" :checked="isPlaying" @change="isPlaying ? stopWithUnlock() : startWithLock(settings.autoplay && settings.autoplay.intervalSec)" style="opacity:0; width:0; height:0;">
                     <span :style="{
                         position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
                         backgroundColor: isPlaying ? 'var(--accent)' : '#ccc', 
@@ -4208,7 +4620,7 @@ export default {
             
             <div style="display:flex; align-items:center; gap:12px;">
                 <span style="color:var(--muted); font-size:14px;">启用间隔:</span>
-                <input type="number" :value="8" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
+                <input type="number" v-model.number="settings.autoplay.intervalSec" min="1" max="3600" @change="applyAutoplayIntervalSec()" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
                 <span v-if="isPlaying" style="font-size:12px; color:var(--muted);">({{ nextIn }}s)</span>
             </div>
           </div>
@@ -4815,14 +5227,153 @@ export default {
                             </div>
                         </template>
                         <template v-if="displayEdit.isDisplay3">
+                            <!-- 车辆编组：下拉菜单，与显示器2 UI 样式行风格一致 -->
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
-                                    <div class="se-label" style="margin-bottom:4px;">出站页面显示时长</div>
-                                    <div class="se-display-option-desc">列车出站时的“出站页面”持续显示时长（秒，0 表示一直显示）</div>
+                                    <div class="se-label" style="margin-bottom:4px;">{{ $t('display.display3TrainFormation') }}</div>
+                                    <div class="se-display-option-desc">{{ $t('display.display3TrainFormationDesc') }}</div>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:8px;">
-                                    <input v-model.number="displayEdit.departDurationSeconds" type="number" min="0" max="60" step="1" class="se-input" style="width:100px; text-align:right;">
-                                    <span style="font-size:14px; color:var(--text); font-weight:500;">秒</span>
+                                    <div ref="trainFormationDropdownRef" style="position:relative; width:160px;" class="custom-dropdown-container">
+                                        <div
+                                            @click.stop="toggleTrainFormationDropdown"
+                                            :style="dropdownTriggerStyle"
+                                        >
+                                            <span style="font-size:13px; font-weight:500;">{{ trainFormationTitle }}</span>
+                                            <i :class="showTrainFormationDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                                        </div>
+                                        <transition name="dropdown-fade">
+                                            <div
+                                                v-show="showTrainFormationDropdown"
+                                                :style="activeCarDropdownMenuStyle"
+                                                @click.stop
+                                            >
+                                                <div
+                                                    v-for="item in display3TrainFormationOptions"
+                                                    :key="item.value"
+                                                    @click.stop="selectTrainFormation(item.value)"
+                                                    :style="{
+                                                        padding: '9px 10px',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        color: 'var(--text)',
+                                                        fontSize: '13px',
+                                                        fontWeight: displayEdit.trainFormation === item.value ? '700' : '500',
+                                                        background: displayEdit.trainFormation === item.value ? glassItemActiveBackground() : 'transparent'
+                                                    }"
+                                                    @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                                                    @mouseout="$event.currentTarget.style.background = (displayEdit.trainFormation === item.value ? glassItemActiveBackground() : 'transparent')"
+                                                >
+                                                    <span>{{ $t(item.labelKey) }}</span>
+                                                    <i v-if="displayEdit.trainFormation === item.value" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
+                                                </div>
+                                            </div>
+                                        </transition>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 当前车厢：独立一行 -->
+                            <div class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">{{ $t('display.display3ActiveCar') }}</div>
+                                    <div class="se-display-option-desc">{{ $t('display.display3ActiveCarDesc') }}</div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <div ref="activeCarDropdownRef" style="position:relative; width:160px;" class="custom-dropdown-container">
+                                        <div
+                                            @click.stop="toggleActiveCarDropdown"
+                                            :style="dropdownTriggerStyle"
+                                        >
+                                            <span style="font-size:13px; font-weight:600;">
+                                                {{ $t('display.display3ActiveCarOption', { n: displayEdit.activeCarNo || 1 }) }}
+                                            </span>
+                                            <i :class="showActiveCarDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                                        </div>
+                                        <transition name="dropdown-fade">
+                                            <div
+                                                v-show="showActiveCarDropdown"
+                                                :style="activeCarDropdownMenuStyle"
+                                                @click.stop
+                                            >
+                                                <div
+                                                    v-for="n in (display3TrainFormationOptions.find(o => o.value === displayEdit.trainFormation)?.groups.reduce((sum, g) => sum + g, 0) || 6)"
+                                                    :key="'car-'+n"
+                                                    @click.stop="selectActiveCar(n)"
+                                                    :style="{
+                                                        padding: '9px 10px',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        color: 'var(--text)',
+                                                        fontSize: '13px',
+                                                        fontWeight: displayEdit.activeCarNo === n ? '700' : '500',
+                                                        background: displayEdit.activeCarNo === n ? glassItemActiveBackground() : 'transparent'
+                                                    }"
+                                                    @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                                                    @mouseout="$event.currentTarget.style.background = (displayEdit.activeCarNo === n ? glassItemActiveBackground() : 'transparent')"
+                                                >
+                                                    <span>{{ $t('display.display3ActiveCarOption', { n }) }}</span>
+                                                    <i v-if="displayEdit.activeCarNo === n" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
+                                                </div>
+                                            </div>
+                                        </transition>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                        <!-- 屏幕位置：独立一行（显示器1 / 3 共用） -->
+                        <div v-if="displayEdit.isDisplay1 || displayEdit.isDisplay3" class="se-display-option-row">
+                                <div class="se-display-option-text">
+                                    <div class="se-label" style="margin-bottom:4px;">{{ $t('display.display3VirtualPos') }}</div>
+                                    <div class="se-display-option-desc">{{ $t('display.display3VirtualPosDesc') }}</div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <div ref="virtualPosDropdownRef" style="position:relative; width:160px;" class="custom-dropdown-container">
+                                        <div
+                                            @click.stop="toggleVirtualPosDropdown"
+                                            :style="dropdownTriggerStyle"
+                                        >
+                                            <span style="font-size:13px; font-weight:600;">
+                                                {{ virtualPosTitle }}
+                                            </span>
+                                            <i :class="showVirtualPosDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                                        </div>
+                                        <transition name="dropdown-fade">
+                                            <div
+                                                v-show="showVirtualPosDropdown"
+                                                :style="virtualPosDropdownMenuStyle"
+                                                @click.stop
+                                            >
+                                                <div
+                                                    v-for="opt in virtualPosOptions"
+                                                    :key="opt.value"
+                                                    @click.stop="selectVirtualPos(opt.value)"
+                                                    :style="{
+                                                        padding: '9px 10px',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        color: 'var(--text)',
+                                                        fontSize: '13px',
+                                                        fontWeight: displayEdit.virtualPosition === opt.value ? '700' : '500',
+                                                        background: displayEdit.virtualPosition === opt.value ? glassItemActiveBackground() : 'transparent'
+                                                    }"
+                                                    @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                                                    @mouseout="$event.currentTarget.style.background = (displayEdit.virtualPosition === opt.value ? glassItemActiveBackground() : 'transparent')"
+                                                >
+                                                    <span>{{ $t(opt.labelKey) }}</span>
+                                                    <i v-if="displayEdit.virtualPosition === opt.value" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
+                                                </div>
+                                            </div>
+                                        </transition>
+                                    </div>
                                 </div>
                             </div>
                         </template>
@@ -5081,7 +5632,7 @@ export default {
         <div 
             v-if="presetContextMenu.visible"
             @click="closePresetContextMenu"
-            style="position: fixed; inset: 0; z-index: 9998; background: transparent;"
+            style="position: fixed; top:0; right:0; bottom:0; left:60px; z-index: 9998; background: transparent;"
         ></div>
     </Teleport>
 
@@ -5157,7 +5708,7 @@ export default {
         <div 
             v-if="displayContextMenu.visible"
             @click="closeDisplayContextMenu"
-            style="position: fixed; inset: 0; z-index: 9998; background: transparent;"
+            style="position: fixed; top:0; right:0; bottom:0; left:60px; z-index: 9998; background: transparent;"
         ></div>
     </Teleport>
     

@@ -742,3 +742,118 @@ export function getStationTransferInfo(station, options = {}) {
 
   return result;
 }
+
+/**
+ * 计算环线（loop 模式）线路图的几何参数。
+ *
+ * 该函数是对显示器1 中环线实现（drawRing）的纯计算抽象版本：
+ * - 不直接操作 DOM，仅返回几何描述，方便在显示器3（Vue 版本）中复用同一套 UI 布局
+ * - 所有数值参数保持与显示器1 一致，确保视觉效果一比一
+ *
+ * @param {Array<Object>} stations - 站点数组（通常来自 appData.stations）
+ * @param {Object} [options]
+ * @param {number} [options.minSpacing=160]            - 顶部水平段相邻站点的最小理论间距
+ * @param {number} [options.minTotalWidth=1400]        - 顶部水平段的最小理论总长度
+ * @param {number} [options.maxTrackLength=1670]       - 高亮路径（水平段部分）的最大理论长度
+ * @param {number} [options.trackGap=100]              - 上下两条轨道中心间距
+ * @param {number} [options.cornerRadius=30]           - 右侧圆角半径
+ * @param {number} [options.baseHeight=360]            - 整个环线视图高度
+ * @param {number} [options.extraHorizontalMargin=20]  - 轨道左右额外留白
+ * @param {number} [options.minTotalViewWidth=2080]    - 整体 viewBox 最小宽度
+ * @param {number} [options.viewSideMargin=75]         - 环线左右边距（与显示器1 逻辑一致）
+ * @param {number} [options.offsetLeft=80]             - 整个环线容器向左偏移量
+ * @param {number} [options.offsetTop=24]              - 整个环线容器向上偏移量
+ *
+ * @returns {{
+ *   viewBoxWidth: number,
+ *   viewBoxHeight: number,
+ *   pathD: string,
+ *   perimeter: number,
+ *   stationDists: number[],
+ *   topCount: number,
+ *   bottomCount: number,
+ *   cornerRadius: number,
+ *   ringOffsetLeft: number,
+ *   ringOffsetTop: number
+ * }}
+ */
+export function computeRingLayoutGeometry(stations, options = {}) {
+  const {
+    minSpacing = 160,
+    minTotalWidth = 1400,
+    maxTrackLength = 1670,
+    trackGap = 100,
+    cornerRadius = 30,
+    baseHeight = 360,
+    extraHorizontalMargin = 20,
+    minTotalViewWidth = 2080,
+    viewSideMargin = 75,
+    offsetLeft = 80,
+    offsetTop = 24
+  } = options || {};
+
+  const totalSt = Array.isArray(stations) ? stations.length : 0;
+  const H = baseHeight;
+  const cornerR = cornerRadius;
+
+  const topCount = totalSt > 0 ? Math.ceil(totalSt / 2) : 0;
+  const bottomCount = totalSt - topCount;
+
+  const w = Math.min(
+    maxTrackLength,
+    Math.max(minTotalWidth, topCount * minSpacing)
+  );
+
+  const ringWidth = w + 2 * (cornerR + extraHorizontalMargin);
+  const W = Math.max(minTotalViewWidth, ringWidth + viewSideMargin);
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const y1 = cy - trackGap / 2;
+  const y2 = cy + trackGap / 2;
+  const x1 = cx - w / 2;
+  const x2 = cx + w / 2;
+
+  const pathD = [
+    `M ${x1} ${y1}`,
+    `L ${x2} ${y1}`,
+    `A ${cornerR} ${cornerR} 0 0 1 ${x2 + cornerR} ${y1 + cornerR}`,
+    `L ${x2 + cornerR} ${y2 - cornerR}`,
+    `A ${cornerR} ${cornerR} 0 0 1 ${x2} ${y2}`,
+    `L ${x1} ${y2}`,
+    `A ${cornerR} ${cornerR} 0 0 1 ${x1 - cornerR} ${y2 - cornerR}`,
+    `L ${x1 - cornerR} ${y1 + cornerR}`,
+    `A ${cornerR} ${cornerR} 0 0 1 ${x1} ${y1}`,
+    'Z'
+  ].join(' ');
+
+  const vertLen = trackGap - 2 * cornerR;
+  const arcLen = Math.PI * cornerR + vertLen;
+  const perimeter = 2 * w + 2 * arcLen;
+
+  const topStep = topCount > 0 ? w / topCount : 0;
+  const bottomStep = bottomCount > 0 ? w / bottomCount : 0;
+
+  const stationDists = [];
+  for (let i = 0; i < totalSt; i += 1) {
+    if (i < topCount) {
+      stationDists.push(topStep * i + topStep / 2);
+    } else {
+      const kb = i - topCount;
+      stationDists.push((w + arcLen) + (bottomStep * kb + bottomStep / 2));
+    }
+  }
+
+  return {
+    viewBoxWidth: W,
+    viewBoxHeight: H,
+    pathD,
+    perimeter,
+    stationDists,
+    topCount,
+    bottomCount,
+    cornerRadius: cornerR,
+    ringOffsetLeft: offsetLeft,
+    ringOffsetTop: offsetTop
+  };
+}

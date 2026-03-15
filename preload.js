@@ -187,8 +187,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     copyAudioToLineDir: async (lineDirOrLineFilePath, sourceFilePath) => {
       try { return await ipcRenderer.invoke('lines/copyAudioToLineDir', lineDirOrLineFilePath, sourceFilePath); } catch (e) { return { ok: false, error: String(e) }; }
     },
+    copyImageToLineDir: async (lineDirOrLineFilePath, sourceFilePath) => {
+      try { return await ipcRenderer.invoke('lines/copyImageToLineDir', lineDirOrLineFilePath, sourceFilePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
     resolveAudioPath: async (lineFilePath, relativePath) => {
       try { return await ipcRenderer.invoke('lines/resolveAudioPath', lineFilePath, relativePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    resolveImagePath: async (lineFilePath, relativePath) => {
+      try { return await ipcRenderer.invoke('lines/resolveImagePath', lineFilePath, relativePath); } catch (e) { return { ok: false, error: String(e) }; }
     },
     cleanupAudioDir: async (lineData, lineFilePath, options) => {
       try { return await ipcRenderer.invoke('lines/cleanupAudioDir', lineData, lineFilePath, options); } catch (e) { return { ok: false, error: String(e) }; }

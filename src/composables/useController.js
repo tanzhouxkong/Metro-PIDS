@@ -40,6 +40,39 @@ export function useController() {
         // 直接使用当前线路数据（贯通线路已在控制面板中合并完成）
         let appDataToSend = cloneDisplayState(state.appData);
         let rtToSend = cloneDisplayState(state.rt);
+        if (appDataToSend && typeof appDataToSend === 'object') {
+            appDataToSend.meta = appDataToSend.meta && typeof appDataToSend.meta === 'object' ? appDataToSend.meta : {};
+            appDataToSend.meta._lineFilePath = state.currentFilePath || '';
+            // 将当前车厢号一并广播给显示端 3，作为额外容错通道
+            const d3 = settings?.display?.displays?.['display-3'];
+            let activeCarFromSettings = null;
+            if (d3 && d3.activeCarNo != null) {
+                activeCarFromSettings = d3.activeCarNo;
+            }
+
+            // 兜底：再尝试从 shared localStorage 读取（由 SlidePanel.saveDisplayEdit 写入）
+            let activeCarFromLocalStorage = null;
+            try {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    const raw = window.localStorage.getItem('metro_pids_display3_active_car_no');
+                    if (raw != null && raw !== '') {
+                        const n = Number(raw);
+                        if (Number.isFinite(n) && n > 0) {
+                            activeCarFromLocalStorage = Math.floor(n);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[Display-3][Controller.sync] 读取本地当前车厢失败', e);
+            }
+
+            const finalActiveCar =
+                activeCarFromSettings != null ? activeCarFromSettings : activeCarFromLocalStorage;
+
+            if (finalActiveCar != null) {
+                appDataToSend.meta.display3ActiveCarNo = finalActiveCar;
+            }
+        }
         
         const payload = {
             t: 'SYNC',
@@ -56,6 +89,9 @@ export function useController() {
                     // 显示器1/3：布局模式
                     display1LayoutMode: settings?.display?.displays?.['display-1']?.layoutMode ?? 'linear',
                     display3LayoutMode: settings?.display?.displays?.['display-3']?.layoutMode ?? 'c-type',
+                    // 显示器1/3：屏幕虚拟位置（left / center / right）
+                    display1VirtualPosition: settings?.display?.displays?.['display-1']?.virtualPosition ?? 'center',
+                    display3VirtualPosition: settings?.display?.displays?.['display-3']?.virtualPosition ?? 'center',
                     // 显示器1：壁纸（到站/结束页）
                     display1WallpaperDataUrl: settings?.display?.displays?.['display-1']?.wallpaperDataUrl ?? '',
                     display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
@@ -66,11 +102,32 @@ export function useController() {
                     display1WallpaperDataUrl: settings?.display?.displays?.['display-1']?.wallpaperDataUrl ?? '',
                     display1WallpaperOpacity: settings?.display?.displays?.['display-1']?.wallpaperOpacity ?? 0.35,
                     // 显示器3：出站页面显示时长（毫秒）
-                    display3DepartDuration: settings?.display?.display3DepartDuration ?? 8000
+                    display3DepartDuration: settings?.display?.display3DepartDuration ?? 8000,
+                    display3TrainFormation: settings?.display?.displays?.['display-3']?.trainFormation ?? '6',
+                    // activeCarNo：优先从 settings.display.displays['display-3'] 读取，其次从 shared localStorage 兜底
+                    display3ActiveCarNo: (() => {
+                        const fromSettings = settings?.display?.displays?.['display-3']?.activeCarNo ?? null;
+                        if (fromSettings != null) return fromSettings;
+                        try {
+                            if (typeof window !== 'undefined' && window.localStorage) {
+                                const raw = window.localStorage.getItem('metro_pids_display3_active_car_no');
+                                if (raw != null && raw !== '') {
+                                    const n = Number(raw);
+                                    if (Number.isFinite(n) && n > 0) {
+                                        return Math.floor(n);
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('[Display-3][Controller.sync] 读取本地 display3ActiveCarNo 作为 settings 兜底失败', e);
+                        }
+                        return null;
+                    })()
                 }
             }
         };
-        
+
+        // 广播同步消息到各显示端
         bcPost(payload);
         // 若控制端曾打开展示弹窗，作为后备通过 postMessage 同步
         try {
