@@ -812,6 +812,195 @@
         }
     </script>
 
+    <!-- 全局错误捕获：在打包环境中显示详细错误信息 -->
+    <script>
+      (function () {
+        function showFatalError(info) {
+          try {
+            var existing = document.getElementById('metro-pids-fatal-error-overlay');
+            if (existing && existing.parentNode) {
+              existing.parentNode.removeChild(existing);
+            }
+
+            var overlay = document.createElement('div');
+            overlay.id = 'metro-pids-fatal-error-overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.zIndex = '999999';
+            overlay.style.background = 'rgba(0,0,0,0.82)';
+            overlay.style.color = '#fff';
+            overlay.style.fontFamily = '"Cascadia Code", Consolas, "Microsoft YaHei", system-ui, sans-serif';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+
+            var box = document.createElement('div');
+            box.style.maxWidth = '960px';
+            box.style.width = 'calc(100% - 80px)';
+            box.style.maxHeight = '80vh';
+            box.style.background = '#111827';
+            box.style.borderRadius = '16px';
+            box.style.boxShadow = '0 24px 80px rgba(0,0,0,0.6)';
+            box.style.padding = '24px 28px';
+            box.style.display = 'flex';
+            box.style.flexDirection = 'column';
+            box.style.gap = '12px';
+            box.style.border = '1px solid rgba(148,163,184,0.6)';
+
+            var title = document.createElement('div');
+            title.style.display = 'flex';
+            title.style.alignItems = 'center';
+            title.style.justifyContent = 'space-between';
+
+            var titleLeft = document.createElement('div');
+            titleLeft.style.display = 'flex';
+            titleLeft.style.alignItems = 'center';
+            titleLeft.style.gap = '10px';
+
+            var dot = document.createElement('div');
+            dot.style.width = '10px';
+            dot.style.height = '10px';
+            dot.style.borderRadius = '999px';
+            dot.style.background = '#f97316';
+            dot.style.boxShadow = '0 0 0 4px rgba(248,113,113,0.25)';
+
+            var titleText = document.createElement('div');
+            titleText.textContent = '应用加载失败 - 捕获到未处理错误';
+            titleText.style.fontWeight = '700';
+            titleText.style.fontSize = '15px';
+
+            var envText = document.createElement('div');
+            envText.textContent = (location.protocol === 'file:' ? '打包运行环境' : '开发/预览环境') + ' · ' + (info.time || new Date().toLocaleString());
+            envText.style.fontSize = '11px';
+            envText.style.color = '#9ca3af';
+
+            titleLeft.appendChild(dot);
+            titleLeft.appendChild(titleText);
+
+            title.appendChild(titleLeft);
+            title.appendChild(envText);
+
+            var msg = document.createElement('div');
+            msg.style.fontSize = '13px';
+            msg.style.color = '#e5e7eb';
+            msg.style.whiteSpace = 'pre-wrap';
+            msg.style.wordBreak = 'break-all';
+            msg.textContent = (info.message || 'Unknown error').toString();
+
+            var src = document.createElement('div');
+            src.style.fontSize = '12px';
+            src.style.color = '#9ca3af';
+            src.textContent = (info.filename ? info.filename + (info.lineno ? ' (' + info.lineno + ':' + info.colno + ')' : '') : '') || '';
+
+            var code = document.createElement('pre');
+            code.style.marginTop = '8px';
+            code.style.padding = '12px 14px';
+            code.style.background = '#020617';
+            code.style.borderRadius = '10px';
+            code.style.fontSize = '11px';
+            code.style.lineHeight = '1.4';
+            code.style.overflow = 'auto';
+            code.style.maxHeight = '42vh';
+            code.style.border = '1px solid rgba(55,65,81,0.9)';
+            code.textContent = (info.stack || '').toString().slice(0, 8000) || '[no stack]';
+
+            var link = document.createElement('a');
+            link.href = 'https://vuejs.org/error-reference/#compiler-23';
+            link.textContent = 'Vue 模板编译错误说明（compiler-23）';
+            link.target = '_blank';
+            link.rel = 'noreferrer noopener';
+            link.style.color = '#38bdf8';
+            link.style.fontSize = '12px';
+            link.style.marginTop = '6px';
+
+            var tip = document.createElement('div');
+            tip.style.fontSize = '12px';
+            tip.style.color = '#9ca3af';
+            tip.style.marginTop = '4px';
+            tip.textContent = '提示：请将以上错误信息（尤其是第一行和堆栈）截图发给开发者，便于快速定位问题。';
+
+            var btnRow = document.createElement('div');
+            btnRow.style.marginTop = '10px';
+            btnRow.style.display = 'flex';
+            btnRow.style.justifyContent = 'flex-end';
+            btnRow.style.gap = '8px';
+
+            var reloadBtn = document.createElement('button');
+            reloadBtn.textContent = '重新加载';
+            reloadBtn.style.padding = '6px 14px';
+            reloadBtn.style.borderRadius = '8px';
+            reloadBtn.style.border = 'none';
+            reloadBtn.style.cursor = 'pointer';
+            reloadBtn.style.background = '#22c55e';
+            reloadBtn.style.color = '#fff';
+            reloadBtn.style.fontSize = '12px';
+            reloadBtn.onclick = function () {
+              location.reload();
+            };
+
+            var closeBtn = document.createElement('button');
+            closeBtn.textContent = '关闭提示';
+            closeBtn.style.padding = '6px 14px';
+            closeBtn.style.borderRadius = '8px';
+            closeBtn.style.border = '1px solid rgba(148,163,184,0.8)';
+            closeBtn.style.background = 'transparent';
+            closeBtn.style.color = '#e5e7eb';
+            closeBtn.style.fontSize = '12px';
+            closeBtn.style.cursor = 'pointer';
+            closeBtn.onclick = function () {
+              if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            };
+
+            btnRow.appendChild(closeBtn);
+            btnRow.appendChild(reloadBtn);
+
+            box.appendChild(title);
+            box.appendChild(msg);
+            if (src.textContent) box.appendChild(src);
+            box.appendChild(code);
+            box.appendChild(link);
+            box.appendChild(tip);
+            box.appendChild(btnRow);
+
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+          } catch (e) {
+            // ignore overlay errors
+          }
+        }
+
+        window.addEventListener('error', function (event) {
+          if (!event) return;
+          var err = event.error || {};
+          var info = {
+            type: 'error',
+            message: (err && err.message) || event.message || String(err || 'Unknown error'),
+            stack: err && err.stack,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+            time: new Date().toLocaleString()
+          };
+          showFatalError(info);
+        });
+
+        window.addEventListener('unhandledrejection', function (event) {
+          if (!event) return;
+          var reason = event.reason || {};
+          var info = {
+            type: 'unhandledrejection',
+            message: (reason && reason.message) || String(reason || 'Unhandled rejection'),
+            stack: reason && reason.stack,
+            filename: null,
+            lineno: null,
+            colno: null,
+            time: new Date().toLocaleString()
+          };
+          showFatalError(info);
+        });
+      })();
+    </script>
+
     <!-- Vite Entry Point -->
     <script type="module" src="./src/main.js"></script>
 </body>

@@ -386,7 +386,7 @@ const displayStyleSheet = `
   top: 0;
   left: 0;
   right: 0;
-  height: 36px;
+  height: 35px;
   display: flex;
   align-items: center;
   background: rgba(0,0,0,0.02);
@@ -495,14 +495,18 @@ const displayStyleSheet = `
   position: relative;
   z-index: 1;
 }
+/* 确保顶栏(header)覆盖在下面内容之上，避免卡片阴影/圆角被遮挡 */
+#display-app #scaler > .header {
+  z-index: 20;
+}
 #display-app .header {
-  height: 100px;
-  margin-top: 35px; /* push header below custom titlebar */
+  height: 80px;
+  margin-top: 15px; /* 顶栏下移，避免覆盖状态栏 */
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 4px solid #ccc;
+  border-bottom: none; /* 去掉顶栏与内容区域分割线 */
   background: var(--theme);
   flex-shrink: 0;
 }
@@ -577,17 +581,33 @@ const displayStyleSheet = `
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+    /* 顶栏(.header)里默认 center 会把 110px 卡片向上挤压到状态栏；
+       这里改成从顶部对齐，让多出来的高度只向下发展。 */
+    align-self: flex-start;
     padding-left: 30px;
     position: relative;
     border: 3px solid #fff;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.4);
-    margin: 10px 0;
-    height: 80px;
-    border-radius: 8px;
+    /* 下落阴影（向下为主），避免溢出到状态栏 */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    margin: 0;
+    height: 90px;
+    /* 顶部两个圆角取消（顶部设为 0），底部圆角保留 */
+    border-radius: 0 0 8px 8px;
     padding-right: 30px;
     z-index: 10;
     margin-left: 90px; /* 让中间白框整体向右偏移 */
-    overflow: hidden;
+    overflow: hidden; /* 关键：裁切阴影/圆角溢出，避免进入状态栏区域 */
+    top: 0;
+}
+
+/* overflow: hidden 后，不需要额外“延续”层，避免溢出裁切失真 */
+#display-app .h-next::after { display: none; }
+
+/* 确保文字内容盖在白色延伸层之上 */
+#display-app .h-next .lbl,
+#display-app .h-next .val {
+  position: relative;
+  z-index: 1;
 }
 #display-app .h-next .lbl {
     font-size: 36px;
@@ -734,8 +754,9 @@ const displayStyleSheet = `
     50% { box-shadow: 0 0 20px 0 rgba(241, 196, 15, 0.6); transform: translate(-50%, -50%) scale(1.2); }
     100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); transform: translate(-50%, -50%) scale(1); }
 }
-@keyframes spin-inner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-@keyframes spin-outer { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+/* 环线方向：外环=顺时针，内环=逆时针（与线路图箭头/站序统一） */
+@keyframes spin-inner { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+@keyframes spin-outer { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 #display-app .marquee-box {
     overflow: hidden;
     white-space: nowrap;
@@ -2816,7 +2837,19 @@ export function initDisplayWindow(rootElement) {
       return `${base}/?token=${encodeURIComponent(wsToken)}`;
     }
   })();
-  const isExternalBrowserRenderMode = wsEnabled && !(typeof window !== 'undefined' && window.electronAPI);
+  // 外部浏览器（ws 协同）渲染时用 contain，Electron 固定窗口用 cover。
+  // 之前仅依赖 `window.electronAPI` 判断 Electron，若 preload 未暴露 electronAPI 会误判为浏览器，
+  // 导致缩放使用 contain，从而出现 letterbox（你截图里显示器1的白色留边）。
+  const isElectronRuntime = (() => {
+    try {
+      if (typeof window === 'undefined') return false;
+      if (window.electronAPI) return true;
+      if (window.process && window.process.type) return true;
+      if (typeof navigator !== 'undefined' && navigator.userAgent && /electron/i.test(navigator.userAgent)) return true;
+    } catch (e) {}
+    return false;
+  })();
+  const isExternalBrowserRenderMode = wsEnabled && !isElectronRuntime;
 
   // 浏览器环境下，多屏协同依赖 WS 与主程序同步；连接失败时显示提示弹窗
   let wsFirstSyncReceived = false;
@@ -3048,7 +3081,9 @@ export function initDisplayWindow(rootElement) {
     // 使用多种方式获取窗口尺寸，确保准确性
     // 优先使用视口单位计算，因为它最准确反映实际可用空间
     const visualWidth = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
-    const visualHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+    // 顶栏（标题栏/控制条）占用一部分高度；显示器3 也使用 -35px 计算舞台缩放
+    const visualHeightRaw = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+    const visualHeight = Math.max(1, visualHeightRaw - 35);
     
     // 计算缩放比例
     // Electron 固定窗口场景维持 cover（Math.max）以消除黑边；
@@ -3072,6 +3107,9 @@ export function initDisplayWindow(rootElement) {
       displayApp.style.overflow = 'hidden';
       displayApp.style.margin = '0';
       displayApp.style.padding = '0';
+      // 与 display-3 一致：标题栏区域 35px 不参与舞台缩放与居中
+      displayApp.style.paddingTop = '35px';
+      displayApp.style.boxSizing = 'border-box';
       displayApp.style.position = 'fixed';
       displayApp.style.top = '0';
       displayApp.style.left = '0';
@@ -3788,7 +3826,7 @@ export function initDisplayWindow(rootElement) {
     if (terminalInfoChanged) {
       if (meta.mode === 'loop') {
         const dirMap = { outer: '外环运行', inner: '内环运行' };
-        const iconClass = meta.dirType === 'outer' ? 'fas fa-undo' : 'fas fa-redo';
+        const iconClass = meta.dirType === 'outer' ? 'fas fa-redo' : 'fas fa-undo';
         const anim = meta.dirType === 'outer' ? 'spin-outer 3s linear infinite' : 'spin-inner 3s linear infinite';
         termBox.innerHTML = `
           <div style="display:flex; align-items:center; gap:15px; height:100%;">
@@ -3931,7 +3969,8 @@ export function initDisplayWindow(rootElement) {
     nNameBox.style.maxWidth = '100%';
     nNameBox.style.minWidth = '0';
     nNameBox.style.height = '40px';
-    nNameBox.style.overflow = 'visible'; // 仅当中文过长时在 setTimeout 中改为 hidden 并启用滚动
+    // 默认裁切，避免站名“撑满右侧”；若确实过长，setTimeout 里会开启滚动
+    nNameBox.style.overflow = 'hidden';
     nNameBox.style.textAlign = 'center'; // 中文居中
     nNameBox.style.lineHeight = '1.12';
     nNameBox.style.paddingBottom = '2px';
@@ -3952,7 +3991,8 @@ export function initDisplayWindow(rootElement) {
     nEnBox.style.fontSize = '16px';
     nEnBox.style.fontWeight = 'bold';
     nEnBox.style.color = '#666';
-    nEnBox.style.overflow = 'visible'; // 仅当英文过长时在 setTimeout 中改为 hidden 并启用滚动
+    // 默认裁切，避免英文过长时“占满右侧”；若确实过长，setTimeout 里会开启滚动
+    nEnBox.style.overflow = 'hidden';
     nEnBox.style.lineHeight = '1.2';
     nEnBox.style.paddingBottom = '2px';
     nEnBox.style.textAlign = 'center';
@@ -4058,7 +4098,8 @@ export function initDisplayWindow(rootElement) {
       nNameBox.style.maxWidth = '100%';
       nNameBox.style.minWidth = '0';
       nNameBox.style.height = '40px';
-      nNameBox.style.overflow = 'visible'; // 仅当中文过长时在 setTimeout 中改为 hidden 并启用滚动
+      // 默认裁切，避免站名“撑满右侧”；若确实过长，setTimeout 里会开启滚动
+      nNameBox.style.overflow = 'hidden';
       nNameBox.style.fontSize = '36px';
       nNameBox.style.fontWeight = '900';
       nNameBox.style.color = '#000';
@@ -4077,7 +4118,8 @@ export function initDisplayWindow(rootElement) {
       nEnBox.style.fontSize = '16px';
       nEnBox.style.fontWeight = 'bold';
       nEnBox.style.color = '#666';
-      nEnBox.style.overflow = 'visible'; // 仅当英文过长时在 setTimeout 中改为 hidden 并启用滚动
+      // 默认裁切，避免英文过长时“占满右侧”；若确实过长，setTimeout 里会开启滚动
+      nEnBox.style.overflow = 'hidden';
       nEnBox.style.opacity = '0.9';
       nEnBox.style.lineHeight = '1.2';
       nEnBox.style.paddingBottom = '2px';
@@ -6689,6 +6731,22 @@ export function initDisplayWindow(rootElement) {
     trackBackground.setAttribute('stroke', '#ccc');
     trackBackground.setAttribute('stroke-width', '18');
     svg.appendChild(trackBackground);
+
+    // 已过站判定：与直线/C 型一致，已过站区间不再绘制高亮色段（显示为灰底）
+    const ringDir = (m && (m.dirType === 'inner' || m.dirType === 'down')) ? 'inner' : 'outer';
+    const currIdxForRun = (rt && typeof rt.idx === 'number') ? rt.idx : 0;
+    const stateForRun = (rt && typeof rt.state === 'number') ? rt.state : 0;
+    const getRunStatus = (idx) => {
+      if (idx === currIdxForRun && stateForRun === 0) return 'current';
+      if (ringDir === 'outer') {
+        if (idx < currIdxForRun) return 'past';
+        if (idx === currIdxForRun && stateForRun === 1) return 'past';
+        return 'future';
+      }
+      if (idx > currIdxForRun) return 'past';
+      if (idx === currIdxForRun && stateForRun === 1) return 'past';
+      return 'future';
+    };
     
     // 为每两个相邻站点创建独立的线段
     for (let i = 0; i < sts.length; i++) {
@@ -6802,6 +6860,15 @@ export function initDisplayWindow(rootElement) {
       } else if (isInHighlightRange) {
         // 线段在运营区内且在高亮范围内，使用主题色
         segmentColor = m.themeColor || 'var(--theme)';
+      }
+
+      // 已过站：不绘制高亮色段，保留灰底轨
+      if (segmentColor !== '#ccc') {
+        const status1 = getRunStatus(i);
+        const status2 = getRunStatus(nextI);
+        if (status1 === 'past' && status2 === 'past') {
+          segmentColor = '#ccc';
+        }
       }
       
       // 如果线段是灰色，不需要单独绘制（背景已经是灰色）
@@ -7001,6 +7068,29 @@ export function initDisplayWindow(rootElement) {
         dot.style.borderColor = '#ccc';
         dot.style.boxShadow = 'none';
         if (label) label.style.color = '#999';
+      }
+
+      // 已过站：圆点压灰（与环线线路条一致，保留下一站反色圆点）
+      if (dot && !st.skip && i !== targetIdx) {
+        try {
+          const status = getRunStatus(i);
+          if (status === 'past') {
+            dot.style.background = '#fff';
+            dot.style.borderColor = '#ccc';
+            dot.style.boxShadow = 'none';
+
+            // 站名也压灰
+            if (label) {
+              label.style.color = '#999';
+              label.style.opacity = '0.7';
+              const enEl = label.querySelector('.en');
+              if (enEl) {
+                enEl.style.color = '#ccc';
+                enEl.style.opacity = '0.7';
+              }
+            }
+          }
+        } catch (e) {}
       }
       // 短交路：运营区外站点与圆点压暗（与直线模式一致）
       const isOutsideRange = hasStartTerm && (

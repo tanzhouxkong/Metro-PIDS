@@ -626,8 +626,9 @@ const displayStyleSheet = `
     50% { box-shadow: 0 0 20px 0 rgba(241, 196, 15, 0.6); transform: translate(-50%, -50%) scale(1.2); }
     100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); transform: translate(-50%, -50%) scale(1); }
 }
-@keyframes spin-inner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-@keyframes spin-outer { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+/* 环线方向：外环=顺时针，内环=逆时针（与线路图箭头/站序统一） */
+@keyframes spin-inner { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+@keyframes spin-outer { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 #display-app .marquee-box {
     overflow: hidden;
     white-space: nowrap;
@@ -3445,7 +3446,7 @@ export function initDisplayWindow(rootElement) {
     if (terminalInfoChanged) {
       if (meta.mode === 'loop') {
         const dirMap = { outer: '外环运行', inner: '内环运行' };
-        const iconClass = meta.dirType === 'outer' ? 'fas fa-undo' : 'fas fa-redo';
+        const iconClass = meta.dirType === 'outer' ? 'fas fa-redo' : 'fas fa-undo';
         const anim = meta.dirType === 'outer' ? 'spin-outer 3s linear infinite' : 'spin-inner 3s linear infinite';
         termBox.innerHTML = `
           <div style="display:flex; align-items:center; gap:15px; height:100%;">

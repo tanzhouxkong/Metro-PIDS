@@ -268,6 +268,270 @@ try {
   }
 }
 
+// ==================== Onboarding IPC（首次启动引导 / 新功能引导） ====================
+// 说明：渲染进程通过 ipcRenderer.invoke('onboarding/*') 调用；若主进程未注册会报
+// “No handler registered for 'onboarding/xxx'”。
+
+const ONBOARDING_STORE_KEY = 'onboarding';
+
+function getOnboardingState() {
+  try {
+    const raw = store ? (store.get(ONBOARDING_STORE_KEY) || {}) : {};
+    if (!raw || typeof raw !== 'object') return { completed: false, dismissedGuides: {} };
+    return {
+      completed: raw.completed === true,
+      completedAt: raw.completedAt || null,
+      dismissedGuides: (raw.dismissedGuides && typeof raw.dismissedGuides === 'object') ? raw.dismissedGuides : {},
+      pendingGuide: (raw.pendingGuide && typeof raw.pendingGuide === 'object') ? raw.pendingGuide : null
+    };
+  } catch (e) {
+    return { completed: false, dismissedGuides: {} };
+  }
+}
+
+function setOnboardingState(next) {
+  const prev = getOnboardingState();
+  const merged = { ...prev, ...(next && typeof next === 'object' ? next : {}) };
+  try {
+    if (store) store.set(ONBOARDING_STORE_KEY, merged);
+  } catch (e) {
+    // ignore
+  }
+  return merged;
+}
+
+function resolveBundledLinesDir() {
+  const candidates = [];
+  try {
+    candidates.push(path.join(app.getAppPath(), 'default'));
+  } catch (e) {}
+  try {
+    candidates.push(path.join(__dirname, 'default'));
+  } catch (e) {}
+  try {
+    if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'default'));
+  } catch (e) {}
+  try {
+    candidates.push(path.join(process.cwd(), 'default'));
+  } catch (e) {}
+
+  for (const dir of candidates) {
+    try {
+      if (dir && fs.existsSync(dir)) return dir;
+    } catch (e) {}
+  }
+  return null;
+}
+
+function normalizeDisplayPreset(preset) {
+  const p = String(preset || '').toLowerCase();
+  if (p === 'dual' || p === 'triple') return p;
+  return 'single';
+}
+
+function applyDisplayPresetToStoreSettings(preset) {
+  const normalized = normalizeDisplayPreset(preset);
+  const enable2 = normalized === 'dual' || normalized === 'triple';
+  const enable3 = normalized === 'triple';
+
+  if (!store) return { ok: false, error: 'store-not-available' };
+  const settings = store.get('settings', {}) || {};
+
+  if (!settings.display || typeof settings.display !== 'object') settings.display = {};
+  if (!settings.display.displays || typeof settings.display.displays !== 'object') settings.display.displays = {};
+
+  const ensure = (id) => {
+    if (!settings.display.displays[id] || typeof settings.display.displays[id] !== 'object') {
+      settings.display.displays[id] = { id };
+    }
+    settings.display.displays[id].id = id;
+  };
+
+  ensure('display-1');
+  ensure('display-2');
+  ensure('display-3');
+
+  settings.display.displays['display-1'].enabled = true;
+  settings.display.displays['display-2'].enabled = !!enable2;
+  settings.display.displays['display-3'].enabled = !!enable3;
+  if (!settings.display.currentDisplayId) settings.display.currentDisplayId = 'display-1';
+  if (!settings.display.display2Mode || settings.display.display2Mode === 'dev-only') {
+    settings.display.display2Mode = 'enabled';
+  }
+
+  store.set('settings', settings);
+  return { ok: true, preset: normalized };
+}
+
+function safeBasename(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  const base = path.basename(raw);
+  // 禁止路径穿越/子目录
+  if (base !== raw) return '';
+  return base;
+}
+
+// 注册 onboarding IPC handlers（可在 app.whenReady 前注册）
+try {
+  try { ipcMain.removeHandler('onboarding/get-state'); } catch (e) {}
+  ipcMain.handle('onboarding/get-state', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const st = getOnboardingState();
+      return { ok: true, completed: st.completed === true, appVersion: app.getVersion() };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/bundled-lines/list'); } catch (e) {}
+  ipcMain.handle('onboarding/bundled-lines/list', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const dir = resolveBundledLinesDir();
+      if (!dir) return { ok: true, files: [] };
+      const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      const files = entries
+        .filter((e) => e && e.isFile && e.isFile())
+        .map((e) => e.name)
+        .filter((n) => typeof n === 'string' && /\.json$/i.test(n))
+        .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+        .map((name) => ({ name }));
+      return { ok: true, files };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e), files: [] };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/bundled-lines/import'); } catch (e) {}
+  ipcMain.handle('onboarding/bundled-lines/import', async (event, bundledName) => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const safeName = safeBasename(bundledName);
+      if (!safeName) return { ok: false, error: 'invalid-name' };
+
+      const dir = resolveBundledLinesDir();
+      if (!dir) return { ok: false, error: 'bundled-lines-dir-not-found' };
+      const srcPath = path.join(dir, safeName);
+      if (!fs.existsSync(srcPath)) return { ok: false, error: 'source-not-found' };
+
+      const targetDir = getLinesDir(null);
+      await ensureDir(targetDir);
+
+      const ext = path.extname(safeName) || '.json';
+      const base = safeName.replace(new RegExp(escapeRegex(ext) + '$', 'i'), '');
+
+      let targetName = safeName;
+      let targetPath = path.join(targetDir, targetName);
+      if (fs.existsSync(targetPath)) {
+        let idx = 2;
+        while (idx < 1000) {
+          targetName = `${base} (${idx})${ext}`;
+          targetPath = path.join(targetDir, targetName);
+          if (!fs.existsSync(targetPath)) break;
+          idx += 1;
+        }
+      }
+
+      await fsPromises.copyFile(srcPath, targetPath);
+      return { ok: true, importedName: targetName, folderPath: targetDir, targetPath };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/apply-display-preset'); } catch (e) {}
+  ipcMain.handle('onboarding/apply-display-preset', async (event, payload) => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const preset = payload && typeof payload === 'object' ? payload.preset : payload;
+      const res = applyDisplayPresetToStoreSettings(preset);
+      return res;
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/complete'); } catch (e) {}
+  ipcMain.handle('onboarding/complete', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      setOnboardingState({ completed: true, completedAt: Date.now() });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/get-pending-guide'); } catch (e) {}
+  ipcMain.handle('onboarding/get-pending-guide', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const st = getOnboardingState();
+      const guide = st.pendingGuide;
+      if (!guide || typeof guide !== 'object') return { ok: true, guide: null };
+      const gid = guide.id ? String(guide.id) : '';
+      if (gid && st.dismissedGuides && st.dismissedGuides[gid]) return { ok: true, guide: null };
+      return { ok: true, guide };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e), guide: null };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/dismiss-guide'); } catch (e) {}
+  ipcMain.handle('onboarding/dismiss-guide', async (event, guideId) => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const gid = guideId ? String(guideId) : '';
+      if (!gid) return { ok: true };
+      const st = getOnboardingState();
+      const dismissed = { ...(st.dismissedGuides || {}) };
+      dismissed[gid] = Date.now();
+      setOnboardingState({ dismissedGuides: dismissed });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/list-monitors'); } catch (e) {}
+  ipcMain.handle('onboarding/list-monitors', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const all = screen.getAllDisplays();
+      const primary = screen.getPrimaryDisplay();
+      const primaryId = primary && primary.id ? primary.id : null;
+      const displays = (all || []).map((d) => ({
+        id: d.id,
+        bounds: d.bounds,
+        size: d.size,
+        scaleFactor: d.scaleFactor,
+        primary: primaryId != null ? d.id === primaryId : !!d.primary
+      }));
+      return { ok: true, displays };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e), displays: [] };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/reset'); } catch (e) {}
+  ipcMain.handle('onboarding/reset', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      // 仅重置“首次启动引导完成”状态；新功能引导的 dismiss 记录默认保留。
+      setOnboardingState({ completed: false, completedAt: null });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+} catch (e) {
+  console.warn('[main] failed to register onboarding IPC handlers:', e && e.message);
+}
+
+// ==================== Onboarding IPC End ====================
+
 // Electron 32+ 内置了 setBackgroundMaterial API，无需额外安装原生模块
 // 如果需要更强的效果，可以安装 electron-acrylic-window（需要 Visual Studio 构建工具）
 

@@ -217,7 +217,7 @@
         </section>
 
         <section class="right-area">
-          <div v-if="!isFormationScreen" class="route-backdrop">
+          <div v-if="!isFormationScreen" ref="routeBackdropRef" class="route-backdrop">
             <!-- 非环线：使用原来的 C 型线路图 -->
             <template v-if="!isLoopLine">
               <svg class="route-svg" :viewBox="`0 0 ${ROUTE_AREA_WIDTH} 600`" preserveAspectRatio="none" aria-hidden="true">
@@ -332,24 +332,79 @@
               </div>
             </template>
 
-            <!-- 环线：使用 computeRingLayoutGeometry 绘制闭合环形轨道（后续可继续补充站名/箭头） -->
+            <!-- 环线：复刻显示器1 drawRing 的闭合环线轨道（含高亮分段/方向箭头/站点倾斜标注） -->
             <template v-else>
-              <svg
-                class="route-svg"
-                :viewBox="`0 0 ${ringLayoutGeometry.viewBoxWidth} ${ringLayoutGeometry.viewBoxHeight}`"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                <path
-                  ref="trackPathRef"
-                  class="track-bg"
-                  :d="ringLayoutGeometry.pathD"
-                  fill="none"
-                  stroke="#ccc"
-                  stroke-width="18"
-                  stroke-linecap="round"
-                />
-              </svg>
+              <div class="ring-layer" :style="ringWrapperStyle">
+                <svg
+                  class="route-svg"
+                  :viewBox="`0 0 ${ringLayoutGeometry.viewBoxWidth} ${ringLayoutGeometry.viewBoxHeight}`"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    ref="trackPathRef"
+                    class="track-bg"
+                    :d="ringLayoutGeometry.pathD"
+                    fill="none"
+                    stroke="#ccc"
+                    stroke-width="18"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    v-for="seg in ringSegmentPaths"
+                    :key="seg.key"
+                    class="track-segment"
+                    :d="ringLayoutGeometry.pathD"
+                    fill="none"
+                    :stroke="seg.stroke"
+                    stroke-width="18"
+                    stroke-linecap="round"
+                    :stroke-dasharray="seg.strokeDasharray"
+                    :stroke-dashoffset="seg.strokeDashoffset"
+                  />
+                </svg>
+
+                <div
+                  v-for="arr in ringArrows"
+                  :key="arr.key"
+                  class="ring-arr"
+                  :style="{ left: arr.x + 'px', top: arr.y + 'px', transform: `translate(-50%, -50%) rotate(${arr.angle}deg)` }"
+                >
+                  <i
+                    class="fas fa-chevron-right ring-arrow"
+                    :class="arr.isCurrent ? 'ring-arrow-current' : 'ring-arrow-default'"
+                  ></i>
+                </div>
+
+                <div class="stations-layer">
+                  <div
+                    v-for="node in ringNodes"
+                    :key="node.key"
+                    class="node"
+                    :class="{ passed: node.passed, curr: node.curr }"
+                    :style="{ left: node.x + 'px', top: node.y + 'px' }"
+                  >
+                    <div v-if="node.xTags.length" class="x-box" :style="node.xBoxStyle">
+                      <span
+                        v-for="(tag, idx) in node.xTags"
+                        :key="`${node.key}-tag-${idx}`"
+                        class="x-tag"
+                        :class="{ suspended: tag.status === 'suspended', 'exit-transfer': tag.status === 'exit' }"
+                        :style="tag.style"
+                      >
+                        {{ tag.text }}
+                        <span v-if="tag.subText" class="sub" :style="tag.subStyle">{{ tag.subText }}</span>
+                      </span>
+                    </div>
+                    <div class="dot" :style="node.dotStyle"></div>
+                    <div class="n-txt" :style="node.labelStyle">
+                      <div v-html="node.nameHtml"></div>
+                      <div class="en" v-html="node.enHtml" :style="node.enStyle"></div>
+                      <span v-if="node.defer" class="defer">暂缓</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </template>
           </div>
           <section v-if="!isExitMode" class="middle-stations-panel">
@@ -516,6 +571,8 @@ const ui = reactive(createDefaultUi())
 const scale = ref(1)
 const trackPathRef = ref(null)
 const cTypeArrows = ref([])
+const routeBackdropRef = ref(null)
+const routeBackdropSize = reactive({ width: ROUTE_AREA_WIDTH, height: BASE_HEIGHT })
 const nowTime = ref('--:--')
 const runtimeEnvironment = ref('browser')
 const displayLocale = ref(detectDisplayLocale())
@@ -791,6 +848,36 @@ function getContrastTextColor(color) {
   const b = Number.parseInt(normalized.slice(4, 6), 16)
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
   return luminance > 0.62 ? '#111111' : '#ffffff'
+}
+
+// 与显示器1保持一致：根据主题色计算“反色”主色（用于箭头闪烁 & 当前/下一站圆点）
+function computeArrowAccentColor(themeColor) {
+  const yellowColor = '#f1c40f'
+  const redColor = '#c00'
+  let arrowBlinkColor = redColor
+  try {
+    const m = /^#?([0-9a-f]{6})$/i.exec(themeColor || '')
+    if (m) {
+      const intVal = parseInt(m[1], 16)
+      const r = (intVal >> 16) & 0xff
+      const g = (intVal >> 8) & 0xff
+      const b = intVal & 0xff
+      const redRef = { r: 0xe7, g: 0x4c, b: 0x3c }
+      const dist = (c1, c2) => {
+        const dr = c1.r - c2.r
+        const dg = c1.g - c2.g
+        const db = c1.b - c2.b
+        return Math.sqrt(dr * dr + dg * dg + db * db)
+      }
+      const distToRed = dist({ r, g, b }, redRef)
+      if (distToRed < 100) {
+        arrowBlinkColor = yellowColor
+      }
+    }
+  } catch (_) {
+    arrowBlinkColor = redColor
+  }
+  return arrowBlinkColor
 }
 
 function getMergedLineBadgeStyle(index) {
@@ -1149,7 +1236,569 @@ const ringLayoutGeometry = computed(() => {
   const stations = Array.isArray(ui.routeStations) && ui.routeStations.length
     ? ui.routeStations
     : (Array.isArray(ui.stations) && ui.stations.length ? ui.stations : [])
-  return computeRingLayoutGeometry(stations)
+  // 环线长度微调：让环线本体固定加长 20px（不影响对齐）
+  return computeRingLayoutGeometry(stations, { trackLengthAdjust: 600 })
+})
+
+// 环线适配：先按显示器1的 viewBox 尺寸渲染（1单位=1像素），再整体等比缩放/居中到右侧容器
+const ringWrapperStyle = computed(() => {
+  const geom = ringLayoutGeometry.value
+  const viewW = Number(geom?.viewBoxWidth || 0)
+  const viewH = Number(geom?.viewBoxHeight || 0)
+  const w = Number(routeBackdropSize.width || ROUTE_AREA_WIDTH)
+  const h = Number(routeBackdropSize.height || BASE_HEIGHT)
+  if (!Number.isFinite(viewW) || !Number.isFinite(viewH) || viewW <= 0 || viewH <= 0) return {}
+
+  const scale = Math.min(w / viewW, h / viewH)
+  const s = Number.isFinite(scale) && scale > 0 ? scale : 1
+  // 视觉微调：让环线在显示器3右侧区域稍微“更靠右”一些
+  const dx = (w - viewW * s) / 2
+  const dy = (h - viewH * s) / 2
+
+  // 与显示器1一致：整体左/上偏移（RING_OFFSET_LEFT/TOP），这里只是随缩放一起应用
+  const ox = Number(geom?.ringOffsetLeft || 0)
+  const oy = Number(geom?.ringOffsetTop || 0)
+
+  return {
+    position: 'absolute',
+    left: '0',
+    top: '0',
+    width: `${viewW}px`,
+    height: `${viewH}px`,
+    transformOrigin: '0 0',
+    transform: `translate(${dx}px, ${dy}px) scale(${s}) translate(${-ox}px, ${-oy}px)`
+  }
+})
+
+function normalizeLoopDirType(value) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (raw === 'inner' || raw === 'down' || raw === 'anticlockwise' || raw === 'counterclockwise' || raw === '-1') return 'inner'
+  return 'outer'
+}
+
+function isRingLastToFirstSegment(i, nextI, total) {
+  return total > 1 && i === total - 1 && nextI === 0
+}
+
+function isRingSegmentInHighlightRange(i, nextI, highlightStartIdx, highlightEndIdx, dirType, total) {
+  if (highlightStartIdx === highlightEndIdx) return true
+  const isLastToFirst = isRingLastToFirstSegment(i, nextI, total)
+  if (isLastToFirst) {
+    const crossesStartEnd = (highlightStartIdx > highlightEndIdx) || (highlightEndIdx < highlightStartIdx)
+    const includesFirstStation = (highlightStartIdx === 0) || (highlightEndIdx === 0)
+    const includesLastStation = (highlightEndIdx === total - 1) || (highlightStartIdx === total - 1)
+    const fullLoop = (highlightStartIdx === 0 && highlightEndIdx === total - 1) || (highlightStartIdx === total - 1 && highlightEndIdx === 0)
+    return crossesStartEnd || includesFirstStation || includesLastStation || fullLoop
+  }
+
+  if (dirType === 'outer') {
+    if (highlightStartIdx < highlightEndIdx) {
+      return i >= highlightStartIdx && i < highlightEndIdx
+    }
+    return i >= highlightStartIdx || i < highlightEndIdx
+  }
+
+  // inner
+  if (highlightEndIdx < highlightStartIdx) {
+    return i >= highlightEndIdx && i < highlightStartIdx
+  }
+  return i >= highlightEndIdx || i < highlightStartIdx
+}
+
+function getRingCustomColor(i, nextI, ranges, total) {
+  const isLastToFirst = isRingLastToFirstSegment(i, nextI, total)
+  if (!Array.isArray(ranges)) return null
+  for (const range of ranges) {
+    const rangeStart = range?.startIdx !== undefined ? parseInt(range.startIdx, 10) : -1
+    const rangeEnd = range?.endIdx !== undefined ? parseInt(range.endIdx, 10) : -1
+    const rangeColor = range?.color || null
+    if (!rangeColor) continue
+    if (rangeStart < 0 || rangeEnd < 0) continue
+
+    let isInCustomRange = false
+    if (rangeStart <= rangeEnd) {
+      isInCustomRange = i >= rangeStart && i < rangeEnd
+    } else {
+      isInCustomRange = i >= rangeStart || i < rangeEnd
+    }
+
+    if (isLastToFirst && (rangeStart === 0 || rangeEnd === total - 1 || rangeStart > rangeEnd)) {
+      isInCustomRange = true
+    }
+
+    if (isInCustomRange) return rangeColor
+  }
+  return null
+}
+
+function sampleClosedPathPoint(pathEl, dist, totalLen) {
+  if (!pathEl || typeof pathEl.getPointAtLength !== 'function') return { x: 0, y: 0 }
+  const len = Number(totalLen)
+  if (!Number.isFinite(len) || len <= 0) return pathEl.getPointAtLength(0)
+  let d = Number(dist)
+  if (!Number.isFinite(d)) d = 0
+  d = d % len
+  if (d < 0) d += len
+  return pathEl.getPointAtLength(d)
+}
+
+function isRingIndexInServiceRange(i, minIdx, maxIdx) {
+  if (minIdx <= maxIdx) return i >= minIdx && i < maxIdx
+  return i >= minIdx || i < maxIdx
+}
+
+function isRingIndexOutsideServiceRange(i, minIdx, maxIdx) {
+  if (minIdx <= maxIdx) return i < minIdx || i > maxIdx
+  return i > maxIdx && i < minIdx
+}
+
+const ringSegmentPaths = computed(() => {
+  if (!isLoopLine.value) return []
+  const geom = ringLayoutGeometry.value
+  const pathEl = trackPathRef.value
+  if (!geom || !pathEl || typeof pathEl.getTotalLength !== 'function') return []
+
+  const stations = Array.isArray(ui.routeStations) && ui.routeStations.length
+    ? ui.routeStations
+    : (Array.isArray(ui.stations) ? ui.stations : [])
+  const total = stations.length
+  if (total < 2) return []
+
+  const totalLen = pathEl.getTotalLength()
+  const scale = geom.perimeter ? (totalLen / geom.perimeter) : 1
+
+  const hasShortTurn = (ui.startIdx !== undefined && ui.startIdx !== -1) || (ui.termIdx !== undefined && ui.termIdx !== -1)
+  const startIdx = (ui.startIdx !== undefined && ui.startIdx !== -1) ? parseInt(ui.startIdx, 10) : 0
+  const termIdx = (ui.termIdx !== undefined && ui.termIdx !== -1) ? parseInt(ui.termIdx, 10) : (total - 1)
+  const minIdx = Math.min(startIdx, termIdx)
+  const maxIdx = Math.max(startIdx, termIdx)
+
+  const highlightStartIdx = hasShortTurn ? startIdx : (ui.routeCurrentStationIndex ?? ui.currentStationIndex ?? 0)
+  const highlightEndIdx = hasShortTurn ? termIdx : highlightStartIdx
+
+  const dirType = normalizeLoopDirType(ui.loopDirType || ui.direction)
+  const ranges = Array.isArray(ui.customColorRanges) ? ui.customColorRanges : []
+  const themeColor = ui.themeColor || '#169cff'
+
+  // 已过站判定：与直线/C 型一致，已过站区间不再绘制高亮色段（显示为灰底）
+  const currIdx = (ui.routeCurrentStationIndex ?? ui.currentStationIndex) ?? 0
+  const state = Number(ui.state) || 0
+  const getRunStatus = (idx) => {
+    if (idx === currIdx && state === 0) return 'current'
+    if (dirType === 'outer') {
+      if (idx < currIdx) return 'past'
+      if (idx === currIdx && state === 1) return 'past'
+      return 'future'
+    }
+    // inner
+    if (idx > currIdx) return 'past'
+    if (idx === currIdx && state === 1) return 'past'
+    return 'future'
+  }
+
+  const actualDists = []
+  const stationDists = Array.isArray(geom.stationDists) ? geom.stationDists : []
+  for (let i = 0; i < total; i += 1) {
+    const theoretical = Number(stationDists[i] ?? 0)
+    actualDists.push((Number.isFinite(theoretical) ? theoretical : 0) * scale)
+  }
+
+  const segments = []
+  for (let i = 0; i < total; i += 1) {
+    const nextI = (i + 1) % total
+    const isInServiceRange = !hasShortTurn || isRingIndexInServiceRange(i, minIdx, maxIdx)
+    if (!isInServiceRange) continue
+
+    const status1 = getRunStatus(i)
+    const status2 = getRunStatus(nextI)
+    if (status1 === 'past' && status2 === 'past') {
+      continue
+    }
+
+    const isLastToFirst = isRingLastToFirstSegment(i, nextI, total)
+    const isInHighlightRange = isRingSegmentInHighlightRange(i, nextI, highlightStartIdx, highlightEndIdx, dirType, total)
+    const customColor = getRingCustomColor(i, nextI, ranges, total)
+
+    let segmentColor = '#ccc'
+    if (isLastToFirst && isInHighlightRange) segmentColor = themeColor
+    else if (customColor) segmentColor = customColor
+    else if (isInHighlightRange) segmentColor = themeColor
+    if (segmentColor === '#ccc') continue
+
+    let d1 = actualDists[i]
+    let d2 = actualDists[nextI]
+    const isWrapping = d2 < d1
+    if (isWrapping) d2 += totalLen
+    const segLen = d2 - d1
+    if (!(segLen > 0)) continue
+
+    if (isWrapping) {
+      const d2Original = d2 - totalLen
+      const segLen1 = totalLen - d1
+      const segLen2 = d2Original
+      if (segLen1 > 0) {
+        segments.push({
+          key: `ring-seg-${i}-1`,
+          stroke: segmentColor,
+          strokeDasharray: `${segLen1} ${totalLen}`,
+          strokeDashoffset: -d1
+        })
+      }
+      if (segLen2 > 0) {
+        segments.push({
+          key: `ring-seg-${i}-2`,
+          stroke: segmentColor,
+          strokeDasharray: `${segLen2} ${totalLen}`,
+          strokeDashoffset: 0
+        })
+      }
+      continue
+    }
+
+    segments.push({
+      key: `ring-seg-${i}`,
+      stroke: segmentColor,
+      strokeDasharray: `${segLen} ${totalLen}`,
+      strokeDashoffset: -d1
+    })
+  }
+  return segments
+})
+
+const ringArrows = computed(() => {
+  if (!isLoopLine.value) return []
+  const geom = ringLayoutGeometry.value
+  const pathEl = trackPathRef.value
+  if (!geom || !pathEl || typeof pathEl.getTotalLength !== 'function') return []
+
+  const stations = Array.isArray(ui.routeStations) && ui.routeStations.length
+    ? ui.routeStations
+    : (Array.isArray(ui.stations) ? ui.stations : [])
+  const total = stations.length
+  if (total < 2) return []
+
+  const totalLen = pathEl.getTotalLength()
+  const scale = geom.perimeter ? (totalLen / geom.perimeter) : 1
+  const stationDists = Array.isArray(geom.stationDists) ? geom.stationDists : []
+  const actualDists = []
+  for (let i = 0; i < total; i += 1) {
+    const theoretical = Number(stationDists[i] ?? 0)
+    actualDists.push((Number.isFinite(theoretical) ? theoretical : 0) * scale)
+  }
+
+  const hasShortTurn = (ui.startIdx !== undefined && ui.startIdx !== -1) || (ui.termIdx !== undefined && ui.termIdx !== -1)
+  const startIdx = (ui.startIdx !== undefined && ui.startIdx !== -1) ? parseInt(ui.startIdx, 10) : 0
+  const termIdx = (ui.termIdx !== undefined && ui.termIdx !== -1) ? parseInt(ui.termIdx, 10) : (total - 1)
+  const minIdx = Math.min(startIdx, termIdx)
+  const maxIdx = Math.max(startIdx, termIdx)
+
+  const dirType = normalizeLoopDirType(ui.loopDirType || ui.direction)
+
+  const state = Number(ui.state) || 0
+  const currIdx = (ui.routeCurrentStationIndex ?? ui.currentStationIndex) ?? 0
+  const nextIdx = Number.isFinite(Number(ui.routeNextStationIndex)) ? Number(ui.routeNextStationIndex) : -1
+  const prevIdx = state === 1 ? currIdx : -1
+  const targetIdx = state === 1 ? nextIdx : -1
+
+  const arrows = []
+  for (let i = 0; i < total; i += 1) {
+    const nextI = (i + 1) % total
+    const isInServiceRange = !hasShortTurn || isRingIndexInServiceRange(i, minIdx, maxIdx)
+    if (!isInServiceRange) continue
+
+    let d1 = actualDists[i]
+    let d2 = actualDists[nextI]
+    if (d2 < d1) d2 += totalLen
+    const segLen = d2 - d1
+    if (!(segLen > 0)) continue
+
+    const isCurrentSeg = state === 1 && ((prevIdx === i && targetIdx === nextI) || (prevIdx === nextI && targetIdx === i))
+    const baseStationCount = 21
+    const baseSpacingPx = 20
+    const scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / total))
+    const desiredGapPx = Math.max(8, Math.round(baseSpacingPx * scaleRatio))
+    const maxGapPx = segLen * 0.6
+    const gapPx = Math.min(desiredGapPx, maxGapPx)
+    const centerDist = d1 + segLen / 2
+    const offsets = [-gapPx / 2, gapPx / 2]
+
+    offsets.forEach((off, k) => {
+      const aDist = (centerDist + off + totalLen) % totalLen
+      const pt = sampleClosedPathPoint(pathEl, aDist, totalLen)
+      const pA = sampleClosedPathPoint(pathEl, aDist - 2, totalLen)
+      const pB = sampleClosedPathPoint(pathEl, aDist + 2, totalLen)
+      let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI
+      if (dirType === 'inner') angle += 180
+
+      arrows.push({
+        key: `ring-arr-${i}-${k}`,
+        x: pt.x,
+        y: pt.y,
+        angle,
+        isCurrent: !!isCurrentSeg
+      })
+    })
+  }
+  return arrows
+})
+
+function parseColorMarkup(text) {
+  if (!text || typeof text !== 'string') return text
+  const regex = /<([^>]+)>([^<]*)<\/>/g
+  let result = text
+  let match
+  while ((match = regex.exec(text)) !== null) {
+    const colorValue = match[1].trim()
+    const content = match[2]
+    const fullMatch = match[0]
+    let isValidColor = false
+    let cssColor = ''
+    const colorNames = {
+      red: 'red', blue: 'blue', green: 'green', yellow: 'yellow',
+      orange: 'orange', purple: 'purple', pink: 'pink', black: 'black',
+      white: 'white', gray: 'gray', grey: 'grey', brown: 'brown',
+      cyan: 'cyan', magenta: 'magenta', lime: 'lime', navy: 'navy',
+      olive: 'olive', teal: 'teal', aqua: 'aqua', silver: 'silver',
+      maroon: 'maroon', fuchsia: 'fuchsia'
+    }
+    if (colorNames[colorValue.toLowerCase()]) {
+      isValidColor = true
+      cssColor = colorNames[colorValue.toLowerCase()]
+    } else if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(colorValue)) {
+      isValidColor = true
+      cssColor = colorValue
+    } else if (/^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(,\s*[\d.]+\s*)?\)$/.test(colorValue)) {
+      isValidColor = true
+      cssColor = colorValue
+    }
+    if (isValidColor) {
+      const escapedContent = String(content)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+      result = result.replace(fullMatch, `<span style="color: ${cssColor};">${escapedContent}</span>`)
+    }
+  }
+  return result
+}
+
+const ringNodes = computed(() => {
+  if (!isLoopLine.value) return []
+  const geom = ringLayoutGeometry.value
+  const pathEl = trackPathRef.value
+  if (!geom || !pathEl || typeof pathEl.getTotalLength !== 'function') return []
+
+  const stations = Array.isArray(ui.routeStations) && ui.routeStations.length
+    ? ui.routeStations
+    : (Array.isArray(ui.stations) ? ui.stations : [])
+  const total = stations.length
+  if (!total) return []
+
+  const totalLen = pathEl.getTotalLength()
+  const scale = geom.perimeter ? (totalLen / geom.perimeter) : 1
+  const stationDists = Array.isArray(geom.stationDists) ? geom.stationDists : []
+  const cy = Number(geom.viewBoxHeight || 0) / 2
+
+  const hasShortTurn = (ui.startIdx !== undefined && ui.startIdx !== -1) || (ui.termIdx !== undefined && ui.termIdx !== -1)
+  const startIdx = (ui.startIdx !== undefined && ui.startIdx !== -1) ? parseInt(ui.startIdx, 10) : 0
+  const termIdx = (ui.termIdx !== undefined && ui.termIdx !== -1) ? parseInt(ui.termIdx, 10) : (total - 1)
+  const minIdx = Math.min(startIdx, termIdx)
+  const maxIdx = Math.max(startIdx, termIdx)
+
+  const state = Number(ui.state) || 0
+  const currIdx = (ui.routeCurrentStationIndex ?? ui.currentStationIndex) ?? 0
+  const nextIdx = Number.isFinite(Number(ui.routeNextStationIndex)) ? Number(ui.routeNextStationIndex) : -1
+  const prevIdx = state === 1 ? currIdx : -1
+  const targetIdx = state === 1 ? nextIdx : currIdx
+
+  const themeColor = ui.themeColor || '#169cff'
+  const ranges = Array.isArray(ui.customColorRanges) ? ui.customColorRanges : []
+  const accent = computeArrowAccentColor(themeColor)
+  const RING_TILT_DEG = 38
+
+  // 已过站判定：与环线线路条一致（用于把 past 站点圆点压灰）
+  const getRunStatus = (idx) => {
+    if (idx === currIdx && state === 0) return 'current'
+    const dir = normalizeLoopDirType(ui.loopDirType || ui.direction)
+    if (dir === 'outer') {
+      if (idx < currIdx) return 'past'
+      if (idx === currIdx && state === 1) return 'past'
+      return 'future'
+    }
+    if (idx > currIdx) return 'past'
+    if (idx === currIdx && state === 1) return 'past'
+    return 'future'
+  }
+
+  return stations.map((station, index) => {
+    const dist = (Number(stationDists[index] ?? 0) || 0) * scale
+    const pt = sampleClosedPathPoint(pathEl, dist, totalLen)
+
+    const distPrev = dist - 8 * scale
+    const distNext = dist + 8 * scale
+    const pPrev = sampleClosedPathPoint(pathEl, distPrev, totalLen)
+    const pNext = sampleClosedPathPoint(pathEl, distNext, totalLen)
+    let angle = Math.atan2(pNext.y - pPrev.y, pNext.x - pPrev.x) * 180 / Math.PI
+    const isNearHorizontal = Math.abs(angle) < 10 || Math.abs(Math.abs(angle) - 180) < 10
+    if (isNearHorizontal) angle = -RING_TILT_DEG
+
+    const isUpperHalf = pt.y < cy
+
+    // 与显示器1 mkNode 一致：环线只标记当前站（state=0）为 curr；运行态当前站视为 passed
+    const curr = index === currIdx && state === 0
+    const passed = index === currIdx && state !== 0
+
+    const outOfRange = hasShortTurn && isRingIndexOutsideServiceRange(index, minIdx, maxIdx)
+    const skip = !!station?.skip
+
+    const labelStyle = isUpperHalf
+      ? {
+          top: '0',
+          bottom: 'auto',
+          left: '50%',
+          textAlign: 'left',
+          transformOrigin: '0% 100%',
+          transform: `translate(0, calc(-100% - 10px)) rotate(${angle}deg)`
+        }
+      : {
+          top: '16px',
+          bottom: 'auto',
+          left: '50%',
+          textAlign: 'right',
+          transformOrigin: '100% 0%',
+          transform: `translate(-100%, 0) rotate(${angle}deg)`
+        }
+
+    const xBoxStyle = isUpperHalf
+      ? { top: 'calc(50% + 20px)', transform: 'translate(-50%, 0)' }
+      : { top: 'calc(50% - 20px)', transform: 'translate(-50%, -100%)' }
+
+    const nameHtml = parseColorMarkup(station?.name || station?.cn || '--')
+    // 英文换行：使用共享 API，并限制最多两行（无空格长单词会在 API 内强制断行）
+    const enRaw = station?.nameEn || station?.en || ''
+    const enPlain = String(enRaw).replace(/\u00A0/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    let enLines = splitEnglishNameIntoLines(enRaw, { maxCharsPerLine: 32, breakLongWords: true })
+    if (!Array.isArray(enLines)) enLines = []
+    if (enLines.length > 2) {
+      const joiner = enPlain.includes(' ') ? ' ' : ''
+      enLines = [enLines[0], enLines.slice(1).join(joiner)]
+    }
+    const enHtml = enLines.filter(Boolean).join('<br>')
+
+    const dotStyle = {}
+    const enStyle = {}
+
+    // 贯通模式：站点圆点边框按区段颜色显示（与直线/C 型一致）
+    let dotColor = themeColor
+    for (const r of ranges) {
+      const rs = r?.startIdx !== undefined ? parseInt(r.startIdx, 10) : -1
+      const re = r?.endIdx !== undefined ? parseInt(r.endIdx, 10) : -1
+      if (rs >= 0 && re >= 0 && index >= rs && index < re && r?.color) {
+        dotColor = r.color
+        break
+      }
+    }
+
+    // 显示器1 drawRing：skip / 区间外都压暗；targetIdx 用反色圆点 + 红字
+    if (skip || outOfRange) {
+      dotStyle.background = '#fff'
+      dotStyle.borderColor = '#ccc'
+      dotStyle.width = '24px'
+      dotStyle.height = '24px'
+      dotStyle.boxShadow = 'none'
+    }
+
+    // 常规站点：默认使用贯通区段色作为边框色（特殊态会在下面覆盖）
+    if (!skip && !outOfRange) {
+      dotStyle.borderColor = dotColor
+    }
+
+    // 已过站站点：圆点压灰（不覆盖下一站/当前高亮）
+    const runStatus = (!skip && !outOfRange) ? getRunStatus(index) : 'past'
+    if (!skip && !outOfRange && runStatus === 'past' && index !== targetIdx) {
+      dotStyle.background = '#fff'
+      dotStyle.borderColor = '#ccc'
+      dotStyle.boxShadow = 'none'
+
+      // 站名同样压灰（与已过站线路条/圆点一致）
+      labelStyle.color = '#999'
+      labelStyle.opacity = 0.7
+      enStyle.color = '#ccc'
+      enStyle.opacity = 0.7
+    }
+
+    if (!skip && !outOfRange && index === targetIdx) {
+      dotStyle.background = accent
+      dotStyle.borderColor = '#fff'
+      dotStyle.boxShadow = `0 0 14px ${accent}`
+      labelStyle.color = '#c00'
+      enStyle.color = '#c00'
+    }
+
+    if (!skip && !outOfRange && index === prevIdx) {
+      dotStyle.background = '#fff'
+      dotStyle.borderColor = '#ccc'
+      dotStyle.boxShadow = 'none'
+    }
+
+    const xTags = normalizeTransfers(station?.xfer || station?.transfers || []).map((tr) => {
+      const style = {
+        fontSize: '12px',
+        padding: '2px 6px',
+        borderRadius: '3px',
+        fontWeight: 'bold',
+        whiteSpace: 'nowrap',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '2px'
+      }
+      const subStyle = {
+        fontSize: '9px',
+        padding: '0 2px',
+        borderRadius: '2px',
+        marginLeft: '2px',
+        fontWeight: 'bold'
+      }
+
+      if (tr.status === 'suspended') {
+        style.background = '#f0f0f0'
+        style.color = '#999'
+        style.border = '1px solid #ccc'
+        style.boxShadow = 'none'
+        subStyle.background = '#999'
+        subStyle.color = '#fff'
+        return { text: tr.shortName, status: 'suspended', subText: tr.subText || '暂缓', style, subStyle }
+      }
+
+      style.background = tr.color || '#8a8a8a'
+      style.color = tr.textColor || '#fff'
+      style.boxShadow = '2px 3px 6px rgba(0,0,0,0.35)'
+      if (tr.status === 'exit') {
+        subStyle.background = 'rgba(0,0,0,0.4)'
+        subStyle.color = '#fff'
+        return { text: tr.shortName, status: 'exit', subText: tr.subText || '出站', style, subStyle }
+      }
+      return { text: tr.shortName, status: 'normal', subText: tr.subText || '', style, subStyle: {} }
+    })
+
+    return {
+      key: `ring-node-${index}`,
+      x: pt.x,
+      y: pt.y,
+      curr,
+      passed,
+      defer: !!station?.skip,
+      xTags,
+      xBoxStyle: { position: 'absolute', left: '50%', ...xBoxStyle, zIndex: 12, pointerEvents: 'none' },
+      dotStyle,
+      labelStyle,
+      nameHtml,
+      enHtml,
+      enStyle
+    }
+  })
 })
 
 function handleIncomingMessage(message) {
@@ -1254,6 +1903,17 @@ function updateScale() {
   const useContain = runtimeEnvironment.value !== 'electron'
   const nextScale = useContain ? Math.min(widthScale, heightScale) : Math.max(widthScale, heightScale)
   scale.value = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1
+
+  // 环线 overlay 需要依赖容器尺寸做 viewBox→像素映射（transform 不影响 layout 尺寸）
+  try {
+    const el = routeBackdropRef.value
+    if (el) {
+      routeBackdropSize.width = el.clientWidth || ROUTE_AREA_WIDTH
+      routeBackdropSize.height = el.clientHeight || BASE_HEIGHT
+    }
+  } catch (_) {
+    // ignore
+  }
 }
 
 // 整个舞台的基础尺寸与缩放样式
@@ -1270,11 +1930,13 @@ const themeVars = computed(() => {
   const colors = ranges.length >= 2
     ? ranges.map((r) => r?.color || base).filter(Boolean)
     : [base]
+  const arrowBlinkColor = computeArrowAccentColor(colors[0])
   const vars = {
     '--accent': colors[0],
     '--accent-soft': `${colors[0]}26`,
     '--accent-dark': '#00000022',
-    '--accent-contrast': getContrastTextColor(colors[0])
+    '--accent-contrast': getContrastTextColor(colors[0]),
+    '--arrow-blink-accent-color': arrowBlinkColor
   }
   colors.forEach((c, i) => {
     if (i > 0) vars[`--accent-${i + 1}`] = c
@@ -2023,15 +2685,17 @@ const plottedStations = computed(() => {
     const rowLabelShiftDx = isTopRow ? C_TYPE_TOP_ROW_LABEL_SHIFT_X : 0
 
     // C 型线路图英文换行由 JS 控制：尽量控制在两行内展示
-    let nameEnLines = splitEnglishNameIntoLines(station?.nameEn || station?.en || '', {
-      // 每行字符数略收紧，避免行太长
-      maxCharsPerLine: 32
+    const rawEn = station?.nameEn || station?.en || ''
+    const plainEn = String(rawEn).replace(/\u00A0/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    let nameEnLines = splitEnglishNameIntoLines(rawEn, {
+      maxCharsPerLine: 32,
+      breakLongWords: true
     })
     // 如果拆出了两行以上，则把第 2 行及之后合并到一行，只保留最多两行
     if (Array.isArray(nameEnLines) && nameEnLines.length > 2) {
       nameEnLines = [
         nameEnLines[0],
-        nameEnLines.slice(1).join(' ')
+        nameEnLines.slice(1).join(plainEn.includes(' ') ? ' ' : '')
       ]
     }
     // C 型线路图中文站名字号：基础 20px，超长站名更早进入缩小逻辑，防止在显示器3上出现错位
@@ -3415,12 +4079,108 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   height: 100%;
 }
 
+.ring-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
 .c-type-arrow {
   position: absolute;
   z-index: 10;
   font-size: 20px;
   color: #fff;
   pointer-events: none;
+}
+
+.ring-arr {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ring-arrow { color: #fff; }
+.ring-arrow-default { color: #fff; }
+.ring-arrow-current { animation: arrow-white-yellow-blink 2s infinite; }
+
+/* 环线节点：像素级复刻显示器1（dot=24 + border=4） */
+.node { position: absolute; z-index: 10; transition: left 0.5s, top 0.5s; }
+.node .dot {
+  width: 24px;
+  height: 24px;
+  background: #fff;
+  border: 4px solid var(--accent, #169cff);
+  border-radius: 50%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: 0.3s;
+  z-index: 2;
+  box-shadow: none;
+}
+.node .n-txt {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: none;
+  /* 与直线/C型一致：默认白色系站名 */
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 5px 0;
+  font-weight: bold;
+  transition: 0.3s;
+  min-width: 140px;
+  z-index: 1;
+  font-size: 18px;
+  white-space: nowrap;
+}
+.node .n-txt .en {
+  font-size: 12px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 0.9;
+  margin-top: 2px;
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.node .n-txt .defer {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin: 1px;
+  background: #f0f0f0 !important;
+  color: #999 !important;
+  border: 1px solid #ccc;
+  box-shadow: none;
+  vertical-align: middle;
+}
+.node .x-box {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: max-content !important;
+  min-width: max-content !important;
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
+  overflow: visible;
+}
+.node .x-box .x-tag {
+  flex-shrink: 0;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
+}
+.node .x-box .x-tag .sub {
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
 }
 
 .c-type-arrow-current {

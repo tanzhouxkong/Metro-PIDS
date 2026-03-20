@@ -165,6 +165,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   alert: async (msg) => ipcRenderer.invoke('dialog/alert', msg),
   confirm: async (msg) => ipcRenderer.invoke('dialog/confirm', msg),
+  onboarding: {
+    getState: async () => {
+      try { return await ipcRenderer.invoke('onboarding/get-state'); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    listBundledLines: async () => {
+      try { return await ipcRenderer.invoke('onboarding/bundled-lines/list'); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    importBundledLine: async (bundledName) => {
+      try { return await ipcRenderer.invoke('onboarding/bundled-lines/import', bundledName); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    applyDisplayPreset: async (preset) => {
+      try { return await ipcRenderer.invoke('onboarding/apply-display-preset', preset); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    complete: async () => {
+      try { return await ipcRenderer.invoke('onboarding/complete'); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    getPendingGuide: async () => {
+      try { return await ipcRenderer.invoke('onboarding/get-pending-guide'); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    dismissGuide: async (guideId) => {
+      try { return await ipcRenderer.invoke('onboarding/dismiss-guide', guideId); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+    listMonitors: async () => {
+      try { return await ipcRenderer.invoke('onboarding/list-monitors'); } catch (e) { return { ok: false, error: String(e.message || e), displays: [] }; }
+    },
+    reset: async () => {
+      try { return await ipcRenderer.invoke('onboarding/reset'); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    }
+  },
   lines: {
     list: async (dir) => {
       return await ipcRenderer.invoke('lines/list', dir);

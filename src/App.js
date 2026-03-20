@@ -43,8 +43,25 @@ export default {
     const cloudConfig = useCloudConfig(CLOUD_API_BASE);
     const { playArrive, playDepart } = useStationAudio(pidState);
     let commonPreview = null;
+    let lastCommonPlayback = null; // { url: string, title: string }
+    let commonStopIntent = false; // 区分“停止/暂停”来源，避免 pause 导致 playbackState 变 none
     const _lastCmdKey = new Map();
     const _CMD_KEY_DEDUPE_MS = 300;
+
+    // 系统媒体控制面板（Windows/锁屏/全局媒体控制）
+    const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
+    const setPlaybackState = (playbackState) => {
+      if (!canUseMediaSession) return
+      try { navigator.mediaSession.playbackState = playbackState } catch (e) {}
+    }
+    const setMediaMetadata = (meta) => {
+      if (!canUseMediaSession) return
+      try {
+        const MM = (typeof MediaMetadata !== 'undefined') ? MediaMetadata : (typeof window !== 'undefined' ? window.MediaMetadata : undefined)
+        if (!MM) return
+        navigator.mediaSession.metadata = new MM(meta)
+      } catch (e) {}
+    }
 
     const getLineDirOrFilePath = () => {
       const metaLine = (pidState.appData?.meta?.lineName || '').replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim();
@@ -71,10 +88,24 @@ export default {
     };
 
     const stopCommonPreview = () => {
+      commonStopIntent = true;
       stopAnyAudioElements();
-      if (!commonPreview) return;
+      if (!commonPreview) {
+        setPlaybackState('none');
+        commonStopIntent = false;
+        return;
+      }
       try { commonPreview.pause(); } catch (e) {}
       commonPreview = null;
+      setPlaybackState('none');
+      commonStopIntent = false;
+    };
+
+    const pauseCommonPreview = () => {
+      if (!commonPreview) return;
+      commonStopIntent = false;
+      try { commonPreview.pause(); } catch (e) {}
+      setPlaybackState('paused');
     };
 
     if (typeof window !== 'undefined') {
@@ -111,13 +142,69 @@ export default {
         if (!res?.ok) return false;
         const url = res.playableUrl || ('file:///' + (res.path || '').replace(/\\/g, '/'));
         if (!url || url === 'file:///') return false;
+        const title = item?.name || item?.path || 'Common Audio';
+
+        lastCommonPlayback = { url, title };
+        if (typeof window !== 'undefined') {
+          window.__activeStationAudioController = {
+            id: 'common',
+            playFromLast: async () => {
+              if (!lastCommonPlayback?.url) return false;
+              return await (async () => {
+                if (typeof window !== 'undefined') {
+                  window.__blockStationAudioUntil = Date.now() + 2000;
+                }
+                stopAnyAudioElements();
+                if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') {
+                  try { await window.__stopStationAudio(); } catch (e) {}
+                }
+                stopCommonPreview();
+                const a = new Audio(lastCommonPlayback.url);
+                commonPreview = a;
+                const onEndedOrError = () => { if (commonPreview === a) commonPreview = null; setPlaybackState('none'); };
+                const onPause = () => {
+                  if (commonPreview !== a) return;
+                  if (commonStopIntent) {
+                    commonPreview = null;
+                    setPlaybackState('none');
+                  } else {
+                    setPlaybackState('paused');
+                  }
+                };
+                a.onended = onEndedOrError;
+                a.onpause = onPause;
+                a.onerror = onEndedOrError;
+                setMediaMetadata({ title: lastCommonPlayback.title, artist: 'Metro-PIDS', album: 'Common Audio' });
+                setPlaybackState('none');
+                try { await a.play(); } catch (e) { return false; }
+                setPlaybackState('playing');
+                return true;
+              })();
+            },
+            pauseFromMedia: pauseCommonPreview,
+            stopFromMedia: stopCommonPreview
+          };
+        }
+
         const a = new Audio(url);
         commonPreview = a;
-        const clear = () => { if (commonPreview === a) commonPreview = null; };
-        a.onended = clear;
-        a.onpause = clear;
-        a.onerror = clear;
-        await a.play().catch(() => {});
+        const onEndedOrError = () => { if (commonPreview === a) commonPreview = null; setPlaybackState('none'); };
+        const onPause = () => {
+          if (commonPreview !== a) return;
+          if (commonStopIntent) {
+            commonPreview = null;
+            setPlaybackState('none');
+          } else {
+            setPlaybackState('paused');
+          }
+        };
+        a.onended = onEndedOrError;
+        a.onpause = onPause;
+        a.onerror = onEndedOrError;
+        setMediaMetadata({ title, artist: 'Metro-PIDS', album: 'Common Audio' });
+        setPlaybackState('none');
+        await a.play();
+        setPlaybackState('playing');
         return true;
       } catch (err) {
         console.warn('[App] playCommonByHotkey error', err);
