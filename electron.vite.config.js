@@ -12,6 +12,7 @@ const target = join(outDir, 'main.js')
 const source = resolve(__dirname, 'main.js')
 const mainModulesSourceDir = resolve(__dirname, 'main')
 const mainModulesTargetDir = join(outDir, 'main')
+const mainModulesExists = existsSync(mainModulesSourceDir)
 
 if (!existsSync(outDir)) {
   mkdirSync(outDir, { recursive: true })
@@ -222,11 +223,7 @@ export default defineConfig({
             isCustomElement: (tag) => false
           }
         },
-        // 确保所有模板在构建时编译
-        // 只处理 .vue 文件，.js 文件中的 template 选项会在运行时编译（使用 vue.esm-bundler.js）
-        include: [/\.vue$/], // 只包含 .vue 文件
-        // 排除 node_modules 和 .js 文件，避免 Vue 编译器错误处理
-        exclude: [/node_modules/, /\.js$/],
+        // 让 .vue 和 .js 里的 template 都在构建时编译，便于在构建阶段定位 compiler-23 的具体文件/行号
         // 修复模板解析问题：禁用响应式转换以避免兼容性问题
         reactivityTransform: false
       }),

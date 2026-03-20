@@ -739,6 +739,11 @@ export default {
     }
     onMounted(() => window.addEventListener('keydown', handleCommonAudioHotkey))
     onBeforeUnmount(() => window.removeEventListener('keydown', handleCommonAudioHotkey))
+
+    // StationEditor 弹窗需要毛玻璃效果时：若全局启用了 html.blur-disabled，会通过 CSS 禁用 backdrop-filter。
+    // 这里在弹窗打开期间临时移除，并用 MutationObserver 防止其它逻辑把它重新加回去；关闭后恢复，避免影响全局设置。
+    let __prevBlurDisabledClass = null
+    let __blurDisabledMutationObserver = null
     watch(
       [() => props.modelValue, () => sectionMode.value, stationAudioSignature, commonAudioSignature, () => currentLineFilePathRef.value, () => currentLineFolderPathRef.value],
       ([visible, mode]) => {
@@ -753,6 +758,49 @@ export default {
       () => props.modelValue,
       (visible) => {
         seDebugLog('watch-modelValue', { visible })
+
+        try {
+          if (typeof document !== 'undefined') {
+            const html = document.documentElement
+            const hasBlurDisabled = html.classList.contains('blur-disabled')
+
+            const enableBlurForDialog = () => {
+              if (html.classList.contains('blur-disabled')) {
+                html.classList.remove('blur-disabled')
+              }
+            }
+
+            const restoreBlurForDialog = () => {
+              if (__blurDisabledMutationObserver) {
+                __blurDisabledMutationObserver.disconnect()
+                __blurDisabledMutationObserver = null
+              }
+              if (__prevBlurDisabledClass) html.classList.add('blur-disabled')
+              __prevBlurDisabledClass = null
+            }
+
+            if (visible) {
+              __prevBlurDisabledClass = hasBlurDisabled
+              enableBlurForDialog()
+
+              // 如果外部逻辑在弹窗打开期间再次切回 blur-disabled，这里会立刻拉回，保证 blur 一直生效
+              if (!__blurDisabledMutationObserver) {
+                __blurDisabledMutationObserver = new MutationObserver(() => {
+                  enableBlurForDialog()
+                })
+                __blurDisabledMutationObserver.observe(html, {
+                  attributes: true,
+                  attributeFilter: ['class'],
+                })
+              }
+            } else {
+              restoreBlurForDialog()
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+
         if (visible) {
           audioSectionCrashed.value = false
         }
@@ -799,6 +847,18 @@ export default {
       seDebugLog('mounted')
     })
     onBeforeUnmount(() => {
+      // 防止组件销毁时遗留观察器或恢复逻辑没执行
+      try {
+        if (__blurDisabledMutationObserver) {
+          __blurDisabledMutationObserver.disconnect()
+          __blurDisabledMutationObserver = null
+        }
+        if (__prevBlurDisabledClass && typeof document !== 'undefined') {
+          document.documentElement.classList.add('blur-disabled')
+        }
+        __prevBlurDisabledClass = null
+      } catch (e) {}
+
       if (audioHealthScanTimer.value) {
         clearTimeout(audioHealthScanTimer.value)
         audioHealthScanTimer.value = null
@@ -1238,7 +1298,14 @@ export default {
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="modelValue" class="se-overlay" @mousedown="onOverlayMouseDown" @click="onOverlayClick">
-        <div class="se-dialog" role="dialog" aria-modal="true" @mousedown.stop @click.stop>
+        <div
+          class="se-dialog"
+          v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+          role="dialog"
+          aria-modal="true"
+          @mousedown.stop
+          @click.stop
+        >
           <div class="se-header">
               <div class="se-header-left">
                 <div class="se-icon">
@@ -1505,7 +1572,8 @@ export default {
               v-if="menuVisible"
               class="station-context-menu"
               data-xfer-context-menu
-              :style="{ left: menuX + 'px', top: menuY + 'px', position: 'fixed', zIndex: 25000, pointerEvents: 'auto' }"
+              v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+              :style="{ left: menuX + 'px', top: menuY + 'px', position: 'fixed', zIndex: 1000001, pointerEvents: 'auto' }"
               @click.stop
               @contextmenu.prevent
             >
@@ -1620,7 +1688,7 @@ export default {
                   <div
                     class="apply-all-submenu glass-submenu"
                     v-if="applyAllHoverDir === menuContext.dir"
-                    :style="{ position: 'fixed', left: applyAllSubmenuPos.x + 'px', top: applyAllSubmenuPos.y + 'px', zIndex: 26010 }"
+                    :style="{ position: 'fixed', left: applyAllSubmenuPos.x + 'px', top: applyAllSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setApplyAllHover(menuContext.dir)"
                     @mouseleave="clearApplyAllHover"
                   >
@@ -1657,7 +1725,7 @@ export default {
                   <div
                     class="apply-all-submenu glass-submenu"
                     v-if="modeHoverKey === 'mode-sub-station'"
-                    :style="{ position: 'fixed', left: modeStationSubmenuPos.x + 'px', top: modeStationSubmenuPos.y + 'px', zIndex: 26010 }"
+                    :style="{ position: 'fixed', left: modeStationSubmenuPos.x + 'px', top: modeStationSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setModeHover('mode-sub-station')"
                     @mouseleave="clearModeHover"
                   >
@@ -1724,7 +1792,7 @@ export default {
                   <div
                     class="apply-all-submenu glass-submenu"
                     v-if="modeHoverKey === 'mode-sub-common'"
-                    :style="{ position: 'fixed', left: modeCommonSubmenuPos.x + 'px', top: modeCommonSubmenuPos.y + 'px', zIndex: 26010 }"
+                    :style="{ position: 'fixed', left: modeCommonSubmenuPos.x + 'px', top: modeCommonSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setModeHover('mode-sub-common')"
                     @mouseleave="clearModeHover"
                   >
@@ -1749,7 +1817,7 @@ export default {
               </template>
             </div>
           </Teleport>
-          <div v-if="menuVisible" class="se-menu-backdrop" style="z-index: 20001" @click="closeMenu" aria-hidden="true"></div>
+          <div v-if="menuVisible" class="se-menu-backdrop" style="z-index: 1000000" @click="closeMenu" aria-hidden="true"></div>
 
           <!-- 换乘线路名称编辑弹窗 -->
           <Teleport to="body">
@@ -1831,13 +1899,13 @@ export default {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.5) inset;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.45);
 }
 
 .se-header {
@@ -1846,7 +1914,7 @@ export default {
   justify-content: space-between;
   padding: 24px 28px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.4);
+  background: transparent;
   position: relative;
   z-index: 1;
   flex-shrink: 0;
@@ -1907,7 +1975,7 @@ export default {
   flex: 1;
   overflow: auto;
   padding: 24px 28px;
-  background: rgba(255, 255, 255, 0.35);
+  background: transparent;
 }
 
 .se-grid2 {
@@ -2557,7 +2625,7 @@ export default {
 .se-footer {
   padding: 20px 28px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.4);
+  background: transparent;
   display: flex;
   gap: 12px;
   justify-content: flex-end;
@@ -2595,18 +2663,19 @@ export default {
 
 @media (prefers-color-scheme: dark) {
   .se-dialog {
-    background: rgba(30, 30, 30, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.68) !important;
+    border: 1px solid rgba(255, 255, 255, 0.45) !important;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
   }
   .se-header {
-    background: rgba(30, 30, 30, 0.4) !important;
+    background: transparent !important;
     border-bottom-color: rgba(255, 255, 255, 0.1);
   }
   .se-content {
-    background: rgba(30, 30, 30, 0.3) !important;
+    background: transparent !important;
   }
   .se-footer {
-    background: rgba(30, 30, 30, 0.4) !important;
+    background: transparent !important;
     border-top-color: rgba(255, 255, 255, 0.1);
   }
   .se-input,
@@ -2664,4 +2733,60 @@ export default {
   background: #1c1c20 !important;
   border: 1px solid rgba(255,255,255,0.16) !important;
 }
+/* Override: StationEditor 内部必须保持毛玻璃（即使全局 html.blur-disabled 打开） */
+:global(html.blur-disabled) .se-dialog {
+  background: rgba(255, 255, 255, 0.68) !important;
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+}
+:global(html.blur-disabled.dark) .se-dialog,
+:global(html.blur-disabled[data-theme="dark"]) .se-dialog {
+  background: rgba(28, 28, 32, 0.68) !important;
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+}
+:global(html.blur-disabled) .station-context-menu,
+:global(html.blur-disabled) .apply-all-submenu,
+:global(html.blur-disabled) .glass-submenu {
+  background: rgba(255, 255, 255, 0.68) !important;
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+}
+:global(html.blur-disabled.dark) .station-context-menu,
+:global(html.blur-disabled[data-theme="dark"]) .station-context-menu,
+:global(html.blur-disabled.dark) .apply-all-submenu,
+:global(html.blur-disabled[data-theme="dark"]) .apply-all-submenu,
+:global(html.blur-disabled.dark) .glass-submenu,
+:global(html.blur-disabled[data-theme="dark"]) .glass-submenu {
+  background: rgba(28, 28, 32, 0.68) !important;
+  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+}
+:global(html.blur-disabled) .se-name-edit-dialog {
+  background: rgba(255, 255, 255, 0.96) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+:global(html.blur-disabled.dark) .se-name-edit-dialog,
+:global(html.blur-disabled[data-theme="dark"]) .se-name-edit-dialog {
+  background: rgba(28, 28, 32, 0.96) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+::global(html.blur-disabled) .se-header,
+::global(html.blur-disabled) .se-content,
+::global(html.blur-disabled) .se-footer {
+  background: transparent !important;
+}
+
+::global(html.blur-disabled.dark) .se-header,
+::global(html.blur-disabled.dark) .se-content,
+::global(html.blur-disabled.dark) .se-footer,
+::global(html.blur-disabled[data-theme="dark"]) .se-header,
+::global(html.blur-disabled[data-theme="dark"]) .se-content,
+::global(html.blur-disabled[data-theme="dark"]) .se-footer {
+  background: transparent !important;
+}
+
 </style>

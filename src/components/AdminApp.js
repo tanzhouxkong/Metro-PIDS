@@ -220,21 +220,28 @@ export default {
 
     async function saveStation(data) {
         ensureCommonAudio()
-        if (editingIndex.value === -1) {
-            // 如果 editingIndex 是 -1，说明是从"新建站点"按钮调用的，添加到末尾
-            state.appData.stations.push(data)
-        } else if (editingIndex.value >= 0 && editingIndex.value < state.appData.stations.length) {
-            // 如果 editingIndex 是有效索引，说明是编辑已有站点
-            state.appData.stations[editingIndex.value] = data
+        const stations = state.appData?.stations
+        if (!Array.isArray(stations)) return
+
+        if (isNewStation.value) {
+            // 新建站点：按指定位置“插入”，避免覆盖编辑已有站点
+            const insertIndex =
+                editingIndex.value === -1
+                    ? stations.length
+                    : Math.min(stations.length, Math.max(0, Number(editingIndex.value)))
+            stations.splice(insertIndex, 0, data)
+            // 更新当前索引：插入在当前站点前面则整体右移
+            if (state.rt.idx >= insertIndex) state.rt.idx++
         } else {
-            // 如果 editingIndex 超出范围，说明是从右键菜单"新建"调用的，插入到指定位置
-            const insertIndex = editingIndex.value >= state.appData.stations.length 
-                ? state.appData.stations.length 
-                : editingIndex.value
-            state.appData.stations.splice(insertIndex, 0, data)
-            // 更新当前索引
-            if (state.rt.idx >= insertIndex) {
-                state.rt.idx++
+            // 编辑已有站点：覆盖指定索引
+            if (editingIndex.value >= 0 && editingIndex.value < stations.length) {
+                stations[editingIndex.value] = data
+            } else if (stations.length > 0) {
+                // 容错：索引异常时，落在边界内
+                const idx = Math.min(stations.length - 1, Math.max(0, Number(editingIndex.value)))
+                stations[idx] = data
+            } else {
+                stations.push(data)
             }
         }
         // 同一线路内同名换乘线路颜色同步：更改某一站某条换乘线颜色后，本线路所有站点的同名换乘线同步该颜色
@@ -257,6 +264,7 @@ export default {
         // 先立即关闭弹窗，再后台执行同步与落盘，避免“保存后等待一会儿才关闭”
         showEditor.value = false
         editingIndex.value = -1
+        isNewStation.value = false
         console.log('[AdminApp] saveStation - editor closed immediately')
         try {
             console.log('[AdminApp] saveStation - calling sync with', data);
@@ -337,13 +345,35 @@ export default {
     function showStationContextMenu(event, station, index) {
         event.preventDefault()
         event.stopPropagation()
-        
+
+        // 右键空白处时：根据鼠标位置计算“下面的卡片”
+        // 约定：stationContextMenu.index 表示“插入点在该站点之后”
+        let finalIndex = index
+        if (index === -1 && !station && listRef.value) {
+            const items = listRef.value.querySelectorAll('.item')
+            if (items && items.length > 0) {
+                const y = event.clientY
+                let belowIndex = items.length // 默认：在最后一张卡片之后
+                for (let i = 0; i < items.length; i++) {
+                    const rect = items[i].getBoundingClientRect()
+                    const centerY = rect.top + rect.height / 2
+                    if (y < centerY) {
+                        belowIndex = i
+                        break
+                    }
+                }
+                finalIndex = belowIndex - 1
+            } else {
+                finalIndex = -1
+            }
+        }
+
         stationContextMenu.value = {
             visible: true,
             x: event.clientX,
             y: event.clientY,
             station: station,
-            index: index
+            index: finalIndex
         }
         
         // 使用 nextTick 在菜单渲染后调整位置，确保菜单不被裁剪
@@ -387,13 +417,23 @@ export default {
     
     // 新建站点（从右键菜单）
     function newStationFromMenu() {
-        const targetIndex = stationContextMenu.value.index >= 0 
-            ? stationContextMenu.value.index + 1 
-            : state.appData.stations.length
+        const targetIndex = stationContextMenu.value.index >= 0
+            ? stationContextMenu.value.index + 1
+            : 0
         closeStationContextMenu()
         // 设置插入位置
         editingIndex.value = targetIndex
-        editingStation.value = { name: '', en: '', skip: false, door: 'left', dock: 'both', xfer: [], expressStop: false }
+        editingStation.value = {
+            name: '',
+            en: '',
+            skip: false,
+            door: 'left',
+            dock: 'both',
+            xfer: [],
+            expressStop: false,
+            // 保持与 openEditor 新建站点一致，避免 StationEditor 依赖字段不存在
+            stationAudio: { separateDirection: true, up: { welcome: [], depart: [], arrive: [], end: [] }, down: { welcome: [], depart: [], arrive: [], end: [] } }
+        }
         isNewStation.value = true
         // 同 openEditor：避免与菜单 click 冒泡冲突导致立刻关闭
         setTimeout(() => {
@@ -432,9 +472,9 @@ export default {
         closeStationContextMenu()
         if (!clipboard.value.station) return
         
-        const targetIndex = stationContextMenu.value.index >= 0 
-            ? stationContextMenu.value.index + 1 
-            : state.appData.stations.length
+        const targetIndex = stationContextMenu.value.index >= 0
+            ? stationContextMenu.value.index + 1
+            : 0
         
         // 如果是剪切操作，需要先处理源站点
         if (clipboard.value.type === 'cut') {
@@ -865,7 +905,7 @@ export default {
 
         <!-- Station List（与顶栏卡片同一套卡片样式） -->
         <div class="card admin-station-card">
-            <div class="st-list" ref="listRef" style="flex:1; overflow-y:auto; padding:0;" @dragover="onDragOver($event)" @contextmenu.prevent="showStationContextMenu($event, null, -1)">
+            <div data-onboard-id="tour-station-list" class="st-list" ref="listRef" style="flex:1; overflow-y:auto; padding:0;" @dragover="onDragOver($event)" @contextmenu.prevent="showStationContextMenu($event, null, -1)">
                 <div v-if="state.appData && state.appData.stations" 
                      v-for="(st, i) in state.appData.stations" 
                      :key="i" 
@@ -952,6 +992,7 @@ export default {
                 v-if="stationContextMenu.visible"
                 class="station-context-menu"
                 data-station-context-menu
+                v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
                 @click.stop
                 @contextmenu.prevent
                 :style="{

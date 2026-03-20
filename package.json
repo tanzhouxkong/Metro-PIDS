@@ -1,6 +1,6 @@
 {
   "name": "metro-pids",
-  "version": "1.6.7",
+  "version": "1.6.9",
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -67,6 +67,7 @@
       "package.json",
       "examples/**/*",
       "assets/**/*",
+      "default/**/*",
       "displays/**/*",
       "preset-lines/**/*",
       "!src/**/*",
@@ -148,6 +149,7 @@
     "photoviewer": "^3.11.1",
     "vue": "^3.5.26",
     "vue-i18n": "^9.14.5",
+    "vue3-glassmorphism": "^0.2.0",
     "ws": "^8.19.0"
   },
   "devDependencies": {

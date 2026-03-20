@@ -322,10 +322,11 @@ export function getTiltLayoutParams(idx, topCount, options = {}) {
  * @param {string} rawHtml - 原始英文站名（可包含简单 HTML 标签）
  * @param {Object} [options]
  * @param {number} [options.maxCharsPerLine=24] - 每行最大字符数（近似值）
+ * @param {boolean} [options.breakLongWords=true] - 当单个单词超长且无法按空格拆分时，是否按字符强制断行
  * @returns {string[]} 拆分后的每一行纯文本
  */
 export function splitEnglishNameIntoLines(rawHtml, options = {}) {
-  const { maxCharsPerLine = 24 } = options;
+  const { maxCharsPerLine = 24, breakLongWords = true } = options;
 
   if (!rawHtml || typeof rawHtml !== 'string') {
     return [];
@@ -344,14 +345,37 @@ export function splitEnglishNameIntoLines(rawHtml, options = {}) {
   const lines = [];
   let line = '';
 
-  for (const w of words) {
+  const flushLine = () => {
+    if (line) lines.push(line);
+    line = '';
+  };
+
+  for (const w0 of words) {
+    if (!w0) continue;
+    let w = String(w0);
+
+    // 常规：当前行还能容纳
     const next = line ? `${line} ${w}` : w;
     if (next.length <= maxCharsPerLine) {
       line = next;
-    } else {
-      if (line) lines.push(line);
-      line = w;
+      continue;
     }
+
+    // 当前行放不下：先把当前行落盘
+    if (line) flushLine();
+
+    // 单词本身就超长：可选按字符切分（解决无空格英文不换行）
+    if (breakLongWords && w.length > maxCharsPerLine) {
+      while (w.length > maxCharsPerLine) {
+        lines.push(w.slice(0, maxCharsPerLine));
+        w = w.slice(maxCharsPerLine);
+      }
+      line = w;
+      continue;
+    }
+
+    // 否则整词放到新行
+    line = w;
   }
 
   if (line) lines.push(line);
@@ -755,6 +779,7 @@ export function getStationTransferInfo(station, options = {}) {
  * @param {number} [options.minSpacing=160]            - 顶部水平段相邻站点的最小理论间距
  * @param {number} [options.minTotalWidth=1400]        - 顶部水平段的最小理论总长度
  * @param {number} [options.maxTrackLength=1670]       - 高亮路径（水平段部分）的最大理论长度
+ * @param {number} [options.trackLengthAdjust=0]       - 在原算法基础上额外加长水平段（像素/单位），用于微调整体长度
  * @param {number} [options.trackGap=100]              - 上下两条轨道中心间距
  * @param {number} [options.cornerRadius=30]           - 右侧圆角半径
  * @param {number} [options.baseHeight=360]            - 整个环线视图高度
@@ -782,6 +807,7 @@ export function computeRingLayoutGeometry(stations, options = {}) {
     minSpacing = 160,
     minTotalWidth = 1400,
     maxTrackLength = 1670,
+    trackLengthAdjust = 0,
     trackGap = 100,
     cornerRadius = 30,
     baseHeight = 360,
@@ -799,10 +825,12 @@ export function computeRingLayoutGeometry(stations, options = {}) {
   const topCount = totalSt > 0 ? Math.ceil(totalSt / 2) : 0;
   const bottomCount = totalSt - topCount;
 
-  const w = Math.min(
+  const baseW = Math.min(
     maxTrackLength,
     Math.max(minTotalWidth, topCount * minSpacing)
   );
+  const adjust = Number.isFinite(Number(trackLengthAdjust)) ? Number(trackLengthAdjust) : 0;
+  const w = baseW + adjust;
 
   const ringWidth = w + 2 * (cornerR + extraHorizontalMargin);
   const W = Math.max(minTotalViewWidth, ringWidth + viewSideMargin);

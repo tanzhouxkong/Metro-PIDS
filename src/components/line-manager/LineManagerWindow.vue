@@ -5,8 +5,10 @@ import { useI18n } from 'vue-i18n'
 import LineManagerDialog from '../LineManagerDialog.js'
 import LineManagerTopbar from '../LineManagerTopbar.js'
 import { useCloudConfig, CLOUD_API_BASE } from '../../composables/useCloudConfig.js'
+import { useSpotlightGuide, SPOTLIGHT_STEP_CONFIG } from '../../composables/useSpotlightGuide.js'
 import dialogService from '../../utils/dialogService.js'
 import ContextMenu from './ContextMenu.vue'
+import SpotlightOverlay from '../onboarding/SpotlightOverlay.vue'
 import { getEffectiveViewportRect } from '../../utils/effectiveViewportRect.js'
 
 // 去除颜色标记，返回纯文本（用于搜索）
@@ -46,7 +48,7 @@ function parseColorMarkup(text) {
 
 export default {
   name: 'LineManagerWindow',
-  components: { Teleport, Transition, LineManagerDialog, LineManagerTopbar, ContextMenu },
+  components: { Teleport, Transition, LineManagerDialog, LineManagerTopbar, ContextMenu, SpotlightOverlay },
   data() {
     return {
       isSavingThroughLine: false,
@@ -71,6 +73,22 @@ export default {
     const searchLoading = ref(false)
     const sidebarRef = ref(null)
     const linesRef = ref(null)
+
+    const {
+      currentStep: spotlightStep,
+      isVisible: spotlightVisible,
+      isCompleted: spotlightCompleted,
+      startLineManagerGuide,
+      nextStep: spotlightNextStep,
+      prevStep: spotlightPrevStep,
+      closeGuide: spotlightCloseGuide,
+      SPOTLIGHT_STEP_CONFIG: SPOTLIGHT_CONFIG
+    } = useSpotlightGuide()
+
+    const spotlightStepConfig = computed(() => {
+      const step = spotlightStep.value
+      return SPOTLIGHT_CONFIG[step] || null
+    })
 
     // 右键菜单状态
     const contextMenu = ref({ visible: false, x: 0, y: 0, folderId: null, folderName: null })
@@ -983,6 +1001,12 @@ export default {
     async function openLine(line) {
       closeLineContextMenu()
       if (!line) return
+
+      // 如果处于线路管理器引导模式（双击打开），推进到下一步
+      if (spotlightVisible.value && spotlightStep.value === 'line_manager_edit') {
+        spotlightNextStep()
+      }
+
       if (line.isRuntime) {
         await applyRuntimeLine(line.data)
         return
@@ -1188,6 +1212,11 @@ export default {
     async function createNewLine() {
       if (!window.electronAPI || !window.electronAPI.lines) return
       if (!window.__lineManagerDialog) return
+
+      // 如果处于线路管理器引导模式，推进到下一步
+      if (spotlightVisible.value && spotlightStep.value === 'line_manager_new') {
+        spotlightNextStep()
+      }
 
       const lineName = await window.__lineManagerDialog.prompt(
         '请输入新线路名称 (例如: 3号线)',
@@ -1703,6 +1732,15 @@ export default {
       buildLineColor,
       bottomBarActionLabel,
 
+      // spotlight guide
+      spotlightStep,
+      spotlightVisible,
+      spotlightStepConfig,
+      startLineManagerGuide,
+      spotlightNextStep,
+      spotlightPrevStep,
+      spotlightCloseGuide,
+
       folderMenuItems: computed(() => {
         const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
         const canDelete = contextMenu.value.folderId && contextMenu.value.folderId !== CLOUD_FOLDER_ID
@@ -1966,7 +2004,7 @@ export default {
           <strong>{{ folders?.find?.(f => f.id === selectedFolderId)?.name || selectedFolderId }}</strong>
         </header>
 
-        <div ref="linesRef" class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
+        <div data-onboard-id="tour-lm-lines-area" ref="linesRef" class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
           <div v-if="loading || runtimeLoading || (isSearchActive && searchLoading)" class="lmw-loading">...</div>
           <div v-else-if="!isSearchActive && currentLines.length === 0" class="lmw-empty">
             {{ activeFolderId === 'runtime-cloud' ? t('lineManager.emptyCloudLines') : t('lineManager.emptyFolder') }}
@@ -2064,6 +2102,25 @@ export default {
 
     <!-- 独立对话框组件，用于右键菜单中的提示/输入（window.__lineManagerDialog） -->
     <LineManagerDialog />
+
+    <!-- 聚光灯引导 -->
+    <SpotlightOverlay
+      v-if="spotlightVisible && spotlightStepConfig"
+      :visible="spotlightVisible"
+      :target-selector="spotlightStepConfig.targetSelector"
+      :title="spotlightStepConfig.title"
+      :body="spotlightStepConfig.body"
+      :step-text="spotlightStepConfig.stepText || ''"
+      :show-back="spotlightStepConfig.showBack"
+      :show-next="spotlightStepConfig.showNext"
+      :back-label="spotlightStepConfig.backLabel || '上一步'"
+      :next-label="spotlightStepConfig.nextLabel || '下一步'"
+      :padding="12"
+      :radius="12"
+      @back="spotlightPrevStep"
+      @next="spotlightNextStep"
+      @dim-click="spotlightCloseGuide"
+    />
   </div>
 </template>
 

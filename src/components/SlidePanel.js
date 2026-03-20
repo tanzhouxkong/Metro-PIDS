@@ -31,6 +31,90 @@ function isDevBuild() {
 
 const IS_DEV_BUILD = isDevBuild();
 
+function ensureDisplayEditorStyles() {
+  if (typeof document === 'undefined') return
+  const id = 'display-editor-styles'
+  const existing = document.getElementById(id)
+  const el = document.createElement('style')
+  el.id = id
+  el.textContent = `
+/* Display-Editor 弹窗：只注入与 footer/buttons 布局相关样式 */
+.se-overlay{
+  position:fixed; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  z-index:99999;
+  background: transparent;
+}
+.se-dialog{
+  width: 900px;
+  max-width: 95%;
+  max-height: 85vh;
+  display:flex; flex-direction:column;
+  border-radius: 20px;
+  overflow:hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(255,255,255,0.3);
+}
+.se-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 24px 28px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+}
+.se-content{
+  flex:1;
+  overflow:auto;
+  padding:24px 28px;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+}
+.se-footer{
+  padding: 20px 28px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.85);
+  display:flex;
+  gap:12px;
+  justify-content:flex-end;
+  align-items:center;
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+}
+.se-btn{
+  padding: 10px 20px;
+  border:none;
+  border-radius:8px;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  min-width:80px;
+  transition: all .15s;
+}
+.se-btn:disabled{ opacity:.6; cursor:not-allowed; }
+.se-btn-gray{ background: var(--btn-gray-bg, #f5f5f5); color: var(--btn-gray-text, #666); }
+.se-btn-gray:hover:not(:disabled){ background: var(--bg, #e5e5e5); }
+.se-btn-green{ background:#2ED573; color:#fff; box-shadow: 0 4px 12px rgba(46,213,115,0.4); }
+.se-btn-green:hover:not(:disabled){ box-shadow: 0 6px 16px rgba(46,213,115,0.6); transform: translateY(-1px); }
+
+/* 如果开启了全局“禁用毛玻璃”开关（html.blur-disabled），也只对本弹窗强制恢复模糊 */
+html.blur-disabled .se-dialog.display-editor-dialog,
+html.blur-disabled.dark .se-dialog.display-editor-dialog,
+html.blur-disabled .se-dialog.display-editor-dialog .se-footer,
+html.blur-disabled.dark .se-dialog.display-editor-dialog .se-footer {
+  background: rgba(255,255,255,0.85) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+}
+`
+  if (existing) existing.textContent = el.textContent
+  else document.head.appendChild(el)
+}
+
 let _slidePanelDisplaySdk = null;
 function getSlidePanelDisplaySdk() {
   if (_slidePanelDisplaySdk) return _slidePanelDisplaySdk;
@@ -47,6 +131,7 @@ export default {
   components: { ColorPicker, Teleport, Transition },
   setup() {
     const isElectronRuntime = typeof navigator !== 'undefined' && /electron/i.test(navigator.userAgent || '');
+    ensureDisplayEditorStyles()
     const { uiState, closePanel } = useUIState()
         const { state: pidsState, sync: syncState } = usePidsState()
         const { next: controllerNext, sync, getStep } = useController()
@@ -244,6 +329,16 @@ export default {
             const opt = display3TrainFormationOptions.find((o) => o.value === text)
             displayEdit.trainFormation = opt ? opt.value : '6'
             showTrainFormationDropdown.value = false
+
+            // 编组变化时：确保当前车厢号有效（避免从大编组切到小编组后越界）
+            try {
+                const formationOption = display3TrainFormationOptions.find((o) => o.value === displayEdit.trainFormation)
+                const totalCars = formationOption ? formationOption.groups.reduce((sum, g) => sum + g, 0) : 6
+                const rawActive = Number(displayEdit.activeCarNo)
+                if (!Number.isFinite(rawActive) || rawActive < 1 || rawActive > totalCars) {
+                    displayEdit.activeCarNo = Math.ceil(totalCars / 2)
+                }
+            } catch (e) {}
         }
 
         const toggleActiveCarDropdown = () => {
@@ -447,6 +542,7 @@ export default {
         }))
 
         const display3TrainFormationOptions = [
+            { value: '2', labelKey: 'display.display3Formation2', groups: [2] },
             { value: '3', labelKey: 'display.display3Formation3', groups: [3] },
             { value: '4', labelKey: 'display.display3Formation4', groups: [4] },
             { value: '5', labelKey: 'display.display3Formation5', groups: [5] },
@@ -548,6 +644,44 @@ export default {
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
     const promptUser = async (msg, defaultValue, title) => dialogService.prompt(msg, defaultValue, title)
+
+        const resetOnboardingGuide = async () => {
+            try {
+                const confirmed = await askUser(
+                    i18n.global.t('about.onboarding.resetConfirm'),
+                    i18n.global.t('about.onboarding.resetTitle')
+                )
+                if (!confirmed) return
+
+                const api = (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onboarding)
+                    ? window.electronAPI.onboarding
+                    : null
+                if (!api || typeof api.reset !== 'function') {
+                    await showMsg(i18n.global.t('about.onboarding.resetElectronOnly'), i18n.global.t('console.warning'))
+                    return
+                }
+
+                const res = await api.reset()
+                if (res && res.ok) {
+                    try {
+                        window.localStorage.removeItem('metro_pids_tour_active')
+                        window.localStorage.removeItem('metro_pids_tour_step')
+                    } catch (e) {}
+                    await showMsg(i18n.global.t('about.onboarding.resetDone'), i18n.global.t('console.info'))
+                    return
+                }
+
+                await showMsg(
+                    i18n.global.t('about.onboarding.resetFailed', { error: (res && res.error) ? res.error : 'unknown' }),
+                    i18n.global.t('console.error')
+                )
+            } catch (e) {
+                await showMsg(
+                    i18n.global.t('about.onboarding.resetFailed', { error: String((e && (e.message || e)) || e) }),
+                    i18n.global.t('console.error')
+                )
+            }
+        }
 
     // 检查是否有 Electron API
     const hasElectronAPI = computed(() => {
@@ -3475,6 +3609,25 @@ export default {
         // 编辑显示端弹窗（与更新日志同风格）
         const showDisplayEditDialog = ref(false);
         const display1WallpaperInput = ref(null);
+        // 显示器编辑弹窗需要毛玻璃效果时，全局 html.blur-disabled 会用 !important 禁掉 backdrop-filter。
+        // 这里在弹窗打开期间临时移除 blur-disabled，关闭后恢复，确保显示器编辑弹窗 blur 一定生效。
+        let __prevBlurDisabledClass = null;
+        watch(showDisplayEditDialog, (val) => {
+            try {
+                if (typeof document === 'undefined') return;
+                const html = document.documentElement;
+                const hasBlurDisabled = html.classList.contains('blur-disabled');
+                if (val) {
+                    __prevBlurDisabledClass = hasBlurDisabled;
+                    if (hasBlurDisabled) html.classList.remove('blur-disabled');
+                } else {
+                    if (__prevBlurDisabledClass) html.classList.add('blur-disabled');
+                    __prevBlurDisabledClass = null;
+                }
+            } catch (e) {
+                // ignore
+            }
+        });
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
             // 仅显示器1使用的选项：线路名合并 / C 型开关
@@ -4510,6 +4663,7 @@ export default {
             showColorPicker, colorPickerInitialColor, onColorConfirm,
             startWithLock, stopWithUnlock, startRecordingWithCheck,
             changeServiceMode, serviceModeLabel,
+            resetOnboardingGuide,
             showReleaseNotes, releaseNotes, loadingNotes, releaseNotesSource, releaseNotesSourceText, openReleaseNotes, closeReleaseNotes, formatReleaseBody, onReleaseBodyClick, imageViewerSrc, openImageViewer, closeImageViewer,
             shortTurnPresets, loadShortTurnPresets, saveShortTurnPreset, loadShortTurnPreset, deleteShortTurnPreset,
             presetContextMenu, showPresetContextMenu, closePresetContextMenu, applyPresetFromMenu, deletePresetFromMenu, sharePresetOffline, importPresetFromShareCode, generateShareId,
@@ -4792,7 +4946,7 @@ export default {
                 </div>
 
         <!-- Display Management -->
-        <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+        <div data-onboard-id="tour-settings-display-management" class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; margin-bottom:28px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05);">
             <div style="color:#FF9F43; font-weight:bold; margin-bottom:16px; font-size:15px;">{{ $t('display.title') }}</div>
             
             <!-- 显示端列表标题 -->
@@ -4806,7 +4960,7 @@ export default {
             </div>
             
             <!-- 显示端卡片列表 -->
-            <div style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:12px; padding:8px; margin-bottom:16px;" @contextmenu.prevent="showDisplayContextMenu($event, null)">
+            <div data-onboard-id="tour-settings-display-list" style="max-height:400px; overflow-y:auto; border:1px solid var(--divider); border-radius:12px; padding:8px; margin-bottom:16px;" @contextmenu.prevent="showDisplayContextMenu($event, null)">
                 <template v-if="visibleDisplayEntries.length">
                 <div v-for="[id, display] in visibleDisplayEntries" :key="id" 
                      :draggable="true"
@@ -5016,6 +5170,16 @@ export default {
                     }) }}
                 </div>
             </div>
+
+            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--divider); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:13px; color:var(--text); font-weight:700;">{{ $t('about.onboarding.title') }}</div>
+                    <div style="font-size:12px; color:var(--muted); margin-top:2px;">{{ $t('about.onboarding.hint') }}</div>
+                </div>
+                <button class="btn" style="background:#e67e22; color:white; padding:8px 12px; border-radius:6px; border:none;" @click="resetOnboardingGuide()">
+                    <i class="fas fa-undo"></i> {{ $t('about.onboarding.resetButton') }}
+                </button>
+            </div>
         </div>
 
         <!-- 反馈与交流 -->
@@ -5050,12 +5214,12 @@ export default {
       @confirm="onColorConfirm"
     />
 
-    <!-- Edit Display Dialog（与编辑站点 StationEditor 同结构同样式：se-overlay + se-dialog） -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div v-if="showDisplayEditDialog" class="se-overlay" @click.self="closeDisplayEditDialog">
-                <div class="se-dialog" role="dialog" aria-modal="true" style="max-width:600px;">
-                    <div class="se-header">
+    <!-- Edit Display Dialog（仿 StationEditor 弹窗框架） -->
+    <teleport to="body">
+        <transition name="fade">
+            <div v-if="showDisplayEditDialog" class="se-overlay" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:99999; background: rgba(0,0,0,0.03) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;" @click.self="closeDisplayEditDialog">
+                <div class="se-dialog display-editor-dialog" role="dialog" aria-modal="true" style="width:900px; max-width:95%; max-height:85vh; display:flex; flex-direction:column; background: rgba(255, 255, 255, 0.40) !important; backdrop-filter: blur(40px) saturate(190%) !important; -webkit-backdrop-filter: blur(40px) saturate(190%) !important;">
+                    <div class="se-header" style="background: rgba(255, 255, 255, 0.40) !important; backdrop-filter: blur(40px) saturate(190%) !important; -webkit-backdrop-filter: blur(40px) saturate(190%) !important;">
                         <div class="se-header-left">
                             <div class="se-icon">
                                 <i class="fas fa-edit"></i>
@@ -5070,7 +5234,7 @@ export default {
                         </button>
                     </div>
 
-                    <div class="se-content" style="display:flex; flex-direction:column; gap:12px;">
+                    <div class="se-content" style="display:flex; flex-direction:column; gap:12px; flex:1; overflow-y:auto; background: rgba(255, 255, 255, 0.40) !important; backdrop-filter: blur(40px) saturate(190%) !important; -webkit-backdrop-filter: blur(40px) saturate(190%) !important;">
                         <template v-if="!displayEdit.isSystem">
                             <div>
                                 <label class="se-label">{{ $t("display.editName") }}</label>
@@ -5227,54 +5391,6 @@ export default {
                             </div>
                         </template>
                         <template v-if="displayEdit.isDisplay3">
-                            <!-- 车辆编组：下拉菜单，与显示器2 UI 样式行风格一致 -->
-                            <div class="se-display-option-row">
-                                <div class="se-display-option-text">
-                                    <div class="se-label" style="margin-bottom:4px;">{{ $t('display.display3TrainFormation') }}</div>
-                                    <div class="se-display-option-desc">{{ $t('display.display3TrainFormationDesc') }}</div>
-                                </div>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <div ref="trainFormationDropdownRef" style="position:relative; width:160px;" class="custom-dropdown-container">
-                                        <div
-                                            @click.stop="toggleTrainFormationDropdown"
-                                            :style="dropdownTriggerStyle"
-                                        >
-                                            <span style="font-size:13px; font-weight:500;">{{ trainFormationTitle }}</span>
-                                            <i :class="showTrainFormationDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
-                                        </div>
-                                        <transition name="dropdown-fade">
-                                            <div
-                                                v-show="showTrainFormationDropdown"
-                                                :style="activeCarDropdownMenuStyle"
-                                                @click.stop
-                                            >
-                                                <div
-                                                    v-for="item in display3TrainFormationOptions"
-                                                    :key="item.value"
-                                                    @click.stop="selectTrainFormation(item.value)"
-                                                    :style="{
-                                                        padding: '9px 10px',
-                                                        borderRadius: '8px',
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        color: 'var(--text)',
-                                                        fontSize: '13px',
-                                                        fontWeight: displayEdit.trainFormation === item.value ? '700' : '500',
-                                                        background: displayEdit.trainFormation === item.value ? glassItemActiveBackground() : 'transparent'
-                                                    }"
-                                                    @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
-                                                    @mouseout="$event.currentTarget.style.background = (displayEdit.trainFormation === item.value ? glassItemActiveBackground() : 'transparent')"
-                                                >
-                                                    <span>{{ $t(item.labelKey) }}</span>
-                                                    <i v-if="displayEdit.trainFormation === item.value" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
-                                                </div>
-                                            </div>
-                                        </transition>
-                                    </div>
-                                </div>
-                            </div>
                             <!-- 当前车厢：独立一行 -->
                             <div class="se-display-option-row">
                                 <div class="se-display-option-text">
@@ -5375,18 +5491,84 @@ export default {
                                         </transition>
                                     </div>
                                 </div>
+                           </div>
+                        
+
+                        <!-- 显示器3：车辆编组（图标按钮组，放最底部） -->
+                        <div v-if="displayEdit.isDisplay3" class="se-display-option-row" style="flex-direction:column; align-items:stretch; gap:10px;">
+                            <div class="se-display-option-text" style="max-width:none;">
+                                <div class="se-label" style="margin-bottom:4px;">{{ $t('display.display3TrainFormation') }}</div>
+                                <div class="se-display-option-desc">{{ $t('display.display3TrainFormationDesc') }}</div>
                             </div>
-                        </template>
+                            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                    <button
+                                        v-for="item in display3TrainFormationOptions"
+                                        :key="'tf-'+item.value"
+                                        type="button"
+                                        @click.stop="selectTrainFormation(item.value)"
+                                        :title="$t(item.labelKey)"
+                                        :aria-pressed="displayEdit.trainFormation === item.value"
+                                        :style="[dropdownTriggerStyle, {
+                                            width: '104px',
+                                            minWidth: '104px',
+                                            height: '56px',
+                                            padding: '8px 10px',
+                                            borderRadius: '12px',
+                                            justifyContent: 'center',
+                                            background: (displayEdit.trainFormation === item.value ? glassItemActiveBackground() : glassMenuBackground()),
+                                            flexDirection: 'column',
+                                            gap: '6px'
+                                        }]"
+                                        @mouseover="displayEdit.trainFormation !== item.value && ($event.currentTarget.style.background = glassItemHoverBackground())"
+                                        @mouseout="displayEdit.trainFormation !== item.value && ($event.currentTarget.style.background = glassMenuBackground())"
+                                    >
+                                        <div style="display:flex; align-items:center; gap:6px;">
+                                            <div
+                                                v-for="(g, gi) in item.groups"
+                                                :key="item.value + '-g-' + gi"
+                                                :style="{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: gi < item.groups.length - 1 ? '6px' : '0' }"
+                                            >
+                                                <span
+                                                    v-for="k in g"
+                                                    :key="item.value + '-g-' + gi + '-c-' + k"
+                                                    :style="{
+                                                        width: '8px',
+                                                        height: '12px',
+                                                        borderRadius: '3px',
+                                                        border: '1px solid ' + (displayEdit.trainFormation === item.value ? 'var(--text)' : 'var(--muted)'),
+                                                        background: displayEdit.trainFormation === item.value ? 'var(--text)' : 'transparent',
+                                                        opacity: displayEdit.trainFormation === item.value ? 0.9 : 0.7,
+                                                        boxSizing: 'border-box'
+                                                    }"
+                                                ></span>
+                                            </div>
+                                        </div>
+                                        <div :style="{
+                                            fontSize: '11px',
+                                            fontWeight: '800',
+                                            color: 'var(--text)',
+                                            opacity: (displayEdit.trainFormation === item.value ? 1 : 0.85),
+                                            textAlign: 'center',
+                                            width: '100%',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                        }">
+                                            {{ $t(item.labelKey) }}
+                                        </div>
+                                    </button>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="se-footer">
+                    <div class="se-footer" style="background: rgba(255, 255, 255, 0.40) !important; backdrop-filter: blur(40px) saturate(190%) !important; -webkit-backdrop-filter: blur(40px) saturate(190%) !important;">
                         <button type="button" class="se-btn se-btn-gray" @click="closeDisplayEditDialog">{{ $t("display.btnCancel") }}</button>
                         <button type="button" class="se-btn se-btn-green" @click="saveDisplayEdit">{{ $t("display.btnSave") }}</button>
                     </div>
                 </div>
             </div>
-        </Transition>
-    </Teleport>
+        </transition>
+    </teleport>
 
     <!-- Multi-Screen QR Dialog -->
     <Teleport to="body">
@@ -5641,15 +5823,13 @@ export default {
         <div 
             v-if="displayContextMenu.visible"
             data-display-context-menu
+            v-glassmorphism="{ blur: 24, opacity: 0.2, color: '#ffffff' }"
             @click.stop
             @contextmenu.prevent
             :style="{
                 position: 'fixed',
                 left: displayContextMenu.x + 'px',
                 top: displayContextMenu.y + 'px',
-                background: glassMenuBackground(),
-                backdropFilter: contextMenuBackdropFilter(),
-                WebkitBackdropFilter: contextMenuBackdropFilter(),
                 border: '1px solid ' + glassMenuBorder(),
                 borderRadius: '12px',
                 boxShadow: glassMenuShadow(),

@@ -4,11 +4,71 @@
  */
 import { calculateNextStationIndex } from '../utils/displayStationCalculator'
 
+// 用于系统媒体控制面板（Windows/锁屏/全局媒体控制）。
+// 这里用 module-scope 状态，避免多次注册 action handler。
+let __mediaSessionHandlersRegistered = false
+let __stationAudioInstanceSeq = 0
+
 export function useStationAudio(state) {
   if (!state) return { playArrive: () => {}, playDepart: () => {} }
 
+  const instanceId = ++__stationAudioInstanceSeq
   let playSessionId = 0
   let currentAudio = null
+  let hasMediaStartedForSession = false
+
+  let lastStationPlayback = null // { type: 'arrive'|'depart', idx: number }
+  const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
+  const setPlaybackState = (playbackState) => {
+    if (!canUseMediaSession) return
+    try { navigator.mediaSession.playbackState = playbackState } catch (e) {}
+  }
+  const setMediaMetadata = (meta) => {
+    if (!canUseMediaSession) return
+    try {
+      const MM = (typeof MediaMetadata !== 'undefined') ? MediaMetadata : (typeof window !== 'undefined' ? window.MediaMetadata : undefined)
+      if (!MM) return
+      navigator.mediaSession.metadata = new MM(meta)
+    } catch (e) {}
+  }
+
+  // 只注册一次系统媒体按钮回调；具体控制哪个实例由 window.__activeStationAudioController 指定。
+  if (
+    canUseMediaSession &&
+    typeof window !== 'undefined' &&
+    !__mediaSessionHandlersRegistered
+  ) {
+    try {
+      navigator.mediaSession.setActionHandler('play', async () => {
+        const ctrl = window.__activeStationAudioController
+        if (ctrl?.playFromLast) {
+          try { await ctrl.playFromLast() } catch (e) {}
+        }
+      })
+      navigator.mediaSession.setActionHandler('pause', async () => {
+        const ctrl = window.__activeStationAudioController
+        if (ctrl?.pauseFromMedia) {
+          try { await ctrl.pauseFromMedia() } catch (e) {}
+        }
+      })
+      navigator.mediaSession.setActionHandler('stop', async () => {
+        const ctrl = window.__activeStationAudioController
+        if (ctrl?.stopFromMedia) {
+          try { await ctrl.stopFromMedia() } catch (e) {}
+        }
+      })
+    } catch (e) {}
+    __mediaSessionHandlersRegistered = true
+  }
+
+  const setActiveController = (ctrl) => {
+    if (typeof window === 'undefined') return
+    window.__activeStationAudioController = ctrl || null
+  }
+  const clearActiveControllerIfSelf = () => {
+    if (typeof window === 'undefined') return
+    if (window.__activeStationAudioController?.id === instanceId) window.__activeStationAudioController = null
+  }
 
   const stopDomAudios = () => {
     try {
@@ -80,7 +140,30 @@ export function useStationAudio(state) {
     playSessionId++
     stopCurrentPlayback()
     stopDomAudios()
+    hasMediaStartedForSession = false
+    setPlaybackState('none')
     // 让事件循环有机会清理正在排队的播放任务
+    await Promise.resolve()
+  }
+
+  // “暂停”仅用于系统媒体面板：停止当前串行队列，但把卡片保留为 paused 状态。
+  // 由于这里无法从“暂停点”继续播放，之后点击系统 Play 会从“最后一次进/出站”重新开始。
+  const pauseForMediaPanel = async () => {
+    playSessionId++
+    stopCurrentPlayback()
+    stopDomAudios()
+    hasMediaStartedForSession = false
+    setPlaybackState('paused')
+    await Promise.resolve()
+  }
+
+  // “停止”用于系统媒体面板：停止并清除卡片。
+  const stopForMediaPanel = async () => {
+    playSessionId++
+    stopCurrentPlayback()
+    stopDomAudios()
+    hasMediaStartedForSession = false
+    setPlaybackState('none')
     await Promise.resolve()
   }
 
@@ -384,7 +467,14 @@ export function useStationAudio(state) {
       audio.onended = () => { if (currentAudio === audio) currentAudio = null; resolve() }
       audio.onpause = () => { if (currentAudio === audio) currentAudio = null; resolve() }
       audio.onerror = (err) => { if (currentAudio === audio) currentAudio = null; reject(err) }
-      audio.play().catch(reject)
+      // play() 的 Promise resolve 表示已经开始播放，这时再把 playbackState 置为 playing，
+      // 避免“提前置 playing 但实际未播放成功”导致 Windows 不显示媒体控制。
+      audio.play().then(() => {
+        if (sessionId === playSessionId && !hasMediaStartedForSession) {
+          hasMediaStartedForSession = true
+          setPlaybackState('playing')
+        }
+      }).catch(reject)
     }).then(() => ({ ok: true })).catch((err) => ({ ok: false, err }))
     if (!result.ok && sessionId === playSessionId) {
       console.warn('[useStationAudio] playAudioFile failed', result.err)
@@ -394,7 +484,12 @@ export function useStationAudio(state) {
 
   // 串行播放列表，检测会话变更立即打断
   const playList = async (sessionId, dir, list, ctx) => {
-    if (!list.length) return
+    if (!list.length) {
+      if (sessionId === playSessionId) {
+        setPlaybackState('none')
+      }
+      return
+    }
     const lineFilePath = getLineDirOrFilePath()
     if (typeof window === 'undefined') return
 
@@ -435,6 +530,10 @@ export function useStationAudio(state) {
         if (sessionId === playSessionId) console.warn('[useStationAudio] play error', item.path, e)
       }
     }
+    // 当前会话的串行列表播放结束
+    if (sessionId === playSessionId) {
+      setPlaybackState('none')
+    }
   }
 
   // 进站播放：筛选列表并串行播放，首末站追加欢迎/终到
@@ -448,11 +547,39 @@ export function useStationAudio(state) {
       if (window.__blockStationAudioUntil) window.__blockStationAudioUntil = 0
     }
     playSessionId++
+    hasMediaStartedForSession = false
     stopCurrentPlayback()
     const sessionId = playSessionId
     const station = stations[idx]
     const sa = station?.stationAudio
-    if (!sa || typeof sa !== 'object') return
+    if (!sa || typeof sa !== 'object') {
+      setPlaybackState('none')
+      clearActiveControllerIfSelf()
+      return
+    }
+
+    // 系统媒体控制面板：设置元数据并标记为正在播放
+    lastStationPlayback = { type: 'arrive', idx }
+    setActiveController({
+      id: instanceId,
+      playFromLast: async () => {
+        if (!lastStationPlayback) return
+        const cmd = lastStationPlayback
+        if (cmd.type === 'arrive') return playArrive(cmd.idx)
+        return playDepart(cmd.idx)
+      },
+      pauseFromMedia: pauseForMediaPanel,
+      stopFromMedia: stopForMediaPanel
+    })
+    const lineNameDisplay = cleanLineName(state.appData?.meta?.lineName)
+    const stationNameDisplay = station?.name ? String(station.name) : `#${idx}`
+    setMediaMetadata({
+      title: `${lineNameDisplay || 'Metro'} - ${stationNameDisplay}`,
+      artist: 'Metro-PIDS',
+      album: 'Station Audio (Arrive)'
+    })
+    setPlaybackState('none')
+
     const meta = state.appData?.meta || {}
     const startIdx = typeof meta.startIdx === 'number' ? meta.startIdx : 0
     const termIdx = typeof meta.termIdx === 'number' ? meta.termIdx : stations.length - 1
@@ -488,11 +615,39 @@ export function useStationAudio(state) {
       if (window.__blockStationAudioUntil) window.__blockStationAudioUntil = 0
     }
     playSessionId++
+    hasMediaStartedForSession = false
     stopCurrentPlayback()
     const sessionId = playSessionId
     const station = stations[idx]
     const sa = station?.stationAudio
-    if (!sa || typeof sa !== 'object') return
+    if (!sa || typeof sa !== 'object') {
+      setPlaybackState('none')
+      clearActiveControllerIfSelf()
+      return
+    }
+
+    // 系统媒体控制面板：设置元数据并标记为正在播放
+    lastStationPlayback = { type: 'depart', idx }
+    setActiveController({
+      id: instanceId,
+      playFromLast: async () => {
+        if (!lastStationPlayback) return
+        const cmd = lastStationPlayback
+        if (cmd.type === 'arrive') return playArrive(cmd.idx)
+        return playDepart(cmd.idx)
+      },
+      pauseFromMedia: pauseForMediaPanel,
+      stopFromMedia: stopForMediaPanel
+    })
+    const lineNameDisplay = cleanLineName(state.appData?.meta?.lineName)
+    const stationNameDisplay = station?.name ? String(station.name) : `#${idx}`
+    setMediaMetadata({
+      title: `${lineNameDisplay || 'Metro'} - ${stationNameDisplay}`,
+      artist: 'Metro-PIDS',
+      album: 'Station Audio (Depart)'
+    })
+    setPlaybackState('none')
+
     const meta = state.appData?.meta || {}
     const serviceMode = meta.serviceMode || 'normal'
     const isShortTurn = typeof meta.startIdx === 'number' && typeof meta.termIdx === 'number' && (meta.termIdx - meta.startIdx + 1) < stations.length

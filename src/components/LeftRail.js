@@ -93,10 +93,15 @@ export default {
             // 先计算新的面板 ID（在切换之前）
             const currentPanelId = uiState.activePanel;
             const newPanelId = currentPanelId === panelId ? null : panelId;
-            
+
+            // 如果处于聚光灯引导模式（打开控制台步骤），推进引导
+            if (panelId === 'panel-1') {
+                window.dispatchEvent(new CustomEvent('spotlight-guide-click-console'))
+            }
+
             // 更新本地状态
             togglePanel(panelId);
-            
+
             // 通知主窗口
             await notifyMainWindow(newPanelId);
         }
@@ -844,7 +849,7 @@ export default {
         <button 
             class="ft-btn" 
             :style="btnStyle('panel-1')"
-            @click="togglePanel('panel-1')" 
+            @click="togglePanel('panel-1')"
             title="PIDS 控制台"
         >
             <i class="fas fa-sliders-h" style="font-size:20px;"></i>
