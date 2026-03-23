@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>首次启动引导</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --card: #111824;
+      --text: #e6edf3;
+      --muted: rgba(230, 237, 243, 0.72);
+      --border: rgba(255,255,255,0.10);
+      --btn: rgba(255,255,255,0.10);
+      --btnHover: rgba(255,255,255,0.16);
+      --accent: rgba(255,255,255,0.18);
+      --danger: rgba(255, 80, 80, 0.20);
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --text: #0b0f14;
+        --muted: rgba(11, 15, 20, 0.68);
+        --border: rgba(0,0,0,0.10);
+        --btn: rgba(0,0,0,0.06);
+        --btnHover: rgba(0,0,0,0.10);
+        --accent: rgba(0,0,0,0.12);
+        --danger: rgba(255, 80, 80, 0.12);
+      }
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+    }
+
+    .side {
+      width: 240px;
+      padding: 18px 14px;
+      border-right: 1px solid var(--border);
+      box-sizing: border-box;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    }
+
+    .brand {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.3px;
+      opacity: 0.95;
+      margin-bottom: 12px;
+    }
+
+    .steps {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .step {
+      display: flex;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      cursor: default;
+      user-select: none;
+      align-items: center;
+      opacity: 0.9;
+    }
+
+    .step.active {
+      border-color: var(--border);
+      background: rgba(255,255,255,0.05);
+      opacity: 1;
+    }
+
+    .badge {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: var(--accent);
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .content {
+      flex: 1;
+      padding: 18px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0 0 6px 0;
+    }
+
+    .desc {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .row {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    select, input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      outline: none;
+    }
+
+    .btns {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      padding-top: 12px;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: var(--btn);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover { background: var(--btnHover); }
+    button.primary { background: rgba(80, 160, 255, 0.22); border-color: rgba(80,160,255,0.32); }
+    button.primary:hover { background: rgba(80, 160, 255, 0.28); }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .err {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--danger);
+      color: var(--text);
+      display: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .footer {
+      margin-top: auto;
+      color: var(--muted);
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="side">
+      <div class="brand">Metro-PIDS · 引导</div>
+      <ol class="steps">
+        <li class="step" data-step="welcome"><div class="badge">1</div><div>欢迎</div></li>
+        <li class="step" data-step="line"><div class="badge">2</div><div>选择线路</div></li>
+        <li class="step" data-step="display"><div class="badge">3</div><div>显示端</div></li>
+        <li class="step" data-step="done"><div class="badge">4</div><div>完成</div></li>
+      </ol>
+    </aside>
+
+    <main class="content">
+      <section class="card" id="panel"></section>
+      <div class="err" id="err"></div>
+      <div class="footer">
+        <div>版本：<span class="mono" id="ver">-</span></div>
+        <div class="btns">
+          <button id="backBtn">上一步</button>
+          <button id="nextBtn" class="primary">下一步</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="onboardingWindow.js"></script>
+</body>
+</html>

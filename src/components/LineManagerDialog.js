@@ -1,0 +1,278 @@
+import { Teleport, Transition } from 'vue'
+
+const LINE_MANAGER_DIALOG_STYLE_ID = 'line-manager-dialog-transition-style'
+
+function ensureLineManagerDialogStyles() {
+  if (typeof document === 'undefined') return
+  if (document.getElementById(LINE_MANAGER_DIALOG_STYLE_ID)) return
+  const styleEl = document.createElement('style')
+  styleEl.id = LINE_MANAGER_DIALOG_STYLE_ID
+  styleEl.textContent = `
+    .fade-enter-active, .fade-leave-active {
+      transition: opacity 0.3s ease;
+    }
+    .fade-enter-from, .fade-leave-to {
+      opacity: 0;
+    }
+  `
+  document.head.appendChild(styleEl)
+}
+
+export default {
+  name: 'LineManagerDialog',
+  components: { Teleport, Transition },
+  data() {
+    return {
+      visible: false,
+      title: '',
+      message: '',
+      inputValue: '',
+      resolve: null,
+      type: 'prompt' // 'prompt', 'alert', 'confirm'
+    }
+  },
+  methods: {
+    prompt(message, defaultValue = '', title = '新建文件夹') {
+      this.title = title;
+      this.message = message;
+      this.inputValue = defaultValue || '';
+      this.type = 'prompt';
+      this.visible = true;
+      return new Promise((resolve) => {
+        this.resolve = resolve;
+      });
+    },
+    alert(message, title = '提示') {
+      this.title = title;
+      this.message = message;
+      this.type = 'alert';
+      this.visible = true;
+      return new Promise((resolve) => {
+        this.resolve = resolve;
+      });
+    },
+    confirm(message, title = '确认') {
+      this.title = title;
+      this.message = message;
+      this.type = 'confirm';
+      this.visible = true;
+      return new Promise((resolve) => {
+        this.resolve = resolve;
+      });
+    },
+    close(result) {
+      const resolver = this.resolve;
+      this.resolve = null;
+      this.visible = false;
+      if (resolver) resolver(result);
+    },
+    handleConfirm() {
+      if (this.type === 'prompt') {
+        this.close(this.inputValue);
+      } else {
+        this.close(true);
+      }
+    },
+    handleCancel() {
+      this.close(this.type === 'prompt' ? null : false);
+    },
+    getDialogIcon() {
+      if (this.type === 'alert') return 'fa-info-circle';
+      if (this.type === 'confirm') return 'fa-question-circle';
+      if (this.type === 'prompt') return 'fa-folder-plus';
+      return 'fa-bell';
+    },
+    getDialogColor() {
+      if (this.type === 'alert') return '#1E90FF';
+      if (this.type === 'confirm') return '#FF9F43';
+      if (this.type === 'prompt') return '#FF9F43';
+      return '#1677ff';
+    },
+    isDarkTheme() {
+      try {
+        const el = document.documentElement;
+        return !!(el && (el.classList.contains('dark') || el.getAttribute('data-theme') === 'dark'));
+      } catch (e) {
+        return false;
+      }
+    },
+    isBlurEnabled() {
+      try {
+        const el = document.documentElement;
+        return !(el && el.classList.contains('blur-disabled'));
+      } catch (e) {
+        return true;
+      }
+    },
+    getGlassBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
+      return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)';
+    },
+    getDialogBackdrop() {
+      return this.isBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none';
+    },
+    getDialogBorder() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '1px solid rgba(255,255,255,0.16)' : '1px solid rgba(15,23,42,0.16)';
+      }
+      return '1px solid rgba(255,255,255,0.3)';
+    },
+    getDialogContentBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
+      return this.isDarkTheme() ? 'rgba(30, 30, 30, 0.30)' : 'rgba(255, 255, 255, 0.30)';
+    },
+    getHeaderBg() {
+      if (!this.isBlurEnabled()) {
+        return this.isDarkTheme() ? '#1c1c20' : '#ffffff';
+      }
+      return this.isDarkTheme() ? 'rgba(30,30,30,0.40)' : 'rgba(255,255,255,0.40)';
+    },
+    getDialogShadow() {
+      return this.isBlurEnabled()
+        ? '0 20px 60px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.5) inset'
+        : '0 20px 60px rgba(0,0,0,0.3)';
+    }
+  },
+  mounted() {
+    ensureLineManagerDialogStyles();
+    // 将对话框方法暴露到全局，供其他组件使用
+    if (typeof window !== 'undefined') {
+      window.__lineManagerDialog = {
+        prompt: (msg, defaultValue, title) => this.prompt(msg, defaultValue, title),
+        alert: (msg, title) => this.alert(msg, title),
+        confirm: (msg, title) => this.confirm(msg, title)
+      };
+    }
+  },
+  template: `
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="visible" 
+             :style="{ 
+               position: 'fixed', 
+               inset: '0', 
+               display: 'flex', 
+               alignItems: 'center', 
+               justifyContent: 'center', 
+               zIndex: '10000', 
+               background: 'transparent', 
+               backdropFilter: 'none', 
+               WebkitBackdropFilter: 'none' 
+             }" 
+             @click.self="handleCancel">
+          <div @click.stop 
+            :style="{ background: getGlassBg(), backdropFilter: getDialogBackdrop(), WebkitBackdropFilter: getDialogBackdrop(), border: getDialogBorder(), borderRadius:'20px', padding:'0', width:'420px', maxWidth:'90%', boxShadow: getDialogShadow(), overflow:'hidden', transform:'scale(1)', transition:'transform 0.2s' }">
+            <!-- Header -->
+            <div :style="{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '24px 28px', 
+              borderBottom: '1px solid rgba(0,0,0,0.08)', 
+              background: getHeaderBg(), 
+              backdropFilter: getDialogBackdrop(),
+              WebkitBackdropFilter: getDialogBackdrop()
+            }">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div :style="{ 
+                  width: '40px', 
+                  height: '40px', 
+                  borderRadius: '10px', 
+                  background: 'linear-gradient(135deg, ' + getDialogColor() + ' 0%, ' + getDialogColor() + 'dd 100%)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  boxShadow: '0 4px 12px ' + getDialogColor() + '40' 
+                }">
+                  <i :class="'fas ' + getDialogIcon()" style="color:white; font-size:18px;"></i>
+                </div>
+                <div>
+                  <div style="margin:0; font-size:20px; font-weight:800; color:var(--text, #333); letter-spacing:-0.5px;">{{ title }}</div>
+                </div>
+              </div>
+              <button @click="handleCancel" 
+                      style="background:none; border:none; color:var(--muted, #999); cursor:pointer; font-size:20px; padding:8px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:all 0.2s;" 
+                      @mouseover="$event.target.style.color='var(--text, #333)'" 
+                      @mouseout="$event.target.style.color='var(--muted, #999)'">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            
+            <!-- Content -->
+            <div :style="{ padding:'24px 28px', background: getDialogContentBg(), backdropFilter: getDialogBackdrop(), WebkitBackdropFilter: getDialogBackdrop() }">
+              <!-- 提示信息 -->
+              <div v-if="message" style="margin-bottom:20px; color:var(--text, #333); font-size:14px; line-height:1.7;">{{ message }}</div>
+              
+              <!-- 输入框：蓝色边框，文字选中 -->
+              <input 
+                v-if="type === 'prompt'" 
+                v-model="inputValue" 
+                @keyup.enter="handleConfirm"
+                @keyup.esc="handleCancel"
+                @focus="$event.target.select(); $event.target.style.borderColor='var(--accent, #1677ff)'"
+                @blur="$event.target.style.borderColor='var(--divider, rgba(0,0,0,0.1))'"
+                style="width:100%; padding:12px 16px; margin-bottom:20px; border:2px solid var(--divider, rgba(0,0,0,0.1)); border-radius:8px; background:var(--input-bg, #ffffff); color:var(--text, #333); font-size:14px; transition:all 0.2s; outline:none; box-sizing:border-box;"
+                :style="{
+                  width:'100%', padding:'12px 16px', marginBottom:'20px', border:'2px solid var(--divider, rgba(0,0,0,0.1))', borderRadius:'8px',
+                  background: isDarkTheme() ? 'rgba(50,50,50,0.70)' : 'var(--input-bg, #ffffff)',
+                  color: isDarkTheme() ? '#f3f3f3' : 'var(--text, #333)',
+                  fontSize:'14px', transition:'all 0.2s', outline:'none', boxSizing:'border-box'
+                }"
+                autofocus
+              />
+              
+              <!-- 按钮区域 -->
+              <div style="display:flex; gap:12px; justify-content:flex-end;">
+                <button 
+                  v-if="type !== 'alert'"
+                  @click="handleCancel"
+                  :style="{
+                    padding:'10px 20px',
+                    background: isDarkTheme() ? 'rgba(255,255,255,0.10)' : 'var(--btn-gray-bg, #f5f5f5)',
+                    color: isDarkTheme() ? '#f0f0f0' : 'var(--btn-gray-text, #666)',
+                    border:'none',
+                    borderRadius:'8px',
+                    fontSize:'14px',
+                    fontWeight:'500',
+                    cursor:'pointer',
+                    transition:'all 0.2s',
+                    minWidth:'80px'
+                  }"
+                  @mouseover="$event.target.style.background = isDarkTheme() ? 'rgba(255,255,255,0.16)' : 'var(--bg, #e5e5e5)'"
+                  @mouseout="$event.target.style.background = isDarkTheme() ? 'rgba(255,255,255,0.10)' : 'var(--btn-gray-bg, #f5f5f5)'"
+                >
+                  取消
+                </button>
+                <button 
+                  @click="handleConfirm"
+                  :style="{ 
+                    padding: '10px 20px', 
+                    background: getDialogColor(), 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer', 
+                    transition: 'all 0.2s', 
+                    minWidth: '80px',
+                    boxShadow: '0 4px 12px ' + getDialogColor() + '40'
+                  }"
+                  @mouseover="$event.target.style.boxShadow='0 6px 16px ' + getDialogColor() + '60'; $event.target.style.transform='translateY(-1px)'"
+                  @mouseout="$event.target.style.boxShadow='0 4px 12px ' + getDialogColor() + '40'; $event.target.style.transform='translateY(0)'"
+                >
+                  确定
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+  `
+}
+

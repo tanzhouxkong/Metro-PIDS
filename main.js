@@ -1,0 +1,10862 @@
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut } = require('electron');
+
+// 提前注册关键 IPC 占位处理器，避免渲染进程启动早于主进程完整初始化时出现 "No handler registered"
+// 后续在主流程中会 removeHandler 并注册正式实现。
+try {
+  ipcMain.handle('effects/dialog-blur', async () => ({ ok: true }));
+  ipcMain.handle('effects/main-blur', async () => ({ ok: true }));
+  ipcMain.handle('system/get-geolocation', async () => ({ country: null, city: null, latitude: null, longitude: null }));
+} catch (e) {
+  // 忽略重复注册异常（热重载场景）
+}
+
+// 辅助函数：显示显示器识别错误对话框
+function showDisplayErrorDialog(title, message, details) {
+  const logFilePath = logger ? logger.transports.file.getFile().path : '未配置日志文件';
+  const detailText = `显示端ID: ${details.displayId || '未知'}
+显示端名称: ${details.name || '未知'}
+Source类型: ${details.source || '未知'}
+配置的URL: ${details.url || '(空)'}
+期望的URL: ${details.expectedUrl || '(未确定)'}
+实际使用的URL: ${details.actualUrl || '(未确定)'}
+识别失败原因: ${details.reason || '未知错误'}
+
+日志文件位置: ${logFilePath}
+
+详细配置信息:
+${JSON.stringify(details.config || {}, null, 2)}`;
+
+  dialog.showMessageBox(mainWin || null, {
+    type: 'error',
+    title: title || '显示器识别错误',
+    message: message || '无法识别第三方显示器',
+    detail: detailText,
+    buttons: ['确定', '打开日志文件'],
+    defaultId: 0,
+    cancelId: 0
+  }).then(result => {
+    if (result.response === 1 && logger) {
+      // 用户点击了"打开日志文件"
+      try {
+        shell.showItemInFolder(logFilePath);
+      } catch (e) {
+        console.warn('[main] 无法打开日志文件:', e);
+      }
+    }
+  }).catch(e => {
+    console.error('[main] 显示错误对话框失败:', e);
+  });
+  
+  // 同时输出到控制台和日志文件
+  console.error(`[main] ${title}: ${message}`);
+  console.error(`[main] 详细信息:`, details);
+  ntLog('error', `[main] ${title}: ${message}`, details);
+}
+const path = require('path');
+const fs = require('fs');
+const fsPromises = fs.promises;
+const NT_LOG_DIR_SEGMENTS = ['data', 'log'];
+
+function getNtLogDir() {
+  try {
+    return path.join(app.getPath('userData'), ...NT_LOG_DIR_SEGMENTS);
+  } catch (e) {
+    return path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS);
+  }
+}
+
+function ensureNtLogDir() {
+  const ntLogDir = getNtLogDir();
+  fs.mkdirSync(ntLogDir, { recursive: true });
+  return ntLogDir;
+}
+
+function ntLog(level, message, meta) {
+  if (!logger || !logger[level]) {
+    if (level === 'error') {
+      console.error(message, meta || '');
+    } else if (level === 'warn') {
+      console.warn(message, meta || '');
+    } else {
+      console.log(message, meta || '');
+    }
+    return;
+  }
+
+  if (typeof meta === 'undefined') {
+    logger[level](message);
+    return;
+  }
+
+  logger[level](message, meta);
+}
+let archiver = null;
+let extractZip = null;
+try { archiver = require('archiver'); } catch (e) { /* optional */ }
+try { extractZip = require('extract-zip'); } catch (e) { /* optional */ }
+let ZipReader = null;
+let ZipWriter = null;
+let BlobReader = null;
+let BlobWriter = null;
+let TextReader = null;
+let TextWriter = null;
+let Uint8ArrayReader = null;
+let Uint8ArrayWriter = null;
+try {
+  const zipjs = require('@zip.js/zip.js');
+  ZipReader = zipjs.ZipReader;
+  ZipWriter = zipjs.ZipWriter;
+  BlobReader = zipjs.BlobReader;
+  BlobWriter = zipjs.BlobWriter;
+  TextReader = zipjs.TextReader;
+  TextWriter = zipjs.TextWriter;
+  Uint8ArrayReader = zipjs.Uint8ArrayReader;
+  Uint8ArrayWriter = zipjs.Uint8ArrayWriter;
+} catch (e) {
+  console.warn('[main] zip.js not available, fallback to archiver/extract-zip', e && e.message);
+}
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+const os = require('os');
+let WebSocketServer = null;
+try {
+  WebSocketServer = require('ws').WebSocketServer;
+} catch (e) {
+  console.warn('[main] ws 模块不可用，局域网 WebSocket 同步将被禁用:', e && e.message);
+}
+let ffmpegPath = null;
+try {
+  const ffmpeg = require('@ffmpeg-installer/ffmpeg');
+  ffmpegPath = ffmpeg.path;
+  // 打包后路径中包含 app.asar，实际可执行文件在 app.asar.unpacked 中
+  if (ffmpegPath && ffmpegPath.includes('app.asar')) {
+    ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+  }
+} catch (e) {
+  console.warn('[main] FFmpeg未安装，录制功能将不可用:', e);
+}
+
+// HTTP API 服务器（可选，用于 Python 等第三方客户端）
+// 默认使用 BroadcastChannel 进行通信，如需使用 Python 客户端可启用此选项
+let displayApiServer = null;
+try {
+  const apiServerPathCandidates = [
+    path.join(__dirname, 'scripts', 'display-api-server.js'),
+    path.join(__dirname, '..', 'scripts', 'display-api-server.js'),
+    path.join(__dirname, '..', '..', 'scripts', 'display-api-server.js'),
+    path.join(app.getAppPath(), 'scripts', 'display-api-server.js'),
+    path.join(process.cwd(), 'scripts', 'display-api-server.js')
+  ];
+  const apiServerPath = apiServerPathCandidates.find((p) => {
+    try { return fs.existsSync(p); } catch (e) { return false; }
+  });
+  const apiServerModule = require(apiServerPath || './scripts/display-api-server.js');
+  displayApiServer = apiServerModule.createDisplayApiServer();
+} catch (e) {
+  console.warn('[main] 无法加载显示器控制API服务器:', e);
+}
+
+let apiServerInstance = null; // 存储当前运行的 API 服务器实例
+
+// ================= GPU 加速优化（优先作用于显示端） =================
+// 这些开关需要在 app.ready 之前配置，主要影响 Chromium 渲染管线。
+// Electron 默认已经启用 GPU，但通过以下开关可以更偏向 GPU 光栅化和零拷贝路径，
+// 对显示端这种大量动画/绘制的窗口更友好。
+try {
+  app.commandLine.appendSwitch('enable-gpu');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+} catch (e) {
+  console.warn('[main] 配置 GPU 开关失败:', e);
+}
+
+// 进程级崩溃诊断日志（用于定位“闪退”）
+process.on('uncaughtException', (err) => {
+  console.error('[main][CrashTrace] uncaughtException:', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[main][CrashTrace] unhandledRejection:', reason && reason.stack ? reason.stack : reason);
+});
+app.on('render-process-gone', (event, webContents, details) => {
+  console.error('[main][CrashTrace] render-process-gone:', {
+    reason: details && details.reason,
+    exitCode: details && details.exitCode,
+    webContentsId: webContents && webContents.id,
+    url: webContents && typeof webContents.getURL === 'function' ? webContents.getURL() : ''
+  });
+});
+app.on('child-process-gone', (event, details) => {
+  console.error('[main][CrashTrace] child-process-gone:', {
+    type: details && details.type,
+    reason: details && details.reason,
+    exitCode: details && details.exitCode,
+    serviceName: details && details.serviceName,
+    name: details && details.name
+  });
+});
+
+// 启用主进程日志输出（打包后也需要日志来调试）
+const ENABLE_MAIN_VERBOSE_LOG = true; // 改为 true，确保打包后也能看到日志
+const __MAIN_ORIGINAL_LOG = console.log;
+console.log = (...args) => {
+  if (ENABLE_MAIN_VERBOSE_LOG) __MAIN_ORIGINAL_LOG(...args);
+  // 同时也输出到 logger（如果可用）
+  if (logger) {
+    try {
+      logger.info(...args);
+    } catch (e) {}
+  }
+};
+
+// 引入 mica-electron 用于 Windows 11 Mica 效果
+// 注意：mica-electron 需要在 app 初始化后加载，所以在 createWindow 中加载
+let MicaBrowserWindow = BrowserWindow; // 默认使用标准 BrowserWindow
+let IS_WINDOWS_11 = false;
+let WIN10 = null;
+
+// 设置应用名称（用于通知等系统显示）
+// 必须在 app.whenReady() 之前设置
+app.setName('Metro-PIDS');
+
+// 设置应用用户模型 ID（Windows 通知设置需要）
+// 必须在 app.whenReady() 之前设置
+// 使用与 package.json 中 appId 相同的值，确保通知设置中能正确识别应用
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.Metro-PIDS.myapp');
+}
+
+// 引入日志和存储
+let logger = null;
+let Store = null;
+let store = null;
+try {
+  logger = require('electron-log');
+  
+  // 配置 logger 输出到文件和控制台
+  if (logger) {
+    const ntLogDir = ensureNtLogDir();
+    logger.transports.file.resolvePathFn = () => path.join(ntLogDir, 'main.log');
+    logger.transports.console.level = 'debug';
+    logger.transports.file.level = 'debug';
+    logger.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
+    console.log('[main] 日志目录:', ntLogDir);
+    console.log('[main] 日志文件位置:', logger.transports.file.getFile().path);
+  }
+} catch (e) {
+  console.warn('electron-log not available:', e);
+}
+
+try {
+  const storeModule = require('electron-store');
+  Store = storeModule && storeModule.default ? storeModule.default : storeModule;
+  store = new Store();
+} catch (e) {
+  if (e && e.code === 'ERR_REQUIRE_ESM') {
+    Promise.resolve()
+      .then(() => import('electron-store'))
+      .then((storeModule) => {
+        Store = storeModule && storeModule.default ? storeModule.default : storeModule;
+        store = new Store();
+        console.log('[main] electron-store loaded via dynamic import');
+      })
+      .catch((err) => {
+        console.warn('electron-store dynamic import failed:', err);
+      });
+  } else {
+    console.warn('electron-store not available:', e);
+  }
+}
+
+// ==================== Onboarding IPC（首次启动引导 / 新功能引导） ====================
+// 说明：渲染进程通过 ipcRenderer.invoke('onboarding/*') 调用；若主进程未注册会报
+// “No handler registered for 'onboarding/xxx'”。
+
+const ONBOARDING_STORE_KEY = 'onboarding';
+
+function getOnboardingState() {
+  try {
+    const raw = store ? (store.get(ONBOARDING_STORE_KEY) || {}) : {};
+    if (!raw || typeof raw !== 'object') return { completed: false, dismissedGuides: {} };
+    return {
+      completed: raw.completed === true,
+      completedAt: raw.completedAt || null,
+      dismissedGuides: (raw.dismissedGuides && typeof raw.dismissedGuides === 'object') ? raw.dismissedGuides : {},
+      pendingGuide: (raw.pendingGuide && typeof raw.pendingGuide === 'object') ? raw.pendingGuide : null
+    };
+  } catch (e) {
+    return { completed: false, dismissedGuides: {} };
+  }
+}
+
+function setOnboardingState(next) {
+  const prev = getOnboardingState();
+  const merged = { ...prev, ...(next && typeof next === 'object' ? next : {}) };
+  try {
+    if (store) store.set(ONBOARDING_STORE_KEY, merged);
+  } catch (e) {
+    // ignore
+  }
+  return merged;
+}
+
+function resolveBundledLinesDir() {
+  const candidates = [];
+  try {
+    candidates.push(path.join(app.getAppPath(), 'default'));
+  } catch (e) {}
+  try {
+    candidates.push(path.join(__dirname, 'default'));
+  } catch (e) {}
+  try {
+    if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'default'));
+  } catch (e) {}
+  try {
+    candidates.push(path.join(process.cwd(), 'default'));
+  } catch (e) {}
+
+  for (const dir of candidates) {
+    try {
+      if (dir && fs.existsSync(dir)) return dir;
+    } catch (e) {}
+  }
+  return null;
+}
+
+function normalizeDisplayPreset(preset) {
+  const p = String(preset || '').toLowerCase();
+  if (p === 'dual' || p === 'triple') return p;
+  return 'single';
+}
+
+function applyDisplayPresetToStoreSettings(preset) {
+  const normalized = normalizeDisplayPreset(preset);
+  const enable2 = normalized === 'dual' || normalized === 'triple';
+  const enable3 = normalized === 'triple';
+
+  if (!store) return { ok: false, error: 'store-not-available' };
+  const settings = store.get('settings', {}) || {};
+
+  if (!settings.display || typeof settings.display !== 'object') settings.display = {};
+  if (!settings.display.displays || typeof settings.display.displays !== 'object') settings.display.displays = {};
+
+  const ensure = (id) => {
+    if (!settings.display.displays[id] || typeof settings.display.displays[id] !== 'object') {
+      settings.display.displays[id] = { id };
+    }
+    settings.display.displays[id].id = id;
+  };
+
+  ensure('display-1');
+  ensure('display-2');
+  ensure('display-3');
+
+  settings.display.displays['display-1'].enabled = true;
+  settings.display.displays['display-2'].enabled = !!enable2;
+  settings.display.displays['display-3'].enabled = !!enable3;
+  if (!settings.display.currentDisplayId) settings.display.currentDisplayId = 'display-1';
+  if (!settings.display.display2Mode || settings.display.display2Mode === 'dev-only') {
+    settings.display.display2Mode = 'enabled';
+  }
+
+  store.set('settings', settings);
+  return { ok: true, preset: normalized };
+}
+
+function safeBasename(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  const base = path.basename(raw);
+  // 禁止路径穿越/子目录
+  if (base !== raw) return '';
+  return base;
+}
+
+// 注册 onboarding IPC handlers（可在 app.whenReady 前注册）
+try {
+  try { ipcMain.removeHandler('onboarding/get-state'); } catch (e) {}
+  ipcMain.handle('onboarding/get-state', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const st = getOnboardingState();
+      return { ok: true, completed: st.completed === true, appVersion: app.getVersion() };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/bundled-lines/list'); } catch (e) {}
+  ipcMain.handle('onboarding/bundled-lines/list', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const dir = resolveBundledLinesDir();
+      if (!dir) return { ok: true, files: [] };
+      const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      const files = entries
+        .filter((e) => e && e.isFile && e.isFile())
+        .map((e) => e.name)
+        .filter((n) => typeof n === 'string' && /\.json$/i.test(n))
+        .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+        .map((name) => ({ name }));
+      return { ok: true, files };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e), files: [] };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/bundled-lines/import'); } catch (e) {}
+  ipcMain.handle('onboarding/bundled-lines/import', async (event, bundledName) => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const safeName = safeBasename(bundledName);
+      if (!safeName) return { ok: false, error: 'invalid-name' };
+
+      const dir = resolveBundledLinesDir();
+      if (!dir) return { ok: false, error: 'bundled-lines-dir-not-found' };
+      const srcPath = path.join(dir, safeName);
+      if (!fs.existsSync(srcPath)) return { ok: false, error: 'source-not-found' };
+
+      const targetDir = getLinesDir(null);
+      await ensureDir(targetDir);
+
+      const ext = path.extname(safeName) || '.json';
+      const base = safeName.replace(new RegExp(escapeRegex(ext) + '$', 'i'), '');
+
+      let targetName = safeName;
+      let targetPath = path.join(targetDir, targetName);
+      if (fs.existsSync(targetPath)) {
+        let idx = 2;
+        while (idx < 1000) {
+          targetName = `${base} (${idx})${ext}`;
+          targetPath = path.join(targetDir, targetName);
+          if (!fs.existsSync(targetPath)) break;
+          idx += 1;
+        }
+      }
+
+      await fsPromises.copyFile(srcPath, targetPath);
+      return { ok: true, importedName: targetName, folderPath: targetDir, targetPath };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/apply-display-preset'); } catch (e) {}
+  ipcMain.handle('onboarding/apply-display-preset', async (event, payload) => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const preset = payload && typeof payload === 'object' ? payload.preset : payload;
+      const res = applyDisplayPresetToStoreSettings(preset);
+      return res;
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/complete'); } catch (e) {}
+  ipcMain.handle('onboarding/complete', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      setOnboardingState({ completed: true, completedAt: Date.now() });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/get-pending-guide'); } catch (e) {}
+  ipcMain.handle('onboarding/get-pending-guide', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const st = getOnboardingState();
+      const guide = st.pendingGuide;
+      if (!guide || typeof guide !== 'object') return { ok: true, guide: null };
+      const gid = guide.id ? String(guide.id) : '';
+      if (gid && st.dismissedGuides && st.dismissedGuides[gid]) return { ok: true, guide: null };
+      return { ok: true, guide };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e), guide: null };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/dismiss-guide'); } catch (e) {}
+  ipcMain.handle('onboarding/dismiss-guide', async (event, guideId) => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const gid = guideId ? String(guideId) : '';
+      if (!gid) return { ok: true };
+      const st = getOnboardingState();
+      const dismissed = { ...(st.dismissedGuides || {}) };
+      dismissed[gid] = Date.now();
+      setOnboardingState({ dismissedGuides: dismissed });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/list-monitors'); } catch (e) {}
+  ipcMain.handle('onboarding/list-monitors', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      const all = screen.getAllDisplays();
+      const primary = screen.getPrimaryDisplay();
+      const primaryId = primary && primary.id ? primary.id : null;
+      const displays = (all || []).map((d) => ({
+        id: d.id,
+        bounds: d.bounds,
+        size: d.size,
+        scaleFactor: d.scaleFactor,
+        primary: primaryId != null ? d.id === primaryId : !!d.primary
+      }));
+      return { ok: true, displays };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e), displays: [] };
+    }
+  });
+
+  try { ipcMain.removeHandler('onboarding/reset'); } catch (e) {}
+  ipcMain.handle('onboarding/reset', async () => {
+    try {
+      if (!app.isReady()) await app.whenReady();
+      // 仅重置“首次启动引导完成”状态；新功能引导的 dismiss 记录默认保留。
+      setOnboardingState({ completed: false, completedAt: null });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && (e.message || e) || e) };
+    }
+  });
+} catch (e) {
+  console.warn('[main] failed to register onboarding IPC handlers:', e && e.message);
+}
+
+// ==================== Onboarding IPC End ====================
+
+// Electron 32+ 内置了 setBackgroundMaterial API，无需额外安装原生模块
+// 如果需要更强的效果，可以安装 electron-acrylic-window（需要 Visual Studio 构建工具）
+
+let autoUpdater = null;
+try {
+  // electron-updater 仅安装后可用，需安全 require
+  // eslint-disable-next-line global-require
+  console.log('[main] 尝试加载 electron-updater...');
+  const updater = require('electron-updater');
+  console.log('[main] electron-updater 模块加载成功:', typeof updater);
+  console.log('[main] updater.autoUpdater:', typeof updater.autoUpdater);
+  
+  autoUpdater = updater.autoUpdater;
+  
+  if (!autoUpdater) {
+    console.error('[main] updater.autoUpdater 为 undefined');
+    // 尝试其他可能的导出方式
+    if (updater.default && updater.default.autoUpdater) {
+      autoUpdater = updater.default.autoUpdater;
+      console.log('[main] 使用 updater.default.autoUpdater');
+    }
+  }
+  
+  // 配置日志
+  if (logger && autoUpdater) {
+    autoUpdater.logger = logger;
+  }
+  
+  if (autoUpdater) {
+    console.log('[main] electron-updater loaded successfully');
+  } else {
+    console.error('[main] electron-updater 加载失败：autoUpdater 为 null');
+  }
+  
+  // 注意：在开发模式下（未打包），electron-updater 默认不会检查更新
+  // 这是正常行为，更新功能需要在打包后的应用中测试
+} catch (e) {
+  console.error('[main] Failed to load electron-updater:', e);
+  console.error('[main] Error details:', {
+    message: e.message,
+    stack: e.stack,
+    code: e.code,
+    name: e.name
+  });
+  autoUpdater = null;
+}
+
+let mainWin = null;
+let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
+let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
+let isAppShuttingDown = false;
+let orphanWindowWatchdog = null;
+const ENABLE_BACKGROUND_RENDER = process.env.METRO_PIDS_BACKGROUND_RENDER === '1';
+const WINDOW_BACKGROUND_THROTTLING = !ENABLE_BACKGROUND_RENDER;
+const AUTO_OPEN_DEVTOOLS = process.env.METRO_PIDS_AUTO_OPEN_DEVTOOLS !== '0';
+
+function getStoredThemeMode() {
+  try {
+    if (store) {
+      const currentSettings = store.get('settings', {});
+      return currentSettings && currentSettings.themeMode ? currentSettings.themeMode : 'system';
+    }
+  } catch (e) {
+    console.warn('[main] 读取主题模式失败，回退为 system:', e);
+  }
+  return 'system';
+}
+
+function startOrphanWindowWatchdog() {
+  if (orphanWindowWatchdog) return;
+  orphanWindowWatchdog = setInterval(() => {
+    if (process.platform === 'darwin') return;
+    if (!isAppShuttingDown && mainWin && !mainWin.isDestroyed()) return;
+    try {
+      const all = BrowserWindow.getAllWindows();
+      if (!all || all.length === 0) return;
+      for (const win of all) {
+        if (win && !win.isDestroyed()) {
+          try { win.destroy(); } catch (_) {}
+        }
+      }
+      try { app.quit(); } catch (_) {}
+      setTimeout(() => {
+        try { app.exit(0); } catch (_) {}
+      }, 60);
+    } catch (_) {}
+  }, 200);
+}
+
+async function isDevtoolsShortcutEnabled() {
+  if (!app.isPackaged) return true;
+  if (!mainWin || mainWin.isDestroyed()) return false;
+  try {
+    const enabled = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+        } catch(e) {
+          return false;
+        }
+      })();
+    `);
+    return enabled === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function registerDevtoolsGlobalShortcuts() {
+  try {
+    globalShortcut.register('F12', () => {
+      (async () => {
+        const enabled = await isDevtoolsShortcutEnabled();
+        if (!enabled) return;
+        const win = BrowserWindow.getFocusedWindow() || mainWin;
+        if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDevToolsOpened()) {
+          win.webContents.openDevTools();
+        }
+      })().catch(() => {});
+    });
+
+    globalShortcut.register('CommandOrControl+Shift+I', () => {
+      (async () => {
+        const enabled = await isDevtoolsShortcutEnabled();
+        if (!enabled) return;
+        const win = BrowserWindow.getFocusedWindow() || mainWin;
+        if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDevToolsOpened()) {
+          win.webContents.openDevTools();
+        }
+      })().catch(() => {});
+    });
+  } catch (e) {
+    console.warn('[main] 注册全局开发者快捷键失败:', e);
+  }
+}
+
+function isDarkThemeByMode(themeMode) {
+  if (themeMode === 'dark') return true;
+  if (themeMode === 'light') return false;
+  try {
+    return !!(nativeTheme && nativeTheme.shouldUseDarkColors);
+  } catch (e) {
+    return false;
+  }
+}
+
+function applyMicaThemeToWindow(win, themeMode) {
+  if (!win || win.isDestroyed() || MicaBrowserWindow === BrowserWindow) return;
+  if (themeMode === 'system') {
+    if (typeof win.setAutoTheme === 'function') win.setAutoTheme();
+    return;
+  }
+  if (themeMode === 'dark') {
+    if (typeof win.setDarkTheme === 'function') win.setDarkTheme();
+    return;
+  }
+  if (typeof win.setLightTheme === 'function') win.setLightTheme();
+}
+
+function applyNativeBlurStateToWindow(win, enable, themeMode = 'system') {
+  if (!win || win.isDestroyed()) return;
+
+  if (process.platform === 'win32') {
+    if (!enable) {
+      if (typeof win.setBackgroundMaterial === 'function') {
+        win.setBackgroundMaterial('none');
+      }
+      if (typeof win.setBackgroundColor === 'function') {
+        win.setBackgroundColor(isDarkThemeByMode(themeMode) ? '#1c1c20' : '#ffffff');
+      }
+      return;
+    }
+
+    if (typeof win.setBackgroundColor === 'function') {
+      win.setBackgroundColor('#00000000');
+    }
+    applyMicaThemeToWindow(win, themeMode);
+
+    if (IS_WINDOWS_11 && typeof win.setMicaAcrylicEffect === 'function') {
+      win.setMicaAcrylicEffect();
+    } else {
+      console.log('[main] ⚠️ 非 Windows 11 平台，跳过 Acrylic / backgroundMaterial');
+    }
+    return;
+  }
+
+  if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+    win.setVibrancy(enable ? 'fullscreen-ui' : 'none');
+  }
+}
+
+// WebSocket 局域网同步（用于跨设备的显示端/第三方显示器）
+let wsServer = null;
+const wsClients = new Set();
+const wsClientMeta = new Map();
+let wsSyncTimer = null;
+let lastWsSyncKey = null;
+let wsActivePort = null;
+let multiScreenHttpServer = null;
+let multiScreenHttpPort = null;
+
+function getStaticMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return 'text/html; charset=utf-8';
+  if (ext === '.js' || ext === '.mjs') return 'application/javascript; charset=utf-8';
+  if (ext === '.css') return 'text/css; charset=utf-8';
+  if (ext === '.json') return 'application/json; charset=utf-8';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.ico') return 'image/x-icon';
+  if (ext === '.woff') return 'font/woff';
+  if (ext === '.woff2') return 'font/woff2';
+  if (ext === '.ttf') return 'font/ttf';
+  return 'application/octet-stream';
+}
+
+function resolveStaticRootDir() {
+  const appPath = app.getAppPath();
+  if (appPath && fs.existsSync(path.join(appPath, 'examples', 'display-switcher.html'))) {
+    return appPath;
+  }
+  const cwdPath = process.cwd();
+  if (cwdPath && fs.existsSync(path.join(cwdPath, 'examples', 'display-switcher.html'))) {
+    return cwdPath;
+  }
+  return appPath || cwdPath;
+}
+
+function startMultiScreenHttpServer(portOverride) {
+  stopMultiScreenHttpServer();
+
+  const http = require('http');
+  const rootDir = resolveStaticRootDir();
+  const basePort = normalizeWsPort(portOverride || process.env.PIDS_MULTI_HTTP_PORT || '9517', 9517);
+  const maxAttempts = 20;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidatePort = basePort + i;
+    if (candidatePort > 65535) break;
+
+    try {
+      const server = http.createServer((req, res) => {
+        try {
+          const reqUrl = new URL(req.url || '/', 'http://127.0.0.1');
+          let pathname = decodeURIComponent(reqUrl.pathname || '/');
+          if (pathname === '/') pathname = '/examples/display-switcher.html';
+          if (pathname === '/favicon.ico') {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          // 开发模式：显示器3已切为纯 Vue（依赖 Vite 编译 .vue）。
+          // 9517 静态服务无法处理 .vue/模块图，因此将 display-3 目录下的请求统一跳转到 Vite dev server。
+          if (!app.isPackaged && typeof pathname === 'string' && pathname.startsWith('/displays/display-3/')) {
+            const hostHeader = String(req.headers.host || '127.0.0.1').trim();
+            const hostName = hostHeader.includes(':') ? hostHeader.split(':')[0] : hostHeader;
+            const vitePort = Number(process.env.PIDS_DEV_SERVER_PORT || process.env.VITE_DEV_SERVER_PORT || '5180');
+            const redirectUrl = `http://${hostName}:${vitePort}${pathname}${reqUrl.search || ''}`;
+            res.statusCode = 302;
+            res.setHeader('Location', redirectUrl);
+            res.end();
+            return;
+          }
+
+          // 浏览器模式不支持直接加载 .vue（需要 Vite/SFC 编译）。
+          // 若用户误打开 DisplayWindow.vue，则重定向到静态入口页。
+          const vueDisplayWindowMatch = pathname.match(/^\/displays\/(display-[^/]+)\/DisplayWindow\.vue$/);
+          if (vueDisplayWindowMatch) {
+            const displayId = vueDisplayWindowMatch[1];
+            res.statusCode = 302;
+            res.setHeader('Location', `/displays/${displayId}/display_window.html`);
+            res.end();
+            return;
+          }
+
+          const safeRelativePath = pathname.replace(/^\/+/, '');
+          const filePath = path.resolve(rootDir, safeRelativePath);
+          const normalizedRoot = path.resolve(rootDir) + path.sep;
+          if (!(filePath + path.sep).startsWith(normalizedRoot) && filePath !== path.resolve(rootDir)) {
+            res.statusCode = 403;
+            res.end('Forbidden');
+            return;
+          }
+
+          if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+            res.statusCode = 404;
+            res.end('Not Found');
+            return;
+          }
+
+          res.setHeader('Content-Type', getStaticMimeType(filePath));
+          res.setHeader('Cache-Control', 'no-cache');
+          fs.createReadStream(filePath).pipe(res);
+        } catch (e) {
+          res.statusCode = 500;
+          res.end('Internal Server Error');
+        }
+      });
+
+      server.listen(candidatePort, () => {
+        multiScreenHttpServer = server;
+        multiScreenHttpPort = candidatePort;
+        console.log(`[MultiScreen] 本地入口页面服务已启动: http://127.0.0.1:${candidatePort}/examples/display-switcher.html`);
+      });
+
+      server.on('error', (e) => {
+        console.warn('[MultiScreen] 静态服务异常:', e && e.message);
+      });
+
+      return true;
+    } catch (e) {
+      const code = e && e.code;
+      const msg = String((e && e.message) || '');
+      const isInUse = code === 'EADDRINUSE' || msg.includes('EADDRINUSE') || msg.toLowerCase().includes('address already in use');
+      if (!isInUse) {
+        console.warn(`[MultiScreen] 启动静态服务失败 (端口 ${candidatePort}):`, e && e.message);
+        return false;
+      }
+    }
+  }
+
+  console.warn(`[MultiScreen] 无法启动入口页面服务：端口 ${basePort}-${Math.min(basePort + maxAttempts - 1, 65535)} 均不可用`);
+  return false;
+}
+
+function stopMultiScreenHttpServer() {
+  if (multiScreenHttpServer) {
+    try {
+      multiScreenHttpServer.close();
+    } catch (e) {}
+  }
+  multiScreenHttpServer = null;
+  multiScreenHttpPort = null;
+}
+
+function normalizeWsRemoteIp(raw) {
+  if (!raw) return '';
+  const text = String(raw);
+  if (text.startsWith('::ffff:')) return text.slice(7);
+  if (text === '::1') return '127.0.0.1';
+  return text;
+}
+
+function ensureWsClientMeta(socket, req) {
+  if (!socket) return null;
+  const existing = wsClientMeta.get(socket);
+  if (existing) return existing;
+  const meta = {
+    connectedAt: Date.now(),
+    lastSeenAt: Date.now(),
+    ip: normalizeWsRemoteIp(req && req.socket && req.socket.remoteAddress),
+    clientId: (crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : `client-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+    latencyMs: null,
+    displayId: '',
+    clientVersion: '',
+    system: ''
+  };
+  wsClientMeta.set(socket, meta);
+  return meta;
+}
+
+function updateWsClientMeta(socket, patch = {}) {
+  const meta = wsClientMeta.get(socket);
+  if (!meta) return;
+  Object.assign(meta, patch, { lastSeenAt: Date.now() });
+}
+
+function getWsConnectedDevicesSnapshot() {
+  const displayNameMap = {
+    'display-1': '显示器1',
+    'display-2': '显示器2',
+    'display-3': '显示器3'
+  };
+  const devices = [];
+  for (const socket of wsClients) {
+    const meta = wsClientMeta.get(socket);
+    if (!meta) continue;
+    const displayName = meta.displayId ? (displayNameMap[meta.displayId] || String(meta.displayId)) : '';
+    devices.push({
+      ip: meta.ip || '',
+      clientId: meta.clientId || '',
+      latencyMs: Number.isFinite(meta.latencyMs) ? Number(meta.latencyMs) : null,
+      displayId: meta.displayId || '',
+      displayName,
+      clientVersion: meta.clientVersion || '',
+      system: meta.system || '',
+      connectedAt: meta.connectedAt,
+      lastSeenAt: meta.lastSeenAt
+    });
+  }
+  return devices;
+}
+
+function normalizeWsPort(value, fallback = 9400) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 65535) return fallback;
+  return n;
+}
+
+function persistWsPortSetting(port) {
+  try {
+    if (!store) return;
+    const currentSettings = store.get('settings', {}) || {};
+    if (Number(currentSettings.wsPort) === Number(port)) return;
+    store.set('settings', { ...currentSettings, wsPort: Number(port) });
+  } catch (e) {
+    console.warn('[WS] 持久化 wsPort 失败:', e && e.message);
+  }
+}
+
+function notifyWsPortAutoSwitched(fromPort, toPort) {
+  try {
+    if (!mainWin || mainWin.isDestroyed() || !mainWin.webContents) return;
+    mainWin.webContents.send('ws/port-auto-switched', {
+      from: Number(fromPort),
+      to: Number(toPort)
+    });
+  } catch (e) {
+    console.warn('[WS] 通知渲染进程端口变更失败:', e && e.message);
+  }
+}
+
+async function switchDisplay(displayId, width, height, options = {}) {
+  if (isAppShuttingDown) {
+    return { ok: false, error: 'app-shutting-down' };
+  }
+  const source = options.reason || 'ipc';
+  console.log(`[main] switch-display requested (${source}), displayId=`, displayId, 'width=', width, 'height=', height);
+
+  // 优先从主窗口的 localStorage 读取最新的 currentDisplayId，确保使用最新配置
+  let actualDisplayId = displayId;
+  if (mainWin && !mainWin.isDestroyed()) {
+    try {
+      const localStorageSettings = await mainWin.webContents.executeJavaScript(`
+        (function() {
+          try {
+            const raw = localStorage.getItem('pids_settings_v1');
+            if (raw) {
+              const settings = JSON.parse(raw);
+              return settings.display?.currentDisplayId || null;
+            }
+            return null;
+          } catch(e) {
+            return null;
+          }
+        })();
+      `);
+      if (localStorageSettings) {
+        actualDisplayId = localStorageSettings;
+        console.log(`[main] switch-display: 从主窗口读取到最新的 currentDisplayId: ${actualDisplayId} (传入的: ${displayId})`);
+      }
+    } catch (e) {
+      console.warn('[main] 从主窗口读取 currentDisplayId 失败，使用传入的 displayId:', e);
+    }
+  }
+
+  // 使用实际应该切换到的 displayId
+  displayId = actualDisplayId;
+  console.log(`[main] switch-display: 最终使用的 displayId: ${displayId}`);
+
+  // 切换显示端时，窗口尺寸应以显示端配置为准（而不是主窗口/屏幕尺寸）。
+  // 传入的 width/height 常常是 1920×1080 等屏幕尺寸，会覆盖 display-3 等内置显示端的默认 1900×600。
+  // 这里统一清空尺寸参数，让 createDisplayWindow() 自行从配置读取并应用正确分辨率。
+  if (typeof width === 'number' || typeof height === 'number') {
+    console.log(`[main] switch-display: 忽略传入尺寸参数，改用配置尺寸 (传入: ${width}x${height})`);
+  }
+  width = undefined;
+  height = undefined;
+
+  const notifyWs = (id) => {
+    if (!id) return;
+    try {
+      broadcastToWebSocketClients({ t: 'DISPLAY_SWITCHED', displayId: id });
+    } catch (e) {
+      console.warn('[main] WS 通知 DISPLAY_SWITCHED 失败', e && e.message);
+    }
+  };
+
+  // 检查是否已存在该显示端窗口
+  const existingWin = displayWindows.get(displayId);
+  if (existingWin && !existingWin.isDestroyed()) {
+    // 如果已存在该显示端窗口，检查是否需要重新加载URL（配置可能已更改）
+    try {
+      // 读取当前配置，检查URL是否变化
+      let needReload = false;
+      let expectedUrl = null;
+
+      // 从 electron-store 读取配置
+      let displayConfig = null;
+      if (store) {
+        try {
+          const settings = store.get('settings', {});
+          const displays = settings.display?.displays || {};
+          displayConfig = displays[displayId];
+          console.log(`[main] switch-display: 从 electron-store 读取显示端配置 ${displayId}:`, displayConfig ? {
+            source: displayConfig.source,
+            url: displayConfig.url,
+            name: displayConfig.name
+          } : '未找到配置');
+        } catch (e) {
+          console.warn('[main] 从 electron-store 读取显示端配置失败:', e);
+        }
+      }
+
+      // 如果 electron-store 中没有配置，尝试从主窗口的 localStorage 读取
+      if (!displayConfig && mainWin && !mainWin.isDestroyed()) {
+        try {
+          const localStorageSettings = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                const raw = localStorage.getItem('pids_settings_v1');
+                if (raw) {
+                  return JSON.parse(raw);
+                }
+                return null;
+              } catch(e) {
+                return null;
+              }
+            })();
+          `);
+
+          if (localStorageSettings && localStorageSettings.display && localStorageSettings.display.displays) {
+            displayConfig = localStorageSettings.display.displays[displayId];
+            if (displayConfig) {
+              console.log(`[main] switch-display: 从主窗口 localStorage 读取显示端配置 ${displayId}:`, {
+                source: displayConfig.source,
+                url: displayConfig.url,
+                name: displayConfig.name
+              });
+              // 同步到 electron-store
+              if (store) {
+                const currentSettings = store.get('settings', {});
+                if (!currentSettings.display) currentSettings.display = {};
+                if (!currentSettings.display.displays) currentSettings.display.displays = {};
+                currentSettings.display.displays[displayId] = displayConfig;
+                store.set('settings', currentSettings);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[main] 从主窗口读取配置失败:', e);
+        }
+      }
+
+      // 计算期望的URL
+      if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+        // 在线显示器：直接使用URL（包括 online、custom、gitee）
+        expectedUrl = displayConfig.url.trim();
+        console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
+
+        // 验证URL格式
+        if (!expectedUrl || expectedUrl.trim() === '') {
+          const errorDetails = {
+            displayId: displayId,
+            name: displayConfig.name,
+            source: displayConfig.source,
+            url: displayConfig.url,
+            expectedUrl: expectedUrl,
+            actualUrl: currentUrl,
+            reason: '配置的URL为空',
+            config: displayConfig
+          };
+          showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置的URL为空`, errorDetails);
+        }
+      } else if (displayConfig && displayConfig.source === 'builtin') {
+        if (displayConfig.url) {
+          // 自定义HTML文件路径
+          let customFilePath = displayConfig.url.trim();
+          let resolvedPath;
+          if (path.isAbsolute(customFilePath)) {
+            resolvedPath = customFilePath;
+          } else {
+            if (app.isPackaged) {
+              resolvedPath = path.join(app.getAppPath(), customFilePath);
+            } else {
+              resolvedPath = path.join(__dirname, '..', customFilePath);
+            }
+          }
+          resolvedPath = path.normalize(resolvedPath);
+
+          if (fs.existsSync(resolvedPath)) {
+            const fileUrl = process.platform === 'win32' 
+              ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+              : `file://${resolvedPath}`;
+            expectedUrl = fileUrl;
+          } else {
+            console.warn(`[main] switch-display: 配置的本地文件不存在: ${resolvedPath}`);
+          }
+        } else {
+          // 使用默认路径
+          if (displayId === 'display-1') {
+            expectedUrl = getRendererUrl('displays/display-1/display_window.html');
+          } else {
+            const customRel = path.join('displays', displayId, 'display_window.html');
+            const customPath = app.isPackaged 
+              ? path.join(app.getAppPath(), 'out/renderer', customRel)
+              : path.join(__dirname, '../renderer', customRel);
+            if (fs.existsSync(customPath)) {
+              expectedUrl = getRendererUrl(customRel);
+            } else {
+              expectedUrl = getRendererUrl('display_window.html');
+            }
+          }
+        }
+      } else if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+        // 在线显示器：直接使用URL（包括 online、custom、gitee）
+        expectedUrl = displayConfig.url.trim();
+        console.log(`[main] switch-display: 使用在线显示器URL: ${expectedUrl}`);
+      } else {
+        // 没有配置，使用默认路径
+        // 如果配置了第三方显示器但URL为空或source不匹配，显示错误
+        if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+          const errorDetails = {
+            displayId: displayId,
+            name: displayConfig.name,
+            source: displayConfig.source,
+            url: displayConfig.url || '(空)',
+            expectedUrl: expectedUrl,
+            actualUrl: currentUrl,
+            reason: displayConfig.url ? 'URL格式错误或无法识别' : '配置的URL为空',
+            config: displayConfig
+          };
+          showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置错误`, errorDetails);
+        }
+
+        if (displayId === 'display-1') {
+          expectedUrl = getRendererUrl('displays/display-1/display_window.html');
+        } else {
+          expectedUrl = getRendererUrl('display_window.html');
+        }
+      }
+
+      // 获取当前窗口的URL
+      const currentUrl = existingWin.webContents.getURL();
+      console.log(`[main] switch-display: 当前窗口URL: ${currentUrl}`);
+      console.log(`[main] switch-display: 期望URL: ${expectedUrl}`);
+      console.log(`[main] switch-display: 显示端配置:`, displayConfig ? {
+        id: displayConfig.id,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url
+      } : '未找到配置');
+
+      // 检查第三方显示器是否被错误识别为默认显示器
+      if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+        const expectedThirdPartyUrl = displayConfig.url.trim();
+        // 如果期望的是第三方URL，但当前URL是默认的display_window.html，说明识别失败
+        if (currentUrl && currentUrl.includes('display_window.html') && expectedThirdPartyUrl && !expectedThirdPartyUrl.includes('display_window.html')) {
+          const errorDetails = {
+            displayId: displayId,
+            name: displayConfig.name,
+            source: displayConfig.source,
+            url: displayConfig.url,
+            expectedUrl: expectedThirdPartyUrl,
+            actualUrl: currentUrl,
+            reason: '第三方显示器被错误识别为默认显示器，URL不匹配',
+            config: displayConfig
+          };
+          showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 被错误识别为默认显示器`, errorDetails);
+        }
+      }
+
+      // 比较URL，如果不一致则需要重新加载
+      if (expectedUrl && currentUrl !== expectedUrl) {
+        needReload = true;
+        console.log(`[main] switch-display: URL不一致，需要重新加载 (${currentUrl} -> ${expectedUrl})`);
+      } else if (expectedUrl && currentUrl === expectedUrl) {
+        console.log(`[main] switch-display: URL一致，但检查是否需要强制重新加载`);
+        // 如果配置了自定义URL，即使URL相同也重新加载（确保使用最新配置）
+        if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) {
+          console.log(`[main] switch-display: 检测到自定义URL配置，强制重新加载以确保使用最新配置`);
+          needReload = true;
+        }
+      }
+
+      if (needReload) {
+        // 需要重新加载，关闭旧窗口并创建新窗口
+        console.log(`[main] 显示端 ${displayId} 配置已更改，重新加载窗口`);
+        try {
+          existingWin.close();
+          displayWindows.delete(displayId);
+        } catch (e) {
+          console.warn(`[main] 关闭显示窗口 ${displayId} 失败:`, e);
+        }
+      } else {
+        // 配置未更改，直接聚焦并调整尺寸
+        if (typeof width === 'number' && typeof height === 'number') {
+          existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
+        }
+        bringDisplayWindowToFront(existingWin, displayId);
+        console.log(`[main] 显示端 ${displayId} 窗口已存在，已聚焦 (URL: ${currentUrl})`);
+
+        // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+        forceReapplyMicaEffect({ ignoreFocus: true });
+
+        // 即使 URL 相同，也发送一个消息通知显示端切换（确保数据同步）
+        try {
+          const jsCode = `
+            (function() {
+              try {
+                // 发送一个切换通知，让显示端知道当前应该显示哪个显示端的数据
+                if (typeof BroadcastChannel !== 'undefined') {
+                  const bc = new BroadcastChannel('metro_pids_v3');
+                  bc.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' });
+                  bc.close();
+                }
+                if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+                  window.postMessage({ t: 'DISPLAY_SWITCHED', displayId: '${displayId}' }, '*');
+                }
+                return true;
+              } catch(e) {
+                console.error('[Display] 发送切换通知失败:', e);
+                return false;
+              }
+            })();
+          `;
+          existingWin.webContents.executeJavaScript(jsCode).catch(e => {
+            console.warn(`[main] 向显示端 ${displayId} 发送切换通知失败:`, e);
+          });
+        } catch (e) {
+          console.warn(`[main] 执行切换通知脚本失败 (${displayId}):`, e);
+        }
+
+        notifyWs(displayId);
+        return true;
+      }
+    } catch (e) {
+      console.warn(`[main] 处理显示窗口 ${displayId} 失败:`, e);
+    }
+  }
+
+  // 关闭所有现有的显示窗口（除了目标显示端）
+  const windowsToClose = [];
+  for (const [id, win] of displayWindows.entries()) {
+    if (id !== displayId && win && !win.isDestroyed()) {
+      windowsToClose.push({ id, win });
+    }
+  }
+
+  // 关闭窗口（关闭操作可能会影响主窗口的模糊效果）
+  for (const { id, win } of windowsToClose) {
+    try {
+      win.close();
+    } catch (e) {
+      console.warn(`[main] 关闭显示窗口 ${id} 失败:`, e);
+    }
+  }
+
+  // 清理已关闭的窗口引用
+  for (const [id, win] of displayWindows.entries()) {
+    if (win && win.isDestroyed()) {
+      displayWindows.delete(id);
+    }
+  }
+
+  // 如果关闭了窗口，立即强制重新应用主窗口的模糊效果（防止因关闭窗口导致模糊消失）
+  if (windowsToClose.length > 0) {
+    console.log(`[main] switch-display: 已关闭 ${windowsToClose.length} 个其他显示窗口，立即重新应用主窗口模糊效果`);
+    forceReapplyMicaEffect({ ignoreFocus: true });
+  }
+
+  // 创建新的显示窗口（如果不存在或需要重新加载）
+  createDisplayWindow(width, height, displayId);
+
+  // 创建新窗口后，强制重新应用主窗口的模糊效果（防止因创建窗口导致模糊消失）
+  forceReapplyMicaEffect({ ignoreFocus: true });
+
+  notifyWs(displayId);
+  return true;
+}
+
+function bringDisplayWindowToFront(win, displayId = '') {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.focus();
+    try { win.moveTop(); } catch (_) {}
+    console.log(`[main] ${displayId || 'display'} 窗口已激活(restore/show/focus)`);
+  } catch (e) {
+    console.warn(`[main] 激活显示端窗口失败 ${displayId || ''}:`, e);
+  }
+}
+
+async function fetchAppDataSnapshot() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  try {
+    const result = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          const raw = localStorage.getItem('pids_global_store_v1');
+          if (!raw) return null;
+          const store = JSON.parse(raw);
+          if (!store || !Array.isArray(store.list)) return null;
+          const cur = Number(store.cur);
+          if (!Number.isInteger(cur) || cur < 0 || cur >= store.list.length) return null;
+          return store.list[cur] || null;
+        } catch(e) {
+          return null;
+        }
+      })();
+    `);
+    return result;
+  } catch (e) {
+    console.warn('[DisplayAPI] 获取应用数据失败:', e);
+    return null;
+  }
+}
+
+async function fetchRtStateSnapshot() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  try {
+    const result = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          const raw = localStorage.getItem('pids_global_store_v1');
+          if (!raw) return null;
+          const store = JSON.parse(raw);
+          if (!store || !store.rt) return null;
+          return store.rt || null;
+        } catch(e) {
+          return null;
+        }
+      })();
+    `);
+    return result;
+  } catch (e) {
+    console.warn('[DisplayAPI] 获取实时状态失败:', e);
+    return null;
+  }
+}
+
+async function fetchDisplaySyncSettingsSnapshot() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  try {
+    const result = await mainWin.webContents.executeJavaScript(`
+      (function() {
+        try {
+          const raw = localStorage.getItem('pids_settings_v1');
+          if (!raw) return null;
+          const settings = JSON.parse(raw);
+          if (!settings || !settings.display) return null;
+          const d = settings.display || {};
+          const displays = d.displays || {};
+          const rawD3Depart = (d && Object.prototype.hasOwnProperty.call(d, 'display3DepartDuration')) ? d.display3DepartDuration : null;
+          const d3DepartNum = Number(rawD3Depart);
+          const d3DepartMs = Number.isFinite(d3DepartNum) ? Math.max(0, d3DepartNum) : 8000;
+          return {
+            display: {
+              currentDisplayId: d.currentDisplayId || null,
+              display2UiVariant: d.display2UiVariant === 'modern' ? 'modern' : 'classic',
+              display2NextStationDuration: d.display2NextStationDuration || 10000,
+              display2FooterLED: d.display2FooterLED || '',
+              display2FooterWatermark: d.display2FooterWatermark !== false,
+              display1LayoutMode: (displays['display-1'] && displays['display-1'].layoutMode) || 'linear',
+              display3LayoutMode: (displays['display-3'] && displays['display-3'].layoutMode) || 'c-type',
+              display1WallpaperDataUrl: (displays['display-1'] && displays['display-1'].wallpaperDataUrl) || '',
+              display1WallpaperOpacity: (displays['display-1'] && Number.isFinite(displays['display-1'].wallpaperOpacity))
+                ? displays['display-1'].wallpaperOpacity
+                : 0.35,
+              display3DepartDuration: d3DepartMs,
+              display1LineNameMerge: !!(displays['display-1'] && displays['display-1'].lineNameMerge),
+              display3LineNameMerge: !!(displays['display-3'] && displays['display-3'].lineNameMerge)
+            }
+          };
+        } catch(e) {
+          return null;
+        }
+      })();
+    `);
+    return result;
+  } catch (e) {
+    console.warn('[DisplayAPI] 获取显示设置失败:', e);
+    return null;
+  }
+}
+
+function broadcastToDisplayWindows(payload) {
+  const channelName = 'metro_pids_v3';
+  const payloadStr = JSON.stringify(payload);
+  const jsCode = `
+    (function() {
+      try {
+        let success = false;
+        if (typeof BroadcastChannel !== 'undefined') {
+          try {
+            const bc = new BroadcastChannel('${channelName}');
+            bc.postMessage(${payloadStr});
+            bc.close();
+            success = true;
+          } catch(e) {
+            console.warn('[Display] BroadcastChannel 发送失败:', e);
+          }
+        }
+        if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+          try {
+            window.postMessage(${payloadStr}, '*');
+            success = true;
+          } catch(e) {
+            console.warn('[Display] postMessage 发送失败:', e);
+          }
+        }
+        return success;
+      } catch(e) {
+        console.error('[Display] 发送消息失败:', e);
+        return false;
+      }
+    })();
+  `;
+
+  let successCount = 0;
+  for (const [id, win] of displayWindows.entries()) {
+    if (win && !win.isDestroyed() && win.webContents) {
+      try {
+        win.webContents.executeJavaScript(jsCode).catch(e => {
+          console.warn(`[DisplayAPI] 向 ${id} 发送消息失败:`, e);
+        });
+        successCount++;
+      } catch (e) {
+        console.warn(`[DisplayAPI] 执行脚本失败 (${id}):`, e);
+      }
+    }
+  }
+
+  if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
+    try {
+      mainWin.webContents.executeJavaScript(jsCode).catch(e => {
+        console.warn('[DisplayAPI] 向主窗口发送消息失败:', e);
+      });
+    } catch (e) {
+      console.warn('[DisplayAPI] 向主窗口执行脚本失败:', e);
+    }
+  }
+
+  return successCount;
+}
+
+function broadcastToWebSocketClients(payload, { skipClient } = {}) {
+  if (!wsServer || wsClients.size === 0) return 0;
+  let delivered = 0;
+  const data = JSON.stringify(payload);
+  for (const client of wsClients) {
+    if (skipClient && client === skipClient) continue;
+    if (client.readyState === 1) { // OPEN
+      try {
+        client.send(data);
+        delivered++;
+      } catch (e) {
+        console.warn('[WS] 向客户端发送失败:', e && e.message);
+      }
+    }
+  }
+  return delivered;
+}
+
+function broadcastToAllChannels(payload, options = {}) {
+  const count = broadcastToDisplayWindows(payload);
+  broadcastToWebSocketClients(payload, options);
+  return count;
+}
+
+async function sendSyncToWsClient(client) {
+  if (!client || client.readyState !== 1) return;
+  try {
+    const [appData, rtState, syncSettings] = await Promise.all([
+      fetchAppDataSnapshot(),
+      fetchRtStateSnapshot(),
+      fetchDisplaySyncSettingsSnapshot()
+    ]);
+    client.send(JSON.stringify({ t: 'SYNC', d: appData, r: rtState || null, settings: syncSettings || undefined }));
+  } catch (e) {
+    console.warn('[WS] 发送 SYNC 失败:', e && e.message);
+  }
+}
+
+async function maybePushStateToWsClients(force = false) {
+  if (!wsServer || wsClients.size === 0) return;
+  try {
+    const [appData, rtState, syncSettings] = await Promise.all([
+      fetchAppDataSnapshot(),
+      fetchRtStateSnapshot(),
+      fetchDisplaySyncSettingsSnapshot()
+    ]);
+    const payload = { t: 'SYNC', d: appData, r: rtState || null, settings: syncSettings || undefined };
+    const key = JSON.stringify(payload);
+    if (!force && key === lastWsSyncKey) return;
+    lastWsSyncKey = key;
+    broadcastToWebSocketClients(payload);
+  } catch (e) {
+    console.warn('[WS] 定时同步失败:', e && e.message);
+  }
+}
+
+function startWebSocketBridge(portOverride) {
+  if (!WebSocketServer) {
+    console.warn('[WS] ws 模块未安装，跳过 WebSocket Bridge');
+    return false;
+  }
+
+  stopWebSocketBridge();
+
+  const basePort = normalizeWsPort(portOverride || process.env.PIDS_WS_PORT || process.env.METRO_PIDS_WS_PORT || '9400', 9400);
+  const maxAttempts = 20;
+  let selectedPort = null;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidatePort = basePort + i;
+    if (candidatePort > 65535) break;
+    try {
+      wsServer = new WebSocketServer({ port: candidatePort });
+      selectedPort = candidatePort;
+      break;
+    } catch (e) {
+      const code = e && e.code;
+      const msg = String((e && e.message) || '');
+      const isInUse = code === 'EADDRINUSE' || msg.includes('EADDRINUSE') || msg.toLowerCase().includes('address already in use');
+      if (!isInUse) {
+        console.warn(`[WS] 无法启动 WebSocket Bridge (端口 ${candidatePort}):`, e && e.message);
+        wsServer = null;
+        wsActivePort = null;
+        return false;
+      }
+      if (i < maxAttempts - 1) {
+        console.warn(`[WS] 端口 ${candidatePort} 被占用，尝试下一个端口...`);
+      }
+    }
+  }
+
+  if (!wsServer || !selectedPort) {
+    console.warn(`[WS] 无法启动 WebSocket Bridge：端口 ${basePort}-${Math.min(basePort + maxAttempts - 1, 65535)} 均不可用`);
+    wsServer = null;
+    wsActivePort = null;
+    return false;
+  }
+
+  let wsBridgeReady = false;
+
+  // 可选鉴权：设置 METRO_PIDS_WS_TOKEN 后，要求客户端在连接 URL 或 HELLO 消息中携带 token。
+  // 未设置 token 时保持原行为（兼容旧客户端）。
+  const requiredToken = (process.env.METRO_PIDS_WS_TOKEN || '').trim();
+
+  wsServer.on('connection', (socket, req) => {
+    wsClients.add(socket);
+    const clientMeta = ensureWsClientMeta(socket, req);
+
+    // 连接级鉴权：支持 ws://host:port/?token=xxx
+    socket.__metroPidsAuthed = requiredToken.length === 0;
+    if (!socket.__metroPidsAuthed && req && typeof req.url === 'string') {
+      try {
+        const u = new URL(req.url, 'http://127.0.0.1');
+        const t = String(u.searchParams.get('token') || '').trim();
+        if (t && t === requiredToken) socket.__metroPidsAuthed = true;
+      } catch (e) { /* ignore */ }
+    }
+
+    console.log('[WS] 客户端已连接:', req && req.socket && req.socket.remoteAddress);
+    if (socket.__metroPidsAuthed) {
+      sendSyncToWsClient(socket);
+    }
+
+    socket.on('message', async (raw) => {
+      let msg = null;
+      try {
+        msg = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(Buffer.from(raw).toString('utf8'));
+      } catch (e) {
+        console.warn('[WS] 收到无法解析的消息');
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+
+      // 如启用 WS Token 鉴权：仅允许 PING + HELLO(携带 token) 在未认证时通过
+      if (requiredToken.length > 0 && socket.__metroPidsAuthed !== true) {
+        const tokenFromMsg = (msg && (msg.token || (msg.meta && msg.meta.token))) ? String(msg.token || (msg.meta && msg.meta.token) || '').trim() : '';
+        if (msg.t === 'PING') {
+          try { socket.send(JSON.stringify({ t: 'PONG', ts: Date.now() })); } catch (e) {}
+          return;
+        }
+        if (msg.t === 'HELLO' && tokenFromMsg && tokenFromMsg === requiredToken) {
+          socket.__metroPidsAuthed = true;
+          try { socket.send(JSON.stringify({ t: 'AUTH_OK' })); } catch (e) {}
+          await sendSyncToWsClient(socket);
+          return;
+        }
+        try { socket.send(JSON.stringify({ t: 'AUTH_REQUIRED' })); } catch (e) {}
+        return;
+      }
+
+      if (msg.t === 'PING') {
+        const latencyMs = (typeof msg.ts === 'number' && Number.isFinite(msg.ts)) ? Number((Date.now() - msg.ts).toFixed(2)) : null;
+        const pingPatch = {};
+        if (latencyMs != null) pingPatch.latencyMs = latencyMs;
+        if (msg.displayId && typeof msg.displayId === 'string') pingPatch.displayId = String(msg.displayId).trim();
+        if (msg.clientVersion && typeof msg.clientVersion === 'string') pingPatch.clientVersion = String(msg.clientVersion).trim();
+        if (msg.system && typeof msg.system === 'string') pingPatch.system = String(msg.system).trim();
+        if (Object.keys(pingPatch).length > 0) {
+          updateWsClientMeta(socket, pingPatch);
+        }
+        try { socket.send(JSON.stringify({ t: 'PONG', ts: Date.now() })); } catch (e) {}
+        return;
+      }
+
+      if (msg.clientId && typeof msg.clientId === 'string') {
+        updateWsClientMeta(socket, { clientId: String(msg.clientId).trim() || clientMeta.clientId });
+      }
+      if (msg.displayId && typeof msg.displayId === 'string') {
+        updateWsClientMeta(socket, { displayId: String(msg.displayId) });
+      }
+      if (typeof msg.latencyMs === 'number' && Number.isFinite(msg.latencyMs)) {
+        updateWsClientMeta(socket, { latencyMs: Number(msg.latencyMs) });
+      }
+      if (msg.clientVersion && typeof msg.clientVersion === 'string') {
+        updateWsClientMeta(socket, { clientVersion: String(msg.clientVersion).trim() });
+      }
+      if (msg.version && typeof msg.version === 'string') {
+        updateWsClientMeta(socket, { clientVersion: String(msg.version).trim() });
+      }
+      if (msg.appVersion && typeof msg.appVersion === 'string') {
+        updateWsClientMeta(socket, { clientVersion: String(msg.appVersion).trim() });
+      }
+      if (msg.system && typeof msg.system === 'string') {
+        updateWsClientMeta(socket, { system: String(msg.system).trim() });
+      }
+      if (msg.platform && typeof msg.platform === 'string') {
+        updateWsClientMeta(socket, { system: String(msg.platform).trim() });
+      }
+      if (msg.os && typeof msg.os === 'string') {
+        updateWsClientMeta(socket, { system: String(msg.os).trim() });
+      }
+      if (msg.t === 'HELLO' && msg.meta && typeof msg.meta === 'object') {
+        const metaPatch = {};
+        if (msg.meta.clientId && typeof msg.meta.clientId === 'string') metaPatch.clientId = String(msg.meta.clientId).trim();
+        if (msg.meta.displayId && typeof msg.meta.displayId === 'string') metaPatch.displayId = String(msg.meta.displayId).trim();
+        if (msg.meta.clientVersion && typeof msg.meta.clientVersion === 'string') metaPatch.clientVersion = String(msg.meta.clientVersion).trim();
+        if (msg.meta.version && typeof msg.meta.version === 'string') metaPatch.clientVersion = String(msg.meta.version).trim();
+        if (msg.meta.system && typeof msg.meta.system === 'string') metaPatch.system = String(msg.meta.system).trim();
+        if (msg.meta.platform && typeof msg.meta.platform === 'string') metaPatch.system = String(msg.meta.platform).trim();
+        if (msg.meta.os && typeof msg.meta.os === 'string') metaPatch.system = String(msg.meta.os).trim();
+        if (Object.keys(metaPatch).length > 0) {
+          updateWsClientMeta(socket, metaPatch);
+        }
+      }
+
+      if (msg.t === 'REQ') {
+        await sendSyncToWsClient(socket);
+        return;
+      }
+
+      if (msg.t === 'SWITCH_DISPLAY' && msg.displayId) {
+        const targetId = String(msg.displayId);
+        updateWsClientMeta(socket, { displayId: targetId });
+        const ok = await switchDisplay(targetId, msg.width, msg.height, { reason: 'ws' });
+        try {
+          socket.send(JSON.stringify({ t: 'SWITCH_DISPLAY_ACK', ok: !!ok, displayId: targetId }));
+        } catch (e) {
+          console.warn('[WS] 发送 SWITCH_DISPLAY_ACK 失败', e && e.message);
+        }
+        if (ok) {
+          broadcastToWebSocketClients({ t: 'DISPLAY_SWITCHED', displayId: targetId }, { skipClient: socket });
+        }
+        return;
+      }
+
+      // 将控制命令或同步数据转发给显示端和其他 WS 客户端
+      if (msg.t === 'CMD_KEY' || msg.t === 'CMD' || msg.t === 'STATE' || msg.t === 'SYNC') {
+        broadcastToDisplayWindows(msg);
+        broadcastToWebSocketClients(msg, { skipClient: socket });
+        return;
+      }
+    });
+
+    socket.on('close', () => {
+      wsClients.delete(socket);
+      wsClientMeta.delete(socket);
+    });
+    socket.on('error', () => {
+      wsClients.delete(socket);
+      wsClientMeta.delete(socket);
+    });
+  });
+
+  wsServer.on('listening', () => {
+    if (wsBridgeReady) return;
+    wsBridgeReady = true;
+    wsActivePort = selectedPort;
+    if (selectedPort !== basePort) {
+      console.warn(`[WS] 检测到端口占用，已自动切换 WebSocket 端口: ${basePort} -> ${selectedPort}`);
+      persistWsPortSetting(selectedPort);
+      notifyWsPortAutoSwitched(basePort, selectedPort);
+    }
+    console.log(`[WS] WebSocket Bridge 已启动，端口: ${selectedPort}`);
+  });
+
+  wsServer.on('error', (e) => {
+    const msg = String((e && e.message) || '');
+    const code = e && e.code;
+    const isInUse = code === 'EADDRINUSE' || msg.includes('EADDRINUSE') || msg.toLowerCase().includes('address already in use');
+
+    if (!wsBridgeReady && isInUse) {
+      const nextPort = selectedPort + 1;
+      const maxPort = Math.min(basePort + maxAttempts - 1, 65535);
+      if (nextPort <= maxPort) {
+        console.warn(`[WS] 端口 ${selectedPort} 启动阶段被占用（异步错误），改为尝试端口 ${nextPort}...`);
+        setTimeout(() => {
+          try {
+            startWebSocketBridge(nextPort);
+          } catch (err) {
+            console.warn('[WS] 自动切换重试失败:', err && err.message);
+          }
+        }, 0);
+        return;
+      }
+      console.warn(`[WS] 无法启动 WebSocket Bridge：端口 ${basePort}-${maxPort} 均不可用`);
+      stopWebSocketBridge();
+      return;
+    }
+
+    console.warn('[WS] WebSocket 服务器错误:', e && e.message);
+  });
+
+  wsSyncTimer = setInterval(() => {
+    if (wsClients.size === 0) return;
+    maybePushStateToWsClients();
+  }, 1200);
+
+  return true;
+}
+
+function stopWebSocketBridge() {
+  if (wsSyncTimer) {
+    clearInterval(wsSyncTimer);
+    wsSyncTimer = null;
+  }
+  if (wsServer) {
+    try { wsServer.close(); } catch (e) {}
+    wsServer = null;
+  }
+  wsActivePort = null;
+  wsClients.clear();
+  wsClientMeta.clear();
+  lastWsSyncKey = null;
+}
+
+// 录制状态管理
+let recordingState = {
+  isRecording: false,
+  displayId: null,
+  options: null,
+  outputPath: null,
+  audioMixEnabled: false,
+  audioEvents: [],
+  outputPath: null,
+  audioMixEnabled: false,
+  audioEvents: [],
+  offscreenWin: null,
+  ffmpegProcess: null,
+  captureTimer: null,
+  progressTimer: null,
+  durationTimer: null,
+  startTime: null,
+  duration: null,
+  progress: 0,
+  elapsed: 0,
+  remaining: null
+};
+
+// 并行/分段录制状态（每段独立 offscreen + 独立 FFmpeg，最终拼接）
+let parallelRecordingState = {
+  isRecording: false,
+  displayId: null,
+  options: null,
+  abort: false,
+  tempDir: null,
+  finalOutputPath: null,
+  segments: [], // { index, startStep, steps, durationSec, outputPath, status, error, elapsed }
+  running: new Map(), // index -> { offscreenWin, ffmpegProcess, captureTimer, stepTimer, startTs, framesWritten, lastStderrLine }
+  startTime: null,
+  totalDuration: 0
+};
+
+// 最近一次检测到的编码器信息（用于 GPU 编码器选择）
+let recordingEncoders = {
+  cpu: [],
+  gpu: []
+};
+
+function normalizeRecordingAudioEvent(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const offsetSec = Number(payload.offsetSec);
+  const absolutePath = String(payload.absolutePath || '').trim();
+  if (!Number.isFinite(offsetSec) || offsetSec < 0) return null;
+  if (!absolutePath) return null;
+  try {
+    if (!fs.existsSync(absolutePath)) return null;
+  } catch (e) {
+    return null;
+  }
+  return {
+    offsetSec: Math.max(0, offsetSec),
+    absolutePath,
+    relativePath: String(payload.relativePath || '').trim()
+  };
+}
+
+async function muxStationAudioTimelineToVideo({ inputVideoPath, audioEvents }) {
+  if (!ffmpegPath) return { ok: false, error: 'FFmpeg未安装' };
+  if (!inputVideoPath || !fs.existsSync(inputVideoPath)) return { ok: false, error: '录制视频文件不存在' };
+  const validEvents = Array.isArray(audioEvents)
+    ? audioEvents
+      .filter(e => e && e.absolutePath && fs.existsSync(e.absolutePath) && Number.isFinite(e.offsetSec) && e.offsetSec >= 0)
+      .sort((a, b) => a.offsetSec - b.offsetSec)
+      .slice(0, 512)
+    : [];
+  if (!validEvents.length) return { ok: true, outputPath: inputVideoPath, mixed: false };
+
+  const ext = path.extname(inputVideoPath) || '.mp4';
+  const parsed = path.parse(inputVideoPath);
+  const mixedPath = path.join(parsed.dir, `${parsed.name}.with-audio${ext}`);
+
+  const inputs = ['-y', '-i', inputVideoPath];
+  for (const ev of validEvents) {
+    inputs.push('-i', ev.absolutePath);
+  }
+
+  const filters = [];
+  const labels = [];
+  for (let i = 0; i < validEvents.length; i++) {
+    const delayMs = Math.max(0, Math.round(validEvents[i].offsetSec * 1000));
+    const outLabel = `a${i}`;
+    labels.push(`[${outLabel}]`);
+    filters.push(`[${i + 1}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,adelay=${delayMs}|${delayMs}[${outLabel}]`);
+  }
+  if (labels.length > 1) {
+    filters.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0:dropout_transition=0[aout]`);
+  } else {
+    filters.push(`${labels[0]}anull[aout]`);
+  }
+
+  const lowerExt = ext.toLowerCase();
+  const isWebm = lowerExt === '.webm';
+  const args = [
+    ...inputs,
+    '-filter_complex', filters.join(';'),
+    '-map', '0:v:0',
+    '-map', '[aout]',
+    '-c:v', 'copy',
+    '-c:a', isWebm ? 'libopus' : 'aac',
+    ...(isWebm ? ['-b:a', '160k'] : ['-b:a', '192k']),
+    '-shortest',
+    ...((lowerExt === '.mp4' || lowerExt === '.mov') ? ['-movflags', '+faststart'] : []),
+    mixedPath
+  ];
+
+  await new Promise((resolve, reject) => {
+    const p = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let errOut = '';
+    p.stderr.on('data', (d) => { errOut += d.toString(); });
+    p.on('error', (e) => reject(e));
+    p.on('close', (code) => {
+      if (code === 0 || code === null) return resolve(true);
+      const lastLine = String(errOut || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+      reject(new Error(`音轨封装失败（退出码 ${code}）${lastLine ? `：${lastLine}` : ''}`));
+    });
+  });
+
+  if (!fs.existsSync(mixedPath)) {
+    return { ok: false, error: '音轨封装输出文件不存在' };
+  }
+
+  try {
+    fs.unlinkSync(inputVideoPath);
+  } catch (e) {}
+  fs.renameSync(mixedPath, inputVideoPath);
+  return { ok: true, outputPath: inputVideoPath, mixed: true };
+}
+
+let lineManagerWin = null;
+let devWin = null;
+let throughOperationTarget = null; // 存储贯通线路选择目标 ('lineA' 或 'lineB')
+
+// BrowserView 管理：存储主窗口中的多个视图
+let browserViews = new Map(); // key: viewId, value: { view: BrowserView, bounds: {x, y, width, height} }
+
+// 判断是否为开发环境（electron-vite 在开发时会注入 ELECTRON_RENDERER_URL 或 VITE_DEV_SERVER_URL）
+const isDev = !app.isPackaged || !!process.env.ELECTRON_RENDERER_URL || !!process.env.VITE_DEV_SERVER_URL;
+
+// 添加全局错误处理，捕获未处理的异常
+process.on('uncaughtException', (error) => {
+  console.error('[main] 未捕获的异常:', error);
+  console.error('[main] 错误堆栈:', error.stack);
+  // 同时记录到 logger
+  if (logger) {
+    try {
+      logger.error('未捕获的异常', error);
+    } catch (e) {}
+  }
+  // 不要立即退出，给应用一个机会记录错误或显示错误对话框
+  // 如果窗口存在，确保它显示出来
+  if (mainWin && !mainWin.isDestroyed() && !mainWin.isVisible()) {
+    try {
+      mainWin.show();
+    } catch (e) {}
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[main] 未处理的 Promise 拒绝:', reason);
+  if (reason instanceof Error) {
+    console.error('[main] 错误堆栈:', reason.stack);
+  }
+  // 同时记录到 logger
+  if (logger) {
+    try {
+      logger.error('未处理的 Promise 拒绝', reason);
+    } catch (e) {}
+  }
+});
+
+// 获取 preload 脚本路径：
+// - 开发模式：electron-vite 会自动处理，使用 dist/main/preload.js（热重载支持）
+// - 生产/打包后：使用与 main 同目录下的 preload.js
+function getPreloadPath() {
+  // electron-vite 在开发模式下会将 preload 打包到 dist/main/preload.js
+  // 这样支持热重载功能
+  if (process.env.ELECTRON_RENDERER_URL || !app.isPackaged) {
+    // 开发模式：使用 electron-vite 打包后的 preload.js（支持热重载）
+    return path.join(__dirname, 'preload.js');
+  }
+  // 生产模式：使用打包后的 preload.js
+  return path.join(__dirname, 'preload.js');
+}
+
+/**
+ * 获取渲染进程页面的 URL
+ * - 开发环境：使用 electron-vite 提供的本地服务器地址（ELECTRON_RENDERER_URL）
+ * - 生产环境：使用打包后 dist/renderer 目录中的静态文件
+ * @param {string} htmlRelativePath 相对于渲染根目录的 html 路径，如 'index.html' 或 'displays/display-2/display_window.html'
+ */
+function getRendererUrl(htmlRelativePath) {
+  // 重要：URL 路径必须使用 /，不能使用 Windows 的 \\，否则 Vite import-analysis 会异常
+  const basePath = htmlRelativePath.replace(/^\//, '').replace(/\\/g, '/');
+  
+  // electron-vite 开发模式：使用 Vite 开发服务器（支持 HMR ⚡️）
+  const devUrl = process.env.ELECTRON_RENDERER_URL || process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    // 确保 URL 格式正确，支持 HMR
+    const url = devUrl.replace(/\/$/, '');
+    return `${url}/${basePath}`;
+  }
+  
+  // 兜底：开发模式但环境变量缺失时，使用默认端口
+  if (!app.isPackaged) {
+    const fallbackDevPort = Number(process.env.PIDS_DEV_SERVER_PORT || '5180');
+    return `http://localhost:${fallbackDevPort}/${basePath}`;
+  }
+  
+  // 生产环境：使用打包后的静态文件
+  // 打包后，__dirname 指向 app.asar/out/main（如果在 asar 中）或 out/main（如果解压）
+  // 渲染进程文件在 out/renderer 目录下
+  // 在 asar 中，路径应该是：app.asar/out/renderer/index.html
+  // app.getAppPath() 返回 app.asar 的路径（如果使用 asar）
+  let resolved;
+  
+  if (app.isPackaged) {
+    // 打包后：app.getAppPath() 返回 app.asar 的路径
+    const appPath = app.getAppPath();
+    // app.asar/out/renderer/index.html
+    resolved = path.join(appPath, 'out/renderer', basePath);
+    console.log(`[getRendererUrl] 打包模式 - appPath: ${appPath}, resolved: ${resolved}`);
+  } else {
+    // 开发环境：__dirname 指向 out/main
+    resolved = path.join(__dirname, '../renderer', basePath);
+    console.log(`[getRendererUrl] 开发模式 - __dirname: ${__dirname}, resolved: ${resolved}`);
+  }
+  
+  // 验证文件是否存在（注意：在 asar 中，fs.existsSync 可以检查 asar 内的文件）
+  try {
+    if (!fs.existsSync(resolved)) {
+      console.warn(`[getRendererUrl] ⚠️ 文件不存在: ${resolved}`);
+      console.warn(`[getRendererUrl] __dirname: ${__dirname}`);
+      if (app.isPackaged) {
+        console.warn(`[getRendererUrl] app.getAppPath(): ${app.getAppPath()}`);
+        // 尝试备用路径
+        const altPath = path.join(__dirname, '../renderer', basePath);
+        if (fs.existsSync(altPath)) {
+          console.log(`[getRendererUrl] 使用备用路径: ${altPath}`);
+          resolved = altPath;
+        }
+      }
+    } else {
+      console.log(`[getRendererUrl] ✅ 文件存在: ${resolved}`);
+    }
+  } catch (e) {
+    console.error(`[getRendererUrl] 检查文件存在性时出错:`, e);
+  }
+  
+  // 转换为 file:// URL 格式（Windows 需要特殊处理）
+  const fileUrl = `file://${resolved.replace(/\\/g, '/')}`;
+  return fileUrl;
+}
+
+// 重新应用 Mica 效果的辅助函数
+function reapplyMicaEffect() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  if (!MAIN_BLUR_ENABLED) {
+    console.log('[MainWindow] 模糊开关关闭，跳过重新应用效果');
+    return;
+  }
+  
+  const isWindows = process.platform === 'win32';
+  if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
+  
+  try {
+    setTimeout(() => {
+      try {
+        applyNativeBlurStateToWindow(mainWin, true, getStoredThemeMode());
+        console.log('[MainWindow] ✅ 重新应用原生窗口效果');
+      } catch (e) {
+        console.warn('[MainWindow] ⚠️ 重新应用效果失败:', e);
+      }
+    }, 50);
+  } catch (e) {
+    console.warn('[MainWindow] ⚠️ 重新应用效果失败:', e);
+  }
+}
+
+// 强制重新应用模糊效果（用于打开显示器窗口时）
+function forceReapplyMicaEffect(opts = {}) {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  if (!MAIN_BLUR_ENABLED) return;
+  const ignoreFocus = !!(opts && opts.ignoreFocus);
+
+  // 默认仅在主窗口当前处于焦点时重应用；但“打开/切换显示端”会导致主窗口失焦，仍需要强制重应用
+  if (!ignoreFocus) {
+    try {
+      if (typeof mainWin.isFocused === 'function' && !mainWin.isFocused()) return;
+    } catch (e) {
+      return;
+    }
+  }
+  
+  const isWindows = process.platform === 'win32';
+  if (!isWindows || MicaBrowserWindow === BrowserWindow) return;
+
+  const now = Date.now();
+  if (forceReapplyMicaEffect._lastApplyTs && now - forceReapplyMicaEffect._lastApplyTs < 300) return;
+  forceReapplyMicaEffect._lastApplyTs = now;
+  
+  // 只调用一次，不使用多个延迟
+  try {
+    if (!mainWin || mainWin.isDestroyed()) return;
+    applyNativeBlurStateToWindow(mainWin, true, getStoredThemeMode());
+  } catch (e) {
+    // 静默失败，不输出日志
+  }
+}
+
+// 启动/停止 API 服务器的函数（在 createWindow 外部定义，以便在 app.whenReady() 中使用）
+function startApiServer() {
+  if (!displayApiServer) {
+    console.warn('[main] API 服务器模块未加载，无法启动');
+    return false;
+  }
+  
+  // 如果已经启动，先停止
+  if (apiServerInstance) {
+    try {
+      apiServerInstance.close();
+      apiServerInstance = null;
+      console.log('[main] 已停止旧的 API 服务器');
+    } catch (e) {
+      console.warn('[main] 停止旧 API 服务器失败:', e);
+    }
+  }
+  
+  try {
+    const { server, PORT, setApiHandlers } = displayApiServer;
+    
+    // 设置API处理器
+    setApiHandlers({
+      getDisplayWindows: () => displayWindows,
+      createDisplayWindow: (width, height, displayId) => {
+        return createDisplayWindow(width, height, displayId);
+      },
+      closeDisplayWindow: (displayId) => {
+        if (displayId) {
+          const win = displayWindows.get(displayId);
+          if (win && !win.isDestroyed()) {
+            win.close();
+            displayWindows.delete(displayId);
+            return [displayId];
+          }
+          return [];
+        } else {
+          const closed = [];
+          for (const [id, win] of displayWindows.entries()) {
+            if (win && !win.isDestroyed()) {
+              win.close();
+              closed.push(id);
+            }
+          }
+          displayWindows.clear();
+          return closed;
+        }
+      },
+      sendBroadcastMessage: (payload) => {
+        return broadcastToAllChannels(payload);
+      },
+      getMainWindow: () => mainWin,
+      getStore: () => store,
+      getAppData: async () => {
+        return fetchAppDataSnapshot();
+      },
+      getRtState: async () => {
+        return fetchRtStateSnapshot();
+      },
+      editDisplay: async (displayId, displayData) => {
+        try {
+          if (!mainWin || mainWin.isDestroyed()) {
+            return { ok: false, error: '主窗口未就绪' };
+          }
+          
+          const result = await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              ipcMain.removeListener('api/edit-display-result', handler);
+              resolve({ ok: false, error: '操作超时' });
+            }, 5000);
+            
+            const handler = (event, response) => {
+              clearTimeout(timeout);
+              ipcMain.removeListener('api/edit-display-result', handler);
+              resolve(response);
+            };
+            
+            ipcMain.once('api/edit-display-result', handler);
+            
+            mainWin.webContents.send('api/edit-display-request', displayId, displayData);
+          });
+          
+          return result;
+        } catch (e) {
+          console.error('[DisplayAPI] 编辑显示端失败:', e);
+          return { ok: false, error: String(e.message || e) };
+        }
+      }
+    });
+    
+    // 启动服务器
+    server.listen(PORT, () => {
+      console.log(`[DisplayAPI] ✅ 显示器控制 API 服务器已启动，端口: ${PORT}`);
+      console.log(`[DisplayAPI] 访问 http://localhost:${PORT}/api/display/info 查看API文档`);
+      apiServerInstance = server;
+    });
+    
+    server.on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        console.warn(`[DisplayAPI] 端口 ${PORT} 已被占用，API服务器未启动`);
+        apiServerInstance = null;
+      } else {
+        console.error('[DisplayAPI] 服务器错误:', e);
+        apiServerInstance = null;
+      }
+    });
+    
+    return true;
+  } catch (e) {
+    console.error('[main] 启动显示器控制API服务器失败:', e);
+    apiServerInstance = null;
+    return false;
+  }
+}
+
+function stopApiServer() {
+  if (apiServerInstance) {
+    try {
+      apiServerInstance.close();
+      apiServerInstance = null;
+      console.log('[main] ✅ API 服务器已停止');
+      return true;
+    } catch (e) {
+      console.warn('[main] 停止 API 服务器失败:', e);
+      apiServerInstance = null;
+      return false;
+    }
+  }
+  return true;
+}
+
+function createWindow() {
+  console.log('[MainWindow] ===== 开始创建窗口 =====');
+  // 尝试加载 mica-electron（需要在 app 初始化后）
+  // 按照官方示例使用解构导入
+  if (MicaBrowserWindow === BrowserWindow) {
+    try {
+      console.log('[main] 正在加载 mica-electron...');
+      // 按照官方示例：使用解构导入
+      const { MicaBrowserWindow: MicaBW, IS_WINDOWS_11: IS_W11, WIN10: W10 } = require('mica-electron');
+      console.log('[main] mica-electron 模块导出:', { MicaBrowserWindow: typeof MicaBW, IS_WINDOWS_11: IS_W11, WIN10: W10 });
+      
+      // 使用解构导入的值
+      MicaBrowserWindow = MicaBW || BrowserWindow;
+      IS_WINDOWS_11 = IS_W11 || false;
+      WIN10 = W10 || null;
+      
+      console.log('[main] ✅ mica-electron 加载成功');
+      console.log('[main] MicaBrowserWindow:', MicaBrowserWindow === BrowserWindow ? '未加载（使用标准 BrowserWindow）' : '已加载');
+      console.log('[main] IS_WINDOWS_11:', IS_WINDOWS_11);
+      console.log('[main] WIN10:', WIN10);
+      
+      // 检查原生模块是否存在
+      const fs = require('fs');
+      const path = require('path');
+      const micaElectronPath = path.join(__dirname, 'node_modules', 'mica-electron', 'src');
+      const arch = process.arch;
+      const nodeFile = path.join(micaElectronPath, `micaElectron_${arch}.node`);
+      if (fs.existsSync(nodeFile)) {
+        console.log('[main] ✅ 原生模块文件存在:', nodeFile);
+      } else {
+        console.warn('[main] ⚠️ 原生模块文件不存在:', nodeFile);
+        console.warn('[main] ⚠️ 需要重新编译 mica-electron，请运行: npm install --build-from-source mica-electron');
+      }
+    } catch (e) {
+      console.error('[main] ❌ mica-electron 加载失败:', e.message);
+      console.error('[main] 错误堆栈:', e.stack);
+    }
+  }
+  
+  // 使用方案二：隐藏默认标题栏，显示系统窗口控制按钮
+  const isWindows = process.platform === 'win32';
+  const isMacOS = process.platform === 'darwin';
+  const isLinux = process.platform === 'linux';
+  
+  // Linux 不支持自定义标题栏，使用系统默认标题栏
+  if (isLinux) {
+    console.log('[MainWindow] 创建 Linux 窗口');
+    mainWin = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      frame: true, // Linux 使用系统框架
+      transparent: false,
+      resizable: true,
+      show: true, // 立即显示
+      webPreferences: {
+        preload: getPreloadPath(),
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+    console.log('[MainWindow] Linux 窗口已创建:', mainWin !== null);
+    if (mainWin) {
+      mainWin.show();
+      mainWin.center();
+      console.log('[MainWindow] Linux 窗口已显示');
+    }
+  } else {
+    // Windows 和 MacOS 使用自定义标题栏
+    // Windows 11：启用透明 + Mica
+    // Windows 10：关闭透明，使用纯色背景，避免拖拽时桌面合成开销过大导致卡顿
+    // Mac：保持原有透明行为
+    let initialWidth = 1600;
+    let initialHeight = 900;
+    try {
+      const primary = screen.getPrimaryDisplay();
+      const size = (primary && (primary.workAreaSize || primary.workArea)) || null;
+      if (size && size.width && size.height) {
+        initialWidth = Math.min(initialWidth, size.width);
+        initialHeight = Math.min(initialHeight, size.height);
+      }
+    } catch (e) {
+      console.warn('[MainWindow] 获取屏幕信息失败，使用默认窗口大小', e);
+    }
+
+    // 是否在当前环境实际启用 Mica（仅 Windows 11 且 mica-electron 加载成功时）
+    const useMica = isWindows && IS_WINDOWS_11 && MicaBrowserWindow !== BrowserWindow;
+
+    const mainWindowOptions = {
+      width: initialWidth,
+      height: initialHeight,
+      frame: false, // 隐藏默认框架
+      // Windows 11: 透明 + Mica；Windows 10: 关闭透明，减少拖拽卡顿；macOS 保持透明
+      transparent: (isMacOS || useMica),
+      resizable: true,
+      // 非 Mica 情况下使用不透明深色背景，避免桌面合成拖慢拖拽
+      backgroundColor: useMica ? '#00000000' : '#090d12',
+      hasShadow: true, // 启用窗口阴影
+      show: true, // 立即显示窗口，避免页面加载失败导致窗口不显示
+      // 隐藏默认标题栏，但保留系统窗口控制按钮
+      titleBarStyle: 'hidden',
+      // 显示系统自带窗口控制按钮
+      titleBarOverlay: {
+        color: isWindows ? 'rgba(0, 0, 0, 0)' : undefined, // Windows 设置为透明
+        symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色
+        height: 32 // 控制按钮高度，与自定义标题栏高度一致
+      },
+      webPreferences: {
+        preload: getPreloadPath(),
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    };
+
+    mainWin = new MicaBrowserWindow(mainWindowOptions);
+    
+    console.log('[MainWindow] 窗口对象已创建:', mainWin !== null);
+    console.log('[MainWindow] 窗口是否可见:', mainWin && mainWin.isVisible());
+    
+    // 窗口创建后立即按“模糊开关 + 主题模式”统一应用原生效果
+    if (isWindows && mainWin && MicaBrowserWindow !== BrowserWindow) {
+      try {
+        applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, getStoredThemeMode());
+      } catch (e) {
+        console.error('[MainWindow] ❌ 应用原生窗口效果失败:', e);
+      }
+    }
+    
+    // 窗口创建后立即居中（因为 show: true，窗口会立即显示）
+    mainWin.once('ready-to-show', () => {
+      try {
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.center();
+          console.log('[MainWindow] ✅ 窗口已显示并居中');
+
+          setTimeout(() => {
+            if (!mainWin || mainWin.isDestroyed()) return;
+
+            const bounds = mainWin.getBounds();
+            const sidebarWidth = 60;
+            const topbarUrl = getRendererUrl('topbar.html');
+            const sidebarUrl = getRendererUrl('sidebar.html');
+
+            console.log('[MainWindow] 📦 初始化顶部栏和侧边栏 BrowserView...');
+
+            const topbarView = createBrowserView('topbar', topbarUrl, {
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 32 / bounds.height
+            });
+
+            const sidebarView = createBrowserView('sidebar', sidebarUrl, {
+              x: 0,
+              y: 32 / bounds.height,
+              width: sidebarWidth / bounds.width,
+              height: (bounds.height - 32) / bounds.height
+            });
+
+            if (!topbarView || !sidebarView) {
+              console.error('[MainWindow] ❌ 初始化 BrowserView 失败');
+              return;
+            }
+
+            if (typeof mainWin.setTopBrowserView === 'function') {
+              try {
+                mainWin.setTopBrowserView(topbarView);
+              } catch (e) {
+                console.warn('[MainWindow] ⚠️ 设置顶部栏层级失败:', e);
+              }
+            }
+
+            console.log('[MainWindow] ✅ 顶部栏和侧边栏 BrowserView 已初始化');
+          }, 300);
+        }
+      } catch (e) {
+        console.warn('[MainWindow] ⚠️ 居中窗口失败:', e);
+      }
+    });
+    
+    // 确保窗口可见
+    console.log('[MainWindow] 确保窗口可见 - 主窗口对象:', mainWin !== null);
+    if (mainWin && !mainWin.isDestroyed()) {
+      try {
+        mainWin.show();
+        mainWin.center();
+        mainWin.focus();
+        console.log('[MainWindow] ✅ 窗口已显示、居中并获取焦点');
+        console.log('[MainWindow] 窗口可见性:', mainWin.isVisible());
+      } catch (e) {
+        console.error('[MainWindow] ❌ 显示窗口失败:', e);
+      }
+    } else {
+      console.error('[MainWindow] ❌ 窗口对象无效或已销毁');
+    }
+    
+    // 处理窗口失焦时的行为，确保保持透明背景
+    mainWin.on('blur', () => {
+      if (mainWin && !mainWin.isDestroyed()) {
+        try {
+          if (MAIN_BLUR_ENABLED) {
+            // 模糊开启时维持透明背景以承载原生材质
+            mainWin.setBackgroundColor('#00000000');
+          }
+        } catch (e) {
+          console.warn('[MainWindow] ⚠️ 设置透明背景失败:', e);
+        }
+      }
+    });
+    
+    // 窗口重新获得焦点时重新应用 Mica 效果
+    mainWin.on('focus', () => {
+      // 主窗口重新获得焦点时，强制重新应用模糊效果
+      forceReapplyMicaEffect();
+    });
+    
+    // 监听页面导航事件，在导航完成后重新应用 Mica 效果
+    mainWin.webContents.on('did-navigate', () => {
+      console.log('[MainWindow] 页面导航完成，重新应用 Mica 效果');
+      reapplyMicaEffect();
+    });
+    
+    // 监听页面内导航（如 hash 变化）
+    mainWin.webContents.on('did-navigate-in-page', () => {
+      console.log('[MainWindow] 页面内导航完成，重新应用 Mica 效果');
+      reapplyMicaEffect();
+    });
+    
+    // 监听页面加载完成事件（每次页面加载完成后都重新应用）
+    mainWin.webContents.on('did-finish-load', () => {
+      console.log('[MainWindow] 页面加载完成，重新应用 Mica 效果');
+      // 延迟应用，确保页面完全渲染
+      setTimeout(() => {
+        reapplyMicaEffect();
+      }, 100);
+    });
+    
+    // 监听 DOM 内容更新事件（Vue 组件切换时可能触发）
+    mainWin.webContents.on('dom-ready', () => {
+      console.log('[MainWindow] DOM 就绪，重新应用 Mica 效果');
+      // 延迟应用，确保 DOM 完全更新
+      setTimeout(() => {
+        reapplyMicaEffect();
+      }, 150);
+    });
+  }
+
+  // 添加页面加载失败的处理（在 loadURL 之前）
+  mainWin.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (isMainFrame) {
+      console.error('[MainWindow] ❌ 主框架页面加载失败:', {
+        errorCode,
+        errorDescription,
+        validatedURL,
+        errorCodeName: getErrorCodeName(errorCode)
+      });
+      
+      // 即使加载失败，也要显示窗口
+      setTimeout(() => {
+        if (mainWin && !mainWin.isDestroyed() && !mainWin.isVisible()) {
+          console.log('[MainWindow] 页面加载失败，但强制显示窗口');
+          try {
+            mainWin.show();
+            mainWin.center();
+            // 注入错误信息到页面
+            mainWin.webContents.executeJavaScript(`
+              document.body.innerHTML = '<div style="padding: 20px; font-family: Arial; line-height: 1.6;">
+                <h2>页面加载失败</h2>
+                <p><strong>错误代码:</strong> ${errorCode} (${getErrorCodeName(errorCode)})</p>
+                <p><strong>错误描述:</strong> ${errorDescription}</p>
+                <p><strong>尝试加载:</strong> ${validatedURL}</p>
+                <p><strong>应用路径:</strong> ${app.getAppPath()}</p>
+                <p><strong>是否打包:</strong> ${app.isPackaged}</p>
+                <p><strong>__dirname:</strong> ${__dirname}</p>
+              </div>';
+            `).catch(e => console.error('[MainWindow] 注入错误信息失败:', e));
+          } catch (e) {
+            console.error('[MainWindow] 显示窗口失败:', e);
+          }
+        }
+      }, 1000);
+    }
+  });
+  
+  // 错误代码名称映射
+  function getErrorCodeName(code) {
+    const codes = {
+      '-3': 'ABORTED',
+      '-2': 'INVALID_ARGUMENT',
+      '-1': 'FAILED',
+      '0': 'OK',
+      '1': 'ABORTED',
+      '2': 'FILE_NOT_FOUND',
+      '3': 'TIMED_OUT',
+      '4': 'FILE_TOO_BIG',
+      '5': 'UNEXPECTED',
+      '6': 'ACCESS_DENIED',
+      '7': 'INVALID_HANDLE',
+      '8': 'FILE_EXISTS',
+      '9': 'FILE_TOO_MANY_OPENED',
+      '10': 'NOT_A_DIRECTORY',
+      '11': 'NOT_A_FILE',
+      '20': 'NETWORK_ACCESS_DENIED',
+      '21': 'NETWORK_FAILED',
+      '22': 'NETWORK_TIMED_OUT'
+    };
+    return codes[code] || 'UNKNOWN';
+  }
+  
+  const controlPath = getRendererUrl('index.html');
+  console.log('[MainWindow] 准备加载页面:', controlPath);
+  console.log('[MainWindow] 应用路径:', app.isPackaged ? app.getAppPath() : __dirname);
+  
+  try {
+    mainWin.loadURL(controlPath).catch((error) => {
+      console.error('[MainWindow] ❌ loadURL Promise 拒绝:', error);
+      console.error('[MainWindow] 尝试加载的路径:', controlPath);
+    });
+  } catch (e) {
+    console.error('[MainWindow] ❌ loadURL 调用失败:', e);
+    console.error('[MainWindow] 错误堆栈:', e.stack);
+    // 即使 loadURL 失败，也尝试显示窗口
+    setTimeout(() => {
+      if (mainWin && !mainWin.isDestroyed() && !mainWin.isVisible()) {
+        console.log('[MainWindow] loadURL 异常，强制显示窗口');
+        try {
+          mainWin.show();
+          mainWin.center();
+        } catch (e2) {
+          console.error('[MainWindow] 强制显示窗口也失败:', e2);
+        }
+      }
+    }, 1000);
+  }
+  
+  // 在页面加载完成后再次确保背景透明并应用 Mica 效果（首次加载）
+  mainWin.webContents.once('did-finish-load', () => {
+    if (mainWin && !mainWin.isDestroyed()) {
+      try {
+        // 多次设置背景透明，确保生效
+        mainWin.setBackgroundColor('#00000000');
+        setTimeout(() => {
+          mainWin.setBackgroundColor('#00000000');
+          console.log('[MainWindow] ✅ 页面加载完成后设置背景为透明');
+          
+          // 如果 Mica 效果可用，再次应用（确保模糊效果显示）
+          if (isWindows && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
+            if (IS_WINDOWS_11 && typeof mainWin.setMicaAcrylicEffect === 'function') {
+              mainWin.setMicaAcrylicEffect();
+              console.log('[MainWindow] ✅ 页面加载后重新应用 Mica Acrylic 效果');
+              
+              // 再次延迟应用，确保模糊效果生效
+              setTimeout(() => {
+                mainWin.setBackgroundColor('#00000000');
+                mainWin.setMicaAcrylicEffect();
+                console.log('[MainWindow] ✅ 延迟再次应用 Mica Acrylic 效果，确保模糊显示');
+              }, 200);
+            } else if (WIN10 && typeof mainWin.setAcrylic === 'function') {
+              mainWin.setAcrylic();
+              console.log('[MainWindow] ✅ 页面加载后重新应用 Acrylic 效果');
+              
+              // 再次延迟应用
+              setTimeout(() => {
+                mainWin.setBackgroundColor('#00000000');
+                mainWin.setAcrylic();
+              }, 200);
+            }
+          }
+        }, 100);
+      } catch (e) {
+        console.warn('[MainWindow] ⚠️ 页面加载后设置透明背景失败:', e);
+      }
+    }
+  });
+
+
+  // 监听来自线路管理器的线路切换请求
+  ipcMain.on('switch-line-request', (event, lineName) => {
+    if (mainWin && !mainWin.isDestroyed()) {
+      // 通过 webContents.send 发送消息到渲染进程
+      mainWin.webContents.send('switch-line-request', lineName);
+    }
+  });
+
+  // 开启 DevTools 控制台（用于调试）
+  // 仅在开发模式下自动打开
+  if (!app.isPackaged && AUTO_OPEN_DEVTOOLS) {
+    mainWin.webContents.openDevTools();
+  }
+  
+  // 为主窗口添加 F12 快捷键支持（切换开发者工具）
+  mainWin.webContents.on('before-input-event', async (event, input) => {
+    // F12 键
+    if (input.key === 'F12') {
+      // 检查是否允许在打包后使用F12
+      let allowF12 = !app.isPackaged; // 开发环境默认允许
+      
+      if (app.isPackaged) {
+        // 打包环境：检查localStorage中的设置
+        try {
+          const result = await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          allowF12 = result === true;
+        } catch (e) {
+          console.warn('[MainWindow] 检查F12设置失败:', e);
+          allowF12 = false;
+        }
+      }
+      
+      if (allowF12) {
+        // 仅打开、不关闭，避免按 F12 导致 DevTools 消失
+        if (!mainWin.webContents.isDevToolsOpened()) {
+          mainWin.webContents.openDevTools();
+        }
+        event.preventDefault();
+      }
+      return;
+    }
+    
+    // Ctrl+Shift+I (Windows/Linux) 或 Cmd+Option+I (MacOS)
+    const isMac = process.platform === 'darwin';
+    const isCtrlShiftI = !isMac && input.control && input.shift && input.key === 'I';
+    const isCmdOptionI = isMac && input.meta && input.alt && input.key === 'I';
+    
+    if (isCtrlShiftI || isCmdOptionI) {
+      let allowShortcut = !app.isPackaged;
+      if (app.isPackaged) {
+        try {
+          const result = await mainWin.webContents.executeJavaScript(`
+            (function() { try { return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true'; } catch(e) { return false; } })();
+          `);
+          allowShortcut = result === true;
+        } catch (e) {
+          console.warn('[MainWindow] 检查F12设置失败:', e);
+          allowShortcut = false;
+        }
+      }
+      if (allowShortcut) {
+        if (!mainWin.webContents.isDevToolsOpened()) {
+          mainWin.webContents.openDevTools();
+        }
+        event.preventDefault();
+      }
+      return;
+    }
+  });
+  
+  // 将主进程日志发送到渲染进程（用于调试）
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...args) => {
+    originalLog.apply(console, args);
+    try {
+      mainWin && mainWin.webContents.send('main-console-log', args.map(a => String(a)).join(' '));
+    } catch (e) {}
+  };
+  console.error = (...args) => {
+    originalError.apply(console, args);
+    try {
+      mainWin && mainWin.webContents.send('main-console-error', args.map(a => String(a)).join(' '));
+    } catch (e) {}
+  };
+
+  // 将主窗体设为无边框，以完全替换系统控件
+  // 无边框窗口需在渲染层提供可拖拽区域（CSS -webkit-app-region: drag）
+  // 仅在创建时生效
+
+  // 暴露 IPC 供渲染层打开显示窗口
+  ipcMain.handle('open-display', (event, opts) => {
+    if (isAppShuttingDown) {
+      return false;
+    }
+    const w = opts && typeof opts.width === 'number' ? opts.width : undefined;
+    const h = opts && typeof opts.height === 'number' ? opts.height : undefined;
+    const displayId = opts && opts.displayId ? opts.displayId : 'display-1';
+    console.log('[main] open-display requested, width=', w, 'height=', h, 'displayId=', displayId);
+    createDisplayWindow(w, h, displayId);
+    return true;
+  });
+
+  // 暴露 IPC 供渲染层切换显示端
+  ipcMain.handle('switch-display', async (event, displayId, width, height) => switchDisplay(displayId, width, height, { reason: 'ipc' }));
+
+  // 暴露 IPC 供渲染层同步设置到主进程
+  ipcMain.handle('settings/sync', async (event, settings) => {
+    try {
+      if (store && settings) {
+        const oldSettings = store.get('settings', {});
+        store.set('settings', settings);
+        console.log('[main] 设置已同步到 electron-store');
+        
+        // 同步主题模式 + 模糊开关到原生窗口效果
+        const oldThemeMode = oldSettings.themeMode || 'system';
+        const newThemeMode = settings.themeMode || 'system';
+        const oldBlurEnabled = oldSettings ? oldSettings.blurEnabled !== false : true;
+        const newBlurEnabled = settings.blurEnabled !== false;
+        MAIN_BLUR_ENABLED = newBlurEnabled;
+
+        if (oldThemeMode !== newThemeMode || oldBlurEnabled !== newBlurEnabled) {
+          try {
+            [mainWin, lineManagerWin]
+              .filter((win) => win && !win.isDestroyed())
+              .forEach((win) => applyNativeBlurStateToWindow(win, newBlurEnabled, newThemeMode));
+            console.log('[main] ✅ 已同步原生窗口效果:', { themeMode: newThemeMode, blurEnabled: newBlurEnabled });
+          } catch (e) {
+            console.warn('[main] ⚠️ 同步原生窗口效果失败:', e);
+          }
+        }
+        
+        // 检查 API 服务器开关是否变化
+        const oldEnableApiServer = oldSettings.enableApiServer || false;
+        const newEnableApiServer = settings.enableApiServer || false;
+        
+        if (oldEnableApiServer !== newEnableApiServer) {
+          if (newEnableApiServer) {
+            console.log('[main] 用户启用了 API 服务器，正在启动...');
+            startApiServer();
+          } else {
+            console.log('[main] 用户禁用了 API 服务器，正在停止...');
+            stopApiServer();
+          }
+        }
+
+        // WebSocket Bridge 开关/端口变化时重启
+        const oldEnableWs = true; // 强制开启
+        const newEnableWs = true; // 强制开启
+        const oldWsPort = parseInt(oldSettings.wsPort || 9400, 10);
+        const newWsPort = parseInt(settings.wsPort || 9400, 10);
+
+        if (oldWsPort !== newWsPort) {
+          console.log('[main] WebSocket Bridge 端口变更，重启:', newWsPort);
+          startWebSocketBridge(newWsPort);
+        }
+        
+        return { ok: true };
+      }
+      return { ok: false, error: 'store 未初始化或 settings 为空' };
+    } catch (e) {
+      console.error('[main] 同步设置失败:', e);
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  // 暴露 IPC 供API服务器编辑显示端配置
+  ipcMain.handle('api/edit-display', async (event, displayId, displayData) => {
+    try {
+      if (!mainWin || mainWin.isDestroyed()) {
+        return { ok: false, error: '主窗口未就绪' };
+      }
+      
+      // 通过IPC通知渲染进程更新显示端配置
+      const result = await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolve({ ok: false, error: '操作超时' });
+        }, 5000);
+        
+        const handler = (event, response) => {
+          clearTimeout(timeout);
+          ipcMain.removeListener('api/edit-display-result', handler);
+          resolve(response);
+        };
+        
+        ipcMain.once('api/edit-display-result', handler);
+        
+        // 发送编辑请求到渲染进程
+        mainWin.webContents.send('api/edit-display-request', displayId, displayData);
+      });
+      
+      return result;
+    } catch (e) {
+      console.error('[main] 编辑显示端失败:', e);
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  // 获取局域网 IPv4 地址列表（用于设置页显示）
+  ipcMain.handle('network/lan-ips', async () => {
+    try {
+      const nets = os.networkInterfaces();
+      const ips = [];
+      for (const key of Object.keys(nets)) {
+        const list = nets[key] || [];
+        for (const item of list) {
+          if (!item || item.internal) continue;
+          if (item.family === 'IPv4' || item.family === 4) {
+            ips.push(item.address);
+          }
+        }
+      }
+      return { ok: true, ips };
+    } catch (e) {
+      console.warn('[main] 获取局域网 IP 失败:', e);
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  ipcMain.handle('network/ws-clients', async () => {
+    try {
+      const clients = getWsConnectedDevicesSnapshot();
+      return { ok: true, clients };
+    } catch (e) {
+      console.warn('[main] 获取 WS 客户端列表失败:', e);
+      return { ok: false, error: String(e.message || e), clients: [] };
+    }
+  });
+
+  ipcMain.handle('network/multi-screen-port', async () => {
+    try {
+      return { ok: true, port: Number(multiScreenHttpPort) || 9517 };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e), port: 9517 };
+    }
+  });
+
+  // 暴露 IPC 供渲染层打开线路管理器
+  ipcMain.handle('open-line-manager', (event, target) => {
+    // target 可能是 'lineA' 或 'lineB'，用于贯通线路设置
+    throughOperationTarget = (target === undefined || target === null) ? null : target;
+    createLineManagerWindow();
+    return true;
+  });
+
+  // 暴露 IPC 供渲染层打开开发者窗口
+  ipcMain.handle('open-dev-window', (event) => {
+    createDevWindow();
+    return true;
+  });
+
+  // 暴露 IPC 供渲染层关闭开发者窗口
+  ipcMain.handle('close-dev-window', async (event) => {
+    if (devWin && !devWin.isDestroyed()) {
+      devWin.close();
+      devWin = null;
+      
+      // 清除主窗口 localStorage 中的开发者按钮标记
+      if (!isAppShuttingDown && mainWin && !mainWin.isDestroyed()) {
+        try {
+          await mainWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                localStorage.removeItem('metro_pids_dev_button_enabled');
+                return true;
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          console.log('[MainWindow] 已清除开发者按钮标记');
+        } catch (e) {
+          console.warn('[MainWindow] 清除开发者按钮标记失败:', e);
+        }
+      }
+    }
+    return true;
+  });
+
+  // 暴露 IPC 供渲染层打开开发者工具
+  ipcMain.handle('dev/open-dev-tools', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (win && !win.isDestroyed()) {
+      win.webContents.openDevTools();
+      return true;
+    }
+    return false;
+  });
+
+  // 更新F12开发者工具设置（用于开发者窗口通知主进程）
+  ipcMain.handle('dev/update-f12-setting', async (event, enabled) => {
+    // 将设置同步到所有显示窗口的localStorage
+    try {
+      for (const [displayId, displayWin] of displayWindows.entries()) {
+        if (displayWin && !displayWin.isDestroyed()) {
+          await displayWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                if (${enabled}) {
+                  localStorage.setItem('metro_pids_enable_f12_devtools', 'true');
+                } else {
+                  localStorage.removeItem('metro_pids_enable_f12_devtools');
+                }
+                return true;
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+        }
+      }
+      return true;
+    } catch (e) {
+      console.warn('[main] 更新F12设置失败:', e);
+      return false;
+    }
+  });
+
+  ipcMain.handle('dialog/alert', async (event, message) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (!win) return;
+    try {
+      await showElectronAlert({ parent: win, type: 'alert', title: '提示', msg: String(message) });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  });
+
+  ipcMain.handle('dialog/confirm', async (event, message) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (!win) return false;
+    try {
+      const res = await showElectronAlert({ parent: win, type: 'confirm', title: '确认', msg: String(message) });
+      return !!res;
+    } catch (e) {
+      return false;
+    }
+  });
+
+  // ========== 视频录制相关 IPC ==========
+  
+  // 获取可用编码器
+  ipcMain.handle('recording/available-encoders', async () => {
+    if (!ffmpegPath) {
+      return { ok: false, error: 'FFmpeg未安装' };
+    }
+    try {
+      // 检测可用编码器
+      const encoders = await new Promise((resolve) => {
+        const process = spawn(ffmpegPath, ['-encoders']);
+        let output = '';
+        process.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+        process.stderr.on('data', (data) => {
+          output += data.toString();
+        });
+        process.on('close', () => {
+          const result = { cpu: [], gpu: [] };
+          const lines = output.split('\n');
+          for (const line of lines) {
+            if (line.includes('libx264')) result.cpu.push('libx264');
+            if (line.includes('libx265')) result.cpu.push('libx265');
+            if (line.includes('libvpx-vp9')) result.cpu.push('libvpx-vp9');
+            if (line.includes('h264_nvenc') || line.includes('hevc_nvenc')) result.gpu.push('nvenc');
+            if (line.includes('h264_amf') || line.includes('hevc_amf')) result.gpu.push('amf');
+            if (line.includes('h264_qsv') || line.includes('hevc_qsv')) result.gpu.push('qsv');
+          }
+          resolve(result);
+        });
+        process.on('error', (err) => {
+          resolve({ cpu: [], gpu: [], error: String(err) });
+        });
+      });
+
+      // 检测硬件型号
+      let cpuModel = '';
+      try {
+        const cpus = os.cpus();
+        if (cpus && cpus.length) cpuModel = cpus[0].model || '';
+      } catch (e) {
+        console.warn('[main] 获取CPU型号失败:', e);
+      }
+
+      let gpuModel = '';
+      try {
+        // 优先使用 Electron GPUInfo
+        const gpuInfo = await app.getGPUInfo('complete');
+        const devices = (gpuInfo && gpuInfo.gpuDevice) || [];
+        const active = devices.find(d => d.active) || devices[0];
+        if (active && active.deviceString) {
+          gpuModel = String(active.deviceString || '');
+        }
+
+        // 兜底：有些机器/驱动下 deviceString 为空，改用 basic 再试一次
+        if (!gpuModel) {
+          const basic = await app.getGPUInfo('basic');
+          const devices2 = (basic && basic.gpuDevice) || [];
+          const active2 = devices2.find(d => d.active) || devices2[0];
+          if (active2 && active2.deviceString) {
+            gpuModel = String(active2.deviceString || '');
+          }
+        }
+      } catch (e) {
+        console.warn('[main] getGPUInfo 获取GPU型号失败:', e);
+      }
+
+      // Windows 兜底：用系统接口读取显卡名称（驱动正常时更稳定）
+      if (!gpuModel && process.platform === 'win32') {
+        try {
+          gpuModel = await new Promise((resolve) => {
+            const ps = spawn('powershell', [
+              '-NoProfile',
+              '-Command',
+              "try { (Get-CimInstance Win32_VideoController | Select-Object -First 1 -ExpandProperty Name) } catch { '' }"
+            ], { windowsHide: true });
+            let out = '';
+            ps.stdout.on('data', (d) => { out += d.toString(); });
+            ps.on('close', () => resolve(String(out || '').trim()));
+            ps.on('error', () => resolve(''));
+          });
+
+          if (!gpuModel) {
+            gpuModel = await new Promise((resolve) => {
+              const wmic = spawn('wmic', ['path', 'win32_VideoController', 'get', 'name'], { windowsHide: true });
+              let out = '';
+              wmic.stdout.on('data', (d) => { out += d.toString(); });
+              wmic.on('close', () => {
+                // 输出通常包含表头 name，取第一条有效行
+                const lines = String(out || '')
+                  .split(/\r?\n/)
+                  .map(s => s.trim())
+                  .filter(Boolean)
+                  .filter(s => s.toLowerCase() !== 'name');
+                resolve(lines[0] || '');
+              });
+              wmic.on('error', () => resolve(''));
+            });
+          }
+        } catch (e) {
+          console.warn('[main] Windows 系统接口获取GPU型号失败:', e);
+        }
+      }
+
+      // 记住编码器信息供后续录制使用
+      recordingEncoders = encoders || { cpu: [], gpu: [] };
+
+      return { ok: true, encoders, hardware: { cpuModel, gpuModel } };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  // 开始录制
+  ipcMain.handle('recording/start', async (event, displayId, options) => {
+    if (!ffmpegPath) {
+      return { ok: false, error: 'FFmpeg未安装' };
+    }
+    if (recordingState.isRecording) {
+      return { ok: false, error: '录制已在进行中' };
+    }
+
+    try {
+      // 规范化参数，避免 FFmpeg 因参数格式直接退出
+      const safeOptions = options && typeof options === 'object' ? { ...options } : {};
+      const safeFps = Math.max(1, Math.min(240, parseInt(safeOptions.fps || 30, 10) || 30));
+      safeOptions.fps = safeFps;
+
+      function normalizeBitrate(bitrate) {
+        if (bitrate === undefined || bitrate === null || bitrate === '') return null;
+        if (typeof bitrate === 'number' && Number.isFinite(bitrate)) {
+          const mbps = Math.max(0.1, bitrate);
+          return `${mbps}M`;
+        }
+        const s = String(bitrate).trim();
+        if (!s) return null;
+        // 如果已经带单位（k/K/m/M/g/G 或 bps），直接用
+        if (/[kKmMgG]$/.test(s) || /bps$/i.test(s)) return s;
+        // 纯数字：默认按 Mbps
+        if (/^\d+(\.\d+)?$/.test(s)) return `${s}M`;
+        return s; // 兜底
+      }
+
+      const normalizedBitrate = normalizeBitrate(safeOptions.bitrate);
+      if (normalizedBitrate) safeOptions.bitrate = normalizedBitrate;
+      else safeOptions.bitrate = '2M';
+
+      // 编码器可用性检查：请求 GPU 但没检测到可用 GPU 编码器时直接报错
+      const wantGpu = safeOptions.encoder === 'gpu';
+      if (wantGpu && (!recordingEncoders || !Array.isArray(recordingEncoders.gpu) || recordingEncoders.gpu.length === 0)) {
+        return { ok: false, error: '未检测到可用的 GPU 编码器，请选择 CPU 编码或先刷新编码器列表' };
+      }
+
+      // 获取显示端配置
+      const settings = store ? store.get('settings', {}) : {};
+      let displays = settings.display?.displays || {};
+      
+      // 如果displays为空或没有该显示端，尝试从config.json读取默认配置
+      if (!displays || Object.keys(displays).length === 0 || !displays[displayId]) {
+        try {
+          const configPath = path.join(__dirname, 'displays', 'config.json');
+          if (fs.existsSync(configPath)) {
+            const configContent = fs.readFileSync(configPath, 'utf-8');
+            const config = JSON.parse(configContent);
+            if (config.displays && config.displays[displayId]) {
+              displays[displayId] = config.displays[displayId];
+            }
+          }
+        } catch (e) {
+          console.warn('[main] 读取默认显示端配置失败:', e);
+        }
+      }
+      
+      let displayConfig = displays[displayId];
+      if (!displayConfig) {
+        // 如果还是没有，使用硬编码的默认值
+        const defaultConfigs = {
+          'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
+          'display-2': { width: 1900, height: 600, source: 'builtin', url: '', name: '副显示器' },
+          'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
+        };
+        if (defaultConfigs[displayId]) {
+          displayConfig = defaultConfigs[displayId];
+        } else {
+          return { ok: false, error: `显示端 ${displayId} 不存在` };
+        }
+      }
+
+      const width = displayConfig.width || 1900;
+      const height = displayConfig.height || 600;
+
+      // 创建离屏窗口
+      const offscreenWin = new BrowserWindow({
+        width,
+        height,
+        show: false,
+        webPreferences: {
+          offscreen: true,
+          preload: getPreloadPath(),
+          contextIsolation: true,
+          nodeIntegration: false,
+          backgroundThrottling: false
+        }
+      });
+
+      // 获取显示端URL（复用createDisplayWindow的逻辑）
+      let dispPath;
+      if (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') {
+        dispPath = displayConfig.url;
+      } else if (displayConfig.source === 'builtin' && displayConfig.url) {
+        let customFilePath = displayConfig.url.trim();
+        let resolvedPath = path.isAbsolute(customFilePath) 
+          ? customFilePath 
+          : (app.isPackaged ? path.join(app.getAppPath(), customFilePath) : path.join(__dirname, '..', customFilePath));
+        resolvedPath = path.normalize(resolvedPath);
+        if (fs.existsSync(resolvedPath)) {
+          dispPath = process.platform === 'win32' 
+            ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+            : `file://${resolvedPath}`;
+        } else {
+          dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+        }
+      } else {
+        if (displayId === 'display-1') {
+          dispPath = getRendererUrl('displays/display-1/display_window.html');
+        } else {
+          dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+        }
+      }
+
+      // 等待窗口加载完成
+      await new Promise((resolve) => {
+        offscreenWin.webContents.once('did-finish-load', resolve);
+        offscreenWin.loadURL(dispPath);
+      });
+
+      // 等待一小段时间确保页面渲染
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // 获取系统视频文件夹
+      const videosDir = app.getPath('videos');
+      const outputDir = path.join(videosDir, 'Metro-PIDS-Videos');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // 生成文件名
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const container = String(safeOptions.container || '').toLowerCase() || null;
+      const containerNormalized = (container === 'mp4' || container === 'avi' || container === 'mov' || container === 'wmv' || container === 'mkv' || container === 'webm')
+        ? container
+        : null;
+
+      // 默认封装：VP9 → webm，其它 → mp4
+      const finalContainer = containerNormalized || (safeOptions.codec === 'vp9' ? 'webm' : 'mp4');
+
+      // 容器与编码兼容性校验（不兼容直接报错，避免“点了没录制”）
+      if (safeOptions.codec === 'vp9' && finalContainer !== 'webm' && finalContainer !== 'mkv') {
+        return { ok: false, error: 'VP9 编码建议使用 WEBM（或 MKV）封装，请调整输出格式' };
+      }
+      if (finalContainer === 'webm' && safeOptions.codec !== 'vp9') {
+        return { ok: false, error: 'WEBM 封装通常搭配 VP9 编码，请选择 VP9 或改用 MP4/MKV/MOV 等格式' };
+      }
+
+      const outputPath = path.join(outputDir, `MetroPIDS_${timestamp}.${finalContainer}`);
+
+      // 确定编码器
+      let encoder = 'libx264';
+      const useGpu = safeOptions.encoder === 'gpu';
+
+      // VP9 目前统一用 CPU 编码，避免兼容性问题
+      if (safeOptions.codec === 'vp9') {
+        encoder = 'libvpx-vp9';
+      } else if (useGpu && recordingEncoders && Array.isArray(recordingEncoders.gpu) && recordingEncoders.gpu.length > 0) {
+        // 根据可用 GPU 编码器类型选择具体实现
+        const gpuType = recordingEncoders.gpu[0]; // nvenc / amf / qsv
+        if (gpuType === 'nvenc') {
+          encoder = safeOptions.codec === 'h265' ? 'hevc_nvenc' : 'h264_nvenc';
+        } else if (gpuType === 'amf') {
+          encoder = safeOptions.codec === 'h265' ? 'hevc_amf' : 'h264_amf';
+        } else if (gpuType === 'qsv') {
+          encoder = safeOptions.codec === 'h265' ? 'hevc_qsv' : 'h264_qsv';
+        } else {
+          // 未知类型，退回 CPU
+          encoder = safeOptions.codec === 'h265' ? 'libx265' : 'libx264';
+        }
+      } else {
+        // CPU 编码
+        if (safeOptions.codec === 'h265') encoder = 'libx265';
+        else encoder = 'libx264';
+      }
+
+      // 构建FFmpeg命令
+      const muxer = (
+        finalContainer === 'mp4' ? 'mp4'
+          : finalContainer === 'mov' ? 'mov'
+            : finalContainer === 'avi' ? 'avi'
+              : finalContainer === 'mkv' ? 'matroska'
+                : finalContainer === 'webm' ? 'webm'
+                  : finalContainer === 'wmv' ? 'asf'
+                    : finalContainer
+      );
+
+      const ffmpegArgs = [
+        '-f', 'rawvideo',
+        '-vcodec', 'rawvideo',
+        '-pix_fmt', 'bgra',
+        '-s', `${width}x${height}`,
+        '-r', String(safeOptions.fps || 30),
+        '-i', 'pipe:0',
+        '-c:v', encoder,
+        '-b:v', safeOptions.bitrate || '2M',
+        '-pix_fmt', 'yuv420p',
+        ...(finalContainer === 'mp4' ? ['-movflags', '+faststart'] : []),
+        '-f', muxer,
+        outputPath
+      ];
+
+      // 启动FFmpeg进程
+      const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+      // 更新录制状态
+      recordingState.isRecording = true;
+      recordingState.displayId = displayId;
+      recordingState.options = safeOptions;
+      recordingState.outputPath = outputPath;
+      recordingState.audioMixEnabled = safeOptions.vehicleAudioEnabled !== false;
+      recordingState.audioEvents = [];
+      recordingState.outputPath = outputPath;
+      recordingState.audioMixEnabled = safeOptions.vehicleAudioEnabled !== false;
+      recordingState.audioEvents = [];
+      recordingState.offscreenWin = offscreenWin;
+      recordingState.ffmpegProcess = ffmpegProcess;
+      recordingState.startTime = Date.now();
+      recordingState.duration = null;
+      recordingState.progress = 0;
+      recordingState.elapsed = 0;
+      recordingState.remaining = null;
+
+      // 如果 FFmpeg 启动即失败/很快退出，及时回传错误并让前端停止录制态
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        let closed = false;
+        const cleanup = () => {
+          try { ffmpegProcess.removeListener('error', onErr); } catch (e) {}
+          try { ffmpegProcess.removeListener('close', onClose); } catch (e) {}
+          try { ffmpegProcess.removeListener('spawn', onSpawn); } catch (e) {}
+          try { if (timer) clearTimeout(timer); } catch (e) {}
+        };
+        const onErr = (err) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(err);
+        };
+        const onClose = (code) => {
+          closed = true;
+          if (settled) return;
+          // 200ms 内就退出，视为启动失败
+          if (code !== 0 && code !== null) {
+            settled = true;
+            cleanup();
+            reject(new Error(`FFmpeg 启动失败（退出码 ${code}）`));
+          }
+        };
+        const onSpawn = () => {
+          // 给一点时间让它不要“秒退”
+          setTimeout(() => {
+            if (settled) return;
+            if (closed) return;
+            settled = true;
+            cleanup();
+            resolve(true);
+          }, 200);
+        };
+        ffmpegProcess.once('error', onErr);
+        ffmpegProcess.once('close', onClose);
+        ffmpegProcess.once('spawn', onSpawn);
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(true);
+        }, 1200);
+      });
+
+      // 监控：是否成功抓到画面/是否写入过帧，避免“卡住不报错”
+      let framesWritten = 0;
+      let captureErrorCount = 0;
+      let lastStderrLine = '';
+      let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
+      let firstFrameWatchdog = setTimeout(() => {
+        try {
+          if (recordingState.isRecording && recordingState.ffmpegProcess === ffmpegProcess) {
+            if (framesWritten <= 0) {
+              stopRecording({
+                error: '录制启动后未捕获到画面（首帧超时）。开发环境下可能是显示端页面未渲染完成/加载失败，或 offscreen 抓帧不可用。'
+              });
+            }
+          }
+        } catch (e) {}
+      }, 4000);
+
+      // 启动抓帧定时器
+      const frameInterval = 1000 / (safeOptions.fps || 30);
+      recordingState.captureTimer = setInterval(async () => {
+        if (!recordingState.isRecording || !offscreenWin || offscreenWin.isDestroyed()) return;
+        
+        // 帧同步：如果前一个 capturePage 还在进行中，跳过本次帧，避免帧堆积导致花屏
+        if (isCapturing) {
+          console.warn('[main] 跳过帧：前一个 capturePage 尚未完成');
+          return;
+        }
+        
+        isCapturing = true;
+        const captureStartTime = Date.now();
+        
+        try {
+          // 添加超时机制：如果 capturePage 耗时过长（超过帧间隔的 1.5 倍），跳过该帧
+          const captureTimeout = frameInterval * 1.5;
+          const capturePromise = offscreenWin.webContents.capturePage();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('抓帧超时')), captureTimeout)
+          );
+          
+          const image = await Promise.race([capturePromise, timeoutPromise]);
+          const bitmap = image.toBitmap();
+          
+          if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+            ffmpegProcess.stdin.write(bitmap);
+            framesWritten += 1;
+            captureErrorCount = 0; // 成功时重置错误计数
+            if (firstFrameWatchdog) {
+              clearTimeout(firstFrameWatchdog);
+              firstFrameWatchdog = null;
+            }
+          } else {
+            stopRecording({ error: 'FFmpeg 输入流已关闭，无法写入视频帧' });
+          }
+          
+          // 记录抓帧耗时，如果过长则警告
+          const captureDuration = Date.now() - captureStartTime;
+          if (captureDuration > frameInterval) {
+            console.warn(`[main] 抓帧耗时 ${captureDuration}ms，超过帧间隔 ${frameInterval}ms`);
+          }
+        } catch (e) {
+          console.error('[main] 抓帧失败:', e);
+          captureErrorCount += 1;
+          // 连续失败直接报错，避免静默生成坏文件
+          if (captureErrorCount >= 5) {
+            stopRecording({ error: `抓帧失败（已连续 ${captureErrorCount} 次）：${String(e)}` });
+          }
+        } finally {
+          isCapturing = false;
+        }
+      }, frameInterval);
+
+      // 启动进度更新定时器（仅用于展示已录制时间；“下一步间隔进度”在渲染层计算）
+      recordingState.progressTimer = setInterval(() => {
+        if (!recordingState.isRecording) return;
+        const elapsed = (Date.now() - recordingState.startTime) / 1000;
+        recordingState.elapsed = elapsed;
+        // 发送进度更新事件
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('recording-progress', {
+            progress: null,
+            elapsed: recordingState.elapsed,
+            remaining: null,
+            duration: null
+          });
+        }
+      }, 1000);
+
+      // FFmpeg错误处理
+      ffmpegProcess.stderr.on('data', (data) => {
+        const s = data.toString();
+        console.log('[FFmpeg]', s);
+        // 记录最后一条 stderr（用于失败提示）
+        const lastLine = String(s || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+        if (lastLine) lastStderrLine = lastLine;
+        // 如果还没写入过任何帧就出现明显错误，直接停止并上报
+        if (framesWritten <= 0 && /unknown encoder|invalid|error|could not|failed/i.test(s)) {
+          stopRecording({ error: `FFmpeg 错误：${lastLine || s.trim()}` });
+        }
+      });
+
+      ffmpegProcess.on('error', (err) => {
+        console.error('[main] FFmpeg进程错误:', err);
+        stopRecording({ error: String(err) });
+      });
+
+      ffmpegProcess.on('close', (code) => {
+        console.log(`[main] FFmpeg进程退出，代码: ${code}`);
+        if (code !== 0 && code !== null) {
+          console.error('[main] FFmpeg编码失败');
+          const extra = lastStderrLine ? `：${lastStderrLine}` : '';
+          stopRecording({ error: `FFmpeg 编码失败（退出码 ${code}）${extra}` });
+          return;
+        }
+        stopRecording({ completed: true });
+      });
+
+      return { ok: true, outputPath };
+    } catch (e) {
+      console.error('[main] 开始录制失败:', e);
+      stopRecording({ error: String(e) });
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  // 停止录制
+  async function stopRecording({ error = null, completed = false } = {}) {
+  async function stopRecording({ error = null, completed = false } = {}) {
+    if (!recordingState.isRecording) return;
+
+    // 清除所有定时器
+    if (recordingState.captureTimer) {
+      clearInterval(recordingState.captureTimer);
+      recordingState.captureTimer = null;
+    }
+    if (recordingState.progressTimer) {
+      clearInterval(recordingState.progressTimer);
+      recordingState.progressTimer = null;
+    }
+    if (recordingState.durationTimer) {
+      clearTimeout(recordingState.durationTimer);
+      recordingState.durationTimer = null;
+    }
+
+    // 关闭FFmpeg stdin
+    if (recordingState.ffmpegProcess && recordingState.ffmpegProcess.stdin) {
+      recordingState.ffmpegProcess.stdin.end();
+    }
+
+    // 销毁离屏窗口
+    if (recordingState.offscreenWin && !recordingState.offscreenWin.isDestroyed()) {
+      recordingState.offscreenWin.destroy();
+    }
+
+    // 清理状态
+    const wasRecording = recordingState.isRecording;
+    const lastElapsed = recordingState.elapsed;
+    const outputPath = recordingState.outputPath;
+    const audioMixEnabled = recordingState.audioMixEnabled === true;
+    const audioEvents = Array.isArray(recordingState.audioEvents) ? [...recordingState.audioEvents] : [];
+    let finalError = error ? String(error) : null;
+
+    recordingState.isRecording = false;
+    recordingState.displayId = null;
+    recordingState.options = null;
+    recordingState.outputPath = null;
+    recordingState.audioMixEnabled = false;
+    recordingState.audioEvents = [];
+    recordingState.offscreenWin = null;
+    recordingState.ffmpegProcess = null;
+    recordingState.startTime = null;
+    recordingState.duration = null;
+    recordingState.progress = 0;
+    recordingState.elapsed = 0;
+    recordingState.remaining = null;
+
+    if (!finalError && completed && audioMixEnabled && outputPath && audioEvents.length > 0) {
+      try {
+        const muxResult = await muxStationAudioTimelineToVideo({ inputVideoPath: outputPath, audioEvents });
+        if (!muxResult?.ok) {
+          finalError = `视频录制完成，但音轨封装失败：${String(muxResult?.error || '未知错误')}`;
+          console.warn('[main] 录制音轨封装失败:', muxResult?.error || '未知错误');
+        }
+      } catch (e) {
+        finalError = `视频录制完成，但音轨封装失败：${String(e)}`;
+        console.warn('[main] 录制音轨封装异常:', e);
+      }
+    }
+
+    // 发送停止/错误事件（让前端退出录制态；仅完成时发送 100%）
+    if (wasRecording && mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('recording-progress', {
+        isRecording: false,
+        completed: !!completed,
+        error: finalError,
+        progress: completed ? 100 : null,
+        elapsed: lastElapsed,
+        remaining: completed ? 0 : null,
+        duration: recordingState.duration,
+        outputPath: outputPath || null
+      });
+    }
+  }
+
+  ipcMain.handle('recording/stop', async () => {
+    await stopRecording({ completed: true });
+    return { ok: true };
+  });
+
+  ipcMain.handle('recording/add-audio-event', async (event, payload) => {
+    try {
+      if (!recordingState.isRecording || !recordingState.audioMixEnabled) {
+        return { ok: true, ignored: true };
+      }
+      const normalized = normalizeRecordingAudioEvent(payload);
+      if (!normalized) return { ok: false, error: '无效音频事件' };
+      if (!Array.isArray(recordingState.audioEvents)) recordingState.audioEvents = [];
+      recordingState.audioEvents.push(normalized);
+      if (recordingState.audioEvents.length > 1024) {
+        recordingState.audioEvents = recordingState.audioEvents.slice(-1024);
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('recording/status', async () => {
+    return {
+      ok: true,
+      isRecording: recordingState.isRecording,
+      progress: recordingState.progress,
+      elapsed: recordingState.elapsed,
+      remaining: recordingState.remaining,
+      duration: recordingState.duration
+    };
+  });
+
+  // ========== 并行/分段离屏录制 ==========
+  function clampInt(n, min, max, fallback) {
+    const v = parseInt(n, 10);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function normalizeBitrateToFfmpeg(bitrate) {
+    if (bitrate === undefined || bitrate === null || bitrate === '') return null;
+    if (typeof bitrate === 'number' && Number.isFinite(bitrate)) {
+      const mbps = Math.max(0.1, bitrate);
+      return `${mbps}M`;
+    }
+    const s = String(bitrate).trim();
+    if (!s) return null;
+    if (/[kKmMgG]$/.test(s) || /bps$/i.test(s)) return s;
+    if (/^\d+(\.\d+)?$/.test(s)) return `${s}M`;
+    return s;
+  }
+
+  // 打开视频输出文件夹（用于“打开文件夹”按钮）
+  ipcMain.handle('recording/open-output-folder', async () => {
+    try {
+      const videosDir = app.getPath('videos');
+      const outputDir = path.join(videosDir, 'Metro-PIDS-Videos');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      const r = await shell.openPath(outputDir);
+      if (r && r.length) return { ok: false, error: r };
+      return { ok: true, path: outputDir };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  function resolveContainerAndMuxer(options) {
+    const container = String(options.container || '').toLowerCase() || null;
+    const containerNormalized = (container === 'mp4' || container === 'avi' || container === 'mov' || container === 'wmv' || container === 'mkv' || container === 'webm')
+      ? container
+      : null;
+    const finalContainer = containerNormalized || (options.codec === 'vp9' ? 'webm' : 'mp4');
+
+    if (options.codec === 'vp9' && finalContainer !== 'webm' && finalContainer !== 'mkv') {
+      return { ok: false, error: 'VP9 编码建议使用 WEBM（或 MKV）封装，请调整输出格式' };
+    }
+    if (finalContainer === 'webm' && options.codec !== 'vp9') {
+      return { ok: false, error: 'WEBM 封装通常搭配 VP9 编码，请选择 VP9 或改用 MP4/MKV/MOV 等格式' };
+    }
+
+    const muxer = (
+      finalContainer === 'mp4' ? 'mp4'
+        : finalContainer === 'mov' ? 'mov'
+          : finalContainer === 'avi' ? 'avi'
+            : finalContainer === 'mkv' ? 'matroska'
+              : finalContainer === 'webm' ? 'webm'
+                : finalContainer === 'wmv' ? 'asf'
+                  : finalContainer
+    );
+    return { ok: true, container: finalContainer, muxer };
+  }
+
+  function resolveVideoEncoder(options) {
+    const wantGpu = options.encoder === 'gpu';
+    if (options.codec === 'vp9') return { ok: true, encoder: 'libvpx-vp9' };
+    if (wantGpu) {
+      if (!recordingEncoders || !Array.isArray(recordingEncoders.gpu) || recordingEncoders.gpu.length === 0) {
+        return { ok: false, error: '未检测到可用的 GPU 编码器，请选择 CPU 编码或先刷新编码器列表' };
+      }
+      const gpuType = recordingEncoders.gpu[0];
+      if (gpuType === 'nvenc') return { ok: true, encoder: options.codec === 'h265' ? 'hevc_nvenc' : 'h264_nvenc' };
+      if (gpuType === 'amf') return { ok: true, encoder: options.codec === 'h265' ? 'hevc_amf' : 'h264_amf' };
+      if (gpuType === 'qsv') return { ok: true, encoder: options.codec === 'h265' ? 'hevc_qsv' : 'h264_qsv' };
+      // 未知类型，退回 CPU
+    }
+    return { ok: true, encoder: options.codec === 'h265' ? 'libx265' : 'libx264' };
+  }
+
+  async function resolveDisplayConfig(displayId) {
+    const settings = store ? store.get('settings', {}) : {};
+    let displays = settings.display?.displays || {};
+    if (!displays || Object.keys(displays).length === 0 || !displays[displayId]) {
+      try {
+        const configPath = path.join(__dirname, 'displays', 'config.json');
+        if (fs.existsSync(configPath)) {
+          const configContent = fs.readFileSync(configPath, 'utf-8');
+          const config = JSON.parse(configContent);
+          if (config.displays && config.displays[displayId]) {
+            displays[displayId] = config.displays[displayId];
+          }
+        }
+      } catch (e) {
+        console.warn('[main] 读取默认显示端配置失败:', e);
+      }
+    }
+
+    let displayConfig = displays[displayId];
+    if (!displayConfig) {
+      const defaultConfigs = {
+        'display-1': { width: 1900, height: 600, source: 'builtin', url: '', name: '主显示器' },
+        'display-2': { width: 1900, height: 600, source: 'builtin', url: '', name: '副显示器' },
+        'display-3': { width: 1900, height: 600, source: 'builtin', url: '', name: '北京地铁LCD' }
+      };
+      if (defaultConfigs[displayId]) displayConfig = defaultConfigs[displayId];
+    }
+    return displayConfig || null;
+  }
+
+  function resolveDisplayUrl(displayId, displayConfig) {
+    if (!displayConfig) return null;
+    let dispPath;
+    if (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') {
+      dispPath = displayConfig.url;
+    } else if (displayConfig.source === 'builtin' && displayConfig.url) {
+      let customFilePath = String(displayConfig.url || '').trim();
+      let resolvedPath = path.isAbsolute(customFilePath)
+        ? customFilePath
+        : (app.isPackaged ? path.join(app.getAppPath(), customFilePath) : path.join(__dirname, '..', customFilePath));
+      resolvedPath = path.normalize(resolvedPath);
+      if (fs.existsSync(resolvedPath)) {
+        dispPath = process.platform === 'win32'
+          ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+          : `file://${resolvedPath}`;
+      } else {
+        dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+      }
+    } else {
+      if (displayId === 'display-1') dispPath = getRendererUrl('displays/display-1/display_window.html');
+      else dispPath = getRendererUrl(`displays/${displayId}/display_window.html`);
+    }
+    return dispPath;
+  }
+
+  function broadcastParallelProgress(extra = {}) {
+    if (!mainWin || mainWin.isDestroyed()) return;
+    const now = Date.now();
+    const elapsed = parallelRecordingState.startTime ? (now - parallelRecordingState.startTime) / 1000 : 0;
+    const total = parallelRecordingState.totalDuration || 0;
+    const completedDur = parallelRecordingState.segments
+      .filter(s => s.status === 'done')
+      .reduce((sum, s) => sum + (s.durationSec || 0), 0);
+    const runningDur = Array.from(parallelRecordingState.running.values())
+      .reduce((sum, r) => sum + (r && r.startTs ? Math.max(0, (now - r.startTs) / 1000) : 0), 0);
+    const overall = total > 0 ? Math.min(100, Math.max(0, ((completedDur + runningDur) / total) * 100)) : 0;
+
+    mainWin.webContents.send('recording-progress', {
+      mode: 'parallel',
+      isRecording: parallelRecordingState.isRecording,
+      progress: overall,
+      elapsed,
+      duration: total,
+      segments: parallelRecordingState.segments.map(s => ({
+        index: s.index,
+        status: s.status,
+        error: s.error || null
+      })),
+      ...extra
+    });
+  }
+
+  async function stopParallelRecording({ error = null, completed = false } = {}) {
+    if (!parallelRecordingState.isRecording) return;
+    parallelRecordingState.abort = true;
+
+    // 停止所有正在运行的段
+    for (const [idx, r] of parallelRecordingState.running.entries()) {
+      try { if (r.captureTimer) clearInterval(r.captureTimer); } catch (e) {}
+      try { if (r.stepTimer) clearInterval(r.stepTimer); } catch (e) {}
+      try { if (r.ffmpegProcess && r.ffmpegProcess.stdin) r.ffmpegProcess.stdin.end(); } catch (e) {}
+      try { if (r.offscreenWin && !r.offscreenWin.isDestroyed()) r.offscreenWin.destroy(); } catch (e) {}
+      parallelRecordingState.running.delete(idx);
+    }
+
+    const was = parallelRecordingState.isRecording;
+    parallelRecordingState.isRecording = false;
+    const finalPath = parallelRecordingState.finalOutputPath;
+
+    if (was && mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('recording-progress', {
+        mode: 'parallel',
+        isRecording: false,
+        completed: !!completed,
+        error: error ? String(error) : null,
+        outputPath: completed ? finalPath : null
+      });
+    }
+  }
+
+  function computeRtFromStep({ startIdx, stepDir, startStep }) {
+    const seg = Math.floor(startStep / 2);
+    const state = (startStep % 2 === 0) ? 0 : 1;
+    const idx = startIdx + seg * stepDir;
+    return { idx, state };
+  }
+
+  async function runSegmentRecording({ displayId, displayConfig, dispUrl, width, height, segment, appData, startRt, stepDir, intervalSec, options, encoder, muxer, container }) {
+    const segmentIndex = segment.index;
+    const partition = `recseg_${Date.now()}_${Math.random().toString(16).slice(2)}_${segmentIndex}`;
+
+    const offscreenWin = new BrowserWindow({
+      width,
+      height,
+      show: false,
+      webPreferences: {
+        offscreen: true,
+        preload: getPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false,
+        partition
+      }
+    });
+
+    await new Promise((resolve) => {
+      offscreenWin.webContents.once('did-finish-load', resolve);
+      offscreenWin.loadURL(dispUrl);
+    });
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 在该 partition 内独立驱动 displayWindowLogic：发送 SYNC，并按 intervalSec 推进 steps
+    const inject = `
+      (function() {
+        try {
+          const bc = new BroadcastChannel('metro_pids_v3');
+          const appData = ${JSON.stringify(appData)};
+          let rt = ${JSON.stringify(startRt)};
+          const stepDir = ${JSON.stringify(stepDir)};
+          const totalSteps = ${JSON.stringify(segment.steps)};
+          const intervalSec = ${JSON.stringify(intervalSec)};
+          let stepCount = 0;
+
+          function post() { try { bc.postMessage({ t: 'SYNC', d: appData, r: rt }); } catch(e) {} }
+          post();
+
+          const timer = setInterval(() => {
+            stepCount += 1;
+            if (stepCount > totalSteps) {
+              clearInterval(timer);
+              try { bc.close(); } catch(e) {}
+              return;
+            }
+            if (rt.state === 0) {
+              rt = { idx: rt.idx, state: 1 };
+            } else {
+              rt = { idx: rt.idx + stepDir, state: 0 };
+            }
+            post();
+          }, Math.max(1, intervalSec) * 1000);
+
+          window.__metroPidsSegmentStop = function() {
+            try { clearInterval(timer); } catch(e) {}
+            try { bc.close(); } catch(e) {}
+          };
+          return true;
+        } catch (e) {
+          return String(e);
+        }
+      })();
+    `;
+    const injected = await offscreenWin.webContents.executeJavaScript(inject);
+    if (injected !== true) {
+      try { offscreenWin.destroy(); } catch (e) {}
+      throw new Error(`片段初始化失败: ${String(injected)}`);
+    }
+
+    const outputPath = segment.outputPath;
+    const safeFps = clampInt(options.fps || 30, 1, 240, 30);
+    const bitrate = normalizeBitrateToFfmpeg(options.bitrate) || '2M';
+
+    const ffmpegArgs = [
+      '-f', 'rawvideo',
+      '-vcodec', 'rawvideo',
+      '-pix_fmt', 'bgra',
+      '-s', `${width}x${height}`,
+      '-r', String(safeFps),
+      '-i', 'pipe:0',
+      '-c:v', encoder,
+      '-b:v', bitrate,
+      '-pix_fmt', 'yuv420p',
+      ...(container === 'mp4' ? ['-movflags', '+faststart'] : []),
+      '-f', muxer,
+      outputPath
+    ];
+
+    const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let framesWritten = 0;
+    let captureErrorCount = 0;
+    let lastStderrLine = '';
+    let closedCode = null;
+    let isCapturing = false; // 帧同步标志：防止异步操作导致的帧重叠或丢失，避免花屏
+
+    const startTs = Date.now();
+    const recordObj = { offscreenWin, ffmpegProcess, captureTimer: null, stepTimer: null, startTs, framesWritten: 0, lastStderrLine: '' };
+    parallelRecordingState.running.set(segmentIndex, recordObj);
+
+    const firstFrameWatchdog = setTimeout(() => {
+      try {
+        const r = parallelRecordingState.running.get(segmentIndex);
+        if (r && r.framesWritten <= 0 && parallelRecordingState.isRecording && !parallelRecordingState.abort) {
+          stopParallelRecording({ error: `片段 #${segmentIndex} 首帧超时，未捕获到画面` });
+        }
+      } catch (e) {}
+    }, 4000);
+
+    ffmpegProcess.stderr.on('data', (data) => {
+      const s = data.toString();
+      const lastLine = String(s || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+      if (lastLine) lastStderrLine = lastLine;
+      const r = parallelRecordingState.running.get(segmentIndex);
+      if (r) r.lastStderrLine = lastStderrLine;
+      if (framesWritten <= 0 && /unknown encoder|invalid|error|could not|failed/i.test(s)) {
+        stopParallelRecording({ error: `片段 #${segmentIndex} FFmpeg 错误：${lastLine || s.trim()}` });
+      }
+    });
+
+    ffmpegProcess.on('error', (err) => {
+      stopParallelRecording({ error: `片段 #${segmentIndex} FFmpeg 进程错误：${String(err)}` });
+    });
+
+    ffmpegProcess.on('close', (code) => {
+      closedCode = code;
+    });
+
+    // 抓帧：按帧数而不是墙钟时间来控制片段时长，避免并行时因性能不足导致视频整体“快进”
+    const frameInterval = 1000 / safeFps;
+    const targetFrames = Math.max(1, Math.round(safeFps * (segment.durationSec || 0.1)));
+    recordObj.captureTimer = setInterval(async () => {
+      if (parallelRecordingState.abort || !parallelRecordingState.isRecording) return;
+      if (!offscreenWin || offscreenWin.isDestroyed()) return;
+      
+      // 帧同步：如果前一个 capturePage 还在进行中，跳过本次帧，避免帧堆积导致花屏
+      if (isCapturing) {
+        console.warn(`[main] 片段 #${segmentIndex} 跳过帧：前一个 capturePage 尚未完成`);
+        return;
+      }
+      
+      isCapturing = true;
+      const captureStartTime = Date.now();
+      
+      try {
+        // 添加超时机制：如果 capturePage 耗时过长（超过帧间隔的 1.5 倍），跳过该帧
+        const captureTimeout = frameInterval * 1.5;
+        const capturePromise = offscreenWin.webContents.capturePage();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('抓帧超时')), captureTimeout)
+        );
+        
+        const image = await Promise.race([capturePromise, timeoutPromise]);
+        const bitmap = image.toBitmap();
+        
+        if (ffmpegProcess.stdin && !ffmpegProcess.stdin.destroyed) {
+          ffmpegProcess.stdin.write(bitmap);
+          framesWritten += 1;
+          recordObj.framesWritten = framesWritten;
+          captureErrorCount = 0; // 成功时重置错误计数
+          if (framesWritten === 1) {
+            try { clearTimeout(firstFrameWatchdog); } catch (e) {}
+          }
+          
+          // 记录抓帧耗时，如果过长则警告
+          const captureDuration = Date.now() - captureStartTime;
+          if (captureDuration > frameInterval) {
+            console.warn(`[main] 片段 #${segmentIndex} 抓帧耗时 ${captureDuration}ms，超过帧间隔 ${frameInterval}ms`);
+          }
+        } else {
+          // FFmpeg 已正常或提前结束，输入流被关闭。
+          // 此时不再将其视为致命错误，而是停止该段的抓帧，后续由等待 FFmpeg 退出的逻辑判断是否成功。
+          try { if (recordObj.captureTimer) clearInterval(recordObj.captureTimer); } catch (e) {}
+          recordObj.captureTimer = null;
+          return;
+        }
+      } catch (e) {
+        captureErrorCount += 1;
+        if (captureErrorCount >= 5) {
+          stopParallelRecording({ error: `片段 #${segmentIndex} 抓帧失败（连续 ${captureErrorCount} 次）：${String(e)}` });
+        }
+      } finally {
+        isCapturing = false;
+      }
+    }, frameInterval);
+
+    // 进度上报定时器（轻量：每秒）
+    recordObj.stepTimer = setInterval(() => {
+      if (!parallelRecordingState.isRecording) return;
+      broadcastParallelProgress();
+    }, 1000);
+
+    // 等待该段达到目标帧数或被中止
+    await new Promise((resolve) => {
+      const checkDone = () => {
+        if (parallelRecordingState.abort || !parallelRecordingState.isRecording) {
+          return resolve();
+        }
+        if (framesWritten >= targetFrames || !recordObj.captureTimer) {
+          return resolve();
+        }
+        setTimeout(checkDone, 200);
+      };
+      checkDone();
+    });
+
+    // 清理段内驱动器
+    try {
+      await offscreenWin.webContents.executeJavaScript(`(function(){ try{ if(window.__metroPidsSegmentStop) window.__metroPidsSegmentStop(); }catch(e){} })();`);
+    } catch (e) {}
+
+    // 结束本段录制
+    try { if (recordObj.captureTimer) clearInterval(recordObj.captureTimer); } catch (e) {}
+    try { if (recordObj.stepTimer) clearInterval(recordObj.stepTimer); } catch (e) {}
+    try { if (ffmpegProcess.stdin) ffmpegProcess.stdin.end(); } catch (e) {}
+
+    // 等待 FFmpeg 退出（最多 10 秒）
+    await new Promise((resolve, reject) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error(`片段 #${segmentIndex} FFmpeg 结束超时`));
+      }, 10000);
+      ffmpegProcess.once('close', (code) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (code !== 0 && code !== null) {
+          reject(new Error(`片段 #${segmentIndex} FFmpeg 编码失败（退出码 ${code}）${lastStderrLine ? `：${lastStderrLine}` : ''}`));
+          return;
+        }
+        resolve(true);
+      });
+    });
+
+    try { if (firstFrameWatchdog) clearTimeout(firstFrameWatchdog); } catch (e) {}
+    try { if (offscreenWin && !offscreenWin.isDestroyed()) offscreenWin.destroy(); } catch (e) {}
+    parallelRecordingState.running.delete(segmentIndex);
+    return true;
+  }
+
+  async function concatSegmentsFFmpeg({ container, segmentPaths, outputPath, tempDir }) {
+    const listPath = path.join(tempDir, 'concat.txt');
+    const lines = segmentPaths.map(p => `file '${String(p).replace(/'/g, `'\\''`)}'`).join('\n') + '\n';
+    fs.writeFileSync(listPath, lines, 'utf-8');
+
+    // 优先 -c copy 快速拼接
+    const args = ['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath];
+    await new Promise((resolve, reject) => {
+      const p = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let errOut = '';
+      p.stderr.on('data', (d) => { errOut += d.toString(); });
+      p.on('error', (e) => reject(e));
+      p.on('close', (code) => {
+        if (code === 0 || code === null) return resolve(true);
+        const lastLine = String(errOut || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+        reject(new Error(`拼接失败（退出码 ${code}）${lastLine ? `：${lastLine}` : ''}`));
+      });
+    });
+    return true;
+  }
+
+  ipcMain.handle('recording/start-parallel', async (event, displayId, options) => {
+    if (!ffmpegPath) return { ok: false, error: 'FFmpeg未安装' };
+    if (recordingState.isRecording || parallelRecordingState.isRecording) return { ok: false, error: '录制已在进行中' };
+
+    try {
+      const safeOptions = options && typeof options === 'object' ? { ...options } : {};
+      const appData = safeOptions.appData;
+      if (!appData || typeof appData !== 'object') return { ok: false, error: '缺少 appData，无法进行并行分段录制' };
+
+      const intervalSec = Math.max(1, clampInt(safeOptions.intervalSec || 8, 1, 60, 8));
+      const totalSteps = clampInt(safeOptions.totalSteps, 1, 200000, null);
+      if (!totalSteps) return { ok: false, error: '缺少 totalSteps，无法进行并行分段录制' };
+
+      const stepsPerSegment = clampInt(safeOptions.stepsPerSegment || 20, 1, 5000, 20);
+      let parallelism = clampInt(safeOptions.parallelism || 2, 1, 4, 2);
+
+      const stepDir = clampInt(safeOptions.stepDir || 1, -1, 1, 1) || 1;
+      const startIdx = clampInt(safeOptions.startIdx, -100000, 100000, 0);
+
+      // 编码器/封装解析
+      const contRes = resolveContainerAndMuxer(safeOptions);
+      if (!contRes.ok) return { ok: false, error: contRes.error };
+      const encRes = resolveVideoEncoder(safeOptions);
+      if (!encRes.ok) return { ok: false, error: encRes.error };
+
+      // 部分硬件编码器（如 NVENC / QSV / AMF）对并行编码进程数量有限制，
+      // 如果检测到是硬件编码器，则自动降低最大并行度，避免频繁出现输入流被 FFmpeg 主动关闭的问题。
+      if (encRes.encoder && /nvenc|qsv|amf/i.test(String(encRes.encoder))) {
+        parallelism = Math.min(parallelism, 2);
+      }
+
+      const displayConfig = await resolveDisplayConfig(displayId);
+      if (!displayConfig) return { ok: false, error: `显示端 ${displayId} 不存在` };
+      const dispUrl = resolveDisplayUrl(displayId, displayConfig);
+      if (!dispUrl) return { ok: false, error: '无法解析显示端 URL' };
+
+      const width = displayConfig.width || 1900;
+      const height = displayConfig.height || 600;
+
+      const videosDir = app.getPath('videos');
+      const outputDir = path.join(videosDir, 'Metro-PIDS-Videos');
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const finalOutputPath = path.join(outputDir, `MetroPIDS_${timestamp}.${contRes.container}`);
+
+      const tmpBase = path.join(app.getPath('temp'), 'Metro-PIDS-VideoSegments');
+      if (!fs.existsSync(tmpBase)) fs.mkdirSync(tmpBase, { recursive: true });
+      const tempDir = path.join(tmpBase, `seg_${timestamp}_${Math.random().toString(16).slice(2)}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+
+      const segmentCount = Math.ceil(totalSteps / stepsPerSegment);
+      const segments = [];
+      for (let i = 0; i < segmentCount; i++) {
+        const startStep = i * stepsPerSegment;
+        const steps = Math.min(stepsPerSegment, totalSteps - startStep);
+        const durationSec = steps * intervalSec;
+        const segPath = path.join(tempDir, `segment_${String(i).padStart(3, '0')}.${contRes.container}`);
+        segments.push({
+          index: i,
+          startStep,
+          steps,
+          durationSec,
+          outputPath: segPath,
+          status: 'pending',
+          error: null
+        });
+      }
+
+      parallelRecordingState.isRecording = true;
+      parallelRecordingState.displayId = displayId;
+      parallelRecordingState.options = safeOptions;
+      parallelRecordingState.abort = false;
+      parallelRecordingState.tempDir = tempDir;
+      parallelRecordingState.finalOutputPath = finalOutputPath;
+      parallelRecordingState.segments = segments;
+      parallelRecordingState.running = new Map();
+      parallelRecordingState.startTime = Date.now();
+      parallelRecordingState.totalDuration = totalSteps * intervalSec;
+
+      // 初始化阶段：准备分段
+      broadcastParallelProgress({ stage: 'segments-start' });
+
+      // 后台执行调度
+      (async () => {
+        try {
+          let nextIndex = 0;
+          const workers = new Array(parallelism).fill(0).map(async () => {
+            while (!parallelRecordingState.abort) {
+              const seg = parallelRecordingState.segments[nextIndex];
+              if (!seg) return;
+              nextIndex += 1;
+
+              seg.status = 'running';
+              // 分段正式开始录制
+              broadcastParallelProgress({ stage: 'segments-running' });
+              const startRt = computeRtFromStep({ startIdx, stepDir, startStep: seg.startStep });
+
+              try {
+                await runSegmentRecording({
+                  displayId,
+                  displayConfig,
+                  dispUrl,
+                  width,
+                  height,
+                  segment: seg,
+                  appData,
+                  startRt,
+                  stepDir,
+                  intervalSec,
+                  options: safeOptions,
+                  encoder: encRes.encoder,
+                  muxer: contRes.muxer,
+                  container: contRes.container
+                });
+                seg.status = 'done';
+                broadcastParallelProgress();
+              } catch (e) {
+                seg.status = 'error';
+                seg.error = String(e);
+                broadcastParallelProgress();
+                throw e;
+              }
+            }
+          });
+
+          await Promise.all(workers);
+          if (parallelRecordingState.abort) return;
+
+          // 所有分段录制完成，准备拼接
+          broadcastParallelProgress({ stage: 'segments-done' });
+
+          broadcastParallelProgress({ stage: 'concat-start' });
+          const paths = parallelRecordingState.segments.map(s => s.outputPath);
+          await concatSegmentsFFmpeg({
+            container: contRes.container,
+            segmentPaths: paths,
+            outputPath: finalOutputPath,
+            tempDir
+          });
+
+          await stopParallelRecording({ completed: true });
+        } catch (err) {
+          await stopParallelRecording({ error: String(err) });
+        }
+      })();
+
+      return { ok: true, outputPath: finalOutputPath, tempDir, segmentCount };
+    } catch (e) {
+      await stopParallelRecording({ error: String(e) });
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('recording/stop-parallel', async () => {
+    await stopParallelRecording({ completed: false, error: '用户停止' });
+    return { ok: true };
+  });
+
+  ipcMain.handle('recording/status-parallel', async () => {
+    return {
+      ok: true,
+      isRecording: parallelRecordingState.isRecording,
+      outputPath: parallelRecordingState.finalOutputPath,
+      tempDir: parallelRecordingState.tempDir,
+      totalDuration: parallelRecordingState.totalDuration,
+      segments: parallelRecordingState.segments
+    };
+  });
+
+  // 文件选择对话框
+  ipcMain.handle('dialog/showOpenDialog', async (event, options) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (!win) return { canceled: true };
+    try {
+      const result = await dialog.showOpenDialog(win, {
+        ...options,
+        properties: options.properties || ['openFile']
+      });
+      return result;
+    } catch (e) {
+      console.error('[main] showOpenDialog error:', e);
+      return { canceled: true, error: String(e) };
+    }
+  });
+
+  ipcMain.removeHandler('effects/dialog-blur');
+  ipcMain.handle('effects/dialog-blur', (event, enable) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (!win) return { ok: false, error: 'no-window' };
+    try {
+      if (typeof win.setVisualEffectState === 'function') {
+        win.setVisualEffectState(enable ? 'active' : 'inactive');
+      }
+      if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+        win.setVibrancy(enable ? 'fullscreen-ui' : 'none');
+      }
+      if (process.platform === 'win32' && typeof win.setBackgroundMaterial === 'function') {
+        win.setBackgroundMaterial(enable ? 'acrylic' : 'none');
+      }
+      return { ok: true };
+    } catch (err) {
+      console.warn('failed to toggle dialog blur', err);
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // 获取设备地理位置（使用操作系统原生 API / IP 定位）
+  ipcMain.removeHandler('system/get-geolocation');
+  ipcMain.handle('system/get-geolocation', async () => {
+    try {
+      // 使用免费的 IP 定位服务（ipapi.co）
+      // 这个服务不需要用户授权，通过 IP 地址获取大致位置
+      const https = require('https');
+      const http = require('http');
+      
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('获取地理位置超时'));
+        }, 8000); // 8秒超时
+        
+        const req = https.get('https://ipapi.co/json/', {
+          headers: {
+            'User-Agent': 'Metro-PIDS/1.0'
+          },
+          timeout: 8000
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            clearTimeout(timeout);
+            try {
+              const json = JSON.parse(data);
+              if (json.error) {
+                reject(new Error(json.reason || '获取地理位置失败'));
+                return;
+              }
+              
+              // 提取国家代码（ISO 3166-1 alpha-2）
+              const country = json.country_code ? json.country_code.toUpperCase() : null;
+              const city = json.city || null;
+              const latitude = json.latitude ? parseFloat(json.latitude) : null;
+              const longitude = json.longitude ? parseFloat(json.longitude) : null;
+              
+              console.log('[main] ✅ 通过 IP 定位获取地理位置成功:', {
+                country,
+                city,
+                latitude: latitude ? latitude.toFixed(4) : null,
+                longitude: longitude ? longitude.toFixed(4) : null
+              });
+              
+              resolve({ country, city, latitude, longitude });
+            } catch (parseError) {
+              reject(new Error('解析地理位置数据失败'));
+            }
+          });
+        });
+        
+        req.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+        
+        req.on('timeout', () => {
+          req.destroy();
+          clearTimeout(timeout);
+          reject(new Error('获取地理位置超时'));
+        });
+      });
+    } catch (error) {
+      console.warn('[main] ⚠️ 获取地理位置失败:', error.message);
+      return { country: null, city: null, latitude: null, longitude: null };
+    }
+  });
+
+  // 主窗口模糊开关（通过 mica-electron 控制，而非 CSS）
+  ipcMain.removeHandler('effects/main-blur');
+  ipcMain.handle('effects/main-blur', (event, enable) => {
+    MAIN_BLUR_ENABLED = !!enable;
+
+    const windows = [mainWin, lineManagerWin].filter((win) => win && !win.isDestroyed());
+    if (!windows.length) return { ok: false, error: 'no-window' };
+
+    try {
+      const themeMode = getStoredThemeMode();
+      for (const win of windows) {
+        applyNativeBlurStateToWindow(win, MAIN_BLUR_ENABLED, themeMode);
+      }
+
+      return { ok: true };
+    } catch (err) {
+      console.warn('[effects/main-blur] toggle failed:', err);
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // 广播最大化/还原事件供渲染层更新 UI
+  mainWin.on('maximize', () => {
+    try { mainWin.webContents.send('window/maxstate', true); } catch (e) {}
+  });
+  mainWin.on('unmaximize', () => {
+    try { mainWin.webContents.send('window/maxstate', false); } catch (e) {}
+  });
+
+  // 创建 BrowserView 复合布局（若 ready-to-show 已触发则立即执行）
+  const initMainBrowserViews = () => {
+    try { mainWin.webContents.send('window/maxstate', mainWin.isMaximized()); } catch (e) {}
+
+    // 延迟一小段时间确保主窗口内容已加载，然后创建 BrowserView 复合布局
+    // 关键问题：BrowserView 覆盖整个窗口时会拦截所有事件，即使设置了 pointer-events: none
+    // 解决方案：创建两个独立的 BrowserView，分别覆盖顶部栏和侧边栏区域
+    // 这样内容区域就不会被 BrowserView 覆盖，可以正常交互
+    setTimeout(() => {
+      const bounds = mainWin.getBounds();
+      const titleBarHeight = 32;
+      const sidebarWidth = 60;
+      const sidebarUrl = getRendererUrl('sidebar.html');
+      
+      console.log('[MainWindow] 📦 准备创建顶部栏+侧边栏 BrowserView（合并为一个 L 形 BrowserView）...');
+      console.log('[MainWindow] 📦 侧边栏 URL:', sidebarUrl);
+      
+      // 创建两个独立的 BrowserView：顶部栏和侧边栏
+      // 这样内容区域（从 x=60, y=32 开始）不会被 BrowserView 覆盖，可以正常接收鼠标和键盘事件
+      const topbarUrl = getRendererUrl('topbar.html');
+      const sidebarUrlForView = getRendererUrl('sidebar.html');
+      
+      console.log('[MainWindow] 📦 准备创建顶部栏和侧边栏 BrowserView...');
+      console.log('[MainWindow] 📦 顶部栏 URL:', topbarUrl);
+      console.log('[MainWindow] 📦 侧边栏 URL:', sidebarUrl);
+      
+      // 1. 顶部栏 BrowserView：覆盖整个宽度，高度 32px
+      const topbarView = createBrowserView('topbar', topbarUrl, {
+        x: 0,
+        y: 0,
+        width: 1, // 整个宽度
+        height: 32 / bounds.height // 高度 32px
+      });
+      
+      // 2. 侧边栏 BrowserView：覆盖左侧 60px，从顶部栏下方开始到窗口底部
+      const sidebarView = createBrowserView('sidebar', sidebarUrl, {
+        x: 0,
+        y: 32 / bounds.height, // 从顶部栏下方开始
+        width: sidebarWidth / bounds.width, // 宽度 60px
+        height: (bounds.height - 32) / bounds.height // 剩余高度
+      });
+      
+      if (!topbarView || !sidebarView) {
+        console.error('[MainWindow] ❌ 创建 BrowserView 失败');
+        return;
+      }
+      
+      console.log('[MainWindow] ✅ 顶部栏和侧边栏 BrowserView 创建成功');
+      
+      // 确保顶部栏 BrowserView 在最顶层
+      if (topbarView) {
+        try {
+          if (typeof mainWin.setTopBrowserView === 'function') {
+            mainWin.setTopBrowserView(topbarView);
+            console.log('[MainWindow] ✅ 顶部栏 BrowserView 已设置为最顶层');
+          }
+        } catch (e) {
+          console.warn('[MainWindow] ⚠️ 设置顶部栏层级失败:', e);
+        }
+      }
+      
+      // 监听加载完成
+      if (topbarView && topbarView.webContents) {
+        topbarView.webContents.once('did-finish-load', () => {
+          console.log('[BrowserView:topbar] ✅ 顶部栏页面加载完成');
+          // 页面加载完成后再次确保顶部栏在最顶层
+          try {
+            if (mainWin && !mainWin.isDestroyed() && topbarView && !topbarView.isDestroyed()) {
+              mainWin.setTopBrowserView(topbarView);
+            }
+          } catch (e) {
+            console.warn('[BrowserView:topbar] ⚠️ 设置层级失败:', e);
+          }
+        });
+      }
+      
+      if (sidebarView && sidebarView.webContents) {
+        sidebarView.webContents.once('did-finish-load', () => {
+          console.log('[BrowserView:sidebar] ✅ 侧边栏页面加载完成');
+        });
+      }
+    }, 500);
+  };
+
+  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible()) {
+    initMainBrowserViews();
+  } else {
+    mainWin.once('ready-to-show', initMainBrowserViews);
+  }
+
+  // 监听窗口大小变化，自动调整 BrowserView 布局
+  mainWin.on('resize', () => {
+    updateBrowserViewsLayout();
+  });
+
+  mainWin.on('move', () => {
+    updateBrowserViewsLayout();
+  });
+
+  mainWin.on('closed', () => {
+    isAppShuttingDown = true;
+    const forceTerminate = () => {
+      try {
+        const remaining = BrowserWindow.getAllWindows();
+        for (const win of remaining) {
+          if (win && !win.isDestroyed()) {
+            try { win.destroy(); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      if (process.platform !== 'darwin') {
+        try { app.quit(); } catch (_) {}
+        setTimeout(() => {
+          try { app.exit(0); } catch (_) {}
+        }, 80);
+      }
+    };
+
+    try {
+      closeAllWindows();
+    } catch (e) {
+      console.warn('[main] 主窗口 closed 清理异常:', e);
+    } finally {
+      mainWin = null;
+      setTimeout(forceTerminate, 20);
+      setTimeout(forceTerminate, 260);
+    }
+  });
+}
+
+}
+
+// ==================== BrowserView 复合布局管理 ====================
+
+/**
+ * 更新所有 BrowserView 的布局（窗口大小变化时调用）
+ */
+function updateBrowserViewsLayout() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+
+  // BrowserView.setBounds 使用的是“内容区坐标系”，在无边框/有阴影/系统边框存在时
+  // 用 getBounds()（外框尺寸）会导致高度计算偏差，表现为侧边栏底部按钮不随窗口高度变化。
+  const bounds = (typeof mainWin.getContentBounds === 'function') ? mainWin.getContentBounds() : mainWin.getBounds();
+  const titleBarHeight = Math.max(0, Math.min(32, bounds.height));
+  
+  for (const [viewId, viewData] of browserViews.entries()) {
+    // 安全检查：确保 viewData 和 view 存在，并且 view 有 isDestroyed 方法
+    if (!viewData || !viewData.view) {
+      browserViews.delete(viewId);
+      continue;
+    }
+    
+    // 检查 BrowserView 是否已被销毁
+    try {
+      if (typeof viewData.view.isDestroyed === 'function' && viewData.view.isDestroyed()) {
+        browserViews.delete(viewId);
+        continue;
+      }
+    } catch (e) {
+      // 如果 isDestroyed 调用失败，说明 view 可能已无效，移除它
+      console.warn(`[BrowserView] ⚠️ 检查 ${viewId} 状态失败:`, e);
+      browserViews.delete(viewId);
+      continue;
+    }
+    
+    // 根据相对位置和大小计算绝对位置
+    let x = Math.floor(viewData.bounds.x * bounds.width);
+    let y = Math.floor(viewData.bounds.y * bounds.height);
+    let width = Math.floor(viewData.bounds.width * bounds.width);
+    let height = Math.floor(viewData.bounds.height * bounds.height);
+    
+    // 顶部栏和侧边栏现在是两个独立的 BrowserView
+    // 内容区域（从 x=60, y=32 开始）不会被 BrowserView 覆盖，可以正常接收鼠标和键盘事件
+    if (viewId === 'topbar') {
+      // 顶部栏：覆盖整个宽度，高度 32px
+      x = 0;
+      y = 0;
+      width = bounds.width;
+      height = titleBarHeight;
+    } else if (viewId === 'sidebar') {
+      // 侧边栏：覆盖左侧 60px，从顶部栏下方开始到窗口底部
+      x = 0;
+      y = titleBarHeight; // 从顶部栏下方开始
+      width = 60;
+      height = Math.max(0, bounds.height - titleBarHeight); // 剩余高度
+    }
+
+    // 注意：topbar/sidebar 是固定尺寸（32px/60px），不能被通用的 min=100 规则“放大”，
+    // 否则会导致布局错位、裁切，从而出现“底部图标不跟随窗口高度”的问题。
+    const minWidth = viewId === 'sidebar' ? 60 : (viewId === 'topbar' ? 1 : 100);
+    const minHeight = viewId === 'topbar' ? 1 : (viewId === 'sidebar' ? 1 : 100);
+
+    viewData.view.setBounds({
+      x: Math.max(0, x),
+      y: Math.max(0, y),
+      width: Math.max(minWidth, width),
+      height: Math.max(minHeight, height)
+    });
+  }
+}
+
+/**
+ * 创建 BrowserView
+ * @param {string} viewId 视图ID（如 'display', 'lineManager'）
+ * @param {string} url 要加载的URL
+ * @param {object} bounds 相对位置和大小 {x: 0-1, y: 0-1, width: 0-1, height: 0-1}
+ * @returns {BrowserView|null}
+ */
+function createBrowserView(viewId, url, bounds = { x: 0, y: 0, width: 1, height: 1 }) {
+  console.log(`[BrowserView] ========== 创建 BrowserView: ${viewId} ==========`);
+  console.log(`[BrowserView:${viewId}] URL:`, url);
+  console.log(`[BrowserView:${viewId}] bounds:`, bounds);
+  
+  if (!mainWin || mainWin.isDestroyed()) {
+    console.error('[BrowserView] ❌ 主窗口不存在，无法创建 BrowserView');
+    return null;
+  }
+  
+  console.log(`[BrowserView:${viewId}] ✅ 主窗口存在`);
+  
+  // 如果已存在，先移除
+  if (browserViews.has(viewId)) {
+    console.log(`[BrowserView:${viewId}] ⚠️ 已存在，先移除旧的`);
+    removeBrowserView(viewId);
+  }
+  
+  // 为侧边栏 BrowserView 启用透明背景以支持毛玻璃效果
+  const viewOptions = {
+    webPreferences: {
+      preload: getPreloadPath(),
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
+      transparent: true // 启用透明背景
+    }
+  };
+  
+  const view = new BrowserView(viewOptions);
+
+  // 让 BrowserView 自身跟随窗口尺寸变化（特别是 sidebar 的高度），避免偶发 resize 时序/事件丢失导致布局不更新。
+  try {
+    if (typeof view.setAutoResize === 'function') {
+      if (viewId === 'topbar') {
+        // 顶部栏：宽度随窗口变化，高度由 setBounds 控制为 32px
+        view.setAutoResize({ width: true, height: false, horizontal: true, vertical: false });
+      } else if (viewId === 'sidebar') {
+        // 侧边栏：高度随窗口变化，宽度固定 60px（宽度仍由 setBounds 控制）
+        view.setAutoResize({ width: false, height: true, horizontal: false, vertical: true });
+      } else {
+        view.setAutoResize({ width: true, height: true, horizontal: true, vertical: true });
+      }
+    }
+  } catch (e) {
+    // 忽略：部分 Electron 版本/壳可能不支持
+  }
+  
+  // 设置 BrowserView 背景为透明（让 mica-electron 的 Mica 效果透出）
+  try {
+    view.setBackgroundColor('#00000000');
+    console.log(`[BrowserView:${viewId}] ✅ 已设置背景为透明`);
+  } catch (e) {
+    console.warn(`[BrowserView:${viewId}] ⚠️ 设置透明背景失败:`, e);
+  }
+  
+  // 确保 BrowserView 没有边框和框架（对于侧边栏）
+  if (viewId === 'sidebar') {
+    // BrowserView 本身没有边框，但我们需要确保内容区域正确显示
+    console.log(`[BrowserView:${viewId}] 创建侧边栏视图，bounds:`, bounds);
+  }
+  
+  // 存储视图和布局信息
+  browserViews.set(viewId, {
+    view: view,
+    bounds: bounds
+  });
+
+  // 监听 console 消息并转发到主进程（需在 loadURL 之前注册，避免丢失早期错误）
+  view.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const prefix = `[BrowserView:${viewId}]`;
+    const at = sourceId ? `(${sourceId}:${line})` : '';
+    if (level === 0) console.log(prefix, message, at);
+    else if (level === 1) console.warn(prefix, message, at);
+    else if (level === 2) console.error(prefix, message, at);
+    else console.error(prefix, `[console:${level}]`, message, at);
+  });
+  
+  // 加载URL
+  console.log(`[BrowserView:${viewId}] 📥 开始加载 URL:`, url);
+  view.webContents.loadURL(url);
+  
+  // 设置初始布局
+  console.log(`[BrowserView:${viewId}] 📐 设置初始布局`);
+  updateBrowserViewsLayout();
+  
+  // 为侧边栏 BrowserView 添加毛玻璃效果（透到桌面）
+  if (viewId === 'sidebar') {
+    // BrowserView 的模糊效果通过 mica-electron 实现（主窗口的 Mica 效果会透出）
+    // 主窗口已设置为透明，所以 BrowserView 的内容可以透到桌面
+    view.webContents.once('did-finish-load', () => {
+      console.log(`[BrowserView:${viewId}] ✅ 页面加载完成，毛玻璃效果通过 mica-electron 实现`);
+      
+      // 延迟检查 DOM，确保 Vue 组件已渲染
+      setTimeout(() => {
+        view.webContents.executeJavaScript(`
+          (function() {
+            const leftrailApp = document.getElementById('leftrail-app');
+            const leftRail = document.getElementById('leftRail');
+            const buttons = leftRail?.querySelectorAll('button') || [];
+            const info = {
+              sidebarEntryLoaded: !!window.__SIDEBAR_ENTRY_LOADED,
+              leftrailApp: !!leftrailApp,
+              leftRail: !!leftRail,
+              buttonsCount: buttons.length,
+              leftrailAppChildren: leftrailApp?.children?.length || 0
+            };
+            console.log('[BrowserView:sidebar] DOM 检查:', JSON.stringify(info));
+            if (buttons.length > 0) {
+              console.log('[BrowserView:sidebar] ✅ 按钮已渲染:', buttons.length);
+            } else {
+              console.warn('[BrowserView:sidebar] ⚠️ 未找到按钮');
+            }
+          })();
+        `).catch(e => console.warn('[BrowserView:sidebar] DOM 检查失败:', e));
+      }, 2000);
+    });
+    
+    // 监听页面加载失败
+    view.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error(`[BrowserView:${viewId}] ❌ 页面加载失败:`, errorCode, errorDescription);
+    });
+  }
+  
+  // 开发模式下打开 DevTools
+  if (!app.isPackaged && AUTO_OPEN_DEVTOOLS) {
+    console.log(`[BrowserView:${viewId}] 🔧 打开 DevTools`);
+    view.webContents.openDevTools();
+  }
+  
+  // 将视图附加到主窗口（使用 addBrowserView 支持多个 BrowserView）
+  try {
+    if (typeof mainWin.addBrowserView === 'function') {
+      // Electron 较新版本支持 addBrowserView（支持多个 BrowserView）
+      mainWin.addBrowserView(view);
+      console.log(`[BrowserView:${viewId}] ✅ 已使用 addBrowserView 添加到主窗口`);
+    } else {
+      // 旧版本使用 setBrowserView（只能设置一个）
+      mainWin.setBrowserView(view);
+      console.log(`[BrowserView:${viewId}] ✅ 已使用 setBrowserView 添加到主窗口`);
+    }
+  } catch (e) {
+    console.error(`[BrowserView:${viewId}] ❌ 添加 BrowserView 到窗口失败:`, e);
+  }
+  
+  // 对于顶部栏，确保它在最上层
+  if (viewId === 'topbar') {
+    try {
+      if (typeof mainWin.setTopBrowserView === 'function') {
+        mainWin.setTopBrowserView(view);
+        console.log(`[BrowserView:${viewId}] ✅ 顶部栏已设置为最顶层`);
+      }
+    } catch (e) {
+      console.warn(`[BrowserView:${viewId}] ⚠️ 设置顶部栏层级失败:`, e);
+    }
+  }
+  
+  console.log(`[BrowserView] 创建视图: ${viewId}, URL: ${url}`);
+  return view;
+}
+
+/**
+ * 移除 BrowserView
+ * @param {string} viewId 视图ID
+ */
+function removeBrowserView(viewId) {
+  if (!browserViews.has(viewId)) return;
+  
+  const viewData = browserViews.get(viewId);
+  // 安全检查：确保 viewData 和 view 存在，并且 view 有 isDestroyed 方法
+  if (viewData && viewData.view) {
+    try {
+      if (typeof viewData.view.isDestroyed === 'function' && !viewData.view.isDestroyed()) {
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.removeBrowserView(viewData.view);
+        }
+        viewData.view.destroy();
+      }
+    } catch (e) {
+      console.warn(`[BrowserView] ⚠️ 移除 ${viewId} 时检查状态失败:`, e);
+      // 即使检查失败，也尝试销毁 view
+      try {
+        if (viewData.view && typeof viewData.view.destroy === 'function') {
+          viewData.view.destroy();
+        }
+      } catch (destroyErr) {
+        console.warn(`[BrowserView] ⚠️ 销毁 ${viewId} 失败:`, destroyErr);
+      }
+    }
+  }
+  
+  browserViews.delete(viewId);
+  console.log(`[BrowserView] 移除视图: ${viewId}`);
+  
+  // 如果还有其他视图，重新设置最后一个为活动视图
+  if (browserViews.size > 0 && mainWin && !mainWin.isDestroyed()) {
+    const lastView = Array.from(browserViews.values())[browserViews.size - 1];
+    if (lastView && lastView.view) {
+      try {
+        if (typeof lastView.view.isDestroyed === 'function' && !lastView.view.isDestroyed()) {
+          mainWin.setBrowserView(lastView.view);
+        }
+      } catch (e) {
+        console.warn(`[BrowserView] ⚠️ 设置活动视图失败:`, e);
+      }
+    }
+  } else if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.setBrowserView(null);
+  }
+}
+
+/**
+ * 更新 BrowserView 的布局
+ * @param {string} viewId 视图ID
+ * @param {object} bounds 新的相对位置和大小
+ */
+function updateBrowserViewBounds(viewId, bounds) {
+  if (!browserViews.has(viewId)) return false;
+  
+  const viewData = browserViews.get(viewId);
+  if (viewData) {
+    viewData.bounds = { ...viewData.bounds, ...bounds };
+    updateBrowserViewsLayout();
+    return true;
+  }
+  return false;
+}
+
+// IPC 接口：创建 BrowserView
+ipcMain.handle('browserview/create', async (event, { viewId, url, bounds }) => {
+  try {
+    const view = createBrowserView(viewId, url, bounds);
+    return { ok: !!view, viewId };
+  } catch (e) {
+    console.error('[BrowserView] 创建失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+// IPC 接口：移除 BrowserView
+ipcMain.handle('browserview/remove', async (event, viewId) => {
+  try {
+    removeBrowserView(viewId);
+    return { ok: true };
+  } catch (e) {
+    console.error('[BrowserView] 移除失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+// IPC 接口：更新 BrowserView 布局
+ipcMain.handle('browserview/update-bounds', async (event, viewId, bounds) => {
+  try {
+    const success = updateBrowserViewBounds(viewId, bounds);
+    return { ok: success };
+  } catch (e) {
+    console.error('[BrowserView] 更新布局失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+// IPC 接口：列出所有 BrowserView
+ipcMain.handle('browserview/list', async () => {
+  return {
+    ok: true,
+    views: Array.from(browserViews.keys()).map(viewId => {
+      const viewData = browserViews.get(viewId);
+      return {
+        viewId,
+        bounds: viewData ? viewData.bounds : null
+      };
+    })
+  };
+});
+
+// 设置框架层级（用于控制 BrowserView 的层级）
+// 按照图片中的方案：使用 setTopBrowserView 来控制 BrowserView 的层级
+// 正常情况：内容区域的 BrowserView（主窗口 webContents）在框架布局的 BrowserView 之上
+// 弹出/提示情况：如果框架弹出下拉框或提示，框架布局的 BrowserView 会被提升到最顶层
+// 按照图片中的方案：使用 setTopBrowserView 来控制 BrowserView 的层级
+// 正常情况：内容区域的 BrowserView（主窗口 webContents）在框架布局的 BrowserView 之上
+// 弹出/提示情况：如果框架弹出下拉框或提示，框架布局的 BrowserView 会被提升到最顶层
+ipcMain.handle('browserview/set-frame-level', async (event, { top }) => {
+  try {
+    const frameViewData = browserViews.get('frame');
+    if (!frameViewData || !frameViewData.view) {
+      return { ok: false, error: 'frame BrowserView not found' };
+    }
+    
+    const frameView = frameViewData.view;
+    if (frameView.isDestroyed && frameView.isDestroyed()) {
+      return { ok: false, error: 'frame BrowserView is destroyed' };
+    }
+    
+    if (top) {
+      // 将框架 BrowserView 提升到最顶层（用于显示下拉框或提示）
+      if (typeof mainWin.setTopBrowserView === 'function') {
+        mainWin.setTopBrowserView(frameView);
+        console.log('[BrowserView:frame] ✅ 框架已提升到最顶层');
+      }
+    } else {
+      // 将框架 BrowserView 降到底层，让主窗口的 webContents 和其他 BrowserView 在上层
+      // 获取所有 BrowserView，将除了框架 BrowserView 之外的其他 BrowserView 提升到顶层
+      const allViews = mainWin.getBrowserViews();
+      for (let i = allViews.length - 1; i >= 0; i--) {
+        const view = allViews[i];
+        if (view && view !== frameView && !view.isDestroyed()) {
+          if (typeof mainWin.setTopBrowserView === 'function') {
+            mainWin.setTopBrowserView(view);
+          }
+        }
+      }
+      // 如果没有其他 BrowserView，主窗口的 webContents 自然在上层
+      console.log('[BrowserView:frame] ✅ 框架已降到底层，内容区域可以接收鼠标事件');
+    }
+    
+    return { ok: true };
+  } catch (e) {
+    console.error('[BrowserView:sidebar] 设置框架层级失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 面板切换 IPC 处理器（侧边栏 -> 主窗口）
+ipcMain.handle('ui/switch-panel', async (event, panelId) => {
+  // 将消息发送到主窗口
+  if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
+    try {
+      mainWin.webContents.send('ui/panel-state-changed', panelId);
+      
+      // 面板切换后重新应用 Mica 效果（多次延迟确保生效）
+      console.log('[MainWindow] 面板切换:', panelId, '，重新应用 Mica 效果');
+      reapplyMicaEffect();
+      
+      // 延迟再次应用，确保 Vue 组件切换完成后效果仍然存在
+      setTimeout(() => {
+        reapplyMicaEffect();
+      }, 200);
+      
+      // 更长的延迟，确保主页完全加载后效果仍然存在
+      setTimeout(() => {
+        reapplyMicaEffect();
+      }, 500);
+      
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  }
+  return { ok: false, error: 'main-window-not-available' };
+});
+
+ipcMain.handle('ui/close-panel', async (event) => {
+  // 将消息发送到主窗口
+  if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
+    try {
+      mainWin.webContents.send('ui/panel-state-changed', null);
+      
+      // 关闭面板后（可能返回到主页）重新应用 Mica 效果
+      console.log('[MainWindow] 关闭面板，重新应用 Mica 效果');
+      reapplyMicaEffect();
+      
+      // 延迟再次应用，确保主页完全加载后效果仍然存在
+      setTimeout(() => {
+        reapplyMicaEffect();
+      }, 200);
+      
+      setTimeout(() => {
+        reapplyMicaEffect();
+      }, 500);
+      
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  }
+  return { ok: false, error: 'main-window-not-available' };
+});
+
+// ==================== BrowserView 管理结束 ====================
+
+// 辅助：线路文件目录为 userData/lines 或其下用户添加的子文件夹（不再使用“默认”内置文件夹）
+function getLinesDir(dir) {
+  if (dir && typeof dir === 'string' && dir.length > 0) return dir;
+  const folders = store ? (store.get('linesFolders') || {}) : {};
+  const currentFolder = store ? store.get('linesCurrentFolder') : null;
+  if (currentFolder && folders[currentFolder]) {
+    return folders[currentFolder].path;
+  }
+  // 无当前文件夹时使用 userData/lines 根目录（仅保证目录存在）
+  const baseLines = path.join(app.getPath('userData'), 'lines');
+  try {
+    if (!fs.existsSync(baseLines)) {
+      fs.mkdirSync(baseLines, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[getLinesDir] 创建 lines 目录失败:', e);
+  }
+  return baseLines;
+}
+
+// 获取所有文件夹配置（不再自动添加“默认”文件夹）
+function getLinesFolders() {
+  if (!store) return {};
+  return store.get('linesFolders') || {};
+}
+
+// 获取当前活动的文件夹ID（无则返回 null）
+function getCurrentLinesFolder() {
+  if (!store) return null;
+  const current = store.get('linesCurrentFolder');
+  const folders = store.get('linesFolders') || {};
+  if (current && folders[current]) return current;
+  const firstId = Object.keys(folders)[0];
+  return firstId || null;
+}
+
+async function ensureDir(dir) {
+  try {
+    await fsPromises.mkdir(dir, { recursive: true });
+  } catch (e) {
+    // 忽略错误
+  }
+}
+
+// Windows 下将目录标记为隐藏（静默失败）
+async function hideDirOnWindows(dir) {
+  if (process.platform !== 'win32' || !dir) return;
+  try { await fsPromises.access(dir); } catch (e) { return; }
+  try {
+    await new Promise((resolve) => {
+      const ps = spawn('attrib', ['+h', dir], { windowsHide: true });
+      ps.on('error', () => resolve());
+      ps.on('exit', () => resolve());
+    });
+  } catch (e) { /* ignore */ }
+}
+
+// 延时工具（用于重试）
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function cleanupUnlocked(dir, targetBase, keepPath) {
+  if (!dir || !targetBase) return;
+  try {
+    const entries = await fsPromises.readdir(dir);
+    const pattern = new RegExp('^' + escapeRegex(targetBase) + '\\.unlocked-\\d+$');
+    for (const name of entries) {
+      if (!pattern.test(name)) continue;
+      const full = path.join(dir, name);
+      if (keepPath && path.resolve(full) === path.resolve(keepPath)) continue;
+      try { await fsPromises.rm(full, { force: true }); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// 扫描目录清理残留的 .unlocked-* 副本（若同名主文件存在或副本过期）
+async function sweepUnlockedDir(dir) {
+  if (!dir) return;
+  try {
+    const entries = await fsPromises.readdir(dir);
+    for (const name of entries) {
+      if (!/\.unlocked-\d+$/.test(name)) continue;
+      const full = path.join(dir, name);
+      const base = name.replace(/\.unlocked-\d+$/, '');
+      const basePath = path.join(dir, base);
+      let removeAlt = false;
+      let promoteAlt = false;
+      let altStat = null;
+      let baseStat = null;
+      try { altStat = await fsPromises.stat(full); } catch (e) { continue; }
+
+      try {
+        baseStat = await fsPromises.stat(basePath);
+        // 主文件存在：若 unlocked 更新且体积不比主文件小太多，则尝试回写；否则清理旧副本
+        if (altStat && baseStat) {
+          const newer = altStat.mtimeMs > baseStat.mtimeMs + 500; // 略大于 0.5s 视为更新
+          const sizeOk = altStat.size >= Math.max(1, baseStat.size * 0.8); // 避免零字节或明显更小
+          if (newer && sizeOk) {
+            promoteAlt = true;
+          } else {
+            // 副本更旧或明显不完整，直接清理
+            removeAlt = true;
+          }
+        }
+      } catch (e) {
+        // 主文件不存在：如果副本较新或未过期，尝试恢复为主文件
+        const altAgeOk = altStat && (Date.now() - altStat.mtimeMs < 24 * 60 * 60 * 1000);
+        if (altAgeOk && altStat.size > 0) {
+          promoteAlt = true;
+        } else {
+          removeAlt = true;
+        }
+      }
+
+      if (promoteAlt) {
+        try {
+          await replaceFile(full, basePath);
+          continue; // 成功回写后无需再删
+        } catch (e) {
+          // 回写失败则不要删除，留待下次
+        }
+      }
+
+      if (!promoteAlt) {
+        // 仅在判定清理或过期时删除
+        if (!baseStat && altStat && Date.now() - altStat.mtimeMs > 6 * 60 * 60 * 1000) removeAlt = true;
+      }
+
+      if (removeAlt) {
+        try { await fsPromises.rm(full, { force: true }); } catch (e) { /* ignore */ }
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// 扫描已配置的线路目录，清理残留 unlocked 副本
+async function cleanupAllUnlockedFolders() {
+  const dirs = new Set();
+  try {
+    const folders = getLinesFolders();
+    Object.values(folders || {}).forEach((f) => {
+      if (f && f.path) dirs.add(path.normalize(f.path));
+    });
+  } catch (e) { /* ignore */ }
+  for (const d of dirs) {
+    await sweepUnlockedDir(d);
+  }
+}
+
+// 安全替换文件：多次重试，优先 rename，其次删除旧文件后 rename，最后写覆盖；失败落到备用文件后再尝试回写目标；最终清理旧 unlocked 副本
+async function replaceFile(tmp, outPath) {
+  const maxAttempts = 8;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fsPromises.rename(tmp, outPath);
+      await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+      return outPath;
+    } catch (e1) {
+      lastErr = e1;
+      try { await fsPromises.rm(outPath, { force: true }); } catch (e) { /* ignore */ }
+      try {
+        await fsPromises.rename(tmp, outPath);
+        await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+        return outPath;
+      } catch (e2) {
+        lastErr = e2;
+        try {
+          const buf = await fsPromises.readFile(tmp);
+          await fsPromises.writeFile(outPath, buf);
+          await fsPromises.rm(tmp, { force: true });
+          await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+          return outPath;
+        } catch (e3) {
+          lastErr = e3;
+          if (attempt < maxAttempts) await delay(200 + attempt * 100);
+        }
+      }
+    }
+  }
+  const altPath = outPath + '.unlocked-' + Date.now();
+  try {
+    const buf = await fsPromises.readFile(tmp);
+    await fsPromises.writeFile(altPath, buf);
+    await fsPromises.rm(tmp, { force: true });
+  } catch (e4) {
+    throw lastErr || e4 || new Error('replaceFile failed');
+  }
+  // 备用落盘后，再尝试将其回写目标若锁已释放
+  for (let retry = 1; retry <= 5; retry++) {
+    await delay(300 + retry * 150);
+    try {
+      await fsPromises.rm(outPath, { force: true });
+    } catch (e) { /* ignore */ }
+    try {
+      await fsPromises.rename(altPath, outPath);
+      await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), outPath);
+      return outPath;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  await cleanupUnlocked(path.dirname(outPath), path.basename(outPath), altPath);
+  return altPath;
+}
+
+// 写入到临时文件后使用 replaceFile 原子替换，降低被占用/半写入风险
+async function writeSafe(outPath, data, options) {
+  const tmp = outPath + '.tmp';
+  await ensureDir(path.dirname(outPath));
+  try {
+    await fsPromises.writeFile(tmp, data, options);
+    return await replaceFile(tmp, outPath);
+  } catch (e) {
+    try { await fsPromises.rm(tmp, { force: true }); } catch (e2) { /* ignore */ }
+    throw e;
+  }
+}
+
+function isFileBusyLikeError(err) {
+  if (!err) return false;
+  const code = String(err.code || '').toUpperCase();
+  const msg = String(err && (err.message || err) || '').toLowerCase();
+  return (
+    code === 'EBUSY' ||
+    code === 'EPERM' ||
+    code === 'EACCES' ||
+    msg.includes('ebusy') ||
+    msg.includes('resource busy') ||
+    msg.includes('used by another process') ||
+    msg.includes('being used by another process')
+  );
+}
+
+function toFriendlySaveError(err, targetPath) {
+  if (isFileBusyLikeError(err)) {
+    const name = targetPath ? path.basename(targetPath) : '目标文件';
+    return `文件被占用：${name}。请关闭正在使用该文件的软件后重试。`;
+  }
+  return String(err);
+}
+
+async function zipjsWrite(entries, outPath) {
+  const tmp = outPath + '.tmp';
+  await ensureDir(path.dirname(outPath));
+  if (ZipWriter && BlobWriter && Uint8ArrayReader && TextReader) {
+    try {
+      const writer = new ZipWriter(new BlobWriter('application/zip'));
+      for (const ent of entries) {
+        if (!ent || !ent.name) continue;
+        if (ent.type === 'string') {
+          await writer.add(ent.name, new TextReader(ent.content || ''));
+        } else if (ent.type === 'file') {
+          const buf = await fsPromises.readFile(ent.path);
+          await writer.add(ent.name, new Uint8ArrayReader(new Uint8Array(buf)));
+        }
+      }
+      const blob = await writer.close();
+      const ab = await blob.arrayBuffer();
+      await fsPromises.writeFile(tmp, Buffer.from(ab));
+      return await replaceFile(tmp, outPath);
+    } catch (e) {
+      try { await fsPromises.rm(tmp, { force: true }); } catch (e2) { /* ignore */ }
+      console.warn('[zipjsWrite] zip.js failed, will fallback', e);
+    }
+  }
+  if (!archiver) {
+    try { archiver = require('archiver'); } catch (e) { /* ignore */ }
+  }
+  if (!archiver) throw new Error('missing-archiver');
+  await new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(tmp);
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    output.on('close', resolve);
+    output.on('error', reject);
+    archive.on('error', reject);
+    archive.pipe(output);
+    for (const ent of entries) {
+      if (!ent || !ent.name) continue;
+      if (ent.type === 'string') {
+        archive.append(ent.content || '', { name: ent.name });
+      } else if (ent.type === 'file') {
+        archive.file(ent.path, { name: ent.name });
+      }
+    }
+    archive.finalize();
+  });
+  return await replaceFile(tmp, outPath);
+}
+
+async function zipjsExtract(zipPath, destDir) {
+  const buffer = await fsPromises.readFile(zipPath);
+  if (ZipReader && BlobReader && Uint8ArrayWriter) {
+    const reader = new ZipReader(new BlobReader(new Blob([buffer])));
+    try {
+      const entries = await reader.getEntries();
+      for (const ent of entries) {
+        const rel = (ent.filename || ent.name || '').replace(/^\/+/, '');
+        if (!rel) continue;
+        const target = path.join(destDir, rel.split('/').join(path.sep));
+        const resolved = path.resolve(target);
+        const root = path.resolve(destDir);
+        if (resolved !== root && !resolved.startsWith(root + path.sep)) continue;
+        if (ent.directory) {
+          await ensureDir(resolved);
+          continue;
+        }
+        await ensureDir(path.dirname(resolved));
+        const data = await ent.getData(new Uint8ArrayWriter());
+        await fsPromises.writeFile(resolved, Buffer.from(data));
+      }
+      await reader.close();
+      return true;
+    } catch (e) {
+      try { await reader.close(); } catch (e2) { /* ignore */ }
+      console.warn('[zipjsExtract] zip.js failed, will fallback', e);
+    }
+  }
+  if (!extractZip) {
+    try { extractZip = require('extract-zip'); } catch (e) { /* ignore */ }
+  }
+  if (!extractZip) throw new Error('extract-zip not available');
+  await extractZip(zipPath, { dir: destDir });
+  return true;
+}
+
+// MPL 临时解压缓存，避免重复解压并支持音频播放/再次打包
+const mplExtractCache = new Map();
+async function ensureMplExtracted(mplPath) {
+  if (!mplPath) return null;
+  const normalized = path.normalize(mplPath);
+  try {
+    const stat = await fsPromises.stat(normalized);
+    const cached = mplExtractCache.get(normalized);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.dir) {
+      try {
+        await fsPromises.access(cached.dir);
+        return cached;
+      } catch (e) {
+        // fall through to re-extract
+      }
+    }
+    const base = path.join(app.getPath('temp'), 'metro-pids-mpl-cache');
+    await ensureDir(base);
+    if (cached && cached.dir) {
+      try { await fsPromises.rm(cached.dir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    }
+    const safeName = path.basename(normalized).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tempExtractDir = path.join(base, `${safeName}_${Date.now().toString(36)}`);
+    await zipjsExtract(normalized, tempExtractDir);
+    const res = { dir: tempExtractDir, mtimeMs: stat.mtimeMs };
+    mplExtractCache.set(normalized, res);
+    return res;
+  } catch (e) {
+    console.warn('[lines] 无法解压 MPL 用于缓存:', e);
+    return null;
+  }
+}
+
+app.on('will-quit', () => {
+  for (const v of mplExtractCache.values()) {
+    if (v && v.dir) {
+      fsPromises.rm(v.dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+});
+
+// 查找 JSON 和 MPL 文件的辅助函数（recursive 参数控制是否递归查找子文件夹）
+async function findJsonFiles(dir, baseDir = null, recursive = false) {
+  if (!baseDir) baseDir = dir;
+  const out = [];
+  try {
+    const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const lowerName = entry.name.toLowerCase();
+        if (lowerName === 'audio' || entry.name.startsWith('.')) continue; // 跳过音频目录/隐藏目录
+        // 如果启用递归，递归查找子文件夹
+        if (recursive) {
+          const subFiles = await findJsonFiles(fullPath, baseDir, recursive);
+          out.push(...subFiles);
+        }
+        // 如果不递归，跳过子文件夹
+      } else if (entry.isFile()) {
+        const lowerName = entry.name.toLowerCase();
+        const isJson = lowerName.endsWith('.json');
+        const isMpl = lowerName.endsWith('.mpl');
+        if (isJson || isMpl) {
+          try {
+            const stat = await fsPromises.stat(fullPath);
+            let json = null;
+            let version = null;
+            if (isJson) {
+              // JSON 文件：直接读取
+              const txt = await fsPromises.readFile(fullPath, 'utf8');
+              try { json = JSON.parse(txt); } catch (e) { json = null; }
+              if (json && json.meta && json.meta.version) version = json.meta.version;
+            } else if (isMpl) {
+              // MPL 文件：解压到缓存目录后读取 line.json（只取元数据）
+              try {
+                const extracted = await ensureMplExtracted(fullPath);
+                if (!extracted || !extracted.dir) continue;
+                const lineJsonPath = path.join(extracted.dir, 'line.json');
+                try {
+                  const txt = await fsPromises.readFile(lineJsonPath, 'utf8');
+                  json = JSON.parse(txt);
+                  if (json && json.meta && json.meta.version) version = json.meta.version;
+                } catch (e) {
+                  const files = await fsPromises.readdir(extracted.dir);
+                  const jsonFile = files.find((f) => f.toLowerCase().endsWith('.json'));
+                  if (jsonFile) {
+                    const txt = await fsPromises.readFile(path.join(extracted.dir, jsonFile), 'utf8');
+                    json = JSON.parse(txt);
+                    if (json && json.meta && json.meta.version) version = json.meta.version;
+                  }
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            // 计算相对路径作为文件名（相对于 baseDir）
+            const relativePath = path.relative(baseDir, fullPath);
+            const nameWithoutExt = relativePath.replace(/\.(json|mpl)$/i, '').replace(/\\/g, '/');
+            out.push({ name: nameWithoutExt, version, mtime: stat.mtimeMs, fullPath, isMpl: isMpl });
+          } catch (e) {
+            // 出错则跳过该文件
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // 忽略错误
+  }
+  return out;
+}
+
+// 列出线路文件(JSON)，返回 { name, version, mtime } 数组（支持递归查找子文件夹）
+// dir 可以是文件夹路径（字符串）或文件夹ID
+ipcMain.handle('lines/list', async (event, dir) => {
+  let base;
+  if (dir && typeof dir === 'string') {
+    // 如果 dir 看起来像是一个完整路径（包含路径分隔符或绝对路径）
+    if (dir.includes(path.sep) || path.isAbsolute(dir)) {
+      base = dir;
+    } else {
+      // 否则认为是文件夹ID，从配置中获取路径
+      const folders = getLinesFolders();
+      if (folders[dir]) {
+        base = folders[dir].path;
+      } else {
+        base = getLinesDir(dir);
+      }
+    }
+  } else {
+    base = getLinesDir(dir);
+  }
+  await ensureDir(base);
+  try {
+    // 不递归查找子文件夹，只查找当前文件夹下的 JSON 文件
+    const files = await findJsonFiles(base, base, false);
+    return files;
+  } catch (err) {
+    return { error: String(err) };
+  }
+});
+
+// 读取单个线路文件（支持子文件夹路径）
+ipcMain.handle('lines/read', async (event, filename, dir) => {
+  let base;
+  if (dir && typeof dir === 'string') {
+    // 如果 dir 看起来像是一个完整路径（包含路径分隔符或绝对路径）
+    if (dir.includes(path.sep) || path.isAbsolute(dir)) {
+      base = dir;
+    } else {
+      // 否则认为是文件夹ID，从配置中获取路径
+      const folders = getLinesFolders();
+      if (folders[dir]) {
+        base = folders[dir].path;
+      } else {
+        base = getLinesDir(dir);
+      }
+    }
+  } else {
+    base = getLinesDir(dir);
+  }
+  // 如果 filename 包含路径分隔符，说明是子文件夹中的文件
+  let fp;
+  let isMplFile = false;
+  if (filename.includes('/') || filename.includes('\\')) {
+    // 相对路径，直接拼接
+    fp = path.join(base, filename);
+    if (fp.toLowerCase().endsWith('.mpl')) {
+      isMplFile = true;
+    } else if (!fp.endsWith('.json') && !fp.toLowerCase().endsWith('.mpl')) {
+      // 尝试 .json 和 .mpl
+      const jsonPath = fp + '.json';
+      const mplPath = fp + '.mpl';
+      try {
+        await fsPromises.access(jsonPath);
+        fp = jsonPath;
+      } catch {
+        try {
+          await fsPromises.access(mplPath);
+          fp = mplPath;
+          isMplFile = true;
+        } catch {
+          fp = jsonPath; // 默认尝试 .json
+        }
+      }
+    }
+  } else {
+    // 简单文件名：尝试 .json 和 .mpl
+    const jsonPath = path.join(base, filename.endsWith('.json') ? filename : `${filename}.json`);
+    const mplPath = path.join(base, filename.toLowerCase().endsWith('.mpl') ? filename : `${filename}.mpl`);
+    try {
+      await fsPromises.access(jsonPath);
+      fp = jsonPath;
+    } catch {
+      try {
+        await fsPromises.access(mplPath);
+        fp = mplPath;
+        isMplFile = true;
+      } catch {
+        fp = jsonPath; // 默认尝试 .json
+      }
+    }
+  }
+  try {
+    if (isMplFile || fp.toLowerCase().endsWith('.mpl')) {
+      // MPL 文件：解压后读取 line.json
+      const extracted = await ensureMplExtracted(fp);
+      if (!extracted || !extracted.dir) return { ok: false, error: 'extract-failed' };
+      const lineJsonPath = path.join(extracted.dir, 'line.json');
+      let txt;
+      try {
+        txt = await fsPromises.readFile(lineJsonPath, 'utf8');
+      } catch (e) {
+        // 如果 line.json 不存在，尝试查找其他 JSON 文件
+        const files = await fsPromises.readdir(extracted.dir);
+        const jsonFile = files.find((f) => f.toLowerCase().endsWith('.json'));
+        if (jsonFile) {
+          txt = await fsPromises.readFile(path.join(extracted.dir, jsonFile), 'utf8');
+        } else {
+          throw new Error('No JSON file found in MPL archive');
+        }
+      }
+      const content = JSON.parse(txt);
+      return { ok: true, content, lineDir: extracted.dir, jsonPath: lineJsonPath };
+    } else {
+      // JSON 文件：直接读取
+      const txt = await fsPromises.readFile(fp, 'utf8');
+      return { ok: true, content: JSON.parse(txt) };
+    }
+  } catch (err) {
+    return { ok: false, error: toFriendlySaveError(err, fp) };
+  }
+});
+
+// 保存线路文件，附带简单版本处理（支持子文件夹路径）；支持 .json 与 .mpl（.mpl 写入 zip 包）
+ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLinePath) => {
+  const base = getLinesDir(dir);
+  await ensureDir(base);
+  const lower = filename.toLowerCase();
+  const wantsMpl = lower.endsWith('.mpl');
+  let fp;
+  if (filename.includes('/') || filename.includes('\\')) {
+    fp = path.join(base, filename);
+    if (!fp.endsWith('.json') && !fp.toLowerCase().endsWith('.mpl')) fp += wantsMpl ? '.mpl' : '.json';
+    await ensureDir(path.dirname(fp));
+  } else {
+    const name = (filename.endsWith('.json') || filename.toLowerCase().endsWith('.mpl')) ? filename : (wantsMpl ? `${filename}.mpl` : `${filename}.json`);
+    fp = path.join(base, name);
+  }
+  const isMpl = fp.toLowerCase().endsWith('.mpl');
+  try {
+    if (!contentObj.meta) contentObj.meta = {};
+    if (!isMpl) {
+      let existing = null;
+      try {
+        const t = await fsPromises.readFile(fp, 'utf8');
+        existing = JSON.parse(t);
+      } catch (e) {
+        existing = null;
+      }
+      const existingVer = existing && existing.meta && existing.meta.version ? existing.meta.version : 0;
+      const incomingVer = contentObj.meta.version ? contentObj.meta.version : 0;
+      if (incomingVer <= existingVer) {
+        contentObj.meta.version = existingVer + 1;
+      }
+      await writeSafe(fp, JSON.stringify(contentObj, null, 2), 'utf8');
+
+      // Telegram 风格：仅对“引用到的音频”做增量 MD5 校验/更新缓存
+      try {
+        const lineDir = path.dirname(fp);
+        await updateAudioHashesCacheForLine({ lineDir, lineData: contentObj });
+      } catch (e) {
+        // 保存本体不应因哈希缓存异常失败
+        console.warn('[lines/save] updateAudioHashesCacheForLine failed', e && e.message ? e.message : e);
+      }
+      return { ok: true, path: fp };
+    }
+    // .mpl：写入 zip（包含 line.json 和音频文件）
+    // 保存 .mpl 前，删除同名的 .json 文件（如果存在）
+    const jsonPath = fp.replace(/\.mpl$/i, '.json');
+    try {
+      await fsPromises.access(jsonPath);
+      await fsPromises.unlink(jsonPath);
+    } catch (e) {
+      // 文件不存在或删除失败，忽略
+    }
+    if (!archiver) {
+      try { archiver = require('archiver'); } catch (e) { /* retry */ }
+    }
+    if (!archiver) return { ok: false, error: 'missing-archiver' };
+    const version = contentObj.meta.version || 1;
+    contentObj.meta.version = version;
+    // 确定音频来源目录：目标文件所在目录、传入目录、原线路目录、MPL 解压缓存
+    const audioSourceDirs = new Set();
+    const fileDir = path.dirname(fp);
+    if (fileDir) audioSourceDirs.add(path.normalize(fileDir));
+    if (dir && typeof dir === 'string' && dir.trim()) {
+      const norm = path.normalize(dir.trim());
+      audioSourceDirs.add(path.isAbsolute(norm) ? norm : path.resolve(norm));
+    }
+    const normalizedSourceLinePaths = [];
+    const sourcePathList = Array.isArray(sourceLinePath)
+      ? sourceLinePath
+      : (sourceLinePath ? [sourceLinePath] : []);
+    for (const rawSource of sourcePathList) {
+      if (!rawSource || typeof rawSource !== 'string' || !rawSource.trim()) continue;
+      let normalizedSourceLinePath = null;
+      const s = path.normalize(rawSource.trim());
+      normalizedSourceLinePath = path.isAbsolute(s) ? s : path.resolve(s);
+      const lower = normalizedSourceLinePath.toLowerCase();
+      const hasKnownExt = lower.endsWith('.mpl') || lower.endsWith('.json');
+      if (!hasKnownExt) {
+        const mplCandidate = normalizedSourceLinePath + '.mpl';
+        const jsonCandidate = normalizedSourceLinePath + '.json';
+        try {
+          await fsPromises.access(mplCandidate);
+          normalizedSourceLinePath = mplCandidate;
+        } catch {
+          try {
+            await fsPromises.access(jsonCandidate);
+            normalizedSourceLinePath = jsonCandidate;
+          } catch {
+            // 保持原值，后续仍可使用其目录作为音频来源
+          }
+        }
+      }
+      normalizedSourceLinePaths.push(normalizedSourceLinePath);
+      const sourceDir = path.dirname(normalizedSourceLinePath);
+      if (sourceDir) audioSourceDirs.add(sourceDir);
+    }
+    const extracted = isMpl ? await ensureMplExtracted(fp) : null;
+    if (extracted && extracted.dir) audioSourceDirs.add(extracted.dir);
+    for (const sourcePath of normalizedSourceLinePaths) {
+      if (sourcePath && sourcePath.toLowerCase().endsWith('.mpl')) {
+        const sourceExtracted = await ensureMplExtracted(sourcePath);
+        if (sourceExtracted && sourceExtracted.dir) audioSourceDirs.add(sourceExtracted.dir);
+      }
+    }
+    const sourceDirs = Array.from(audioSourceDirs);
+    const fallbackSourceDirs = new Set(sourceDirs);
+    try {
+      const folders = getLinesFolders();
+      Object.values(folders || {}).forEach((f) => {
+        const p = f && f.path;
+        if (p && typeof p === 'string' && p.trim()) fallbackSourceDirs.add(path.normalize(p.trim()));
+      });
+    } catch (e) { /* ignore */ }
+    try {
+      fallbackSourceDirs.add(path.join(app.getPath('userData'), 'lines'));
+    } catch (e) { /* ignore */ }
+    const fallbackDirs = Array.from(fallbackSourceDirs);
+    // 收集音频路径（统一逻辑：包含站点音频 + 通用音频）
+    const relPaths = collectAudioRelPaths(contentObj);
+    const entries = [{ type: 'string', name: 'line.json', content: JSON.stringify(contentObj, null, 2) }];
+    const addedSet = new Set();
+    const addOne = (fullPath, nameInZip) => {
+      if (!nameInZip || addedSet.has(nameInZip)) return;
+      entries.push({ type: 'file', path: fullPath, name: nameInZip });
+      addedSet.add(nameInZip);
+    };
+    if (sourceDirs.length > 0 && relPaths.size > 0) {
+      for (const rel of relPaths) {
+        const relNorm = rel.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^(\.\.\\|\.\.\/)+/, '');
+        if (!relNorm || relNorm === 'audio' || relNorm.endsWith('/')) continue;
+        const relNormalized = relNorm.split('/').join(path.sep);
+        let resolved = false;
+        for (const baseDir of sourceDirs) {
+          let full = path.join(baseDir, relNormalized);
+          let nameInZip = relNorm;
+          try {
+            await fsPromises.access(full);
+            addOne(full, nameInZip);
+            resolved = true;
+            break;
+          } catch (e) {
+            // try fallbacks
+          }
+          if (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized)) {
+            full = path.normalize(relNormalized);
+            try {
+              await fsPromises.access(full);
+              const r = path.relative(baseDir, full);
+              if (r && !r.startsWith('..')) nameInZip = r.replace(/\\/g, '/');
+              addOne(full, nameInZip);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          } else {
+            const withRootBase = path.join(baseDir, path.basename(relNormalized));
+            try {
+              await fsPromises.access(withRootBase);
+              full = withRootBase;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const rootRef = path.basename(relNormalized).replace(/\\/g, '/');
+              addOne(full, originalRef || rootRef);
+              if (originalRef !== rootRef) addOne(full, rootRef);
+              resolved = true;
+              break;
+            } catch (eRoot) { /* continue */ }
+            const withAudio = path.join(baseDir, 'audio', path.basename(relNormalized));
+            try {
+              await fsPromises.access(withAudio);
+              full = withAudio;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', path.basename(relNormalized)).replace(/\\/g, '/');
+              addOne(full, originalRef || audioRef);
+              if (originalRef !== audioRef) addOne(full, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) {
+              const withAudioSubdir = path.join(baseDir, 'audio', relNormalized);
+              try {
+                await fsPromises.access(withAudioSubdir);
+                full = withAudioSubdir;
+                const originalRef = relNorm.replace(/\\/g, '/');
+                const audioRef = path.join('audio', relNormalized).replace(/\\/g, '/');
+                addOne(full, originalRef || audioRef);
+                if (originalRef !== audioRef) addOne(full, audioRef);
+                resolved = true;
+                break;
+              } catch (e3) { /* try next dir */ }
+            }
+          }
+        }
+        if (!resolved) {
+          const baseNameOnly = path.basename(relNormalized);
+          for (const fb of fallbackDirs) {
+            const c1 = path.join(fb, baseNameOnly);
+            try {
+              await fsPromises.access(c1);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              addOne(c1, originalRef || baseNameOnly);
+              if (originalRef !== baseNameOnly) addOne(c1, baseNameOnly.replace(/\\/g, '/'));
+              resolved = true;
+              break;
+            } catch (e) { /* continue */ }
+            const c2 = path.join(fb, 'audio', baseNameOnly);
+            try {
+              await fsPromises.access(c2);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', baseNameOnly).replace(/\\/g, '/');
+              addOne(c2, originalRef || audioRef);
+              if (originalRef !== audioRef) addOne(c2, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          }
+        }
+        if (!resolved && (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized))) {
+          const abs = path.normalize(relNormalized);
+          try {
+            await fsPromises.access(abs);
+            const r = sourceDirs.length ? path.relative(sourceDirs[0], abs) : null;
+            const nameInZip = (r && !r.startsWith('..')) ? r.replace(/\\/g, '/') : path.basename(abs);
+            addOne(abs, nameInZip);
+          } catch (e) { /* ignore */ }
+        }
+      }
+    }
+    if (sourceDirs.length > 0) {
+      for (const baseDir of sourceDirs) {
+        const audioDir = path.join(baseDir, 'audio');
+        try {
+          const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+          for (const ent of entries) {
+            if (!ent.isFile()) continue;
+            const full = path.join(audioDir, ent.name);
+            const nameInZip = path.join('audio', ent.name).replace(/\\/g, '/');
+            addOne(full, nameInZip);
+          }
+        } catch (e) { /* 无 audio 目录或不可读 */ }
+      }
+    }
+    console.log(`[lines/save] 保存 .mpl: sourceLinePaths=${normalizedSourceLinePaths.join(';') || 'null'}, sourceDirs=${sourceDirs.join(';')}, 音频引用数=${relPaths.size}, 实际写入数=${addedSet.size}, 文件=${fp}`);
+    const finalPath = await zipjsWrite(entries, fp);
+    try {
+      const lineDir = path.dirname(fp);
+      await updateAudioHashesCacheForLine({ lineDir, lineData: contentObj });
+    } catch (e) {
+      console.warn('[lines/save] updateAudioHashesCacheForLine failed', e && e.message ? e.message : e);
+    }
+    return { ok: true, path: finalPath || fp };
+  } catch (err) {
+    return { ok: false, error: toFriendlySaveError(err, filePath) };
+  }
+});
+
+// 删除线路文件（支持子文件夹路径）
+ipcMain.handle('lines/delete', async (event, filename, dir) => {
+  const base = getLinesDir(dir);
+  // 如果 filename 包含路径分隔符，说明是子文件夹中的文件
+  let fp;
+  if (filename.includes('/') || filename.includes('\\')) {
+    // 相对路径，直接拼接
+    fp = path.join(base, filename);
+    if (!fp.endsWith('.json') && !fp.toLowerCase().endsWith('.mpl')) {
+      // 尝试 .json 和 .mpl
+      const jsonPath = fp + '.json';
+      const mplPath = fp + '.mpl';
+      try {
+        await fsPromises.access(jsonPath);
+        fp = jsonPath;
+      } catch {
+        try {
+          await fsPromises.access(mplPath);
+          fp = mplPath;
+        } catch {
+          fp = jsonPath; // 默认尝试 .json
+        }
+      }
+    }
+  } else {
+    // 简单文件名：尝试 .json 和 .mpl
+    const jsonPath = path.join(base, filename.endsWith('.json') ? filename : `${filename}.json`);
+    const mplPath = path.join(base, filename.toLowerCase().endsWith('.mpl') ? filename : `${filename}.mpl`);
+    try {
+      await fsPromises.access(jsonPath);
+      fp = jsonPath;
+    } catch {
+      try {
+        await fsPromises.access(mplPath);
+        fp = mplPath;
+      } catch {
+        fp = jsonPath; // 默认尝试 .json
+      }
+    }
+  }
+
+  // 删除前清理 MPL 缓存，避免占用句柄
+  const clearMplCache = async (target) => {
+    try {
+      const norm = path.normalize(target);
+      const cached = mplExtractCache.get(norm);
+      if (cached && cached.dir) {
+        mplExtractCache.delete(norm);
+        try { await fsPromises.rm(cached.dir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  const safeUnlink = async (target) => {
+    let lastErr = null;
+    for (let i = 0; i < 3; i++) {
+      try {
+        await fsPromises.unlink(target);
+        return true;
+      } catch (e) {
+        lastErr = e;
+        if (e && (e.code === 'EBUSY' || e.code === 'EPERM')) {
+          await new Promise(r => setTimeout(r, 150));
+          continue;
+        }
+        break;
+      }
+    }
+    // 最后一搏：使用 rm(force)
+    try {
+      await fsPromises.rm(target, { force: true });
+      return true;
+    } catch (e) {
+      lastErr = e;
+    }
+    return lastErr ? lastErr : new Error('unlink failed');
+  };
+
+  try {
+    if (fp.toLowerCase().endsWith('.mpl')) {
+      await clearMplCache(fp);
+    }
+    const res = await safeUnlink(fp);
+    if (res === true) return { ok: true };
+    return { ok: false, error: String(res) };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 在文件管理器中打开线路目录
+ipcMain.handle('lines/openFolder', async (event, dir) => {
+  const base = getLinesDir(dir);
+  try {
+    await ensureDir(base);
+    const r = await shell.openPath(base);
+    if (r && r.length) return { ok: false, error: r };
+    return { ok: true, path: base };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// ==================== 线路音频安全辅助（防路径穿越/任意读写） ====================
+
+// 仅允许渲染进程通过主进程解析后的 local-audio URL 访问文件，避免直接拼任意路径。
+const allowedLocalAudioPaths = new Map(); // normalizedAbsPath -> expiresAtMs
+const LOCAL_AUDIO_TTL_MS = 5 * 60 * 1000;
+
+function normalizeAbsPath(p) {
+  if (!p || typeof p !== 'string') return null;
+  try {
+    const normalized = path.normalize(p);
+    if (!path.isAbsolute(normalized)) return null;
+    return path.resolve(normalized);
+  } catch (e) {
+    return null;
+  }
+}
+
+function isPathUnderRoot(targetPath, rootPath) {
+  const target = normalizeAbsPath(targetPath);
+  const root = normalizeAbsPath(rootPath);
+  if (!target || !root) return false;
+  const sep = path.sep;
+  return target === root || target.startsWith(root + sep);
+}
+
+function allowLocalAudioPath(p, ttlMs = LOCAL_AUDIO_TTL_MS) {
+  const abs = normalizeAbsPath(p);
+  if (!abs) return false;
+  const ttl = Math.max(10_000, Number(ttlMs) || LOCAL_AUDIO_TTL_MS);
+  allowedLocalAudioPaths.set(abs, Date.now() + ttl);
+  return true;
+}
+
+function isLocalAudioPathAllowed(p) {
+  const abs = normalizeAbsPath(p);
+  if (!abs) return false;
+  const expiresAt = allowedLocalAudioPaths.get(abs);
+  if (!expiresAt) return false;
+  if (Date.now() > expiresAt) {
+    allowedLocalAudioPaths.delete(abs);
+    return false;
+  }
+  return true;
+}
+
+function getAllowedLineRoots() {
+  const roots = new Set();
+  try { roots.add(path.join(app.getPath('userData'), 'lines')); } catch (e) {}
+  try { roots.add(path.join(app.getPath('temp'), 'metro-pids-import')); } catch (e) {}
+  try {
+    if (typeof getLinesFolders === 'function') {
+      const folders = getLinesFolders();
+      Object.values(folders || {}).forEach((f) => {
+        const p = f && f.path;
+        if (p && typeof p === 'string' && p.trim()) roots.add(p.trim());
+      });
+    }
+  } catch (e) {}
+  return Array.from(roots).map((p) => normalizeAbsPath(p)).filter(Boolean);
+}
+
+function isLineDirAllowed(lineDir) {
+  const abs = normalizeAbsPath(lineDir);
+  if (!abs) return false;
+  if (process.env.METRO_PIDS_ALLOW_EXTERNAL_LINE_DIR === '1') return true;
+  const roots = getAllowedLineRoots();
+  return roots.some((r) => isPathUnderRoot(abs, r));
+}
+
+// 根据线路文件路径获取其所在目录（用于车站音频 resolve/copy）
+ipcMain.handle('lines/getLineDir', async (event, lineFilePath) => {
+  if (!lineFilePath || typeof lineFilePath !== 'string') return { ok: false, error: 'invalid-path' };
+  const normalized = path.normalize(lineFilePath);
+  if (!path.isAbsolute(normalized)) return { ok: false, error: 'path-must-be-absolute' };
+  try {
+    const dir = path.dirname(normalized);
+    if (!isLineDirAllowed(dir)) return { ok: false, error: 'forbidden-line-dir' };
+    return { ok: true, dir };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 将外部音频文件复制到线路目录的 audio 子目录，返回相对路径（如 audio/xxx.mp3）
+// 相同 MD5 不重复复制，直接返回已有路径
+ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, sourceFilePath) => {
+  if (!sourceFilePath || typeof sourceFilePath !== 'string') return { ok: false, error: 'invalid-source' };
+  const sourceAbs = normalizeAbsPath(sourceFilePath);
+  if (!sourceAbs) return { ok: false, error: 'source-must-be-absolute' };
+  let lineDir = null;
+  const raw = lineDirOrLineFilePath;
+  if (raw != null && typeof raw === 'string' && raw.trim()) {
+    const s = raw.trim();
+    if (s.endsWith('.json') || s.includes(path.sep) || s.includes('/')) {
+      lineDir = path.dirname(path.normalize(s));
+    } else {
+      lineDir = path.normalize(s);
+    }
+  }
+  // 无有效目录时使用默认线路目录（支持按钮添加与拖拽添加）
+  if (!lineDir || typeof lineDir !== 'string' || !lineDir.trim()) {
+    try {
+      lineDir = getLinesDir(null);
+    } catch (e) {
+      return { ok: false, error: 'no-line-dir' };
+    }
+  }
+  lineDir = normalizeAbsPath(lineDir);
+  if (!lineDir) return { ok: false, error: 'line-dir-must-be-absolute' };
+  if (!isLineDirAllowed(lineDir)) return { ok: false, error: 'forbidden-line-dir' };
+  // 统一使用 nested 布局：音频文件放在 audio/ 子目录
+  const audioDir = path.join(lineDir, 'audio');
+  await ensureDir(audioDir);
+  await hideDirOnWindows(audioDir); // 创建后标记为隐藏，避免在线路管理器中显示
+  const hashCachePath = path.join(audioDir, '.audio-hashes.json');
+  let sourceMd5 = '';
+  try {
+    const buf = await fsPromises.readFile(sourceAbs);
+    sourceMd5 = crypto.createHash('md5').update(buf).digest('hex');
+  } catch (e) {
+    return { ok: false, error: 'read-source-failed' };
+  }
+  let cache = {};
+  try {
+    const raw = await fsPromises.readFile(hashCachePath, 'utf8');
+    cache = JSON.parse(raw);
+  } catch (e) { /* no cache or invalid */ }
+  for (const [rel, stored] of Object.entries(cache)) {
+    const storedMd5 = (typeof stored === 'string')
+      ? stored
+      : (stored && typeof stored === 'object' && typeof stored.md5 === 'string' ? stored.md5 : '');
+    if (storedMd5 === sourceMd5) {
+      const full = path.join(lineDir, rel.replace(/\//g, path.sep));
+      try {
+        await fsPromises.access(full);
+        return { ok: true, relativePath: rel };
+      } catch (e) { /* file removed, continue */ }
+    }
+  }
+  const baseName = path.basename(sourceFilePath);
+  const safeName = baseName.replace(/[<>:"/\\|?*]/g, '_').trim() || 'audio';
+  let destPath = path.join(audioDir, safeName);
+  let relPath = path.join('audio', safeName);
+  if (path.sep !== '/') relPath = relPath.split(path.sep).join('/');
+  let exists = false;
+  try { await fsPromises.access(destPath); exists = true; } catch (e) { /* not exists */ }
+  if (exists) {
+    const ext = path.extname(safeName);
+    const nameNoExt = path.basename(safeName, ext);
+    for (let i = 1; i < 1000; i++) {
+      const nextName = nameNoExt + '_' + i + ext;
+      destPath = path.join(audioDir, nextName);
+      relPath = path.join('audio', nextName);
+      if (path.sep !== '/') relPath = relPath.split(path.sep).join('/');
+      try { await fsPromises.access(destPath); } catch (e) { break; }
+    }
+  }
+  try {
+    await fsPromises.copyFile(sourceAbs, destPath);
+    const newBuf = await fsPromises.readFile(destPath);
+    const newMd5 = crypto.createHash('md5').update(newBuf).digest('hex');
+    // 新缓存格式：写入 md5 + 元数据，便于后续做增量校验
+    const st = await fsPromises.stat(destPath).catch(() => null);
+    cache[relPath] = {
+      md5: newMd5,
+      size: st && typeof st.size === 'number' ? st.size : newBuf.length,
+      mtimeMs: st && typeof st.mtimeMs === 'number' ? st.mtimeMs : Date.now()
+    };
+    await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
+    return { ok: true, relativePath: relPath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 解析线路目录下的音频相对路径为绝对路径，并返回可播放的 local-audio 协议 URL（避免 file:// 被禁止加载）
+// lineFilePath 可以是线路文件路径或线路目录路径
+ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePath) => {
+  if (!lineFilePath || !relativePath || typeof relativePath !== 'string') return { ok: false, error: 'invalid-args' };
+  const normalized = path.normalize(String(lineFilePath));
+  if (!path.isAbsolute(normalized)) return { ok: false, error: 'line-path-must-be-absolute' };
+  const relSafe = String(relativePath)
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^\.(?:\.?\/)+/, '')
+    .replace(/^(\.\.\/|\.\.\\)+/, '');
+  const isMpl = normalized.toLowerCase().endsWith('.mpl');
+  const lineDir = (normalized.endsWith('.json') || isMpl) ? path.dirname(normalized) : normalized;
+  const lineDirAbs = normalizeAbsPath(lineDir);
+  if (!lineDirAbs) return { ok: false, error: 'invalid-line-dir' };
+  if (!isLineDirAllowed(lineDirAbs)) return { ok: false, error: 'forbidden-line-dir' };
+
+  let playableDir = lineDirAbs;
+  if (isMpl) {
+    const extracted = await ensureMplExtracted(normalized);
+    if (extracted && extracted.dir) {
+      const extractedAbs = normalizeAbsPath(extracted.dir);
+      if (extractedAbs) playableDir = extractedAbs;
+    }
+  }
+  const fullPath = path.resolve(playableDir, relSafe.split('/').join(path.sep));
+
+  // 防止相对路径逃逸到 playableDir 之外
+  if (!isPathUnderRoot(fullPath, playableDir)) return { ok: false, error: 'path-traversal-blocked' };
+
+  try {
+    const st = await fsPromises.stat(fullPath);
+    if (!st.isFile()) return { ok: false, error: 'not-a-file' };
+    allowLocalAudioPath(fullPath);
+    const playableUrl = 'local-audio://file/' + encodeURIComponent(fullPath);
+    return { ok: true, path: fullPath, playableUrl };
+  } catch (e) {
+    return { ok: false, error: 'file-not-found' };
+  }
+});
+
+// 收集线路数据中引用的音频相对路径（含通用音频）
+function collectAudioRelPaths(lineData) {
+  const relPaths = new Set();
+  const addPath = (p) => {
+    if (!p || typeof p !== 'string') return;
+    const norm = p.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^\.+\//, '');
+    if (!norm) return;
+    relPaths.add(norm);
+  };
+  const addBucket = (bucket) => {
+    if (!bucket || typeof bucket !== 'object') return;
+    const list = Array.isArray(bucket.list) ? bucket.list : [];
+    for (const item of list) addPath(item && (item.path || item.src || item.filePath));
+    // 兼容旧版字段
+    const legacyKeys = ['welcome', 'depart', 'arrive', 'end'];
+    for (const k of legacyKeys) {
+      const arr = bucket[k];
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) addPath(item && (item.path || item.src || item.filePath));
+    }
+  };
+  const stations = lineData && Array.isArray(lineData.stations) ? lineData.stations : [];
+  for (const st of stations) {
+    const sa = st && st.stationAudio;
+    if (!sa || typeof sa !== 'object') continue;
+    for (const dirName of ['up', 'down']) {
+      addBucket(sa[dirName]);
+    }
+  }
+  const common = lineData && lineData.meta && lineData.meta.commonAudio;
+  if (common && typeof common === 'object') {
+    addBucket(common.up);
+    addBucket(common.down);
+    if (Array.isArray(common.list)) {
+      for (const item of common.list) addPath(item && (item.path || item.src || item.filePath));
+    }
+  }
+  return relPaths;
+}
+
+// 清理线路目录下 audio 子目录中未被引用的音频文件；默认在保存/关闭时使用
+ipcMain.handle('lines/cleanupAudioDir', async (event, lineData, lineFilePath, options) => {
+  try {
+    const relPaths = collectAudioRelPaths(lineData || {});
+    const normalizedPath = (lineFilePath && typeof lineFilePath === 'string') ? path.normalize(lineFilePath.trim()) : null;
+    let lineDir = normalizedPath ? path.dirname(normalizedPath) : null;
+    if (!lineDir && typeof getLinesDir === 'function') lineDir = getLinesDir(null);
+    if (!lineDir) return { ok: false, error: 'no-line-dir' };
+    const audioDir = path.join(lineDir, 'audio');
+    let stat = null;
+    try { stat = await fsPromises.stat(audioDir); } catch (e) { return { ok: true, removed: 0, skipped: 'no-audio-dir' }; }
+    if (!stat.isDirectory()) return { ok: false, error: 'audio-dir-not-directory' };
+
+    const isMpl = normalizedPath ? normalizedPath.toLowerCase().endsWith('.mpl') : false;
+    let hasJsonSibling = false;
+    if (isMpl) {
+      const jsonSibling = normalizedPath.replace(/\.mpl$/i, '.json');
+      try { await fsPromises.access(jsonSibling); hasJsonSibling = true; } catch (e) { /* ignore */ }
+    }
+    const aggressive = isMpl && !hasJsonSibling && (!options || options.removeAllForMpl !== false);
+    let removed = 0;
+    let kept = 0;
+
+    if (aggressive) {
+      const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+      for (const ent of entries) {
+        // 保留 md5 缓存文件，避免每次保存/导出后缓存状态被清空
+        if (ent && ent.name === '.audio-hashes.json') { kept++; continue; }
+        const full = path.join(audioDir, ent.name);
+        try { await fsPromises.rm(full, { recursive: true, force: true }); removed++; } catch (e) { /* ignore */ }
+      }
+      return { ok: true, removed, kept, mode: 'aggressive' };
+    }
+
+    const allowed = new Set();
+    const addAllowed = (p) => {
+      if (!p) return;
+      const norm = p.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (!norm) return;
+      allowed.add(norm);
+      if (norm.startsWith('audio/')) allowed.add(norm.slice('audio/'.length));
+      allowed.add(path.basename(norm));
+    };
+    relPaths.forEach((p) => addAllowed(p));
+
+    const walk = async (dir) => {
+      const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          await walk(full);
+          continue;
+        }
+        // 保留 md5 缓存文件，不参与 prune/删除
+        if (ent && ent.name === '.audio-hashes.json') { kept++; continue; }
+        const relFromAudio = path.relative(audioDir, full).split(path.sep).join('/');
+        const withPrefix = ('audio/' + relFromAudio).replace(/\\/g, '/');
+        const base = path.basename(relFromAudio);
+        const shouldKeep = allowed.has(relFromAudio) || allowed.has(withPrefix) || allowed.has(base);
+        if (shouldKeep) { kept++; continue; }
+        try { await fsPromises.unlink(full); removed++; } catch (e) { /* ignore */ }
+      }
+    };
+    await walk(audioDir);
+    return { ok: true, removed, kept, mode: 'prune' };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// Telegram 风格增量：只对“引用到的音频文件”做 MD5 复核/更新缓存
+// 缓存文件：<lineDir>/audio/.audio-hashes.json
+// 兼容旧缓存：string(md5) => 自动升级为 { md5, size, mtimeMs }
+async function updateAudioHashesCacheForLine({ lineDir, lineData }) {
+  if (!lineDir || typeof lineDir !== 'string') return;
+  const audioDir = path.join(lineDir, 'audio');
+  const hashCachePath = path.join(audioDir, '.audio-hashes.json');
+
+  // 没有 audio 目录时无需处理
+  try {
+    const st = await fsPromises.stat(audioDir);
+    if (!st.isDirectory()) return;
+  } catch (e) {
+    return;
+  }
+
+  const relPaths = collectAudioRelPaths(lineData || {});
+  if (!relPaths || !relPaths.size) return;
+
+  let cache = {};
+  try {
+    const raw = await fsPromises.readFile(hashCachePath, 'utf8');
+    cache = JSON.parse(raw);
+    if (!cache || typeof cache !== 'object') cache = {};
+  } catch (e) {
+    cache = {};
+  }
+
+  let changed = false;
+
+  const normalizeRelKey = (rel) => String(rel).replace(/\\/g, '/');
+
+  for (const rel of relPaths) {
+    const relKey = normalizeRelKey(rel);
+    const entry = cache[relKey];
+
+    // 尝试定位目标文件（优先按 relKey 直连；若没带 audio/ 前缀则回退到 audioDir）
+    const candidates = [];
+    if (relKey.startsWith('audio/')) {
+      candidates.push(path.join(lineDir, relKey.replace(/\//g, path.sep)));
+    }
+    candidates.push(path.join(audioDir, relKey.replace(/^audio\//i, '').replace(/\//g, path.sep)));
+
+    let chosenFull = null;
+    let stat = null;
+    for (const full of candidates) {
+      try {
+        const s = await fsPromises.stat(full);
+        if (s.isFile()) { chosenFull = full; stat = s; break; }
+      } catch (e) { /* try next */ }
+    }
+    if (!chosenFull || !stat) continue; // 文件不存在：不更新缓存
+
+    const size = stat.size;
+    const mtimeMs = stat.mtimeMs;
+
+    // 如果缓存是对象且 size/mtimeMs 均一致，则跳过 MD5 计算
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      if (entry.md5 && entry.size === size && entry.mtimeMs === mtimeMs) continue;
+    } else if (typeof entry === 'string') {
+      // 旧缓存：只有 md5，没有 metadata，无法判断变更，按需重算并升级
+    } else {
+      // cache miss
+    }
+
+    const buf = await fsPromises.readFile(chosenFull);
+    const newMd5 = crypto.createHash('md5').update(buf).digest('hex');
+    cache[relKey] = { md5: newMd5, size, mtimeMs };
+    changed = true;
+  }
+
+  if (!changed) return;
+  await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
+}
+
+// 仅禁止把 zip 保存到主进程脚本所在目录（如 out\main），避免误写到 main.js；lines 下任意子文件夹（如 lines\123）允许保存
+function getSafeZipSaveDir() {
+  return path.join(app.getPath('userData'), 'lines');
+}
+function isPathUnderMainScriptDir(p) {
+  if (!p || typeof p !== 'string') return false;
+  const n = path.resolve(path.normalize(p));
+  const mainDir = path.resolve(__dirname);
+  const sep = path.sep;
+  return n === mainDir || n.startsWith(mainDir + sep);
+}
+// 路径是否在 userData 下（AppData/Roaming/Metro-PIDS）；在此目录下的保存不应被重定向到默认文件夹
+function isPathUnderUserData(p) {
+  if (!p || typeof p !== 'string') return false;
+  try {
+    const n = path.resolve(path.normalize(p));
+    const userData = path.resolve(app.getPath('userData'));
+    const sep = path.sep;
+    return n === userData || n.startsWith(userData + sep);
+  } catch (e) {
+    return false;
+  }
+}
+// 从线路数据得到用于导出的文件名（不含扩展名），避免使用 main/main.js 等脚本名
+function getExportBasenameFromLineData(lineData) {
+  const raw = (lineData.meta && lineData.meta.lineName) ? String(lineData.meta.lineName).replace(/<[^>]+>/g, '').trim() : '';
+  const cleaned = raw.replace(/[<>:"/\\|?*]/g, '').trim().replace(/\s+/g, ' ');
+  const name = cleaned || 'line';
+  if (/^main(\.js)?$/i.test(name)) return 'line';
+  return name.length > 255 ? name.substring(0, 255) : name;
+}
+
+// 将线路 + 所有引用音频打包为 zip；lineFilePath 可选，无则仅打包 line.json
+// 参数：event, lineData, lineFilePath, targetZipPath, audioSourceDir（与 preload 传参一致）
+ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZipPath, audioSourceDir) => {
+  if (!archiver) {
+    try { archiver = require('archiver'); } catch (e) { /* retry once */ }
+    if (!archiver) return { ok: false, error: 'missing-archiver' };
+  }
+  if (!lineData || typeof lineData !== 'object') return { ok: false, error: 'missing-line-data' };
+  // 音频来源目录：与 resolveAudioPath 一致，优先用 line.json 所在目录，保证从该目录下 audio/ 找文件
+  let lineDir = null;
+  if (lineFilePath && typeof lineFilePath === 'string' && lineFilePath.trim().length > 0) {
+    lineDir = path.dirname(path.normalize(lineFilePath.trim()));
+  }
+  if (!lineDir && audioSourceDir && typeof audioSourceDir === 'string' && audioSourceDir.trim().length > 0) {
+    lineDir = path.normalize(audioSourceDir.trim());
+    if (!path.isAbsolute(lineDir)) lineDir = path.resolve(lineDir);
+  }
+  if (!lineDir && targetZipPath && typeof targetZipPath === 'string' && targetZipPath.trim().length > 0) {
+    lineDir = path.dirname(path.normalize(targetZipPath.trim()));
+  }
+  if (!lineDir && typeof getLinesDir === 'function') {
+    try { lineDir = getLinesDir(null); } catch (e) { /* ignore */ }
+  }
+  if (lineDir && !path.isAbsolute(lineDir)) lineDir = path.resolve(lineDir);
+  const extractedForMpl = (lineFilePath && String(lineFilePath).toLowerCase().endsWith('.mpl')) ? await ensureMplExtracted(lineFilePath) : null;
+  const relPaths = collectAudioRelPaths(lineData);
+  // 从哪里打开保存到哪里：若前端传入明确的绝对目标路径，直接使用；仅在路径位于脚本目录且不在 userData 下时才重定向
+  const safeZipDir = getSafeZipSaveDir();
+  let filePath = null;
+  const rawTarget = (targetZipPath && typeof targetZipPath === 'string') ? targetZipPath.trim() : '';
+  const isExplicitAbsolute = rawTarget.length > 0 && (path.isAbsolute(rawTarget) || rawTarget.startsWith('/') || /^[A-Za-z]:[\\/]/.test(rawTarget));
+
+  if (isExplicitAbsolute) {
+    filePath = path.normalize(rawTarget);
+    // 仅当路径在脚本目录下且不在 userData 下时才重定向（避免把 userData\lines\123\xxx.mpl 误重定向到 lines\xxx.mpl）
+    if (isPathUnderMainScriptDir(filePath) && !isPathUnderUserData(filePath)) {
+      filePath = path.join(safeZipDir, getExportBasenameFromLineData(lineData) + '.mpl');
+    }
+  } else if (rawTarget.length > 0) {
+    // 相对路径：用 preferredSaveDir 或 getLinesDir 拼出绝对路径
+    let preferredSaveDir = null;
+    if (audioSourceDir && typeof audioSourceDir === 'string' && audioSourceDir.trim().length > 0) {
+      const n = path.normalize(audioSourceDir.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = n;
+    }
+    if (!preferredSaveDir && lineFilePath && typeof lineFilePath === 'string' && lineFilePath.trim().length > 0) {
+      const n = path.normalize(lineFilePath.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = path.dirname(n);
+    }
+    const baseDir = preferredSaveDir || (typeof getLinesDir === 'function' ? getLinesDir(null) : app.getPath('userData'));
+    filePath = path.join(baseDir, rawTarget);
+    if (isPathUnderMainScriptDir(filePath) && !isPathUnderUserData(filePath)) {
+      filePath = path.join(safeZipDir, getExportBasenameFromLineData(lineData) + '.mpl');
+    }
+  }
+
+  if (!filePath) {
+    // 无显式目标路径时：优先用 lineFilePath 或 audioSourceDir 所在目录保存（从哪里打开就从哪里保存）
+    const defaultFileName = getExportBasenameFromLineData(lineData) + '.mpl';
+    let preferredSaveDir = null;
+    if (lineFilePath && typeof lineFilePath === 'string' && lineFilePath.trim().length > 0) {
+      const n = path.normalize(lineFilePath.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = path.dirname(n);
+    }
+    if (!preferredSaveDir && audioSourceDir && typeof audioSourceDir === 'string' && audioSourceDir.trim().length > 0) {
+      const n = path.normalize(audioSourceDir.trim());
+      if (path.isAbsolute(n)) preferredSaveDir = n;
+    }
+    if (preferredSaveDir && isPathUnderUserData(preferredSaveDir)) {
+      filePath = path.join(preferredSaveDir, defaultFileName);
+    }
+    if (!filePath) {
+      const win = require('electron').BrowserWindow.fromWebContents(event.sender) || mainWin;
+      let defaultDir = preferredSaveDir || (typeof getLinesDir === 'function' ? getLinesDir(null) : null) || app.getPath('userData');
+      if (defaultDir && isPathUnderMainScriptDir(defaultDir) && !isPathUnderUserData(defaultDir)) defaultDir = safeZipDir;
+      const defaultPath = path.join(defaultDir || app.getPath('userData'), defaultFileName);
+      const { filePath: chosen } = await dialog.showSaveDialog(win, {
+        title: '保存线路压缩包',
+        defaultPath,
+        filters: [{ name: 'Metro-PIDS 线路包', extensions: ['mpl'] }, { name: 'ZIP', extensions: ['zip'] }]
+      });
+      filePath = chosen;
+      if (filePath && isPathUnderMainScriptDir(filePath) && !isPathUnderUserData(filePath)) {
+        filePath = path.join(safeZipDir, defaultFileName);
+      }
+    }
+  }
+  if (!filePath) return { ok: false, error: 'cancelled' };
+  // 确保文件扩展名是 .mpl，但如果已经是 .mpl 结尾则不再添加
+  // 同时处理可能的 .js.mpl 或 .js.zip 情况：如果文件名以这些结尾，移除 .js 部分
+  if (filePath.toLowerCase().endsWith('.js.mpl')) {
+    filePath = filePath.slice(0, -7) + '.mpl';
+  } else if (filePath.toLowerCase().endsWith('.js.zip')) {
+    filePath = filePath.slice(0, -7) + '.mpl';
+  } else if (!filePath.toLowerCase().endsWith('.mpl') && !filePath.toLowerCase().endsWith('.zip')) {
+    filePath = filePath + (filePath.endsWith('.') ? 'mpl' : '.mpl');
+  } else if (filePath.toLowerCase().endsWith('.zip')) {
+    // 如果用户选择了 .zip 扩展名，也允许（向后兼容），但建议使用 .mpl
+    // 保持原样，不强制转换
+  }
+  try {
+    const entries = [{ type: 'string', name: 'line.json', content: JSON.stringify(lineData, null, 2) }];
+    const addedInZip = new Set();
+    const addFileToZip = (fullPath, nameInZip) => {
+      if (!nameInZip || addedInZip.has(nameInZip)) return;
+      entries.push({ type: 'file', path: fullPath, name: nameInZip });
+      addedInZip.add(nameInZip);
+    };
+    const audioDirs = new Set();
+    if (lineDir) audioDirs.add(lineDir);
+    if (extractedForMpl && extractedForMpl.dir) audioDirs.add(extractedForMpl.dir);
+    const audioDirList = Array.from(audioDirs);
+    const fallbackAudioDirs = new Set(audioDirList);
+    try {
+      const folders = getLinesFolders();
+      Object.values(folders || {}).forEach((f) => {
+        const p = f && f.path;
+        if (p && typeof p === 'string' && p.trim()) fallbackAudioDirs.add(path.normalize(p.trim()));
+      });
+    } catch (e) { /* ignore */ }
+    try {
+      fallbackAudioDirs.add(path.join(app.getPath('userData'), 'lines'));
+    } catch (e) { /* ignore */ }
+    const fallbackDirs = Array.from(fallbackAudioDirs);
+    if (audioDirList.length) {
+      for (const rel of relPaths) {
+        const relNorm = rel.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (!relNorm || relNorm === 'audio' || relNorm.endsWith('/')) continue;
+        const relNormalized = relNorm.split('/').join(path.sep);
+        let resolved = false;
+        for (const baseDir of audioDirList) {
+          let full = path.join(baseDir, relNormalized);
+          let nameInZip = relNorm;
+          try {
+            await fsPromises.access(full);
+            addFileToZip(full, nameInZip);
+            resolved = true;
+            break;
+          } catch (e) { /* try fallbacks */ }
+          if (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized)) {
+            full = path.normalize(relNormalized);
+            try {
+              await fsPromises.access(full);
+              const r = path.relative(baseDir, full);
+              if (r && !r.startsWith('..')) nameInZip = r.replace(/\\/g, '/');
+              addFileToZip(full, nameInZip);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          } else {
+            const withRootBase = path.join(baseDir, path.basename(relNormalized));
+            try {
+              await fsPromises.access(withRootBase);
+              full = withRootBase;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const rootRef = path.basename(relNormalized).replace(/\\/g, '/');
+              addFileToZip(full, originalRef || rootRef);
+              if (originalRef !== rootRef) addFileToZip(full, rootRef);
+              resolved = true;
+              break;
+            } catch (eRoot) { /* continue */ }
+            const withAudio = path.join(baseDir, 'audio', path.basename(relNormalized));
+            try {
+              await fsPromises.access(withAudio);
+              full = withAudio;
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', path.basename(relNormalized)).replace(/\\/g, '/');
+              addFileToZip(full, originalRef || audioRef);
+              if (originalRef !== audioRef) addFileToZip(full, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) {
+              const withAudioSubdir = path.join(baseDir, 'audio', relNormalized);
+              try {
+                await fsPromises.access(withAudioSubdir);
+                full = withAudioSubdir;
+                const originalRef = relNorm.replace(/\\/g, '/');
+                const audioRef = path.join('audio', relNormalized).replace(/\\/g, '/');
+                addFileToZip(full, originalRef || audioRef);
+                if (originalRef !== audioRef) addFileToZip(full, audioRef);
+                resolved = true;
+                break;
+              } catch (e3) { /* keep trying */ }
+            }
+          }
+        }
+        if (!resolved) {
+          const baseNameOnly = path.basename(relNormalized);
+          for (const fb of fallbackDirs) {
+            const c1 = path.join(fb, baseNameOnly);
+            try {
+              await fsPromises.access(c1);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              addFileToZip(c1, originalRef || baseNameOnly);
+              if (originalRef !== baseNameOnly) addFileToZip(c1, baseNameOnly.replace(/\\/g, '/'));
+              resolved = true;
+              break;
+            } catch (e) { /* continue */ }
+            const c2 = path.join(fb, 'audio', baseNameOnly);
+            try {
+              await fsPromises.access(c2);
+              const originalRef = relNorm.replace(/\\/g, '/');
+              const audioRef = path.join('audio', baseNameOnly).replace(/\\/g, '/');
+              addFileToZip(c2, originalRef || audioRef);
+              if (originalRef !== audioRef) addFileToZip(c2, audioRef);
+              resolved = true;
+              break;
+            } catch (e2) { /* continue */ }
+          }
+        }
+        if (!resolved && (path.isAbsolute(relNormalized) || /^[A-Za-z]:[\\/]/.test(relNormalized))) {
+          const abs = path.normalize(relNormalized);
+          try {
+            await fsPromises.access(abs);
+            const r = audioDirList.length ? path.relative(audioDirList[0], abs) : null;
+            const nameInZip = (r && !r.startsWith('..')) ? r.replace(/\\/g, '/') : path.basename(abs);
+            addFileToZip(abs, nameInZip);
+          } catch (e) { /* ignore */ }
+        }
+      }
+      for (const baseDir of audioDirList) {
+        const audioDir = path.join(baseDir, 'audio');
+        try {
+          const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+          for (const ent of entries) {
+            if (!ent.isFile()) continue;
+            const full = path.join(audioDir, ent.name);
+            const nameInZip = path.join('audio', ent.name).replace(/\\/g, '/');
+            addFileToZip(full, nameInZip);
+          }
+        } catch (e) {
+          // 无 audio 目录或不可读，忽略
+        }
+      }
+    }
+    console.log(`[lines/saveAsZip] 打包 .mpl: lineFilePath=${lineFilePath || 'null'}, audioSourceDir=${audioSourceDir || 'null'}, sourceDirs=${audioDirList.join(';')}, 音频引用数=${relPaths.size}, 实际写入数=${addedInZip.size}, 文件=${filePath}`);
+    const finalPath = await zipjsWrite(entries, filePath);
+    return { ok: true, path: finalPath || filePath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 从 zip 解压到临时目录，返回目录路径供前端读取 line.json
+ipcMain.handle('lines/extractZipToTemp', async (event, zipPath) => {
+  if (!zipPath) return { ok: false, error: 'missing-path' };
+  const tempBase = path.join(app.getPath('temp'), 'metro-pids-import');
+  await ensureDir(tempBase);
+  const extractDir = path.join(tempBase, `import_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  try {
+    await zipjsExtract(zipPath, extractDir);
+    const lineJsonPath = path.join(extractDir, 'line.json');
+    try {
+      await fsPromises.access(lineJsonPath);
+    } catch (e) {
+      const files = await fsPromises.readdir(extractDir);
+      const jsonFile = files.find((f) => f.toLowerCase().endsWith('.json'));
+      if (jsonFile) return { ok: true, dir: extractDir, jsonName: jsonFile, archivePath: zipPath };
+      return { ok: false, error: 'no-json-in-zip' };
+    }
+    return { ok: true, dir: extractDir, jsonName: 'line.json', archivePath: zipPath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 打开指定的文件夹路径（用于右键菜单）
+ipcMain.handle('lines/folders/open', async (event, folderPath) => {
+  try {
+    const r = await shell.openPath(folderPath);
+    if (r && r.length) return { ok: false, error: r };
+    return { ok: true, path: folderPath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 多文件夹管理：列出所有文件夹（自动扫描并添加已存在的文件夹）
+ipcMain.handle('lines/folders/list', async () => {
+  try {
+    const baseLinesDir = path.join(app.getPath('userData'), 'lines');
+    await ensureDir(baseLinesDir);
+    
+    // 扫描 lines 目录下的所有子文件夹
+    const existingDirs = [];
+    try {
+      const entries = await fsPromises.readdir(baseLinesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const dirPath = path.join(baseLinesDir, entry.name);
+          existingDirs.push({
+            name: entry.name,
+            path: dirPath
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('扫描文件夹失败:', e);
+    }
+    
+    // 获取当前配置的文件夹
+    let folders = getLinesFolders();
+    let hasChanges = false;
+    
+    // 将已存在但未配置的文件夹添加到配置中
+    for (const dir of existingDirs) {
+      const existingId = Object.keys(folders).find(id => folders[id].path === dir.path);
+      if (!existingId) {
+        // 文件夹存在但不在配置中，自动添加
+        const newId = `folder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        folders[newId] = { name: dir.name, path: dir.path };
+        hasChanges = true;
+      }
+    }
+    
+    // 如果有新文件夹被添加，保存配置
+    if (hasChanges && store) {
+      store.set('linesFolders', folders);
+    }
+    
+    const current = getCurrentLinesFolder();
+    const result = Object.keys(folders).map(id => ({
+      id,
+      name: folders[id].name,
+      path: folders[id].path,
+      isCurrent: id === current
+    }));
+    return { ok: true, folders: result, current };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 多文件夹管理：添加文件夹（在 lines 目录下创建子文件夹）
+ipcMain.handle('lines/folders/add', async (event, folderName) => {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  if (!win) return { ok: false, error: 'no-window' };
+  try {
+    // 获取 lines 基础目录
+    const baseLinesDir = path.join(app.getPath('userData'), 'lines');
+    await ensureDir(baseLinesDir);
+    
+    // 如果没有提供文件夹名，返回错误提示前端先获取用户输入
+    if (!folderName || typeof folderName !== 'string' || !folderName.trim()) {
+      return { ok: false, error: 'folder-name-required' };
+    }
+    
+    // 清理文件夹名称，移除不合法字符
+    const sanitizedFolderName = folderName.trim().replace(/[<>:"/\\|?*]/g, '');
+    if (!sanitizedFolderName) {
+      return { ok: false, error: '文件夹名称无效' };
+    }
+    
+    // 先检查文件夹名称是否已存在（按名称检查，不按路径）
+    const folders = getLinesFolders();
+    const existingByName = Object.keys(folders).find(id => {
+      const folder = folders[id];
+      return folder && folder.name === sanitizedFolderName;
+    });
+    if (existingByName) {
+      return { ok: false, error: `文件夹名称"${sanitizedFolderName}"已存在，请使用其他名称` };
+    }
+    
+    // 构建完整路径
+    const folderPath = path.join(baseLinesDir, sanitizedFolderName);
+    
+    // 检查文件夹路径是否已存在
+    try {
+      const stat = await fsPromises.stat(folderPath);
+      if (stat.isDirectory()) {
+        // 文件夹路径已存在，检查是否已在配置中
+        const existingId = Object.keys(folders).find(id => folders[id].path === folderPath);
+        if (existingId) {
+          return { ok: false, error: '该文件夹路径已存在', folderId: existingId };
+        }
+        // 文件夹路径已存在但不在配置中，直接添加到配置
+      } else {
+        return { ok: false, error: '路径已存在但不是文件夹' };
+      }
+    } catch (e) {
+      // 文件夹不存在，创建它
+      await ensureDir(folderPath);
+    }
+    
+    // 再次检查该路径是否已经在配置中（防止并发创建）
+    const foldersCheck = getLinesFolders();
+    const existingId = Object.keys(foldersCheck).find(id => foldersCheck[id].path === folderPath);
+    if (existingId) {
+      return { ok: false, error: '该文件夹已存在', folderId: existingId };
+    }
+    
+    // 生成新的文件夹ID（使用时间戳）
+    const newId = `folder_${Date.now()}`;
+    
+    foldersCheck[newId] = { name: sanitizedFolderName, path: folderPath };
+    if (store) {
+      store.set('linesFolders', foldersCheck);
+    }
+    
+    return { ok: true, folderId: newId, name: sanitizedFolderName, path: folderPath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 多文件夹管理：删除文件夹（同时删除文件夹及其内部的所有文件）
+// 支持通过路径或ID来删除文件夹（优先使用路径）
+ipcMain.handle('lines/folders/remove', async (event, folderPathOrId) => {
+  try {
+    console.log(`[main] 删除文件夹，参数: ${folderPathOrId}`);
+    const folders = getLinesFolders();
+    
+    let targetFolderId = null;
+    let folderPath = null;
+    
+    // 判断传入的是路径还是ID
+    const isPath = folderPathOrId.includes(path.sep) || path.isAbsolute(folderPathOrId);
+    
+    if (isPath) {
+      // 传入的是路径，通过路径查找配置中的文件夹
+      folderPath = folderPathOrId;
+      // 标准化路径（处理路径分隔符差异）
+      const normalizedPath = path.normalize(folderPath);
+      
+      // 在配置中查找匹配的路径
+      for (const [id, folder] of Object.entries(folders)) {
+        const normalizedFolderPath = path.normalize(folder.path);
+        if (normalizedFolderPath === normalizedPath) {
+          targetFolderId = id;
+          break;
+        }
+      }
+      
+      if (!targetFolderId) {
+        console.warn(`[main] 通过路径找不到文件夹配置，路径: ${folderPath}`);
+        // 即使配置中找不到，也尝试直接删除文件系统中的文件夹
+        // 这样可以处理配置不同步的情况
+      }
+    } else {
+      // 传入的是ID，通过ID查找
+      targetFolderId = folderPathOrId;
+      if (!folders[targetFolderId]) {
+        const availableIds = Object.keys(folders);
+        const errorMsg = `文件夹配置不存在。请求的ID: "${targetFolderId}"，当前可用的ID: ${availableIds.length > 0 ? availableIds.map(id => `"${id}"`).join(', ') : '无'}`;
+        console.warn(`[main] ${errorMsg}`);
+        return { ok: false, error: errorMsg };
+      }
+      folderPath = folders[targetFolderId].path;
+    }
+    
+    // 如果没有找到配置但传入了路径，使用传入的路径直接删除
+    if (!targetFolderId && isPath) {
+      console.log(`[main] 配置中未找到文件夹，但将尝试删除路径: ${folderPath}`);
+    }
+    
+    // 验证文件夹路径是否存在
+    try {
+      const stat = await fsPromises.stat(folderPath);
+      if (!stat.isDirectory()) {
+        // 路径存在但不是文件夹，只删除配置（如果找到了配置）
+        console.warn(`路径 ${folderPath} 存在但不是文件夹，只删除配置`);
+        if (targetFolderId && folders[targetFolderId]) {
+          delete folders[targetFolderId];
+          if (store) {
+            store.set('linesFolders', folders);
+          }
+        }
+        return { ok: true };
+      }
+    } catch (statErr) {
+      // 文件夹路径不存在，可能已经被删除，只删除配置（如果找到了配置）
+      console.warn(`文件夹路径 ${folderPath} 不存在，只删除配置:`, statErr.message);
+      if (targetFolderId && folders[targetFolderId]) {
+        delete folders[targetFolderId];
+        if (store) {
+          store.set('linesFolders', folders);
+        }
+      }
+      return { ok: true };
+    }
+    
+    // 如果删除的是当前文件夹，切换到剩余的第一个文件夹
+    if (targetFolderId && store) {
+      const current = getCurrentLinesFolder();
+      if (current === targetFolderId) {
+        const remaining = Object.keys(folders).filter(id => id !== targetFolderId);
+        store.set('linesCurrentFolder', remaining[0] || null);
+      }
+    }
+    
+    // 删除文件夹及其内部的所有文件
+    try {
+      // 使用 Node.js 14.14.0+ 的 fs.promises.rm，支持 recursive 选项
+      await fsPromises.rm(folderPath, { recursive: true, force: true });
+      console.log(`成功删除文件夹: ${folderPath}`);
+    } catch (rmErr) {
+      // 如果 fs.promises.rm 不可用或失败，尝试使用 rmdir
+      try {
+        await fsPromises.rmdir(folderPath, { recursive: true });
+        console.log(`使用 rmdir 成功删除文件夹: ${folderPath}`);
+      } catch (rmdirErr) {
+        // 如果都失败，记录错误但继续删除配置
+        console.error(`删除文件夹失败 ${folderPath}:`, rmdirErr);
+        // 即使删除失败，也继续删除配置，避免配置和实际文件不一致
+        // return { ok: false, error: `删除文件夹失败: ${rmdirErr.message}` };
+      }
+    }
+    
+    // 从配置中移除文件夹（如果找到了配置）
+    if (targetFolderId && folders[targetFolderId]) {
+      delete folders[targetFolderId];
+      if (store) {
+        store.set('linesFolders', folders);
+      }
+    }
+    
+    return { ok: true };
+  } catch (err) {
+    console.error('删除文件夹时发生错误:', err);
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 多文件夹管理：重命名文件夹
+ipcMain.handle('lines/folders/rename', async (event, folderId, newName) => {
+  try {
+    if (!newName || typeof newName !== 'string' || newName.trim().length === 0) {
+      return { ok: false, error: '文件夹名称不能为空' };
+    }
+    
+    const folders = getLinesFolders();
+    if (!folders[folderId]) {
+      return { ok: false, error: '文件夹不存在' };
+    }
+    
+    folders[folderId].name = newName.trim();
+    if (store) {
+      store.set('linesFolders', folders);
+    }
+    
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 多文件夹管理：切换当前文件夹
+ipcMain.handle('lines/folders/switch', async (event, folderId) => {
+  try {
+    const folders = getLinesFolders();
+    if (!folders[folderId]) {
+      return { ok: false, error: '文件夹不存在' };
+    }
+    
+    if (store) {
+      store.set('linesCurrentFolder', folderId);
+    }
+    
+    return { ok: true, folderId, name: folders[folderId].name, path: folders[folderId].path };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 多文件夹管理：获取当前文件夹
+ipcMain.handle('lines/folders/current', async () => {
+  try {
+    const folders = getLinesFolders();
+    const current = getCurrentLinesFolder();
+    const folder = folders[current];
+    if (!folder) {
+      return { ok: false, error: '当前文件夹不存在' };
+    }
+    return { ok: true, folderId: current, name: folder.name, path: folder.path };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 短交路预设目录
+function getShortTurnsDir() {
+  return path.join(app.getPath('userData'), 'shortturns');
+}
+
+// 列出短交路预设（按线路名称筛选）
+ipcMain.handle('shortturns/list', async (event, lineName) => {
+  const base = getShortTurnsDir();
+  await ensureDir(base);
+  try {
+    const files = await findJsonFiles(base, base, false); // 不递归查找子文件夹
+    const presets = [];
+    for (const file of files) {
+      try {
+        const res = await fsPromises.readFile(file.fullPath, 'utf8');
+        const preset = JSON.parse(res);
+        // 如果指定了线路名称，只返回匹配的预设
+        if (!lineName || (preset.lineName && preset.lineName === lineName)) {
+          // file.name 可能包含路径，我们只需要文件名（不含扩展名）
+          const presetName = path.basename(file.name, '.json');
+          presets.push({
+            name: presetName,
+            ...preset,
+            mtime: file.mtime
+          });
+        }
+      } catch (e) {
+        // 跳过无效文件
+      }
+    }
+    return presets;
+  } catch (err) {
+    return { error: String(err) };
+  }
+});
+
+// 保存短交路预设
+ipcMain.handle('shortturns/save', async (event, presetName, presetData) => {
+  const base = getShortTurnsDir();
+  await ensureDir(base);
+  const sanitized = presetName.replace(/[<>:"/\\|?*]/g, '').trim();
+  if (!sanitized) {
+    return { ok: false, error: '预设名称无效' };
+  }
+  const fp = path.join(base, sanitized + '.json');
+  try {
+    await writeSafe(fp, JSON.stringify(presetData, null, 2), 'utf8');
+    return { ok: true, path: fp };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 读取短交路预设
+ipcMain.handle('shortturns/read', async (event, presetName) => {
+  const base = getShortTurnsDir();
+  const sanitized = presetName.replace(/[<>:"/\\|?*]/g, '').trim();
+  if (!sanitized) {
+    return { ok: false, error: '预设名称无效' };
+  }
+  const fp = path.join(base, sanitized + '.json');
+  try {
+    const txt = await fsPromises.readFile(fp, 'utf8');
+    return { ok: true, content: JSON.parse(txt) };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 删除短交路预设
+ipcMain.handle('shortturns/delete', async (event, presetName) => {
+  const base = getShortTurnsDir();
+  const sanitized = presetName.replace(/[<>:"/\\|?*]/g, '').trim();
+  if (!sanitized) {
+    return { ok: false, error: '预设名称无效' };
+  }
+  const fp = path.join(base, sanitized + '.json');
+  try {
+    await fsPromises.unlink(fp);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 计算数据的 MD5 哈希值（用于比较线路是否相同）
+ipcMain.handle('utils/calculate-md5', async (event, data) => {
+  try {
+    // 标准化数据（移除版本号等可能变化的字段）
+    const normalizeForCompare = (line) => {
+      const normalized = JSON.parse(JSON.stringify(line));
+      if (normalized.meta) {
+        delete normalized.meta.version;
+      }
+      return normalized;
+    };
+    
+    const normalized = normalizeForCompare(data);
+    
+    // 将数据转换为 JSON 字符串（标准化格式，排序键）
+    const jsonStr = JSON.stringify(normalized, Object.keys(normalized).sort());
+    
+    // 使用 Node.js crypto 模块计算 MD5
+    const hash = crypto.createHash('md5').update(jsonStr, 'utf8').digest('hex');
+    return { ok: true, hash };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 在默认浏览器打开外部链接
+ipcMain.handle('open-external', async (event, url) => {
+  try {
+    if (!url || typeof url !== 'string') return { ok: false, error: 'invalid-url' };
+    const result = await shell.openExternal(url);
+    return { ok: true, result };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// 提供应用版本给渲染层
+ipcMain.handle('app/get-version', async () => {
+  try {
+    return { ok: true, version: app.getVersion() };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('app/is-packaged', async () => {
+  try {
+    return app.isPackaged;
+  } catch (e) {
+    return false;
+  }
+});
+
+// Mica Electron IPC 处理器
+ipcMain.handle('mica/get-info', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    const info = {
+      isWindows11: IS_WINDOWS_11,
+      isWindows10: !!WIN10,
+      currentEffect: null,
+      currentTheme: 'auto',
+      backgroundColor: mainWin.getBackgroundColor ? mainWin.getBackgroundColor() : '#00000000'
+    };
+    
+    // 尝试检测当前效果（通过检查方法是否存在）
+    if (MicaBrowserWindow !== BrowserWindow && mainWin) {
+      if (typeof mainWin.setMicaAcrylicEffect === 'function') {
+        // 无法直接检测当前效果，但可以知道支持 Mica Acrylic
+        info.currentEffect = 'acrylic'; // 使用 Acrylic 效果
+      } else if (typeof mainWin.setMicaEffect === 'function') {
+        info.currentEffect = 'mica'; // 标准 Mica 效果
+      }
+    }
+    
+    return { ok: true, ...info };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-mica-effect', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (MicaBrowserWindow === BrowserWindow) {
+      return { ok: false, error: 'Mica Electron 未加载' };
+    }
+    
+    if (!IS_WINDOWS_11) {
+      return { ok: false, error: 'Mica 效果仅支持 Windows 11' };
+    }
+    
+    if (typeof mainWin.setMicaAcrylicEffect !== 'function') {
+      return { ok: false, error: 'setMicaAcrylicEffect 方法不可用' };
+    }
+    
+    // 重要：按照 mica-electron 的要求，必须先设置背景为透明，再应用 Mica 效果
+    // Mica 效果在 Windows 11 上需要窗口背景完全透明才能显示
+    
+    // 步骤1: 先设置主题（Mica 效果需要主题支持）
+    if (typeof mainWin.setAutoTheme === 'function') {
+      mainWin.setAutoTheme();
+      console.log('[Mica IPC] 步骤1: 已设置自动主题');
+    } else if (typeof mainWin.setLightTheme === 'function') {
+      mainWin.setLightTheme();
+      console.log('[Mica IPC] 步骤1: 已设置浅色主题');
+    }
+    
+    // 步骤2: 设置背景为透明（多次设置确保生效）
+    mainWin.setBackgroundColor('#00000000');
+    console.log('[Mica IPC] 步骤2: 设置背景为透明');
+    
+    // 延迟一下，确保背景色设置生效
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // 步骤3: 再次设置背景透明
+    mainWin.setBackgroundColor('#00000000');
+    console.log('[Mica IPC] 步骤3: 再次确保背景透明');
+    
+    // 步骤4: 应用 Mica Acrylic 效果（更强的模糊）
+    // 注意：Mica Acrylic 效果可能需要窗口有焦点才能显示
+    // 如果窗口失去焦点，效果可能会消失
+    mainWin.setMicaAcrylicEffect();
+    console.log('[Mica IPC] 步骤4: 已调用 setMicaAcrylicEffect()');
+    
+    // 尝试使用 alwaysFocused 来保持 Mica 效果（如果可用）
+    // 注意：这会降低性能，所以只在需要时使用
+    // 暂时禁用 alwaysFocused，因为它可能不是必需的
+    // if (typeof mainWin.alwaysFocused === 'function') {
+    //   try {
+    //     mainWin.alwaysFocused(true);
+    //     console.log('[Mica IPC] 步骤4.1: 已启用 alwaysFocused 以保持 Mica 效果');
+    //   } catch (e) {
+    //     console.warn('[Mica IPC] alwaysFocused 不可用:', e);
+    //   }
+    // }
+    
+    // 确保窗口有焦点（Mica 效果可能需要窗口有焦点才能显示）
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.focus();
+      console.log('[Mica IPC] 步骤4.1: 已确保窗口有焦点');
+    }
+    
+    // 步骤5: 延迟再次应用，确保效果生效
+    setTimeout(() => {
+      try {
+        mainWin.setBackgroundColor('#00000000');
+        mainWin.setMicaAcrylicEffect();
+        const bgFinal = mainWin.getBackgroundColor();
+        console.log('[Mica IPC] 步骤5: 延迟再次应用 Mica Acrylic 效果，最终背景色:', bgFinal);
+        console.log('[Mica IPC] 💡 提示：即使显示 #000000，Mica 模糊效果应该仍然可见');
+        console.log('[Mica IPC] 💡 如果看不到模糊，请检查内容区域的背景色是否遮挡了效果');
+        
+        // 检查背景色（应用 Mica 后可能返回 #000000，这是正常的）
+        const bgAfterMica = mainWin.getBackgroundColor();
+        console.log('[Mica IPC] 应用 Mica 后背景色:', bgAfterMica);
+        console.log('[Mica IPC] 💡 提示：即使显示 #000000，Mica 模糊效果应该仍然可见');
+        console.log('[Mica IPC] 💡 如果看不到模糊，请检查内容区域的背景色是否遮挡了效果');
+      } catch (e) {
+        console.warn('[Mica IPC] 延迟应用失败:', e);
+      }
+    }, 100);
+    
+    return { ok: true };
+  } catch (e) {
+    console.error('[Mica IPC] 设置 Mica 效果失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-acrylic', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (MicaBrowserWindow === BrowserWindow) {
+      return { ok: false, error: 'Mica Electron 未加载' };
+    }
+    
+    if (!WIN10) {
+      return { ok: false, error: 'Acrylic 效果需要 Windows 10+' };
+    }
+    
+    if (typeof mainWin.setAcrylic !== 'function') {
+      return { ok: false, error: 'setAcrylic 方法不可用' };
+    }
+    
+    mainWin.setBackgroundColor('#00000000');
+    mainWin.setAcrylic();
+    
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-light-theme', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (MicaBrowserWindow === BrowserWindow) {
+      return { ok: false, error: 'Mica Electron 未加载' };
+    }
+    
+    applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, 'light');
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      applyNativeBlurStateToWindow(lineManagerWin, MAIN_BLUR_ENABLED, 'light');
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-dark-theme', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (MicaBrowserWindow === BrowserWindow) {
+      return { ok: false, error: 'Mica Electron 未加载' };
+    }
+    
+    applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, 'dark');
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      applyNativeBlurStateToWindow(lineManagerWin, MAIN_BLUR_ENABLED, 'dark');
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-auto-theme', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (MicaBrowserWindow === BrowserWindow) {
+      return { ok: false, error: 'Mica Electron 未加载' };
+    }
+    
+    applyNativeBlurStateToWindow(mainWin, MAIN_BLUR_ENABLED, 'system');
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      applyNativeBlurStateToWindow(lineManagerWin, MAIN_BLUR_ENABLED, 'system');
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-background-color', async (event, color) => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (typeof mainWin.setBackgroundColor !== 'function') {
+      return { ok: false, error: 'setBackgroundColor 方法不可用' };
+    }
+    
+    mainWin.setBackgroundColor(color || '#00000000');
+    
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('mica/set-rounded-corner', async () => {
+  try {
+    if (!mainWin || mainWin.isDestroyed()) {
+      return { ok: false, error: '主窗口不存在' };
+    }
+    
+    if (MicaBrowserWindow === BrowserWindow) {
+      return { ok: false, error: 'Mica Electron 未加载' };
+    }
+    
+    if (typeof mainWin.setRoundedCorner === 'function') {
+      mainWin.setRoundedCorner();
+      return { ok: true };
+    } else if (typeof mainWin.setSmallRoundedCorner === 'function') {
+      mainWin.setSmallRoundedCorner();
+      return { ok: true };
+    }
+    
+    return { ok: false, error: 'setRoundedCorner 方法不可用' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 提供操作系统版本信息给渲染层
+ipcMain.handle('app/get-os-version', async () => {
+  try {
+    const os = require('os');
+    const { execSync } = require('child_process');
+    const platform = os.platform();
+    let osVersion = '';
+    
+    if (platform === 'win32') {
+      // Windows: 使用 PowerShell 获取准确的 Windows 版本信息
+      try {
+        // 使用 PowerShell 获取 Windows 版本号（更准确）
+        const psCommand = `
+          $os = Get-CimInstance Win32_OperatingSystem;
+          $version = $os.Version;
+          $build = $os.BuildNumber;
+          $caption = $os.Caption;
+          # 检查是否是 Windows 11（Build 22000 或更高）
+          if ([int]$build -ge 22000) {
+            $caption = "Windows 11";
+          }
+          Write-Output "$caption $version (Build $build)"
+        `;
+        const result = execSync(`powershell -Command "${psCommand}"`, { 
+          encoding: 'utf8', 
+          timeout: 5000,
+          windowsHide: true 
+        }).trim();
+        if (result) {
+          osVersion = result;
+        } else {
+          // 降级方案：使用 os.release()
+          const release = os.release();
+          osVersion = `Windows ${release}`;
+        }
+      } catch (e) {
+        // 如果 PowerShell 失败，使用降级方案
+        console.warn('Failed to get Windows version via PowerShell:', e);
+        const release = os.release();
+        const buildNumber = release.split('.')[2] || '';
+        // Windows 11 的 Build 号是 22000 或更高
+        if (buildNumber && parseInt(buildNumber) >= 22000) {
+          osVersion = `Windows 11 ${release}`;
+        } else {
+          osVersion = `Windows 10 ${release}`;
+        }
+      }
+    } else if (platform === 'darwin') {
+      // macOS: 使用 os.release() 获取 Darwin 版本，通常需要映射到 macOS 版本
+      const release = os.release();
+      // Darwin 版本号映射（简化版本，可根据需要扩展）
+      osVersion = `macOS ${release}`;
+    } else if (platform === 'linux') {
+      // Linux: 尝试获取发行版信息，如果没有则使用内核版本
+      // 性能优化：使用异步操作避免阻塞事件循环
+      // 注意：由于这是IPC处理函数，异步读取可能导致返回值延迟
+      // 为了保持兼容性，先尝试同步读取，如果失败则使用默认值
+      try {
+        const fs = require('fs');
+        // 尝试同步读取（文件很小，影响可接受）
+        if (fs.existsSync('/etc/os-release')) {
+          const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+          const lines = osRelease.split('\n');
+          let name = '';
+          let version = '';
+          for (const line of lines) {
+            if (line.startsWith('PRETTY_NAME=')) {
+              const match = line.match(/PRETTY_NAME="(.+)"/);
+              if (match) {
+                osVersion = match[1];
+                break;
+              }
+            } else if (line.startsWith('NAME=') && !name) {
+              const match = line.match(/NAME="(.+)"/);
+              if (match) name = match[1];
+            } else if (line.startsWith('VERSION=') && !version) {
+              const match = line.match(/VERSION="(.+)"/);
+              if (match) version = match[1];
+            }
+          }
+          if (!osVersion && name) {
+            osVersion = version ? `${name} ${version}` : name;
+          }
+        }
+        if (!osVersion) {
+          osVersion = `Linux ${os.release()}`;
+        }
+      } catch (e) {
+        osVersion = `Linux ${os.release()}`;
+      }
+    } else {
+      osVersion = `${platform} ${os.release()}`;
+    }
+    
+    return { ok: true, osVersion: osVersion || `${platform} ${os.release()}` };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 获取系统信息（完整信息）
+ipcMain.handle('app/get-system-info', async () => {
+  try {
+    const os = require('os');
+    const platform = os.platform();
+    
+    const systemInfo = {
+      platform: platform,           // 'win32', 'darwin', 'linux'等
+      arch: process.arch,            // 'x64', 'arm64'等
+      osName: os.type(),             // 操作系统类型
+      osVersion: os.release(),       // 操作系统版本（简化）
+      hostname: os.hostname(),       // 主机名
+      totalMem: os.totalmem(),       // 总内存(字节)
+      freeMem: os.freemem(),         // 可用内存(字节)
+      cpuCores: os.cpus().length     // CPU核心数
+    };
+    
+    // 尝试获取详细的操作系统版本（复用现有的get-os-version逻辑）
+    try {
+      const osVersionResult = await new Promise((resolve) => {
+        // 调用内部逻辑获取详细OS版本
+        const handle = async () => {
+          try {
+            const osModule = require('os');
+            const { execSync } = require('child_process');
+            const platform = osModule.platform();
+            let osVersion = '';
+            
+            if (platform === 'win32') {
+              try {
+                const psCommand = `
+                  $os = Get-CimInstance Win32_OperatingSystem;
+                  $version = $os.Version;
+                  $build = $os.BuildNumber;
+                  $caption = $os.Caption;
+                  if ([int]$build -ge 22000) {
+                    $caption = "Windows 11";
+                  }
+                  Write-Output "$caption $version (Build $build)"
+                `;
+                const result = execSync(`powershell -Command "${psCommand}"`, { 
+                  encoding: 'utf8', 
+                  timeout: 5000,
+                  windowsHide: true 
+                }).trim();
+                osVersion = result || `Windows ${osModule.release()}`;
+              } catch (e) {
+                const release = osModule.release();
+                const buildNumber = release.split('.')[2] || '';
+                osVersion = (buildNumber && parseInt(buildNumber) >= 22000) 
+                  ? `Windows 11 ${release}` 
+                  : `Windows 10 ${release}`;
+              }
+            } else if (platform === 'darwin') {
+              osVersion = `macOS ${osModule.release()}`;
+            } else if (platform === 'linux') {
+              try {
+                const fs = require('fs');
+                if (fs.existsSync('/etc/os-release')) {
+                  const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+                  const lines = osRelease.split('\n');
+                  for (const line of lines) {
+                    if (line.startsWith('PRETTY_NAME=')) {
+                      const match = line.match(/PRETTY_NAME="(.+)"/);
+                      if (match) {
+                        osVersion = match[1];
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (!osVersion) {
+                  osVersion = `Linux ${osModule.release()}`;
+                }
+              } catch (e) {
+                osVersion = `Linux ${osModule.release()}`;
+              }
+            } else {
+              osVersion = `${platform} ${osModule.release()}`;
+            }
+            
+            resolve(osVersion);
+          } catch (err) {
+            resolve(`${osModule.platform()} ${osModule.release()}`);
+          }
+        };
+        handle();
+      });
+      systemInfo.osVersionDetailed = osVersionResult;
+    } catch (e) {
+      // 忽略错误，使用默认值
+      systemInfo.osVersionDetailed = `${platform} ${os.release()}`;
+    }
+    
+    return { ok: true, ...systemInfo };
+  } catch (error) {
+    console.error('[main] 获取系统信息失败:', error);
+    return { 
+      ok: false, 
+      error: String(error),
+      platform: 'unknown',
+      arch: 'unknown',
+      osName: 'unknown',
+      osVersion: 'unknown',
+      hostname: 'unknown'
+    };
+  }
+});
+
+// 获取设备唯一ID（多层级存储：文件系统 + 综合判断）
+ipcMain.handle('app/get-device-id', async () => {
+  try {
+    const deviceIdFilePath = path.join(app.getPath('userData'), 'device_id.txt');
+    let deviceId = null;
+    
+    // 第一层：尝试从文件系统读取（卸载后重装仍可能保留）
+    try {
+      if (fs.existsSync(deviceIdFilePath)) {
+        const fileContent = await fsPromises.readFile(deviceIdFilePath, 'utf8');
+        const storedId = fileContent.trim();
+        if (storedId && storedId.length > 10) {
+          deviceId = storedId;
+        }
+      }
+    } catch (e) {
+      console.warn('[main] 读取设备ID文件失败:', e);
+    }
+    
+    // 第二层：如果文件系统没有，尝试综合判断生成稳定的ID
+    if (!deviceId) {
+      try {
+        const os = require('os');
+        const crypto = require('crypto');
+        
+        // 收集设备特征信息（类似极光推送的做法）
+        const deviceFingerprint = [
+          os.hostname(),           // 主机名
+          os.type(),               // 操作系统类型
+          os.platform(),           // 平台
+          process.arch,            // 架构
+          os.cpus().length.toString(), // CPU核心数
+          os.totalmem().toString()     // 总内存
+        ].join('|');
+        
+        // 生成稳定的哈希值作为设备ID
+        const hash = crypto.createHash('sha256').update(deviceFingerprint).digest('hex');
+        deviceId = hash.substring(0, 32); // 使用前32位作为设备ID
+        
+        console.log('[main] 基于设备特征生成设备ID:', deviceId.substring(0, 8) + '...');
+        
+        // 保存到文件系统
+        try {
+          await writeSafe(deviceIdFilePath, deviceId, 'utf8');
+          console.log('[main] 设备ID已保存到文件系统');
+        } catch (e) {
+          console.warn('[main] 保存设备ID到文件系统失败:', e);
+        }
+      } catch (e) {
+        console.error('[main] 生成设备ID失败:', e);
+        // 最后的降级方案：随机生成
+        deviceId = 'device-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      }
+    }
+    
+    return { ok: true, deviceId };
+  } catch (error) {
+    console.error('[main] 获取设备ID失败:', error);
+    // 生成一个随机ID作为后备方案
+    const fallbackId = 'device-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return { ok: true, deviceId: fallbackId };
+  }
+});
+
+// 应用重启（用于重置数据后彻底刷新主窗口与 BrowserView）
+ipcMain.handle('app/relaunch', () => {
+  try {
+    app.relaunch();
+    app.exit(0); // 使用 exit 以确保 relaunch 生效
+    return { ok: true };
+  } catch (e) {
+    console.error('[main] app/relaunch 失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 获取环境变量中的 Gitee Token
+ipcMain.handle('env/get-gitee-token', () => {
+  // 安全：不要把私密 Token 暴露给渲染进程。
+  // 如确有需要，仅在开发模式且显式允许时返回。
+  if (app.isPackaged) return null;
+  if (process.env.METRO_PIDS_ALLOW_RENDERER_TOKENS !== '1') return null;
+  return process.env.GITEE_TOKEN || process.env.GITEE_ACCESS_TOKEN || null;
+});
+
+// 更新主窗口进度条（用于任务栏图标）
+ipcMain.handle('window/set-progress-bar', async (event, progress) => {
+  try {
+    if (mainWin && !mainWin.isDestroyed()) {
+      // progress 是 0 到 1 之间的浮点数，-1 表示移除进度条
+      if (progress >= 0 && progress <= 1) {
+        mainWin.setProgressBar(progress);
+      } else if (progress === -1) {
+        mainWin.setProgressBar(-1);
+      }
+      return { ok: true };
+    }
+    return { ok: false, error: 'Main window not available' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 取色窗口和状态
+let colorPickerWin = null;
+let colorPickResolve = null;
+
+// 启动取色模式
+ipcMain.handle('color/startPick', async (event) => {
+  try {
+    // 如果已经有取色窗口，先关闭
+    if (colorPickerWin) {
+      colorPickerWin.close();
+      colorPickerWin = null;
+    }
+    
+    // 获取主屏幕尺寸和位置
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const screenSize = primaryDisplay.size;
+    const screenBounds = primaryDisplay.bounds;
+    
+    colorPickerWin = new BrowserWindow({
+      width: screenSize.width,
+      height: screenSize.height,
+      x: screenBounds.x,
+      y: screenBounds.y,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: getPreloadPath()
+      }
+    });
+    
+    // 创建取色页面 HTML
+    const pickerHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 100vw;
+      height: 100vh;
+      background: transparent;
+      cursor: crosshair;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      color: white;
+      font-size: 24px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      user-select: none;
+    }
+    .picker-hint {
+      background: rgba(0,0,0,0.7);
+      padding: 16px 24px;
+      border-radius: 8px;
+      /* 毛玻璃效果通过 mica-electron 实现，不使用 CSS backdrop-filter */
+    }
+  </style>
+</head>
+<body>
+  <div class="picker-hint">点击屏幕任意位置取色 (ESC 取消)</div>
+  <script>
+    document.addEventListener('click', (e) => {
+      window.electronAPI.sendColorPickClick(e.screenX, e.screenY);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        window.electronAPI.cancelColorPick();
+      }
+    });
+  </script>
+</body>
+</html>`;
+    
+    // 等待窗口准备好后再显示
+    colorPickerWin.once('ready-to-show', () => {
+      // 允许鼠标事件，但确保窗口在最上层
+      colorPickerWin.setIgnoreMouseEvents(false);
+      colorPickerWin.show();
+      colorPickerWin.focus();
+      // 确保窗口始终在最上层
+      colorPickerWin.setAlwaysOnTop(true, 'screen-saver');
+    });
+    
+    colorPickerWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(pickerHTML)}`);
+    
+    // 监听窗口关闭
+    colorPickerWin.on('closed', () => {
+      colorPickerWin = null;
+      if (colorPickResolve) {
+        const resolve = colorPickResolve;
+        colorPickResolve = null;
+        resolve({ ok: false, error: 'cancelled' });
+      }
+    });
+    
+    // 返回 Promise，等待取色结果
+    return new Promise((resolve) => {
+      colorPickResolve = resolve;
+    });
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 显示系统通知
+ipcMain.handle('notification/show', async (event, { title, body, options = {} }) => {
+  try {
+    // Electron 的 Notification 在 Windows/Linux 上需要应用已就绪
+    if (!Notification.isSupported()) {
+      return { ok: false, error: '系统不支持通知' };
+    }
+
+    const notification = new Notification({
+      title: title || '通知',
+      body: body || '',
+      icon: options.icon || undefined,
+      badge: options.badge || undefined,
+      tag: options.tag || undefined,
+      silent: options.silent || false,
+      urgency: options.urgency || 'normal' // 'normal', 'critical', 'low'
+    });
+
+    // 可选：添加点击事件处理
+    notification.on('click', () => {
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.focus();
+      }
+    });
+
+    notification.show();
+    return { ok: true };
+  } catch (e) {
+    console.error('显示通知失败:', e);
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 处理取色点击
+ipcMain.on('color-picker-click', async (event, x, y) => {
+  if (!colorPickerWin || !colorPickResolve) return;
+  
+  try {
+    // 使用系统 API 获取准确的鼠标位置
+    const cursorPoint = screen.getCursorScreenPoint();
+    const actualX = cursorPoint.x;
+    const actualY = cursorPoint.y;
+    
+    // 使用系统 API 获取像素颜色（各平台使用不同的方法）
+    const { execSync } = require('child_process');
+    let systemColor = null;
+    
+    if (process.platform === 'win32') {
+      // Windows: 使用 PowerShell 调用 Windows API GetPixel
+      try {
+        const psScript = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class PixelColor {
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetDC(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+  [DllImport("gdi32.dll")]
+  public static extern uint GetPixel(IntPtr hdc, int nXPos, int nYPos);
+}
+"@; $hdc = [PixelColor]::GetDC([IntPtr]::Zero); $colorRef = [PixelColor]::GetPixel($hdc, ${actualX}, ${actualY}); [PixelColor]::ReleaseDC([IntPtr]::Zero, $hdc); $r = $colorRef -band 0x0000FF; $g = ($colorRef -band 0x00FF00) -shr 8; $b = ($colorRef -band 0xFF0000) -shr 16; Write-Output "$r,$g,$b"`;
+        
+        const result = execSync(`powershell -Command "${psScript}"`, { encoding: 'utf-8', timeout: 5000 });
+        const parts = result.trim().split(',');
+        if (parts.length === 3) {
+          const r = parseInt(parts[0].trim());
+          const g = parseInt(parts[1].trim());
+          const b = parseInt(parts[2].trim());
+          
+          if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+            systemColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+          }
+        }
+      } catch (psError) {
+        console.warn('[ColorPicker] Windows PowerShell 取色失败:', psError.message || psError);
+      }
+    } else if (process.platform === 'darwin') {
+      // macOS: 使用 screencapture 命令截取指定坐标的像素
+      try {
+        const fs = require('fs');
+        const os = require('os');
+        const tmpFile = path.join(os.tmpdir(), `color_pick_${Date.now()}.png`);
+        
+        // 使用 screencapture 截取指定坐标的 1x1 像素区域
+        // -R x,y,w,h: 指定区域，-x: 不播放快门声音
+        execSync(`screencapture -R ${actualX},${actualY},1,1 -x "${tmpFile}"`, { timeout: 5000 });
+        
+        if (fs.existsSync(tmpFile)) {
+          // 读取图片并获取像素颜色
+          const image = nativeImage.createFromPath(tmpFile);
+          if (image && !image.isEmpty()) {
+            const bitmap = image.getBitmap();
+            
+            if (bitmap && bitmap.length >= 4) {
+              // macOS 上 getBitmap() 返回 RGBA 格式
+              const r = bitmap[0];
+              const g = bitmap[1];
+              const b = bitmap[2];
+              
+              systemColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            }
+          }
+          
+          // 清理临时文件
+          try { fs.unlinkSync(tmpFile); } catch (e) {}
+        }
+      } catch (macError) {
+        console.warn('[ColorPicker] macOS 系统 API 取色失败:', macError.message || macError);
+      }
+    } else if (process.platform === 'linux') {
+      // Linux: 使用 xwd + ImageMagick convert 或者 import 命令
+      try {
+        const fs = require('fs');
+        const os = require('os');
+        const tmpFile = path.join(os.tmpdir(), `color_pick_${Date.now()}.png`);
+        
+        // 方法1: 尝试使用 import 命令（ImageMagick）直接截取指定坐标的像素
+        try {
+          execSync(`import -window root -crop 1x1+${actualX}+${actualY} "${tmpFile}"`, { timeout: 5000 });
+        } catch (importError) {
+          // import 失败，尝试使用 xwd + convert
+          const xwdFile = path.join(os.tmpdir(), `color_pick_${Date.now()}.xwd`);
+          try {
+            // 使用 xwd 截取整个屏幕
+            execSync(`xwd -root -silent -out "${xwdFile}"`, { timeout: 5000 });
+            
+            if (fs.existsSync(xwdFile)) {
+              // 使用 convert 裁剪指定坐标的像素
+              execSync(`convert "${xwdFile}" -crop 1x1+${actualX}+${actualY} "${tmpFile}"`, { timeout: 5000 });
+            }
+            
+            // 清理 xwd 文件
+            try { fs.unlinkSync(xwdFile); } catch (e) {}
+          } catch (xwdError) {
+            throw importError; // 如果都失败，抛出原始错误
+          }
+        }
+        
+        if (fs.existsSync(tmpFile)) {
+          const image = nativeImage.createFromPath(tmpFile);
+          if (image && !image.isEmpty()) {
+            const bitmap = image.getBitmap();
+            
+            if (bitmap && bitmap.length >= 4) {
+              // Linux 上 getBitmap() 通常返回 RGBA 格式
+              const r = bitmap[0];
+              const g = bitmap[1];
+              const b = bitmap[2];
+              
+              systemColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            }
+          }
+          
+          // 清理临时文件
+          try { fs.unlinkSync(tmpFile); } catch (e) {}
+        }
+      } catch (linuxError) {
+        console.warn('[ColorPicker] Linux 系统 API 取色失败:', linuxError.message || linuxError);
+      }
+    }
+    
+    // 如果系统 API 成功获取颜色，直接返回
+    if (systemColor) {
+      const resolve = colorPickResolve;
+      colorPickResolve = null;
+      
+      if (colorPickerWin) {
+        colorPickerWin.close();
+        colorPickerWin = null;
+      }
+      
+      resolve({ ok: true, color: systemColor });
+      return;
+    }
+    
+    // 回退方法：使用 desktopCapturer（适用于所有平台或 Windows API 失败时）
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const screenSize = primaryDisplay.size;
+    const scaleFactor = primaryDisplay.scaleFactor || 1;
+    
+    // 使用原始分辨率（考虑缩放因子）获取屏幕源
+    const sources = await desktopCapturer.getSources({ 
+      types: ['screen'], 
+      thumbnailSize: {
+        width: screenSize.width * scaleFactor,
+        height: screenSize.height * scaleFactor
+      }
+    });
+    
+    if (!sources || sources.length === 0) {
+      throw new Error('无法获取屏幕源');
+    }
+    
+    // 找到主显示器
+    const source = sources.find(s => s.display_id === primaryDisplay.id.toString()) || sources[0];
+    
+    if (!source || !source.thumbnail) {
+      throw new Error('无法获取屏幕缩略图');
+    }
+    
+    // 直接从 thumbnail 获取 bitmap
+    const bitmap = source.thumbnail.getBitmap();
+    const thumbnailSize = source.thumbnail.getSize();
+    
+    // 计算坐标：鼠标位置需要乘以缩放因子来匹配缩略图分辨率
+    const pixelX = Math.floor(actualX * scaleFactor);
+    const pixelY = Math.floor(actualY * scaleFactor);
+    
+    // 确保坐标在有效范围内
+    if (pixelX < 0 || pixelX >= thumbnailSize.width || pixelY < 0 || pixelY >= thumbnailSize.height) {
+      throw new Error('坐标超出范围');
+    }
+    
+    const width = thumbnailSize.width;
+    const pixelIndex = (pixelY * width + pixelX) * 4;
+    
+    if (bitmap && bitmap.length > pixelIndex + 3) {
+      // Electron 的 getBitmap() 在 Windows 上返回 BGRA 格式
+      const b = bitmap[pixelIndex];
+      const g = bitmap[pixelIndex + 1];
+      const r = bitmap[pixelIndex + 2];
+      
+      // 确保值在 0-255 范围内
+      const rClamped = Math.max(0, Math.min(255, r));
+      const gClamped = Math.max(0, Math.min(255, g));
+      const bClamped = Math.max(0, Math.min(255, b));
+      
+      const rgbColor = `#${rClamped.toString(16).padStart(2, '0')}${gClamped.toString(16).padStart(2, '0')}${bClamped.toString(16).padStart(2, '0')}`;
+      
+      const resolve = colorPickResolve;
+      colorPickResolve = null;
+      
+      if (colorPickerWin) {
+        colorPickerWin.close();
+        colorPickerWin = null;
+      }
+      
+      resolve({ ok: true, color: rgbColor });
+    } else {
+      throw new Error('无法读取像素颜色');
+    }
+  } catch (err) {
+    console.error('取色失败:', err);
+    
+    const resolve = colorPickResolve;
+    colorPickResolve = null;
+    
+    if (colorPickerWin) {
+      colorPickerWin.close();
+      colorPickerWin = null;
+    }
+    
+    resolve({ ok: false, error: String(err) });
+  }
+});
+
+// 取消取色
+ipcMain.on('color-picker-cancel', () => {
+  if (!colorPickerWin || !colorPickResolve) return;
+  
+  const resolve = colorPickResolve;
+  colorPickResolve = null;
+  
+  if (colorPickerWin) {
+    colorPickerWin.close();
+    colorPickerWin = null;
+  }
+  
+  resolve({ ok: false, error: 'cancelled' });
+});
+
+// 渲染层可调用的窗口控制（最小化/最大化或还原/关闭）
+ipcMain.handle('window/minimize', (event) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (win) win.minimize();
+    try { event.sender.send('window/maxstate', win ? win.isMaximized() : false); } catch (e) {}
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String(e) }; }
+});
+
+ipcMain.handle('window/toggleMax', (event) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    if (!win) return { ok: false, error: 'no-window' };
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+    const maximized = win.isMaximized();
+    try { event.sender.send('window/maxstate', maximized); } catch (e) {}
+    return { ok: true, maximized };
+  } catch (e) { return { ok: false, error: String(e) }; }
+});
+
+ipcMain.handle('window/close', (event) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    const senderUrl = (() => {
+      try { return event && event.sender ? event.sender.getURL() : 'unknown'; } catch (_) { return 'unknown'; }
+    })();
+    console.log('[main] IPC window/close 收到请求:', {
+      senderUrl,
+      hasMainWin: !!(mainWin && !mainWin.isDestroyed()),
+      targetIsMain: !!(mainWin && win === mainWin)
+    });
+
+    if (!win || win.isDestroyed()) {
+      console.warn('[main] IPC window/close 未找到可关闭窗口');
+      return { ok: false, error: 'no-window' };
+    }
+
+    const isMainWindowClose = !!(mainWin && !mainWin.isDestroyed() && win === mainWin);
+    if (isMainWindowClose) {
+      isAppShuttingDown = true;
+      try { closeAllWindows(); } catch (_) {}
+      try { mainWin && !mainWin.isDestroyed() && mainWin.close(); } catch (_) {}
+      if (process.platform !== 'darwin') {
+        try { app.quit(); } catch (_) {}
+        setTimeout(() => {
+          try { app.exit(0); } catch (_) {}
+        }, 100);
+      }
+      return { ok: true, cascaded: true };
+    }
+
+    if (win) win.close();
+    console.log('[main] IPC window/close 已触发 win.close()');
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String(e) }; }
+});
+
+// 辅助函数：延迟执行
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(true);
+    }, ms);
+  });
+}
+
+// 获取静默更新配置（默认为 false）
+function getSilentUpdateEnabled() {
+  if (!store) return false;
+  return store.get('silentUpdateEnabled', false);
+}
+
+// 初始化自动更新
+async function initAutoUpdater() {
+  if (!autoUpdater) return;
+  
+  try {
+    autoUpdater.disableWebInstaller = false;
+    
+    // 更新源：优先本地调试，否则走 Cloudflare Worker（自动更新经服务器，不直连 GitHub）
+    const localFeed = process.env.LOCAL_UPDATE_URL;
+    const cloudUpdateBase = process.env.CLOUD_UPDATE_URL || 'https://metro.tanzhouxiang.dpdns.org';
+    const cloudFeed = cloudUpdateBase.replace(/\/+$/, '') + '/update/';
+    if (localFeed) {
+      try {
+        autoUpdater.setFeedURL({
+          url: localFeed,
+          provider: 'generic'
+        });
+        console.log('[main] 使用本地更新源 LOCAL_UPDATE_URL:', localFeed);
+      } catch (e) {
+        console.error('[main] 设置本地更新源失败:', e);
+      }
+    } else {
+      try {
+        autoUpdater.setFeedURL({
+          url: cloudFeed,
+          provider: 'generic'
+        });
+        console.log('[main] 使用 Cloudflare 更新源（自动更新经服务器）:', cloudFeed);
+      } catch (e) {
+        console.error('[main] 设置 Cloudflare 更新源失败:', e);
+      }
+    }
+    
+    // 根据静默更新配置决定是否自动下载
+    const silentUpdateEnabled = getSilentUpdateEnabled();
+    autoUpdater.autoDownload = silentUpdateEnabled;
+    // 确保更新安装后自动运行应用（无缝更新）
+    autoUpdater.autoInstallOnAppQuit = true;
+    console.log(`[main] 初始化自动更新，静默更新: ${silentUpdateEnabled ? '已启用' : '已禁用'}`);
+    console.log(`[main] autoUpdater.autoDownload: ${autoUpdater.autoDownload}`);
+    console.log(`[main] autoUpdater.autoInstallOnAppQuit: ${autoUpdater.autoInstallOnAppQuit}`);
+    
+    // 设置请求头，确保正确的 User-Agent
+    autoUpdater.requestHeaders = {
+      'User-Agent': `Metro-PIDS-App/${app.getVersion()} (${process.platform})`
+    };
+    
+    // 开发环境下也允许检查更新
+    // electron-updater 在开发模式下会使用 package.json 中的配置
+    if (!app.isPackaged) {
+      // 开发模式下，可以设置 channel 为 latest 或使用默认配置
+      // autoUpdater.channel = 'latest';
+      console.log('[main] 开发模式下初始化更新检查，将使用 package.json 中的 GitHub 配置');
+    }
+    
+    // 错误处理
+    autoUpdater.on('error', (err) => {
+      const errorMsg = String(err);
+      const errorDetails = {
+        message: errorMsg,
+        stack: err.stack,
+        code: err.code,
+        name: err.name
+      };
+      if (logger) {
+        logger.error(['检查更新失败', errorDetails]);
+      } else {
+        console.error('检查更新失败:', errorDetails);
+      }
+      try { 
+        mainWin && mainWin.webContents.send('update/error', errorMsg); 
+      } catch (e) {}
+    });
+    
+    // 有可用更新
+    autoUpdater.on('update-available', (info) => {
+      const currentVersion = app.getVersion();
+      const silentUpdateEnabled = getSilentUpdateEnabled();
+      
+      if (logger) {
+        logger.info('检查到有更新', { currentVersion, latestVersion: info.version, silentUpdate: silentUpdateEnabled });
+        logger.info(info);
+      } else {
+        console.log('[main] 检查到有更新', { currentVersion, latestVersion: info.version, silentUpdate: silentUpdateEnabled });
+      }
+      
+      // 输出详细信息用于调试
+      console.log('[main] update-available 详细信息:', {
+        version: info.version,
+        currentVersion: currentVersion,
+        releaseDate: info.releaseDate,
+        path: info.path,
+        silentUpdate: silentUpdateEnabled
+      });
+      
+      // 如果启用了静默更新，自动开始下载
+      if (silentUpdateEnabled && !autoUpdater.autoDownload) {
+        console.log('[main] 静默更新已启用，自动开始下载更新...');
+        // 由于 autoDownload 可能为 false，我们需要手动触发下载
+        autoUpdater.downloadUpdate().catch(err => {
+          console.error('[main] 静默下载更新失败:', err);
+          if (logger) {
+            logger.error('静默下载更新失败', err);
+          }
+        });
+      }
+      
+      try { 
+        // 通知渲染进程有更新可用（用于显示NEW标记）
+        mainWin && mainWin.webContents.send('update/available', info);
+        // 发送一个特殊事件来标记有更新（用于UI显示 + 首次启动弹窗）
+        const forceUpdate = !!(info && info.updateInfo && info.updateInfo.forceUpdate === true);
+        mainWin && mainWin.webContents.send('update/has-update', { version: info.version, silentUpdate: silentUpdateEnabled, forceUpdate });
+      } catch (e) {
+        console.error('[main] 发送 update-available 事件失败:', e);
+      }
+    });
+    
+    // 没有可用更新
+    autoUpdater.on('update-not-available', (info) => {
+      const currentVersion = app.getVersion();
+      if (logger) {
+        logger.info('没有可用更新', { currentVersion, info });
+      } else {
+        console.log('[main] 没有可用更新', { currentVersion, info });
+      }
+      
+      // 输出详细信息用于调试
+      console.log('[main] update-not-available 详细信息:', {
+        version: info ? info.version : 'N/A',
+        currentVersion: currentVersion,
+        releaseDate: info ? info.releaseDate : 'N/A',
+        path: info ? info.path : 'N/A',
+        // 如果 info 中有 updateInfo，也输出
+        updateInfo: info ? info.updateInfo : null
+      });
+      
+      // 如果 info 为空或版本号相同，说明确实没有更新
+      // 如果版本号不同但没有触发 update-available，可能是版本格式问题
+      if (info && info.version) {
+        console.log('[main] 版本对比:', {
+          current: currentVersion,
+          latest: info.version,
+          areEqual: currentVersion === info.version,
+          // 尝试比较去掉 'v' 前缀的版本
+          currentClean: currentVersion.replace(/^v/, ''),
+          latestClean: info.version.replace(/^v/, ''),
+          areEqualClean: currentVersion.replace(/^v/, '') === info.version.replace(/^v/, '')
+        });
+      }
+      
+      try { 
+        mainWin && mainWin.webContents.send('update/not-available', info || {}); 
+      } catch (e) {
+        console.error('[main] 发送 update-not-available 事件失败:', e);
+      }
+    });
+    
+    // 下载进度
+    autoUpdater.on('download-progress', (progress) => {
+      if (logger) {
+        logger.info('下载进度:', progress);
+      }
+      try { 
+        mainWin && mainWin.webContents.send('update/progress', progress); 
+      } catch (e) {}
+    });
+    
+    // 下载完成
+    autoUpdater.on('update-downloaded', (info) => {
+      const silentUpdateEnabled = getSilentUpdateEnabled();
+      
+      if (logger) {
+        logger.info('下载完毕！提示安装更新', { silentUpdate: silentUpdateEnabled });
+        logger.info(info);
+      } else {
+        console.log('[main] 下载完成', { version: info.version, silentUpdate: silentUpdateEnabled });
+      }
+      
+      // 检查是否用户已经跳过了当前版本
+      if (store) {
+        const skippedVersion = store.get('skippedVersion');
+        if (info && info.version === skippedVersion) {
+          if (logger) {
+            logger.info('用户已跳过此版本，不提示更新');
+          }
+          return;
+        }
+      }
+      
+      // 如果启用了静默更新，自动安装
+      if (silentUpdateEnabled) {
+        console.log('[main] 静默更新模式：下载完成，自动安装更新...');
+        if (logger) {
+          logger.info('静默更新：下载完成，自动安装更新', { version: info.version });
+        }
+        
+        try {
+          // 清除跳过的版本标记
+          if (store) {
+            store.delete('skippedVersion');
+          }
+          
+          // 延迟一小段时间，确保下载完全完成，然后自动安装
+          setTimeout(() => {
+            try {
+              console.log('[main] 执行自动安装更新...');
+              // quitAndInstall(isSilent, isForceRunAfter)
+              // isSilent: true = 静默安装（Windows 需要 NSIS 配置支持）
+              // isForceRunAfter: true = 安装完成后自动运行应用
+              autoUpdater.quitAndInstall(true, true);
+              if (logger) {
+                logger.info('已调用 quitAndInstall(true, true)，应用将退出并静默安装更新');
+              }
+            } catch (installErr) {
+              console.error('[main] 自动安装更新失败:', installErr);
+              if (logger) {
+                logger.error('自动安装更新失败', installErr);
+              }
+              // 如果自动安装失败，发送通知给用户
+              try {
+                mainWin && mainWin.webContents.send('update/downloaded', info);
+              } catch (e) {}
+            }
+          }, 1000); // 延迟 1 秒
+        } catch (e) {
+          console.error('[main] 静默更新自动安装处理失败:', e);
+          if (logger) {
+            logger.error('静默更新自动安装处理失败', e);
+          }
+          // 如果出错，发送通知给用户
+          try {
+            mainWin && mainWin.webContents.send('update/downloaded', info);
+          } catch (sendErr) {}
+        }
+      } else {
+        // 非静默模式，发送通知给用户
+        try { 
+          mainWin && mainWin.webContents.send('update/downloaded', info); 
+        } catch (e) {}
+      }
+    });
+  } catch (e) {
+    if (logger) {
+      logger.error('autoUpdater setup failed', e);
+    } else {
+      console.warn('autoUpdater setup failed', e);
+    }
+  }
+}
+
+// 检查并安装待安装的更新（应用启动时）
+// 这个函数在 initAutoUpdater 之前调用，用于检测是否有待安装的更新
+let startupUpdateHandler = null;
+
+async function checkAndInstallPendingUpdate() {
+  if (!autoUpdater) return false;
+  
+  try {
+    console.log('[main] 检查是否有待安装的更新...');
+    
+    return new Promise((resolve) => {
+      let timeoutId = null;
+      let resolved = false;
+      
+      // 设置超时，避免无限等待
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          if (startupUpdateHandler) {
+            autoUpdater.removeListener('update-downloaded', startupUpdateHandler);
+            startupUpdateHandler = null;
+          }
+          console.log('[main] 检查待安装更新超时，继续正常启动');
+          resolve(false);
+        }
+      }, 3000); // 3秒超时
+      
+      // 监听 update-downloaded 事件（仅用于启动时检测）
+      startupUpdateHandler = (info) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeoutId);
+        
+        if (startupUpdateHandler) {
+          autoUpdater.removeListener('update-downloaded', startupUpdateHandler);
+          startupUpdateHandler = null;
+        }
+        
+        console.log('[main] 检测到待安装的更新:', info.version);
+        if (logger) {
+          logger.info('检测到待安装的更新，自动安装并重启', { version: info.version });
+        }
+        
+        // 检查是否用户跳过了此版本
+        if (store) {
+          const skippedVersion = store.get('skippedVersion');
+          if (info && info.version === skippedVersion) {
+            console.log('[main] 用户已跳过此版本，不自动安装');
+            resolve(false);
+            return;
+          }
+        }
+        
+        // 清除跳过的版本标记
+        if (store) {
+          store.delete('skippedVersion');
+        }
+        
+        // 延迟一小段时间，确保所有初始化完成，然后自动安装并重启
+        setTimeout(() => {
+          try {
+            console.log('[main] 自动安装待安装的更新并重启应用...');
+            if (logger) {
+              logger.info('应用将退出并静默安装更新，安装完成后自动启动新版本');
+            }
+            // 静默安装并自动运行应用
+            // quitAndInstall(isSilent, isForceRunAfter)
+            // isSilent: true = 静默安装，不显示安装界面
+            // isForceRunAfter: true = 安装完成后自动运行应用
+            autoUpdater.quitAndInstall(true, true);
+            resolve(true);
+          } catch (e) {
+            console.error('[main] 自动安装待安装的更新失败:', e);
+            if (logger) {
+              logger.error('自动安装待安装的更新失败', e);
+            }
+            resolve(false);
+          }
+        }, 800); // 延迟 800ms，确保初始化完成
+      };
+      
+      autoUpdater.once('update-downloaded', startupUpdateHandler);
+      
+      // 触发检查更新，如果更新已下载，electron-updater 会立即触发 update-downloaded 事件
+      autoUpdater.checkForUpdates().then(() => {
+        // checkForUpdates 成功，但不代表有更新，等待事件触发
+        console.log('[main] 检查更新请求已发送，等待响应...');
+      }).catch(err => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeoutId);
+          if (startupUpdateHandler) {
+            autoUpdater.removeListener('update-downloaded', startupUpdateHandler);
+            startupUpdateHandler = null;
+          }
+          // 检查更新失败不代表没有待安装的更新，继续正常启动
+          console.log('[main] 检查更新失败（可能没有待安装的更新）:', err.message);
+          resolve(false);
+        }
+      });
+    });
+  } catch (e) {
+    console.error('[main] 检查待安装更新失败:', e);
+    if (logger) {
+      logger.error('检查待安装更新失败', e);
+    }
+    return false;
+  }
+}
+
+app.whenReady().then(async () => {
+  startOrphanWindowWatchdog();
+  console.log('[main] ✅ Electron 应用已准备就绪');
+  console.log('[main] 应用路径:', app.getAppPath());
+  console.log('[main] 是否打包:', app.isPackaged);
+  console.log('[main] __dirname:', __dirname);
+  console.log('[main] 日志文件位置:', logger ? logger.transports.file.getFile().path : 'N/A');
+
+  // 注册本地音频协议，避免 file:// 被禁止加载导致无法播放
+  try {
+    protocol.registerFileProtocol('local-audio', (request, callback) => {
+      try {
+        const prefix = 'local-audio://file/';
+        const url = request.url;
+        if (!url.startsWith(prefix)) {
+          return callback({ error: -2 });
+        }
+        const encoded = url.slice(prefix.length).replace(/\?.*$/, '');
+        const fullPath = decodeURIComponent(encoded);
+        const normalized = path.normalize(fullPath);
+        if (!path.isAbsolute(normalized)) {
+          return callback({ error: -2 });
+        }
+
+        // 仅允许访问经主进程校验后短期放行的路径
+        if (!isLocalAudioPathAllowed(normalized)) {
+          return callback({ error: -2 });
+        }
+
+        callback({ path: normalized });
+      } catch (e) {
+        callback({ error: -1 });
+      }
+    }, (err) => {
+      if (err) console.error('[main] local-audio protocol 注册失败:', err);
+    });
+  } catch (e) {
+    console.warn('[main] local-audio protocol 注册异常:', e);
+  }
+
+  // 在 Windows 上，尝试显示控制台窗口以便调试（仅打包后）
+  if (app.isPackaged && process.platform === 'win32') {
+    try {
+      // 尝试附加到父进程的控制台，或创建新的控制台窗口
+      const { exec } = require('child_process');
+      exec('cmd /c "echo 控制台已打开 && pause"', { windowsHide: false });
+    } catch (e) {
+      // 忽略错误
+    }
+  }
+
+  // 启动后异步清理残留的 .unlocked-* 副本（避免旧失败写入遗留）
+  setTimeout(() => {
+    cleanupAllUnlockedFolders().catch((e) => console.warn('[main] cleanupAllUnlockedFolders 失败:', e));
+  }, 2000);
+
+  // 启动时从持久化设置恢复主窗口模糊开关，避免首屏与用户设置不一致
+  try {
+    if (store) {
+      const startupSettings = store.get('settings', {});
+      MAIN_BLUR_ENABLED = startupSettings ? startupSettings.blurEnabled !== false : true;
+      console.log('[main] 启动时恢复 blurEnabled:', MAIN_BLUR_ENABLED);
+    }
+  } catch (e) {
+    console.warn('[main] 启动时恢复 blurEnabled 失败，使用默认开启:', e);
+    MAIN_BLUR_ENABLED = true;
+  }
+  
+  // 在创建窗口之前检查并安装待安装的更新
+  // 如果有待安装的更新，会自动安装并重启，不会创建窗口
+  if (app.isPackaged && autoUpdater) {
+    // 先进行基本的 autoUpdater 配置（不设置完整的事件监听器）
+    try {
+      autoUpdater.disableWebInstaller = false;
+      autoUpdater.autoInstallOnAppQuit = true;
+      // 设置请求头
+      autoUpdater.requestHeaders = {
+        'User-Agent': `Metro-PIDS-App/${app.getVersion()} (${process.platform})`
+      };
+    } catch (e) {
+      console.error('[main] 初始化 autoUpdater 基本配置失败:', e);
+    }
+    
+    // 检查是否有待安装的更新
+    const hasPendingUpdate = await checkAndInstallPendingUpdate();
+    if (hasPendingUpdate) {
+      // 如果有待安装的更新，应用会退出并安装，不会执行后续代码
+      // quitAndInstall 会立即退出应用，所以这里不会继续执行
+      console.log('[main] 检测到待安装的更新，应用将退出并安装更新');
+      return;
+    }
+  }
+  
+  try {
+    createWindow();
+    console.log('[main] ✅ 窗口创建成功');
+    
+    // 确保窗口最终会显示（防止页面加载失败导致窗口永远不显示）
+    setTimeout(() => {
+      if (mainWin && !mainWin.isDestroyed() && !mainWin.isVisible()) {
+        console.warn('[main] ⚠️ 窗口创建后 10 秒仍未显示，强制显示');
+        try {
+          mainWin.show();
+          mainWin.center();
+          mainWin.focus();
+          // 如果页面还是空白，显示错误信息
+          mainWin.webContents.executeJavaScript(`
+            if (!document.body || document.body.innerHTML.trim() === '') {
+              document.body = document.createElement('body');
+              document.body.innerHTML = '<div style="padding: 40px; font-family: Arial; line-height: 1.6;">
+                <h1>应用启动问题</h1>
+                <p>窗口已创建但页面未加载。请查看控制台日志获取详细信息。</p>
+                <p><strong>应用路径:</strong> ${app.getAppPath()}</p>
+                <p><strong>是否打包:</strong> ${app.isPackaged}</p>
+              </div>';
+            }
+          `).catch(e => console.error('[main] 注入错误信息失败:', e));
+        } catch (e) {
+          console.error('[main] 强制显示窗口失败:', e);
+        }
+      }
+    }, 10000); // 10 秒超时
+  } catch (e) {
+    console.error('[main] ❌ 窗口创建失败:', e);
+    console.error('[main] 错误堆栈:', e.stack);
+    // 即使窗口创建失败，也不要立即退出，给用户一个机会看到错误信息
+    if (logger) {
+      logger.error('窗口创建失败', e);
+    }
+  }
+  
+  // 初始化自动更新（设置完整的事件监听器）
+  await initAutoUpdater();
+  
+  // 延迟检查更新，确保窗口准备完成
+  scheduleAutoUpdateCheck();
+  
+  // 在 Windows 上，确保应用注册到通知系统
+  // 这会让应用出现在 Windows 设置 > 系统 > 通知和操作 中
+  if (process.platform === 'win32' && Notification.isSupported()) {
+    try {
+      // 静默发送一个测试通知（立即关闭），以确保应用被注册到通知系统
+      // 用户不会看到这个通知，但它会触发 Windows 注册应用
+      const testNotification = new Notification({
+        title: 'Metro-PIDS',
+        body: '',
+        silent: true
+      });
+      // 立即关闭测试通知，用户不会看到
+      testNotification.close();
+      console.log('[main] Windows 通知系统注册完成');
+    } catch (e) {
+      console.warn('[main] Windows 通知系统注册失败:', e);
+    }
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+
+  // 根据用户设置决定是否启动 API 服务器
+  // 默认使用 BroadcastChannel 进行通信，如需使用 Python 等第三方客户端可启用 API 服务器
+  try {
+    const currentSettings = store ? store.get('settings', {}) : {};
+    // 我们强制开启WebSocket
+    try {
+      if (store && currentSettings && typeof currentSettings === 'object') {
+        if (currentSettings.enableWebSocketBridge !== true) {
+          currentSettings.enableWebSocketBridge = true;
+          store.set('settings', currentSettings);
+          console.log('[main] ✅ 强制启用 WebSocket Bridge');
+        }
+      }
+    } catch (e) {
+      console.warn('[main] ⚠️ WebSocket Bridge 迁移失败（忽略）:', e && e.message ? e.message : e);
+    }
+    const shouldEnableApiServer = currentSettings.enableApiServer === true;
+    const shouldEnableWsBridge = process.env.METRO_PIDS_DISABLE_WS_BRIDGE === '1' ? false : true; // 强制始终开启
+    let wsPortSetting = currentSettings.wsPort || currentSettings.wsPortOverride || 9400;
+    const httpPortTarget = process.env.PIDS_MULTI_HTTP_PORT || 9517;
+    if (wsPortSetting == httpPortTarget) {
+      wsPortSetting = 9400;
+      currentSettings.wsPort = 9400;
+      try { store.set('settings', currentSettings); } catch(e) {}
+    }
+    
+    if (shouldEnableApiServer && displayApiServer) {
+      console.log('[main] 检测到用户已启用 API 服务器，正在启动...');
+      startApiServer();
+    } else {
+      console.log('[main] API 服务器未启用（默认使用 BroadcastChannel 通信）');
+    }
+
+    if (shouldEnableWsBridge) {
+      console.log('[main] 启用局域网 WebSocket Bridge...');
+      startWebSocketBridge(wsPortSetting);
+    } else {
+      stopWebSocketBridge();
+      console.log('[main] WebSocket Bridge 未启用');
+    }
+
+    startMultiScreenHttpServer(process.env.PIDS_MULTI_HTTP_PORT || 9517);
+  } catch (e) {
+    console.warn('[main] 读取 API 服务器设置失败，使用默认值（未启用）:', e);
+  }
+  
+  /*
+  // 启动显示器控制API服务器（旧代码，已改为使用 startApiServer 函数）
+  if (displayApiServer) {
+    try {
+      const { server, PORT, setApiHandlers } = displayApiServer;
+      
+      // 设置API处理器
+      setApiHandlers({
+        getDisplayWindows: () => displayWindows,
+        createDisplayWindow: (width, height, displayId) => {
+          return createDisplayWindow(width, height, displayId);
+        },
+        closeDisplayWindow: (displayId) => {
+          if (displayId) {
+            // 关闭指定显示器
+            const win = displayWindows.get(displayId);
+            if (win && !win.isDestroyed()) {
+              win.close();
+              displayWindows.delete(displayId);
+              return [displayId];
+            }
+            return [];
+          } else {
+            // 关闭所有显示器
+            const closed = [];
+            for (const [id, win] of displayWindows.entries()) {
+              if (win && !win.isDestroyed()) {
+                win.close();
+                closed.push(id);
+              }
+            }
+            displayWindows.clear();
+            return closed;
+          }
+        },
+        sendBroadcastMessage: (payload) => {
+          // 通过所有显示端窗口的webContents发送BroadcastChannel消息
+          const channelName = 'metro_pids_v3';
+          const payloadStr = JSON.stringify(payload);
+          
+          // 改进的发送代码：同时使用 BroadcastChannel 和 window.postMessage
+          const jsCode = `
+            (function() {
+              try {
+                let success = false;
+                
+                // 方法1：使用 BroadcastChannel（同源时有效）
+                if (typeof BroadcastChannel !== 'undefined') {
+                  try {
+                    const bc = new BroadcastChannel('${channelName}');
+                    bc.postMessage(${payloadStr});
+                    bc.close();
+                    success = true;
+                  } catch(e) {
+                    console.warn('[Display] BroadcastChannel 发送失败:', e);
+                  }
+                }
+                
+                // 方法2：使用 window.postMessage（作为回退方案，对所有窗口有效）
+                if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+                  try {
+                    window.postMessage(${payloadStr}, '*');
+                    success = true;
+                  } catch(e) {
+                    console.warn('[Display] postMessage 发送失败:', e);
+                  }
+                }
+                
+                return success;
+              } catch(e) {
+                console.error('[Display] 发送消息失败:', e);
+                return false;
+              }
+            })();
+          `;
+          
+          let successCount = 0;
+          for (const [id, win] of displayWindows.entries()) {
+            if (win && !win.isDestroyed() && win.webContents) {
+              try {
+                win.webContents.executeJavaScript(jsCode).catch(e => {
+                  console.warn(`[DisplayAPI] 向 ${id} 发送消息失败:`, e);
+                });
+                successCount++;
+              } catch (e) {
+                console.warn(`[DisplayAPI] 执行脚本失败 (${id}):`, e);
+              }
+            }
+          }
+          
+          // 同时发送到主窗口（如果存在）
+          if (mainWin && !mainWin.isDestroyed() && mainWin.webContents) {
+            try {
+              mainWin.webContents.executeJavaScript(jsCode).catch(e => {
+                console.warn('[DisplayAPI] 向主窗口发送消息失败:', e);
+              });
+            } catch (e) {
+              console.warn('[DisplayAPI] 向主窗口执行脚本失败:', e);
+            }
+          }
+          
+          return successCount;
+        },
+        getMainWindow: () => mainWin,
+        getStore: () => store,
+        getAppData: async () => {
+          // 从主窗口的localStorage获取应用数据
+          if (!mainWin || mainWin.isDestroyed()) {
+            return null;
+          }
+          try {
+            const result = await mainWin.webContents.executeJavaScript(`
+              (function() {
+                try {
+                  const raw = localStorage.getItem('pids_global_store_v1');
+                  if (!raw) return null;
+                  const store = JSON.parse(raw);
+                  if (!store || !Array.isArray(store.list)) return null;
+                  const cur = Number(store.cur);
+                  if (!Number.isInteger(cur) || cur < 0 || cur >= store.list.length) return null;
+                  return store.list[cur] || null;
+                } catch(e) {
+                  return null;
+                }
+              })();
+            `);
+            return result;
+          } catch (e) {
+            console.warn('[DisplayAPI] 获取应用数据失败:', e);
+            return null;
+          }
+        },
+        getRtState: async () => {
+          // 从主窗口的localStorage获取实时状态
+          if (!mainWin || mainWin.isDestroyed()) {
+            return null;
+          }
+          try {
+            const result = await mainWin.webContents.executeJavaScript(`
+              (function() {
+                try {
+                  const raw = localStorage.getItem('pids_global_store_v1');
+                  if (!raw) return null;
+                  const store = JSON.parse(raw);
+                  if (!store || !store.rt) return null;
+                  return store.rt || null;
+                } catch(e) {
+                  return null;
+                }
+              })();
+            `);
+            return result;
+          } catch (e) {
+            console.warn('[DisplayAPI] 获取实时状态失败:', e);
+            return null;
+          }
+        },
+        editDisplay: async (displayId, displayData) => {
+          // 通过IPC调用编辑显示端
+          try {
+            if (!mainWin || mainWin.isDestroyed()) {
+              return { ok: false, error: '主窗口未就绪' };
+            }
+            
+            const result = await new Promise((resolve) => {
+              const timeout = setTimeout(() => {
+                ipcMain.removeListener('api/edit-display-result', handler);
+                resolve({ ok: false, error: '操作超时' });
+              }, 5000);
+              
+              const handler = (event, response) => {
+                clearTimeout(timeout);
+                ipcMain.removeListener('api/edit-display-result', handler);
+                resolve(response);
+              };
+              
+              ipcMain.once('api/edit-display-result', handler);
+              
+              // 发送编辑请求到渲染进程
+              mainWin.webContents.send('api/edit-display-request', displayId, displayData);
+            });
+            
+            return result;
+          } catch (e) {
+            console.error('[DisplayAPI] 编辑显示端失败:', e);
+            return { ok: false, error: String(e.message || e) };
+          }
+        }
+      });
+      
+      // 启动服务器
+      server.listen(PORT, () => {
+        console.log(`[DisplayAPI] ✅ 显示器控制 API 服务器已启动，端口: ${PORT}`);
+        console.log(`[DisplayAPI] 访问 http://localhost:${PORT}/api/display/info 查看API文档`);
+      });
+      
+      server.on('error', (e) => {
+        if (e.code === 'EADDRINUSE') {
+          console.warn(`[DisplayAPI] 端口 ${PORT} 已被占用，API服务器未启动`);
+        } else {
+          console.error('[DisplayAPI] 服务器错误:', e);
+        }
+      });
+    } catch (e) {
+      console.error('[main] 启动显示器控制API服务器失败:', e);
+    }
+  }
+  */
+});
+
+// 关闭所有窗口的辅助函数
+function closeAllWindows() {
+  console.log('[main] 开始关闭所有窗口...');
+  
+  // 关闭所有显示端窗口
+  if (displayWindows && displayWindows.size > 0) {
+    console.log(`[main] 关闭 ${displayWindows.size} 个显示端窗口...`);
+    for (const [id, win] of displayWindows.entries()) {
+      if (win && !win.isDestroyed()) {
+        try {
+          win.close();
+        } catch (e) {
+          console.warn(`[main] 关闭显示端窗口 ${id} 失败:`, e);
+        }
+      }
+    }
+    displayWindows.clear();
+  }
+  
+  // 关闭线路管理器窗口
+  if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+    console.log('[main] 关闭线路管理器窗口...');
+    try {
+      lineManagerWin.close();
+    } catch (e) {
+      console.warn('[main] 关闭线路管理器窗口失败:', e);
+    }
+    lineManagerWin = null;
+  }
+  
+  // 关闭开发者工具窗口
+  if (devWin && !devWin.isDestroyed()) {
+    console.log('[main] 关闭开发者工具窗口...');
+    try {
+      devWin.close();
+    } catch (e) {
+      console.warn('[main] 关闭开发者工具窗口失败:', e);
+    }
+    devWin = null;
+  }
+  
+  // 关闭颜色选择器窗口
+  if (colorPickerWin && !colorPickerWin.isDestroyed()) {
+    console.log('[main] 关闭颜色选择器窗口...');
+    try {
+      colorPickerWin.close();
+    } catch (e) {
+      console.warn('[main] 关闭颜色选择器窗口失败:', e);
+    }
+    colorPickerWin = null;
+  }
+  
+  // 关闭所有 BrowserView
+  if (browserViews && browserViews.size > 0) {
+    console.log(`[main] 关闭 ${browserViews.size} 个 BrowserView...`);
+    for (const [viewId, viewData] of browserViews.entries()) {
+      if (viewData && viewData.view) {
+        try {
+          if (typeof viewData.view.isDestroyed === 'function' && !viewData.view.isDestroyed()) {
+            if (mainWin && !mainWin.isDestroyed()) {
+              mainWin.removeBrowserView(viewData.view);
+            }
+            viewData.view.destroy();
+          }
+        } catch (e) {
+          console.warn(`[main] 关闭 BrowserView ${viewId} 失败:`, e);
+        }
+      }
+    }
+    browserViews.clear();
+  }
+  
+  // 关闭所有其他窗口（通过 BrowserWindow.getAllWindows() 获取）
+  const allWindows = BrowserWindow.getAllWindows();
+  for (const win of allWindows) {
+    if (win && !win.isDestroyed() && win !== mainWin) {
+      try {
+        console.log(`[main] 关闭窗口: ${win.getTitle() || '未命名窗口'}`);
+        win.close();
+      } catch (e) {
+        console.warn('[main] 关闭窗口失败:', e);
+      }
+    }
+  }
+  
+  console.log('[main] 所有窗口关闭完成');
+}
+
+function forceCloseAllOpenWindows(reason = 'unknown', options = {}) {
+  const excludeMain = !!options.excludeMain;
+  const allWindows = BrowserWindow.getAllWindows();
+  for (const win of allWindows) {
+    if (!win || win.isDestroyed()) continue;
+    if (excludeMain && mainWin && win === mainWin) continue;
+    try {
+      win.destroy();
+    } catch (e) {
+      try {
+        win.close();
+      } catch (_) {
+        console.warn('[main] 全量窗口清理失败:', e);
+      }
+    }
+  }
+}
+
+function resolveDisplayIdFromUrl(rawUrl) {
+  const url = String(rawUrl || '');
+  const fromPath = url.match(/displays\/([^/]+)\/display_window\.html/i);
+  if (fromPath && fromPath[1]) return fromPath[1];
+  const fromQuery = url.match(/[?&]displayId=([^&#]+)/i);
+  if (fromQuery && fromQuery[1]) {
+    try { return decodeURIComponent(fromQuery[1]); } catch (_) { return fromQuery[1]; }
+  }
+  return 'display-1';
+}
+
+function installGlobalDisplayWindowOpenRouting() {
+  app.on('web-contents-created', (_event, contents) => {
+    try {
+      contents.setWindowOpenHandler(({ url }) => {
+        const target = String(url || '');
+        const isDisplayWindow = /display_window\.html/i.test(target);
+        if (!isDisplayWindow) return { action: 'allow' };
+
+        if (!isAppShuttingDown) {
+          const displayId = resolveDisplayIdFromUrl(target);
+          setTimeout(() => {
+            if (isAppShuttingDown) return;
+            createDisplayWindow(undefined, undefined, displayId).catch((e) => {
+              console.warn('[main] 全局 window.open 显示端路由失败:', e);
+            });
+          }, 0);
+        }
+        return { action: 'deny' };
+      });
+    } catch (e) {
+      console.warn('[main] 安装 window.open 路由失败:', e);
+    }
+  });
+}
+
+installGlobalDisplayWindowOpenRouting();
+
+// 应用程序退出前处理：确保所有窗口都已关闭
+app.on('before-quit', (event) => {
+  console.log('[main] before-quit 事件触发');
+  isAppShuttingDown = true;
+  stopWebSocketBridge();
+  stopMultiScreenHttpServer();
+  // 如果还有窗口未关闭，先关闭所有窗口
+  const allWindows = BrowserWindow.getAllWindows();
+  if (allWindows.length > 0) {
+    console.log(`[main] 检测到 ${allWindows.length} 个窗口仍在运行，开始关闭...`);
+    closeAllWindows();
+    // 等待窗口关闭完成后再退出
+    setTimeout(() => {
+      // 再次检查，如果还有窗口，强制关闭
+      const remainingWindows = BrowserWindow.getAllWindows();
+      if (remainingWindows.length > 0) {
+        console.log(`[main] 仍有 ${remainingWindows.length} 个窗口未关闭，强制关闭...`);
+        for (const win of remainingWindows) {
+          if (win && !win.isDestroyed()) {
+            try {
+              win.destroy();
+            } catch (e) {
+              console.warn('[main] 强制关闭窗口失败:', e);
+            }
+          }
+        }
+      }
+    }, 100);
+  }
+});
+
+app.on('window-all-closed', () => {
+  console.log('[main] window-all-closed 事件触发');
+  isAppShuttingDown = true;
+  // 确保所有窗口都已关闭
+  closeAllWindows();
+  if (process.platform !== 'darwin') {
+    console.log('[main] 退出应用程序');
+    app.quit();
+  }
+});
+
+// 检查 Gitee 更新（自定义逻辑，因为 electron-updater 不支持 Gitee）
+async function checkGiteeUpdate() {
+  try {
+    const https = require('https');
+    const url = 'https://gitee.com/api/v5/repos/tanzhouxkong/Metro-PIDS-/releases';
+    const currentVersion = app.getVersion().replace(/^v/, ''); // 移除可能的 v 前缀
+    
+    return new Promise((resolve, reject) => {
+      https.get(url, {
+        headers: {
+          'User-Agent': 'Metro-PIDS-App',
+          'Accept': 'application/json'
+        }
+      }, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            const releases = JSON.parse(data);
+            if (!Array.isArray(releases) || releases.length === 0) {
+              resolve({ ok: true, hasUpdate: false, reason: 'no-releases' });
+              return;
+            }
+            
+            // 获取最新的非预发布版本
+            const latestRelease = releases.find(r => !r.prerelease) || releases[0];
+            if (!latestRelease || !latestRelease.tag_name) {
+              resolve({ ok: true, hasUpdate: false, reason: 'no-valid-release' });
+              return;
+            }
+            
+            const latestVersion = latestRelease.tag_name.replace(/^v/, '');
+            const needsUpdate = latestVersion !== currentVersion;
+            
+            console.log('[main] Gitee 更新检查:', {
+              current: currentVersion,
+              latest: latestVersion,
+              needsUpdate: needsUpdate
+            });
+            
+            if (needsUpdate) {
+              // 检查是否启用了静默更新
+              const silentUpdateEnabled = getSilentUpdateEnabled();
+              
+              // 发送更新可用事件
+              try {
+                const updateInfo = {
+                  version: latestVersion,
+                  releaseDate: latestRelease.created_at,
+                  releaseNotes: latestRelease.body,
+                  releaseUrl: latestRelease.html_url || `https://gitee.com/tanzhouxkong/Metro-PIDS-/releases/${latestRelease.tag_name}`,
+                  assets: latestRelease.assets || [],
+                  forceUpdate: latestRelease && latestRelease.updateInfo && latestRelease.updateInfo.forceUpdate === true
+                };
+                mainWin && mainWin.webContents.send('update/available', updateInfo);
+                mainWin && mainWin.webContents.send('update/has-update', { version: latestVersion, silentUpdate: silentUpdateEnabled, forceUpdate: !!updateInfo.forceUpdate });
+                
+                // 如果启用了静默更新，自动触发下载（通过调用 update/download IPC）
+                if (silentUpdateEnabled) {
+                  console.log('[main] Gitee 静默更新已启用，自动开始下载更新...');
+                  // 注意：Gitee 的下载需要通过自定义逻辑实现，这里只是触发事件通知前端
+                  // 前端可以监听 update/available 事件，如果 silentUpdate 为 true，则自动调用 downloadUpdate
+                }
+              } catch (e) {
+                console.error('[main] 发送 Gitee 更新事件失败:', e);
+              }
+              
+              resolve({ ok: true, hasUpdate: true, version: latestVersion, release: latestRelease, silentUpdate: silentUpdateEnabled });
+            } else {
+              // 发送无更新事件
+              try {
+                mainWin && mainWin.webContents.send('update/not-available', { version: currentVersion });
+              } catch (e) {}
+              resolve({ ok: true, hasUpdate: false, reason: 'already-latest' });
+            }
+          } catch (e) {
+            console.error('[main] 解析 Gitee Releases 失败:', e);
+            reject(new Error('解析失败: ' + String(e)));
+          }
+        });
+      }).on('error', (err) => {
+        console.error('[main] 获取 Gitee Releases 失败:', err);
+        reject(err);
+      });
+    });
+  } catch (e) {
+    throw new Error('检查 Gitee 更新失败: ' + String(e));
+  }
+}
+
+// 检查 GitHub 更新（electron-updater），失败时抛错
+async function checkGithubUpdate() {
+  // 使用 GitHub（electron-updater）
+  console.log('[main] checkGithubUpdate: autoUpdater 状态:', autoUpdater ? '已加载' : '未加载');
+  console.log('[main] checkGithubUpdate: app.isPackaged:', app.isPackaged);
+
+  // 开发模式下也允许检查更新
+  if (!app.isPackaged) {
+    console.log('[main] checkGithubUpdate: 当前为开发模式，将检查 GitHub releases 是否有新版本');
+  }
+
+  if (!autoUpdater) {
+    console.error('[main] checkGithubUpdate: autoUpdater is null');
+    console.error('[main] checkGithubUpdate: 尝试重新加载 electron-updater...');
+
+    // 尝试重新加载
+    try {
+      delete require.cache[require.resolve('electron-updater')];
+      const updater = require('electron-updater');
+      autoUpdater = updater.autoUpdater;
+      console.log('[main] checkGithubUpdate: 重新加载成功，autoUpdater:', autoUpdater ? '已加载' : '未加载');
+
+      if (autoUpdater) {
+        // 重新初始化配置
+        autoUpdater.disableWebInstaller = false;
+        const silentUpdateEnabled = getSilentUpdateEnabled();
+        autoUpdater.autoDownload = silentUpdateEnabled;
+        if (logger) {
+          autoUpdater.logger = logger;
+        }
+        // 重新绑定事件监听
+        await initAutoUpdater();
+      }
+    } catch (e) {
+      console.error('[main] checkGithubUpdate: 重新加载失败:', e);
+      console.error('[main] checkGithubUpdate: 错误详情:', {
+        message: e.message,
+        stack: e.stack,
+        code: e.code
+      });
+    }
+
+    if (!autoUpdater) {
+      throw new Error('autoUpdater 未加载，请确保应用已正确打包');
+    }
+  }
+
+  console.log('[main] checkGithubUpdate: checking for updates...');
+  console.log('[main] app.getVersion():', app.getVersion());
+
+  // 检查更新配置
+  if (autoUpdater.config) {
+    console.log('[main] updater config:', {
+      provider: autoUpdater.config.provider,
+      owner: autoUpdater.config.owner,
+      repo: autoUpdater.config.repo,
+      channel: autoUpdater.config.channel
+    });
+  } else {
+    if (app.isPackaged) {
+      console.warn('[main] updater config 为空，将使用 app-update.yml 中的配置');
+    } else {
+      console.log('[main] 开发模式：将使用 package.json 中的 build.publish 配置检查更新');
+      console.log('[main] GitHub 仓库:', 'tanzhouxkong/Metro-PIDS-');
+    }
+  }
+
+  // GitHub releases 检查（加 30 秒超时）
+  console.log('[main] 开始检查 GitHub releases...');
+  const checkPromise = autoUpdater.checkForUpdates();
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('检查更新超时（30秒）')), 30000)
+  );
+
+  const result = await Promise.race([checkPromise, timeoutPromise]);
+  console.log('[main] checkForUpdates result:', result);
+
+  // 输出详细信息用于调试
+  if (result && result.updateInfo) {
+    console.log('[main] 检查到的更新信息:', {
+      version: result.updateInfo.version,
+      releaseDate: result.updateInfo.releaseDate,
+      path: result.updateInfo.path,
+      sha512: result.updateInfo.sha512
+    });
+    console.log('[main] 当前应用版本:', app.getVersion());
+    console.log('[main] 版本比较:', {
+      current: app.getVersion(),
+      latest: result.updateInfo.version,
+      needsUpdate: result.updateInfo.version !== app.getVersion()
+    });
+  }
+
+  // 成功：具体是否有更新由事件通知
+  return { ok: true };
+}
+
+// 供渲染层触发更新动作的 IPC
+ipcMain.handle('update/check', async () => {
+  console.log('[main] update/check: 收到检查更新请求');
+  
+  const updateSource = getUpdateSource();
+  console.log('[main] update/check: 更新源:', updateSource);
+  
+  // 如果使用 Gitee，使用自定义检查逻辑
+  if (updateSource === 'gitee') {
+    try {
+      const result = await checkGiteeUpdate();
+      return { ok: true, source: 'gitee', ...result };
+    } catch (e) {
+      // Gitee 失败：尝试回退到 GitHub；只有两边都失败才提示错误
+      const giteeErrorDetails = {
+        message: String(e),
+        stack: e.stack,
+        code: e.code,
+        name: e.name
+      };
+      console.error('[main] Gitee update/check error:', giteeErrorDetails);
+      if (logger) logger.error('Gitee update/check error:', giteeErrorDetails);
+
+      try {
+        console.log('[main] update/check: Gitee 失败，回退尝试 GitHub...');
+        await checkGithubUpdate();
+        return { ok: true, source: 'github-fallback' };
+      } catch (githubErr) {
+        const githubErrorDetails = {
+          message: String(githubErr),
+          stack: githubErr && githubErr.stack,
+          code: githubErr && githubErr.code,
+          name: githubErr && githubErr.name
+        };
+        console.error('[main] update/check: GitHub fallback 也失败:', githubErrorDetails);
+        if (logger) logger.error('GitHub fallback update/check error:', githubErrorDetails);
+
+        const finalMsg = `更新检查失败：Gitee 与 GitHub 均不可用。\nGitee: ${String(e)}\nGitHub: ${String(githubErr)}`;
+        try {
+          mainWin && mainWin.webContents.send('update/error', finalMsg);
+        } catch (sendErr) {
+          console.error('[main] 发送更新错误事件失败:', sendErr);
+        }
+        return { ok: false, error: finalMsg, source: 'gitee' };
+      }
+    }
+  }
+  
+  try {
+    await checkGithubUpdate();
+    return { ok: true, source: 'github' };
+  } catch (e) {
+    // GitHub 失败：尝试回退到 Gitee；只有两边都失败才提示错误
+    const githubErrorDetails = {
+      message: String(e),
+      stack: e.stack,
+      code: e.code,
+      name: e.name
+    };
+    console.error('[main] update/check (GitHub) error:', githubErrorDetails);
+    if (logger) logger.error('update/check (GitHub) error:', githubErrorDetails);
+
+    try {
+      console.log('[main] update/check: GitHub 失败，回退尝试 Gitee...');
+      const result = await checkGiteeUpdate();
+      // 注意：checkGiteeUpdate 内部会负责发 available/not-available 事件
+      return { ok: true, source: 'gitee-fallback', ...result };
+    } catch (giteeErr) {
+      const giteeErrorDetails = {
+        message: String(giteeErr),
+        stack: giteeErr && giteeErr.stack,
+        code: giteeErr && giteeErr.code,
+        name: giteeErr && giteeErr.name
+      };
+      console.error('[main] update/check: Gitee fallback 也失败:', giteeErrorDetails);
+      if (logger) logger.error('Gitee fallback update/check error:', giteeErrorDetails);
+
+      const finalMsg = `更新检查失败：GitHub 与 Gitee 均不可用。\nGitHub: ${String(e)}\nGitee: ${String(giteeErr)}`;
+      try {
+        mainWin && mainWin.webContents.send('update/error', finalMsg);
+      } catch (sendErr) {
+        console.error('[main] 发送更新错误事件失败:', sendErr);
+      }
+      return { ok: false, error: finalMsg, source: 'github' };
+    }
+  }
+});
+
+// 清除所有可能的缓存目录
+async function clearUpdaterCache() {
+  const os = require('os');
+  const platform = process.platform;
+  const cacheDirs = [];
+  
+  if (platform === 'win32') {
+    cacheDirs.push(path.join(os.homedir(), 'AppData', 'Local', 'metro-pids-updater'));
+    cacheDirs.push(path.join(app.getPath('userData'), 'metro-pids-updater'));
+    cacheDirs.push(path.join(os.homedir(), 'AppData', 'Roaming', 'metro-pids-updater'));
+    // electron-updater 默认缓存位置（基于 appId）
+    cacheDirs.push(path.join(os.homedir(), 'AppData', 'Local', 'com.Metro-PIDS.myapp-updater'));
+    if (autoUpdater && autoUpdater.config && autoUpdater.config.cacheDir) {
+      cacheDirs.push(autoUpdater.config.cacheDir);
+    }
+  } else if (platform === 'darwin') {
+    cacheDirs.push(path.join(os.homedir(), 'Library', 'Caches', 'metro-pids-updater'));
+    cacheDirs.push(path.join(os.homedir(), 'Library', 'Application Support', 'metro-pids-updater'));
+    cacheDirs.push(path.join(os.homedir(), 'Library', 'Caches', 'com.Metro-PIDS.myapp-updater'));
+    if (autoUpdater && autoUpdater.config && autoUpdater.config.cacheDir) {
+      cacheDirs.push(autoUpdater.config.cacheDir);
+    }
+  } else {
+    cacheDirs.push(path.join(os.homedir(), '.cache', 'metro-pids-updater'));
+    cacheDirs.push(path.join(os.homedir(), '.cache', 'com.Metro-PIDS.myapp-updater'));
+    if (autoUpdater && autoUpdater.config && autoUpdater.config.cacheDir) {
+      cacheDirs.push(autoUpdater.config.cacheDir);
+    }
+  }
+  
+  let clearedCount = 0;
+  for (const cacheDir of cacheDirs) {
+    try {
+      if (fs.existsSync(cacheDir)) {
+        console.log(`[main] 清除缓存目录: ${cacheDir}`);
+        await fsPromises.rm(cacheDir, { recursive: true, force: true });
+        clearedCount++;
+      }
+    } catch (dirErr) {
+      console.warn(`[main] 清除缓存目录失败 ${cacheDir}:`, dirErr);
+    }
+  }
+  
+  return clearedCount;
+}
+
+ipcMain.handle('update/download', async () => {
+  if (!autoUpdater) return { ok: false, error: 'no-updater' };
+  
+  const maxRetries = 3;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[main] update/download: 开始下载更新... (尝试 ${attempt}/${maxRetries})`);
+      
+      // 如果是重试，先清除之前的下载缓存
+      if (attempt > 1) {
+        console.log('[main] update/download: 清除之前的下载缓存...');
+        const clearedCount = await clearUpdaterCache();
+        if (clearedCount > 0) {
+          console.log(`[main] update/download: 已清除 ${clearedCount} 个缓存目录`);
+          // 等待确保缓存清理完成
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          console.log('[main] update/download: 未找到缓存目录');
+        }
+      }
+      
+      // 使用 Promise 来捕获错误事件和异常
+      const downloadPromise = new Promise((resolve, reject) => {
+        let downloadError = null;
+        let downloaded = false;
+        let timeout = null;
+        
+        // 监听下载进度，用于诊断
+        let lastProgressPercent = 0;
+        const progressHandler = (progress) => {
+          const percent = Math.round(progress.percent || 0);
+          if (percent !== lastProgressPercent && percent % 10 === 0) {
+            // 每10%记录一次日志
+            console.log(`[main] update/download: 下载进度 ${percent}% (${progress.transferred || 0}/${progress.total || 0} bytes)`);
+            lastProgressPercent = percent;
+          }
+        };
+        
+        // 清理函数
+        const cleanup = () => {
+          if (timeout) clearTimeout(timeout);
+          try {
+            autoUpdater.removeListener('error', errorHandler);
+            autoUpdater.removeListener('update-downloaded', downloadedHandler);
+            autoUpdater.removeListener('download-progress', progressHandler);
+          } catch (e) {}
+        };
+        
+        // 监听错误事件（注意：error 事件可能会在下载过程中多次触发）
+        const errorHandler = (err) => {
+          const errorMsg = String(err);
+          console.error('[main] update/download: 收到错误事件:', errorMsg);
+          console.error('[main] update/download: 错误对象详情:', {
+            message: err.message,
+            stack: err.stack,
+            code: err.code,
+            name: err.name,
+            errno: err.errno,
+            syscall: err.syscall
+          });
+          
+          // 如果是校验和错误，标记为需要重试
+          if (errorMsg.includes('checksum') || errorMsg.includes('sha512')) {
+            downloadError = new Error(errorMsg);
+            downloadError.isChecksumError = true;
+            cleanup();
+            reject(downloadError);
+          } else {
+            downloadError = new Error(errorMsg);
+          }
+        };
+        
+        // 监听下载完成事件
+        const downloadedHandler = (info) => {
+          downloaded = true;
+          console.log('[main] update/download: 收到下载完成事件:', info);
+          cleanup();
+          resolve(info);
+        };
+        
+        // 设置超时（10分钟，给大文件下载更多时间）
+        timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('下载超时（10分钟）'));
+        }, 10 * 60 * 1000);
+        
+        // 绑定事件监听器（使用 once 确保只触发一次）
+        autoUpdater.once('error', errorHandler);
+        autoUpdater.once('update-downloaded', downloadedHandler);
+        autoUpdater.on('download-progress', progressHandler);
+        
+        // 开始下载
+        autoUpdater.downloadUpdate().then(() => {
+          // downloadUpdate 返回的 Promise 通常只表示开始下载，不表示完成
+          // 真正的完成和错误通过事件通知
+          console.log('[main] update/download: downloadUpdate() 调用完成，等待事件...');
+        }).catch((err) => {
+          cleanup();
+          reject(err);
+        });
+      });
+      
+      await downloadPromise;
+      console.log('[main] update/download: 下载完成');
+      return { ok: true };
+    } catch (e) {
+      lastError = e;
+      const errorMsg = String(e);
+      const isChecksumError = errorMsg.includes('checksum') || errorMsg.includes('sha512') || e.isChecksumError;
+      
+      console.error(`[main] update/download: 下载失败 (尝试 ${attempt}/${maxRetries}):`, errorMsg);
+      console.error('[main] update/download: 错误详情:', {
+        message: e.message,
+        stack: e.stack,
+        code: e.code,
+        name: e.name,
+        isChecksumError: isChecksumError
+      });
+      
+      if (isChecksumError && attempt < maxRetries) {
+        console.log(`[main] update/download: 检测到校验和错误，将在 ${attempt * 2} 秒后重试...`);
+        // 通知渲染进程正在重试
+        try {
+          mainWin && mainWin.webContents.send('update/progress', { 
+            percent: 0, 
+            retrying: true, 
+            attempt: attempt + 1,
+            maxRetries: maxRetries
+          });
+        } catch (sendErr) {}
+        
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000)); // 递增延迟：2秒、4秒
+        continue;
+      }
+      
+      // 如果不是校验和错误，或者已经达到最大重试次数，直接返回错误
+      if (logger) {
+        logger.error('下载更新失败', {
+          attempt,
+          maxRetries,
+          message: errorMsg,
+          stack: e.stack,
+          code: e.code,
+          name: e.name,
+          isChecksumError: isChecksumError
+        });
+      }
+      
+      // 如果是最后一次尝试，返回详细错误
+      if (attempt === maxRetries) {
+        return { 
+          ok: false, 
+          error: errorMsg,
+          attempts: attempt,
+          isChecksumError: isChecksumError
+        };
+      }
+    }
+  }
+  
+  // 理论上不会到达这里，但为了安全起见
+  return { ok: false, error: lastError ? String(lastError) : '未知错误' };
+});
+
+// 清除更新缓存并重新下载
+ipcMain.handle('update/clear-cache-and-download', async () => {
+  if (!autoUpdater) return { ok: false, error: 'no-updater' };
+  try {
+    console.log('[main] update/clear-cache-and-download: 清除缓存并重新下载...');
+    
+    // 清除所有缓存
+    const clearedCount = await clearUpdaterCache();
+    if (clearedCount > 0) {
+      console.log(`[main] 已清除 ${clearedCount} 个缓存目录`);
+    } else {
+      console.log('[main] 未找到缓存目录');
+    }
+    
+    // 等待确保缓存清理完成
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // 重新下载（这里不使用重试循环，因为用户主动触发的）
+    await autoUpdater.downloadUpdate();
+    console.log('[main] update/clear-cache-and-download: 重新下载完成');
+    return { ok: true };
+  } catch (e) {
+    const errorMsg = String(e);
+    console.error('[main] update/clear-cache-and-download: 失败:', errorMsg);
+    
+    if (logger) {
+      logger.error('清除缓存并重新下载失败', {
+        message: errorMsg,
+        stack: e.stack,
+        code: e.code,
+        name: e.name
+      });
+    }
+    
+    return { ok: false, error: errorMsg };
+  }
+});
+
+ipcMain.handle('update/install', async () => {
+  if (!autoUpdater) return { ok: false, error: 'no-updater' };
+  try {
+    // 安装的时候如果设置过 skippedVersion, 需要清除掉
+    if (store) {
+      store.delete('skippedVersion');
+    }
+    
+    if (logger) {
+      logger.info('退出应用，开始静默安装更新！');
+    }
+    
+    // quitAndInstall(isSilent, isForceRunAfter)
+    // isSilent: true = 静默安装（Windows NSIS 使用 /S 参数，不显示安装界面）
+    // isForceRunAfter: true = 安装完成后自动运行应用
+    // 这样用户只需重启应用即可完成更新，无需走安装流程
+    autoUpdater.quitAndInstall(true, true);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 获取 GitHub Releases 列表（仅从 Cloudflare Worker 服务器获取）
+ipcMain.handle('github/get-releases', async () => {
+  const https = require('https');
+  const CLOUD_API_BASE = 'https://metro.tanzhouxiang.dpdns.org';
+  // 企业代理或自签名证书环境常见 "unable to verify the first certificate"，放宽 TLS 校验
+  const tlsOpt = { rejectUnauthorized: false };
+
+  // 仅从 Cloudflare Worker 服务器获取（不降级到 GitHub）
+  try {
+    const workerResult = await new Promise((resolve, reject) => {
+      const u = `${CLOUD_API_BASE.replace(/\/+$/, '')}/releases`;
+      const req = https.get(u, { 
+        ...tlsOpt, 
+        headers: { 
+          'Accept': 'application/json', 
+          'User-Agent': 'Metro-PIDS-App' 
+        },
+        timeout: 10000  // 10秒超时
+      }, (res) => {
+        let data = '';
+        res.on('data', (c) => { data += c; });
+        res.on('end', () => {
+          try {
+            if (res.statusCode === 200) {
+              const r = JSON.parse(data || '{}');
+              if (r && r.ok && Array.isArray(r.releases)) {
+                console.log('[main] ✅ 从服务器(Worker)获取 Releases 成功，数量:', r.releases.length);
+                return resolve({ ok: true, releases: r.releases, source: 'worker' });
+              }
+              console.warn('[main] ⚠️ 服务器 /releases 返回 200 但格式不符: ok=%s, releases is array=%s', !!r?.ok, Array.isArray(r?.releases));
+              console.warn('[main] 响应内容:', data?.substring(0, 200));
+              return reject(new Error('服务器返回格式错误: ' + (r?.error || '未知错误')));
+            } else {
+              // 尝试解析错误响应
+              let errorMsg = `服务器返回状态码 ${res.statusCode}`;
+              try {
+                const errorData = JSON.parse(data || '{}');
+                if (errorData.error) {
+                  errorMsg = errorData.error;
+                  if (errorData.detail) {
+                    errorMsg += ' (' + errorData.detail + ')';
+                  }
+                }
+              } catch (e) {
+                // 忽略解析错误
+              }
+              console.warn('[main] ⚠️ 服务器 /releases 非 200: status=', res.statusCode, 'error:', errorMsg);
+              return reject(new Error(errorMsg));
+            }
+          } catch (e) {
+            console.warn('[main] ⚠️ 服务器 /releases 解析失败:', e.message);
+            console.warn('[main] 原始响应:', data?.substring(0, 200));
+            return reject(new Error('解析服务器响应失败: ' + e.message));
+          }
+        });
+      });
+      req.on('error', (e) => {
+        console.error('[main] ❌ 服务器 /releases 请求失败:', e.message);
+        reject(new Error('连接服务器失败: ' + e.message));
+      });
+      req.on('timeout', () => {
+        console.error('[main] ❌ 服务器 /releases 请求超时');
+        req.destroy();
+        reject(new Error('请求服务器超时'));
+      });
+    });
+    return workerResult;
+  } catch (e) {
+    console.error('[main] ❌ 从服务器获取 Releases 失败:', e.message);
+    return { 
+      ok: false, 
+      error: '无法从服务器获取更新日志: ' + e.message,
+      source: 'worker'  // 即使失败也标记为 worker，表示应该从服务器获取
+    };
+  }
+});
+
+// 获取 Gitee Releases 列表（用于显示更新日志和检查更新）
+ipcMain.handle('gitee/get-releases', async () => {
+  try {
+    const https = require('https');
+    const url = 'https://gitee.com/api/v5/repos/tanzhouxkong/Metro-PIDS-/releases';
+    const tlsOpt = { rejectUnauthorized: false }; // 企业代理/自签名证书环境
+
+    return new Promise((resolve) => {
+      https.get(url, {
+        ...tlsOpt,
+        headers: {
+          'User-Agent': 'Metro-PIDS-App',
+          'Accept': 'application/json'
+        }
+      }, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            const releases = JSON.parse(data);
+            // Gitee API 返回格式与 GitHub 略有不同，进行适配
+            // 只返回前10个最新的release
+            const recentReleases = releases.slice(0, 10).map(release => ({
+              tag_name: release.tag_name,
+              name: release.name,
+              body: release.body,
+              published_at: release.created_at || release.published_at, // Gitee 使用 created_at
+              html_url: release.html_url || `https://gitee.com/tanzhouxkong/Metro-PIDS-/releases/${release.tag_name}`,
+              prerelease: release.prerelease || false,
+              draft: release.draft || false,
+              assets: release.assets || [] // 包含下载文件信息
+            }));
+            resolve({ ok: true, releases: recentReleases });
+          } catch (e) {
+            console.error('[main] 解析 Gitee Releases 失败:', e);
+            resolve({ ok: false, error: '解析失败: ' + String(e) });
+          }
+        });
+      }).on('error', (err) => {
+        console.error('[main] 获取 Gitee Releases 失败:', err);
+        resolve({ ok: false, error: String(err) });
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 检查更新源配置（从存储中读取，默认为 'github'）
+function getUpdateSource() {
+  if (!store) return 'github';
+  return store.get('updateSource', 'github'); // 'github' 或 'gitee'
+}
+
+// 设置更新源配置
+ipcMain.handle('update/set-source', async (event, source) => {
+  if (!store) return { ok: false, error: 'no-store' };
+  if (source !== 'github' && source !== 'gitee') {
+    return { ok: false, error: 'invalid-source' };
+  }
+  store.set('updateSource', source);
+  console.log(`[main] 更新源已设置为: ${source}`);
+  return { ok: true };
+});
+
+// 获取更新源配置
+ipcMain.handle('update/get-source', async () => {
+  return { ok: true, source: getUpdateSource() };
+});
+
+// 设置静默更新配置
+ipcMain.handle('update/set-silent', async (event, enabled) => {
+  if (!store) return { ok: false, error: 'no-store' };
+  const silentEnabled = Boolean(enabled);
+  store.set('silentUpdateEnabled', silentEnabled);
+  console.log(`[main] 静默更新已${silentEnabled ? '启用' : '禁用'}`);
+  
+  // 如果启用了静默更新，更新 autoUpdater 配置
+  if (autoUpdater) {
+    autoUpdater.autoDownload = silentEnabled;
+    console.log(`[main] autoUpdater.autoDownload 已设置为: ${silentEnabled}`);
+  }
+  
+  return { ok: true };
+});
+
+// 获取静默更新配置
+ipcMain.handle('update/get-silent', async () => {
+  return { ok: true, enabled: getSilentUpdateEnabled() };
+});
+
+// 跳过版本更新
+ipcMain.handle('update/skip-version', async (event, version) => {
+  if (store && version) {
+    store.set('skippedVersion', version);
+    if (logger) {
+      logger.info('用户跳过版本:', version);
+    }
+    return { ok: true };
+  }
+  return { ok: false, error: 'no-store-or-version' };
+});
+
+// 自动检查更新：启动时执行（包括开发环境）
+async function scheduleAutoUpdateCheck() {
+  if (!autoUpdater) {
+    console.log('[main] scheduleAutoUpdateCheck: autoUpdater is null');
+    return;
+  }
+  
+  // 开发环境和打包环境都执行自动检查
+  console.log('[main] scheduleAutoUpdateCheck: 准备检查更新 (开发模式:', !app.isPackaged, ')');
+  
+  console.log('[main] scheduleAutoUpdateCheck: starting...');
+  console.log('[main] app version:', app.getVersion());
+  
+  // 等待 3 秒再检查更新，确保窗口准备完成，用户进入系统
+  await sleep(3000);
+  
+  try {
+    console.log('[main] scheduleAutoUpdateCheck: calling checkForUpdates...');
+    const result = await autoUpdater.checkForUpdates();
+    console.log('[main] scheduleAutoUpdateCheck: result:', result);
+  } catch (err) {
+    const errorDetails = {
+      message: String(err),
+      stack: err.stack,
+      code: err.code,
+      name: err.name
+    };
+    if (logger) {
+      logger.error('自动检查更新失败:', errorDetails);
+    } else {
+      console.error('[main] 自动检查更新失败:', errorDetails);
+    }
+    try { 
+      mainWin && mainWin.webContents.send('update/error', String(err)); 
+    } catch (e) {}
+  }
+}
+
+async function createDisplayWindow(width, height, displayId = 'display-1') {
+  if (isAppShuttingDown) {
+    return null;
+  }
+  // 检查是否已存在该显示端窗口
+  if (displayWindows.has(displayId)) {
+    const existingWin = displayWindows.get(displayId);
+    if (existingWin && !existingWin.isDestroyed()) {
+      try {
+        if (typeof width === 'number' && typeof height === 'number') {
+          existingWin.setSize(Math.max(100, Math.floor(width)), Math.max(100, Math.floor(height)));
+        }
+        bringDisplayWindowToFront(existingWin, displayId);
+        // 聚焦显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+        forceReapplyMicaEffect();
+      } catch (e) {
+        // 忽略尺寸设置异常
+      }
+      return existingWin;
+    } else {
+      // 清理已销毁的窗口引用
+      displayWindows.delete(displayId);
+    }
+  }
+
+  // 计算适配缩放后的窗口尺寸
+  // 如果没有传入尺寸参数，尝试从配置中读取显示端的默认尺寸
+  let defaultWidth = 1900;
+  let defaultHeight = 600;
+  
+  // 尝试从store中读取显示端配置以获取默认尺寸（仅在参数未传入时）
+  if (typeof width !== 'number' || typeof height !== 'number') {
+    try {
+      if (store) {
+        const settings = store.get('settings', {});
+        const displays = settings.display?.displays || {};
+        const displayConfig = displays[displayId];
+        if (displayConfig) {
+          if (typeof displayConfig.width === 'number' && displayConfig.width > 0) {
+            defaultWidth = Number(displayConfig.width);
+          }
+          if (typeof displayConfig.height === 'number' && displayConfig.height > 0) {
+            defaultHeight = Number(displayConfig.height);
+          }
+          console.log(`[main] 从配置读取 ${displayId} 尺寸:`, defaultWidth, 'x', defaultHeight);
+        } else {
+          console.warn(`[main] 未找到 ${displayId} 的配置，使用默认尺寸:`, defaultWidth, 'x', defaultHeight);
+        }
+      }
+    } catch (e) {
+      console.warn('[main] 读取显示端默认尺寸失败:', e);
+    }
+  } else {
+    console.log(`[main] 使用传入的 ${displayId} 尺寸:`, width, 'x', height);
+  }
+  
+  // 窗口逻辑尺寸始终与内容尺寸一致，不受系统缩放影响
+  // 这样可以确保在所有缩放比例下，显示的内容范围都是一样的
+  let logicalWidth, logicalHeight;
+  
+  // 对于 display-2，强制使用 1900x600，忽略所有其他值
+  if (displayId === 'display-2') {
+    // 强制使用 1900x600，无论配置或传入的参数是什么
+    logicalWidth = 1900;
+    logicalHeight = 600;
+    console.log(`[main] display-2 强制使用固定尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, '和配置值)');
+    
+    // 同时更新 store 中的配置，确保配置正确
+    try {
+      if (store) {
+        const settings = store.get('settings', {});
+        if (!settings.display) settings.display = {};
+        if (!settings.display.displays) settings.display.displays = {};
+        if (!settings.display.displays['display-2']) {
+          settings.display.displays['display-2'] = {};
+        }
+        settings.display.displays['display-2'].width = 1900;
+        settings.display.displays['display-2'].height = 600;
+        store.set('settings', settings);
+        console.log(`[main] display-2 配置已更新为: 1900x600`);
+      }
+    } catch (e) {
+      console.warn('[main] display-2 更新配置失败:', e);
+    }
+    
+    // 跳过后续的配置读取逻辑
+  } else if (displayId === 'display-3') {
+    // 北京地铁LCD显示器：强制使用 1900x600，和 display-1 相同的尺寸
+    logicalWidth = 1900;
+    logicalHeight = 600;
+    console.log(`[main] display-3 强制使用固定尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, '和配置值)');
+
+    // 同步更新 store 中的配置，确保配置正确
+    try {
+      if (store) {
+        const settings = store.get('settings', {});
+        if (!settings.display) settings.display = {};
+        if (!settings.display.displays) settings.display.displays = {};
+        if (!settings.display.displays['display-3']) {
+          settings.display.displays['display-3'] = {};
+        }
+        settings.display.displays['display-3'].width = 1900;
+        settings.display.displays['display-3'].height = 600;
+        store.set('settings', settings);
+        console.log('[main] display-3 配置已更新为: 1900x600');
+      }
+    } catch (e) {
+      console.warn('[main] display-3 更新配置失败:', e);
+    }
+
+    // 跳过后续的配置读取逻辑
+  } else if (false) { // 原来的 display-2 逻辑已移到上面，这里永远不会执行
+    // 尝试从配置读取 display-2 的尺寸
+    try {
+      if (store) {
+        const settings = store.get('settings', {});
+        const displays = settings.display?.displays || {};
+        const display2Config = displays['display-2'];
+        if (display2Config) {
+          const configWidth = display2Config.width;
+          const configHeight = display2Config.height;
+          if (typeof configWidth === 'number' && configWidth > 0 && typeof configHeight === 'number' && configHeight > 0) {
+            logicalWidth = Number(configWidth);
+            logicalHeight = Number(configHeight);
+            console.log(`[main] display-2 强制使用配置尺寸:`, logicalWidth, 'x', logicalHeight, '(忽略传入的参数:', width, 'x', height, ')');
+          } else {
+            // 配置无效，使用传入的参数或默认值
+            if (typeof width === 'number' && typeof height === 'number') {
+              logicalWidth = Math.max(100, Math.floor(width));
+              logicalHeight = Math.max(100, Math.floor(height));
+              console.log(`[main] display-2 配置无效，使用传入的参数:`, logicalWidth, 'x', logicalHeight);
+            } else {
+              logicalWidth = defaultWidth;
+              logicalHeight = defaultHeight;
+              console.log(`[main] display-2 配置无效，使用默认尺寸:`, logicalWidth, 'x', logicalHeight);
+            }
+          }
+        } else {
+          // 没有配置，使用传入的参数或默认值
+          if (typeof width === 'number' && typeof height === 'number') {
+            logicalWidth = Math.max(100, Math.floor(width));
+            logicalHeight = Math.max(100, Math.floor(height));
+            console.log(`[main] display-2 无配置，使用传入的参数:`, logicalWidth, 'x', logicalHeight);
+          } else {
+            logicalWidth = defaultWidth;
+            logicalHeight = defaultHeight;
+            console.log(`[main] display-2 无配置，使用默认尺寸:`, logicalWidth, 'x', logicalHeight);
+          }
+        }
+      } else {
+        // store 不可用，使用传入的参数或默认值
+        if (typeof width === 'number' && typeof height === 'number') {
+          logicalWidth = Math.max(100, Math.floor(width));
+          logicalHeight = Math.max(100, Math.floor(height));
+          console.log(`[main] display-2 store不可用，使用传入的参数:`, logicalWidth, 'x', logicalHeight);
+        } else {
+          logicalWidth = defaultWidth;
+          logicalHeight = defaultHeight;
+          console.log(`[main] display-2 store不可用，使用默认尺寸:`, logicalWidth, 'x', logicalHeight);
+        }
+      }
+    } catch (e) {
+      console.warn('[main] display-2 读取配置失败，使用传入参数或默认值:', e);
+      if (typeof width === 'number' && typeof height === 'number') {
+        logicalWidth = Math.max(100, Math.floor(width));
+        logicalHeight = Math.max(100, Math.floor(height));
+      } else {
+        logicalWidth = defaultWidth;
+        logicalHeight = defaultHeight;
+      }
+    }
+  } else {
+    // 其他显示端使用原有逻辑
+  if (typeof width === 'number' && typeof height === 'number') {
+    // 如果传入了尺寸参数，使用传入的尺寸
+    logicalWidth = Math.max(100, Math.floor(width));
+    logicalHeight = Math.max(100, Math.floor(height));
+      console.log(`[main] ${displayId} 使用传入的尺寸参数:`, logicalWidth, 'x', logicalHeight);
+  } else {
+    // 使用从配置读取的默认尺寸，如果没有配置则使用默认值
+    logicalWidth = defaultWidth;
+    logicalHeight = defaultHeight;
+      console.log(`[main] ${displayId} 使用配置/默认尺寸:`, logicalWidth, 'x', logicalHeight);
+    }
+  }
+  
+  // 确保尺寸为4的倍数，以避免在高DPI下的渲染问题
+  const adjustedWidth = Math.ceil(logicalWidth / 4) * 4;
+  const adjustedHeight = Math.ceil(logicalHeight / 4) * 4;
+  console.log(`[main] ${displayId} 最终窗口尺寸:`, adjustedWidth, 'x', adjustedHeight);
+
+  // 先读取显示端配置，以判断是否为第三方显示器（自定义HTML文件）
+  let displayConfig = null;
+  
+  // 首先尝试从 electron-store 读取
+  if (store) {
+    try {
+      const settings = store.get('settings', {});
+      const displays = settings.display?.displays || {};
+      displayConfig = displays[displayId];
+      console.log(`[main] 创建窗口前读取显示端配置 ${displayId}:`, displayConfig ? {
+        source: displayConfig.source,
+        url: displayConfig.url,
+        name: displayConfig.name
+      } : '未找到配置');
+    } catch (e) {
+      console.warn('[main] 从 electron-store 读取显示端配置失败:', e);
+    }
+  }
+  
+  // 如果 electron-store 中没有配置，尝试从主窗口的 localStorage 读取（通过 IPC）
+  if (!displayConfig && mainWin && !mainWin.isDestroyed()) {
+    try {
+      const localStorageSettings = await mainWin.webContents.executeJavaScript(`
+        (function() {
+          try {
+            const raw = localStorage.getItem('pids_settings_v1');
+            if (raw) {
+              return JSON.parse(raw);
+            }
+            return null;
+          } catch(e) {
+            return null;
+          }
+        })();
+      `);
+      
+      if (localStorageSettings && localStorageSettings.display && localStorageSettings.display.displays) {
+        displayConfig = localStorageSettings.display.displays[displayId];
+        if (displayConfig) {
+          console.log(`[main] 创建窗口前从主窗口 localStorage 读取显示端配置 ${displayId}:`, {
+            source: displayConfig.source,
+            url: displayConfig.url,
+            name: displayConfig.name
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[main] 从主窗口读取配置失败:', e);
+    }
+  }
+  
+  // 判断是否为第三方显示器（配置了自定义HTML文件或在线URL）
+  const isThirdPartyDisplay = displayConfig && (
+    (displayConfig.source === 'builtin' && displayConfig.url && displayConfig.url.trim()) ||
+    (displayConfig.source === 'online' && displayConfig.url && displayConfig.url.trim()) ||
+    (displayConfig.source === 'custom' && displayConfig.url && displayConfig.url.trim()) ||
+    (displayConfig.source === 'gitee' && displayConfig.url && displayConfig.url.trim())
+  );
+  
+  // 使用方案二：隐藏默认标题栏，显示系统窗口控制按钮
+  const isWindows = process.platform === 'win32';
+  const isMacOS = process.platform === 'darwin';
+  const isLinux = process.platform === 'linux';
+  
+  // 根据是否为第三方显示器选择窗口配置
+  let opts;
+  if (isThirdPartyDisplay) {
+    // 第三方显示器：使用框架窗口（有标题栏、边框等）
+    console.log(`[main] ${displayId} 是第三方显示器，使用框架窗口`);
+    opts = {
+      width: adjustedWidth,
+      height: adjustedHeight,
+      useContentSize: false,
+      frame: true, // 显示框架
+      transparent: false,
+      backgroundColor: '#ffffff', // 白色背景
+      resizable: true, // 允许调整大小
+      maximizable: true, // 允许最大化
+      minimizable: true, // 允许最小化
+      show: false, // 先不显示，等 ready-to-show 事件后再显示
+      skipTaskbar: false,
+      title: displayConfig.name || `Metro PIDS - ${displayId}`,
+      webPreferences: {
+        preload: getPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        zoomFactor: 1.0,
+        backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
+        offscreen: false,
+        enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
+      }
+    };
+  } else if (isLinux) {
+    // Linux 不支持自定义标题栏，使用系统默认标题栏
+    opts = {
+      width: adjustedWidth,
+      height: adjustedHeight,
+      useContentSize: false,
+      frame: true, // Linux 使用系统框架
+      resizable: false,
+      maximizable: false, // 禁用最大化
+      show: true,
+      skipTaskbar: false,
+      title: `Metro PIDS - ${displayId}`,
+      webPreferences: {
+        preload: getPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        zoomFactor: 1.0,
+        // 显示端：确保在后台也保持刷新，并启用 2D Canvas GPU 光栅化
+        backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
+        offscreen: false,
+        enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
+      }
+    };
+  } else {
+    // Windows 和 MacOS 使用自定义标题栏
+   // 如果 mica-electron 可用，使用透明背景以支持 Mica 效果（不模糊）
+    const useMica = isWindows && MicaBrowserWindow !== BrowserWindow;
+    opts = {
+      width: adjustedWidth,
+      height: adjustedHeight,
+      useContentSize: false,
+      frame: false, // 隐藏默认框架
+      transparent: !!useMica, // Mica 需要透明窗口才能让原生效果透出
+      backgroundColor: useMica ? '#00000000' : '#090d12', // Mica 时透明，否则使用深色背景
+      resizable: false,
+      maximizable: false, // 禁用最大化
+      show: false, // 先不显示，等 ready-to-show 事件后再显示
+      skipTaskbar: false,
+      title: `Metro PIDS - ${displayId}`,
+      // 隐藏默认标题栏，但保留系统窗口控制按钮
+      titleBarStyle: 'hidden',
+      // 显示系统自带窗口控制按钮
+      // 注意：height 设置为 0 或很小，让自定义状态栏完全控制拖动区域
+      titleBarOverlay: {
+      // 使用与自定义状态栏相同的白色背景，确保系统最小化/关闭按钮在悬停时有清晰的高亮遮罩
+      // 启用 Mica 时必须透明，否则右侧系统按钮区域会变成一整块白色
+      color: isWindows ? (useMica ? '#00000000' : '#ffffff') : undefined,
+      symbolColor: isWindows ? '#2d3436' : undefined, // Windows 控制按钮颜色（与控制面板一致，使用黑色）
+      height: 32 // 控制按钮高度，与自定义状态栏高度一致（32px）
+      },
+      // 顶级窗口（无父级），以独立原生窗口呈现
+      webPreferences: {
+        preload: getPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        // 禁用自动缩放，使用CSS transform来控制缩放
+        zoomFactor: 1.0,
+        // 显示端：确保在后台也保持刷新，并启用 2D Canvas GPU 光栅化
+        backgroundThrottling: WINDOW_BACKGROUND_THROTTLING,
+        offscreen: false,
+        // 允许高DPI支持 + 2D Canvas GPU 加速
+        enableBlinkFeatures: 'Accelerated2dCanvas,CanvasOopRasterization'
+      }
+    };
+  }
+
+  const displayWin = new MicaBrowserWindow(opts);
+
+  if (process.platform === 'win32' && MicaBrowserWindow !== BrowserWindow) {
+    try {
+      applyNativeBlurStateToWindow(displayWin, true, getStoredThemeMode());
+    } catch (e) { 
+      console.warn('[main] 无法应用显示器的Mica效果: ', e);
+    }
+  }
+  
+  // 立即确保窗口尺寸正确（防止某些情况下尺寸被错误设置）
+  // 对于 display-2，强制使用 1900x600
+  let finalWidth = adjustedWidth;
+  let finalHeight = adjustedHeight;
+  if (displayId === 'display-2') {
+    // 强制使用配置中的尺寸，忽略所有其他值
+    try {
+      if (store) {
+        const settings = store.get('settings', {});
+        const displays = settings.display?.displays || {};
+        const display2Config = displays['display-2'];
+        if (display2Config) {
+          const configWidth = display2Config.width;
+          const configHeight = display2Config.height;
+          if (typeof configWidth === 'number' && configWidth > 0 && typeof configHeight === 'number' && configHeight > 0) {
+            finalWidth = Math.ceil(Number(configWidth) / 4) * 4;
+            finalHeight = Math.ceil(Number(configHeight) / 4) * 4;
+            console.log(`[main] display-2 强制使用配置尺寸:`, finalWidth, 'x', finalHeight);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[main] display-2 强制读取配置失败:', e);
+    }
+  }
+  
+  displayWin.setSize(finalWidth, finalHeight, false);
+  console.log(`[main] ${displayId} 窗口已创建，尺寸已设置为:`, finalWidth, 'x', finalHeight);
+
+  // 根据显示端ID选择不同的HTML文件
+  let dispPath;
+  
+  // displayConfig 已在窗口创建前读取，这里直接使用
+  // 如果配置了在线URL（source为online/custom/gitee且url存在），直接使用该URL
+  if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee') && displayConfig.url) {
+    dispPath = displayConfig.url.trim();
+    console.log(`[main] ✅ 使用在线显示器URL: ${dispPath}`);
+    
+    // 验证URL格式
+    if (!dispPath || dispPath.trim() === '') {
+      const errorDetails = {
+        displayId: displayId,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url,
+        expectedUrl: dispPath,
+        actualUrl: null,
+        reason: '配置的URL为空，无法加载第三方显示器',
+        config: displayConfig
+      };
+      showDisplayErrorDialog('第三方显示器加载失败', `显示端 "${displayConfig.name || displayId}" 的URL为空`, errorDetails);
+      // 回退到默认路径
+      dispPath = getRendererUrl('display_window.html');
+    }
+  } else if (displayConfig && displayConfig.source === 'builtin' && displayConfig.url) {
+    let customFilePath = displayConfig.url.trim();
+    console.log(`[main] 检测到自定义HTML文件路径: ${customFilePath}`);
+    
+    // 规范化路径：如果是相对路径，需要相对于应用目录解析
+    let resolvedPath;
+    if (path.isAbsolute(customFilePath)) {
+      // 绝对路径，直接使用
+      resolvedPath = customFilePath;
+    } else {
+      // 相对路径，相对于应用目录解析
+      if (app.isPackaged) {
+        resolvedPath = path.join(app.getAppPath(), customFilePath);
+      } else {
+        resolvedPath = path.join(__dirname, '..', customFilePath);
+      }
+    }
+    
+    // 规范化路径格式（处理Windows路径分隔符等）
+    resolvedPath = path.normalize(resolvedPath);
+    console.log(`[main] 解析后的文件路径: ${resolvedPath}`);
+    
+    // 检查文件是否存在
+    if (fs.existsSync(resolvedPath)) {
+      // 使用 file:// 协议加载本地文件
+      // Windows路径需要特殊处理：file:///C:/path/to/file.html
+      // Unix路径：file:///path/to/file.html
+      const fileUrl = process.platform === 'win32' 
+        ? `file:///${resolvedPath.replace(/\\/g, '/')}`
+        : `file://${resolvedPath}`;
+      dispPath = fileUrl;
+      console.log(`[main] ✅ 使用自定义HTML文件: ${fileUrl}`);
+    } else {
+      console.warn(`[main] ⚠️ 配置的本地文件不存在: ${resolvedPath}，使用默认路径`);
+      // 回退到默认路径
+      if (displayId === 'display-1') {
+        dispPath = getRendererUrl('displays/display-1/display_window.html');
+      } else {
+        const customRel = `displays/${displayId}/display_window.html`;
+        const customPath = app.isPackaged 
+          ? path.join(app.getAppPath(), 'out/renderer', customRel)
+          : path.join(__dirname, '../renderer', customRel);
+        if (fs.existsSync(customPath)) {
+          dispPath = getRendererUrl(customRel);
+        } else {
+          dispPath = getRendererUrl('display_window.html');
+        }
+      }
+    }
+  } else {
+    // 没有配置自定义URL，检查是否有默认的显示端文件
+    // 如果配置了第三方显示器但URL为空或source不匹配，显示错误
+    if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+      const errorDetails = {
+        displayId: displayId,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url || '(空)',
+        expectedUrl: null,
+        actualUrl: null,
+        reason: displayConfig.url ? 'URL格式错误或无法识别，source类型为第三方但URL无效' : '配置的URL为空，source类型为第三方但未提供URL',
+        config: displayConfig
+      };
+      showDisplayErrorDialog('第三方显示器识别失败', `显示端 "${displayConfig.name || displayId}" 配置错误`, errorDetails);
+    }
+    
+    if (displayId === 'display-1') {
+      dispPath = getRendererUrl('displays/display-1/display_window.html');
+      console.log(`[main] 使用显示器1 路径: ${dispPath}`);
+    } else {
+      // 检查是否存在对应的显示端文件
+      const customRel = `displays/${displayId}/display_window.html`;
+      // 直接使用 getRendererUrl 的逻辑来构建路径进行检查
+      let customPath;
+      
+      if (app.isPackaged) {
+        // 打包环境：使用 app.getAppPath()
+        const appPath = app.getAppPath();
+        customPath = path.join(appPath, 'out/renderer', customRel);
+      } else {
+        // 开发环境：Vite dev server 会直接提供该路径，不依赖 out/renderer 的落盘文件
+        // 直接使用 URL，避免因未生成 out/renderer/displays 导致识别失败
+        dispPath = getRendererUrl(customRel);
+        console.log(`[main] (dev) 直接使用 ${displayId} 路径: ${dispPath}`);
+        customPath = null;
+      }
+      
+      if (!app.isPackaged) {
+        // dev 分支已直接设置 dispPath
+      } else {
+        console.log(`[main] 检查 ${displayId} 文件路径: ${customPath}, 存在: ${fs.existsSync(customPath)}`);
+      }
+      
+      if (!app.isPackaged || (customPath && fs.existsSync(customPath))) {
+        dispPath = getRendererUrl(customRel);
+        console.log(`[main] ✅ 使用 ${displayId} 路径: ${dispPath}`);
+      } else {
+        // 如果不存在，使用默认显示端
+        console.warn(`[main] ⚠️ ${displayId} 文件不存在 (${customPath})，使用默认显示端`);
+        if (displayConfig) {
+          console.log(`[main] 显示端配置信息: source=${displayConfig.source}, url=${displayConfig.url || '(空)'}, name=${displayConfig.name || '(空)'}`);
+        } else {
+          console.warn(`[main] ⚠️ 显示端 ${displayId} 的配置未找到`);
+        }
+        dispPath = getRendererUrl('display_window.html');
+      }
+    }
+  }
+  
+  console.log(`[main] createDisplayWindow: displayId=${displayId}, dispPath=${dispPath}`);
+
+  // 在窗口准备好后再显示，避免黑屏
+  let readyToShowHandled = false;
+  const readyToShowFallbackTimer = setTimeout(() => {
+    try {
+      if (!displayWin || displayWin.isDestroyed()) return;
+      if (readyToShowHandled) return;
+      if (!displayWin.isVisible()) {
+        console.warn(`[main] ${displayId} ready-to-show 超时，执行兜底显示`);
+        displayWin.show();
+      }
+      bringDisplayWindowToFront(displayWin, displayId);
+    } catch (e) {
+      console.warn(`[main] ${displayId} 兜底显示失败:`, e);
+    }
+  }, 3000);
+
+  displayWin.once('ready-to-show', () => {
+    readyToShowHandled = true;
+    clearTimeout(readyToShowFallbackTimer);
+    // 再次确保窗口尺寸正确（特别是 display-2）
+    // 对于 display-2，再次从配置读取确保使用正确尺寸
+    let expectedWidth = finalWidth;
+    let expectedHeight = finalHeight;
+    
+    if (displayId === 'display-2') {
+      try {
+        if (store) {
+          const settings = store.get('settings', {});
+          const displays = settings.display?.displays || {};
+          const display2Config = displays['display-2'];
+          if (display2Config) {
+            const configWidth = display2Config.width;
+            const configHeight = display2Config.height;
+            if (typeof configWidth === 'number' && configWidth > 0 && typeof configHeight === 'number' && configHeight > 0) {
+              expectedWidth = Math.ceil(Number(configWidth) / 4) * 4;
+              expectedHeight = Math.ceil(Number(configHeight) / 4) * 4;
+              console.log(`[main] display-2 ready-to-show 时强制使用配置尺寸:`, expectedWidth, 'x', expectedHeight);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[main] display-2 ready-to-show 读取配置失败:', e);
+      }
+    }
+    
+    const currentSize = displayWin.getSize();
+    if (currentSize[0] !== expectedWidth || currentSize[1] !== expectedHeight) {
+      console.warn(`[main] ${displayId} 窗口尺寸不匹配！当前: ${currentSize[0]}x${currentSize[1]}, 期望: ${expectedWidth}x${expectedHeight}，正在修正...`);
+      displayWin.setSize(expectedWidth, expectedHeight, false);
+      // 对于 display-2，如果尺寸仍然不对，多次强制设置
+      if (displayId === 'display-2') {
+        setTimeout(() => {
+          const checkSize = displayWin.getSize();
+          if (checkSize[0] !== expectedWidth || checkSize[1] !== expectedHeight) {
+            console.warn(`[main] display-2 尺寸仍然不正确，再次强制设置:`, expectedWidth, 'x', expectedHeight);
+            displayWin.setSize(expectedWidth, expectedHeight, false);
+            // 再延迟一次确保设置成功
+            setTimeout(() => {
+              const checkSize2 = displayWin.getSize();
+              if (checkSize2[0] !== expectedWidth || checkSize2[1] !== expectedHeight) {
+                console.error(`[main] display-2 尺寸设置失败！当前: ${checkSize2[0]}x${checkSize2[1]}, 期望: ${expectedWidth}x${expectedHeight}`);
+                displayWin.setSize(expectedWidth, expectedHeight, false);
+              } else {
+                console.log(`[main] display-2 ✅ 尺寸已成功设置为:`, expectedWidth, 'x', expectedHeight);
+              }
+            }, 200);
+          } else {
+            console.log(`[main] display-2 ✅ 尺寸已正确:`, expectedWidth, 'x', expectedHeight);
+          }
+        }, 100);
+      }
+    } else {
+      console.log(`[main] ${displayId} ✅ 窗口尺寸正确:`, expectedWidth, 'x', expectedHeight);
+    }
+    displayWin.show();
+    bringDisplayWindowToFront(displayWin, displayId);
+    // 显示端开发模式默认自动打开开发者工具；可通过环境变量显式关闭
+    if (!app.isPackaged && process.env.METRO_PIDS_OPEN_DISPLAY_DEVTOOLS !== '0') {
+      displayWin.webContents.openDevTools();
+    }
+    
+    // 显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+    forceReapplyMicaEffect();
+  });
+  
+  displayWin.loadURL(dispPath);
+
+  // 转发显示端控制台日志，便于排查黑屏
+  try {
+    displayWin.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      const prefix = `[DisplayWindow:${displayId}]`;
+      const at = sourceId ? `(${sourceId}:${line})` : '';
+      if (level === 0) console.log(prefix, message, at);
+      else if (level === 1) console.warn(prefix, message, at);
+      else if (level === 2) console.error(prefix, message, at);
+      else console.error(prefix, `[console:${level}]`, message, at);
+    });
+  } catch (e) {
+    // ignore
+  }
+  
+  // 监听加载失败事件，特别是第三方显示器
+  displayWin.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return; // 只处理主框架的加载失败
+    
+    // 如果是第三方显示器加载失败，显示详细错误信息
+    if (displayConfig && (displayConfig.source === 'online' || displayConfig.source === 'custom' || displayConfig.source === 'gitee')) {
+      const errorDetails = {
+        displayId: displayId,
+        name: displayConfig.name,
+        source: displayConfig.source,
+        url: displayConfig.url,
+        expectedUrl: dispPath,
+        actualUrl: validatedURL || dispPath,
+        reason: `页面加载失败 (错误代码: ${errorCode}, 描述: ${errorDescription})`,
+        config: displayConfig,
+        errorCode: errorCode,
+        errorDescription: errorDescription,
+        validatedURL: validatedURL
+      };
+      showDisplayErrorDialog('第三方显示器加载失败', `显示端 "${displayConfig.name || displayId}" 无法加载`, errorDetails);
+    } else {
+      // 非第三方显示器也记录错误，但不弹出对话框（避免干扰正常使用）
+      console.error(`[main] ${displayId} 加载失败:`, {
+        errorCode,
+        errorDescription,
+        validatedURL,
+        dispPath
+      });
+      if (logger) {
+        logger.error(`[main] ${displayId} 加载失败`, { errorCode, errorDescription, validatedURL, dispPath });
+      }
+    }
+  });
+  
+  // 确保缩放因子始终为1.0，禁用Electron的自动缩放
+  displayWin.webContents.setZoomFactor(1.0);
+  
+  // 监听缩放变化事件，确保始终保持1.0缩放
+  displayWin.webContents.on('did-finish-load', () => {
+    displayWin.webContents.setZoomFactor(1.0);
+    // 某些机器上 ready-to-show 触发偏慢，did-finish-load 到达后先行显示，减少“第二次打开明显慢”
+    if (!readyToShowHandled) {
+      readyToShowHandled = true;
+      clearTimeout(readyToShowFallbackTimer);
+      try {
+        if (!displayWin.isDestroyed()) {
+          if (!displayWin.isVisible()) displayWin.show();
+          bringDisplayWindowToFront(displayWin, displayId);
+          console.log(`[main] ${displayId} did-finish-load 提前显示窗口`);
+        }
+      } catch (e) {
+        console.warn(`[main] ${displayId} did-finish-load 提前显示失败:`, e);
+      }
+    }
+    // 页面加载完成后，强制重新应用主窗口的模糊效果
+    forceReapplyMicaEffect();
+  });
+  
+  // 监听窗口显示事件，再次确保缩放正确
+  displayWin.on('show', () => {
+    displayWin.webContents.setZoomFactor(1.0);
+    // 显示窗口后，强制重新应用主窗口的模糊效果（防止因焦点变化导致模糊消失）
+    forceReapplyMicaEffect();
+  });
+  
+  // 监听显示器窗口的焦点事件，当显示器窗口失去焦点时（主窗口重新获得焦点），重新应用模糊效果
+  displayWin.on('blur', () => {
+    forceReapplyMicaEffect();
+  });
+  
+  // 添加快捷键支持：F12 或 Ctrl+Shift+I 仅打开开发者工具（不关闭，避免“消失”）
+  displayWin.webContents.on('before-input-event', async (event, input) => {
+    // F12 键
+    if (input.key === 'F12') {
+      // 检查是否允许在打包后使用F12
+      let allowF12 = !app.isPackaged; // 开发环境默认允许
+      
+      if (app.isPackaged) {
+        // 打包环境：检查localStorage中的设置
+        try {
+          const result = await displayWin.webContents.executeJavaScript(`
+            (function() {
+              try {
+                return localStorage.getItem('metro_pids_enable_f12_devtools') === 'true';
+              } catch(e) {
+                return false;
+              }
+            })();
+          `);
+          allowF12 = result === true;
+        } catch (e) {
+          console.warn('[DisplayWindow] 检查F12设置失败:', e);
+          allowF12 = false;
+        }
+      }
+      
+      if (allowF12) {
+        if (!displayWin.webContents.isDevToolsOpened()) displayWin.webContents.openDevTools();
+        event.preventDefault();
+      }
+      return;
+    }
+    const isMac = process.platform === 'darwin';
+    const isCtrlShiftI = !isMac && input.control && input.shift && input.key === 'I';
+    const isCmdOptionI = isMac && input.meta && input.alt && input.key === 'I';
+    if (isCtrlShiftI || isCmdOptionI) {
+      let allowShortcut = !app.isPackaged;
+      if (app.isPackaged) {
+        try {
+          const result = await displayWin.webContents.executeJavaScript(`(function(){try{return localStorage.getItem('metro_pids_enable_f12_devtools')==='true';}catch(e){return false;}})();`);
+          allowShortcut = result === true;
+        } catch (e) {
+          console.warn('[DisplayWindow] 检查F12设置失败:', e);
+          allowShortcut = false;
+        }
+      }
+      if (allowShortcut) {
+        if (!displayWin.webContents.isDevToolsOpened()) displayWin.webContents.openDevTools();
+        event.preventDefault();
+      }
+      return;
+    }
+  });
+
+  // 性能优化：窗口关闭时彻底清理资源，避免内存泄漏
+  displayWin.on('closed', () => {
+    clearTimeout(readyToShowFallbackTimer);
+    displayWindows.delete(displayId);
+    // 确保窗口引用被清理
+    if (displayWin && !displayWin.isDestroyed()) {
+      try {
+        displayWin.destroy();
+      } catch (e) {
+        console.warn(`[DisplayWindow:${displayId}] 销毁窗口失败:`, e);
+      }
+    }
+  });
+
+  // 性能优化：监控显示端窗口内存使用，超阈值时刷新页面
+  // 显示端窗口通常需要持续运行，内存监控有助于保持性能
+  let memoryMonitorInterval = null;
+  if (displayWin && displayWin.webContents) {
+    memoryMonitorInterval = setInterval(async () => {
+      try {
+        if (displayWin.isDestroyed()) {
+          if (memoryMonitorInterval) {
+            clearInterval(memoryMonitorInterval);
+            memoryMonitorInterval = null;
+          }
+          return;
+        }
+        
+        const memoryInfo = displayWin.webContents.getProcessMemoryInfo();
+        if (memoryInfo && memoryInfo.privateBytes) {
+          const memoryMB = memoryInfo.privateBytes / 1024 / 1024;
+          // 显示端窗口内存阈值：800MB（考虑到地图渲染等复杂内容）
+          if (memoryMB > 800) {
+            console.warn(`[DisplayWindow:${displayId}] 内存使用超阈值（${memoryMB.toFixed(2)}MB），刷新页面`);
+            displayWin.webContents.reload();
+          }
+        }
+      } catch (e) {
+        // 忽略监控错误，避免影响窗口正常运行
+        if (memoryMonitorInterval) {
+          clearInterval(memoryMonitorInterval);
+          memoryMonitorInterval = null;
+        }
+      }
+    }, 30000); // 每30秒检查一次内存使用
+  }
+
+  // 存储窗口引用
+  displayWindows.set(displayId, displayWin);
+
+  return displayWin;
+}
+
+// 辅助：显示带模糊背景的自定义 Electron 警告/确认弹窗
+function showElectronAlert({ parent, type = 'alert', title = '提示', msg = '' } = {}) {
+  return new Promise((resolve, reject) => {
+    try {
+      const modal = new BrowserWindow({
+        parent: parent || null,
+        modal: !!parent,
+        width: 680,
+        height: 420,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
+        frame: true,
+        show: false,
+        transparent: false,
+        webPreferences: {
+          preload: getPreloadPath(),
+          contextIsolation: true,
+          nodeIntegration: true
+        }
+      });
+
+      const id = Date.now().toString(36) + Math.floor(Math.random()*1000).toString(36);
+      const url = `${getRendererUrl('electron_alert.html')}?id=${encodeURIComponent(id)}&type=${encodeURIComponent(type)}&title=${encodeURIComponent(title)}&msg=${encodeURIComponent(msg)}`;
+
+      let _blurApplied = false;
+      const applyParentBlur = (enable) => {
+        try {
+          if (!parent) return;
+          if (typeof parent.setVisualEffectState === 'function') {
+            parent.setVisualEffectState(enable ? 'active' : 'inactive');
+            _blurApplied = enable;
+            return;
+          }
+          if (process.platform === 'darwin' && typeof parent.setVibrancy === 'function') {
+            parent.setVibrancy(enable ? 'fullscreen-ui' : 'none');
+            _blurApplied = enable;
+            return;
+          }
+          if (process.platform === 'win32' && typeof parent.setBackgroundMaterial === 'function') {
+            parent.setBackgroundMaterial(enable ? 'acrylic' : 'mica');
+            _blurApplied = enable;
+            return;
+          }
+        } catch (e) {
+      // 忽略
+        }
+      };
+
+      const cleanup = () => {
+        try { modal.removeAllListeners(); } catch (e) {}
+        try { applyParentBlur(false); } catch (e) {}
+      };
+
+      const responseHandler = (event, data) => {
+        try {
+          if (!data || data.id !== id) return;
+          cleanup();
+          try { modal.close(); } catch (e) {}
+          resolve(!!data.result);
+        } catch (e) {
+          cleanup();
+          try { modal.close(); } catch (e) {}
+          resolve(false);
+        }
+      };
+
+      ipcMain.once('electron-alert-response', responseHandler);
+
+      modal.once('ready-to-show', () => {
+        try { applyParentBlur(true); } catch (e) {}
+        try { modal.show(); } catch (e) {}
+      });
+
+      modal.on('closed', () => {
+        // 若未返回结果即关闭，视为取消/false
+        try { ipcMain.removeListener('electron-alert-response', responseHandler); } catch (e) {}
+        try { applyParentBlur(false); } catch (e) {}
+        resolve(false);
+      });
+
+      modal.loadURL(url).catch((e) => {
+        try { ipcMain.removeListener('electron-alert-response', responseHandler); } catch (e) {}
+        try { modal.close(); } catch (e) {}
+        reject(e);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// 创建线路管理器窗口
+function createLineManagerWindow() {
+  if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+    lineManagerWin.focus();
+    return;
+  }
+  
+  const isWindows = process.platform === 'win32';
+  
+  // 使用 MicaBrowserWindow（如果可用）以获得 Mica 模糊效果
+  lineManagerWin = new MicaBrowserWindow({
+    width: 900,
+    height: 600,
+    minWidth: 700,
+    minHeight: 500,
+    frame: false, // 隐藏默认框架，使用自定义标题栏
+    transparent: true, // 启用透明以支持毛玻璃效果
+    resizable: true,
+    backgroundColor: '#00000000', // 完全透明的背景色
+    hasShadow: true, // 启用窗口阴影
+    titleBarStyle: 'hidden', // 隐藏默认标题栏
+    titleBarOverlay: process.platform === 'win32' ? {
+      color: 'rgba(0, 0, 0, 0)', // 透明背景
+      symbolColor: '#2d3436', // 符号颜色
+      height: 32 // 标题栏高度
+    } : undefined,
+    webPreferences: {
+      preload: getPreloadPath(),
+      nodeIntegration: false,
+      contextIsolation: true
+    },
+    show: false // 先不显示，等 dom-ready 后再显示
+  });
+
+  // 应用 Mica 模糊效果（与主窗口相同，仅在 Windows 11 上启用 Mica）
+  if (isWindows && lineManagerWin && MicaBrowserWindow !== BrowserWindow && MAIN_BLUR_ENABLED) {
+    try {
+      applyNativeBlurStateToWindow(lineManagerWin, true, getStoredThemeMode());
+      console.log('[LineManagerWindow] ✅ 已按当前设置应用原生窗口效果');
+    } catch (e) {
+      console.warn('[LineManagerWindow] ⚠️ 应用 Mica 效果失败:', e);
+    }
+  }
+
+  // 模糊关闭时，确保线路管理器窗口也关闭原生材质
+  if (isWindows && lineManagerWin && !MAIN_BLUR_ENABLED) {
+    try {
+      applyNativeBlurStateToWindow(lineManagerWin, false, getStoredThemeMode());
+      console.log('[LineManagerWindow] 模糊关闭，已禁用原生材质');
+    } catch (e) {
+      console.warn('[LineManagerWindow] 禁用原生材质失败:', e);
+    }
+  }
+
+  const lineManagerPath = getRendererUrl('line_manager_window.html');
+  lineManagerWin.loadURL(lineManagerPath);
+
+  // 确保背景透明并重新应用 Mica 效果
+  lineManagerWin.webContents.once('dom-ready', () => {
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      try {
+        lineManagerWin.setBackgroundColor('#00000000');
+        // 延迟应用效果，确保背景色设置生效
+        setTimeout(() => {
+          if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+            try {
+              if (MAIN_BLUR_ENABLED && IS_WINDOWS_11 && typeof lineManagerWin.setMicaAcrylicEffect === 'function') {
+                lineManagerWin.setBackgroundColor('#00000000');
+                lineManagerWin.setMicaAcrylicEffect();
+                console.log('[LineManagerWindow] ✅ 重新应用 Mica Acrylic 效果');
+              } else {
+                // 2026-02: 出于兼容性考虑，暂时不在 Windows 10 上主动调用 setAcrylic
+                console.log('[LineManagerWindow] ⚠️ 当前系统不为 Windows 11，跳过 Acrylic 重新应用');
+              }
+            } catch (e) {
+              console.warn('[LineManagerWindow] ⚠️ 重新应用效果失败:', e);
+            }
+          }
+        }, 50);
+      } catch (e) {
+        console.warn('[LineManagerWindow] ⚠️ 设置透明背景失败:', e);
+      }
+    }
+    lineManagerWin.show();
+  });
+
+  lineManagerWin.once('ready-to-show', () => {
+    if (!app.isPackaged) {
+      lineManagerWin.webContents.openDevTools();
+    }
+  });
+
+  lineManagerWin.on('closed', () => {
+    lineManagerWin = null;
+  });
+}
+
+// 创建开发者窗口
+function createDevWindow() {
+  if (devWin && !devWin.isDestroyed()) {
+    devWin.focus();
+    return;
+  }
+  
+  devWin = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    minWidth: 800,
+    minHeight: 600,
+    frame: true,
+    transparent: false,
+    resizable: true,
+    titleBarOverlay: process.platform === 'win32' ? {
+      color: '#f0f2f5',
+      symbolColor: '#2d3436',
+      height: 32
+    } : undefined,
+    webPreferences: {
+      preload: getPreloadPath(),
+      nodeIntegration: false,
+      contextIsolation: true
+    },
+    show: false
+  });
+
+  const devPath = getRendererUrl('dev_window.html');
+  devWin.loadURL(devPath);
+
+  devWin.once('ready-to-show', () => {
+    devWin.show();
+    if (!app.isPackaged) {
+      devWin.webContents.openDevTools();
+    }
+  });
+
+  devWin.on('closed', async () => {
+    devWin = null;
+    
+    // 清除主窗口 localStorage 中的开发者按钮标记
+    if (!isAppShuttingDown && mainWin && !mainWin.isDestroyed()) {
+      try {
+        await mainWin.webContents.executeJavaScript(`
+          (function() {
+            try {
+              localStorage.removeItem('metro_pids_dev_button_enabled');
+              return true;
+            } catch(e) {
+              return false;
+            }
+          })();
+        `);
+        console.log('[MainWindow] 开发者窗口关闭，已清除开发者按钮标记');
+      } catch (e) {
+        console.warn('[MainWindow] 清除开发者按钮标记失败:', e);
+      }
+    }
+  });
+}
+
+// 处理线路管理器的线路切换请求（options 可含 target、folderPath，folderPath 用于主窗口从正确目录刷新以得到正确的 currentFilePath）
+ipcMain.handle('line-manager/switch-line', async (event, lineName, options) => {
+  try {
+    const folderPath = (options && typeof options === 'object' && options.folderPath) ? options.folderPath : null;
+    if (folderPath && typeof folderPath === 'string' && store) {
+      const folders = getLinesFolders();
+      const normalizedPath = path.normalize(folderPath);
+      const matchedId = Object.keys(folders).find((id) => folders[id] && path.normalize(folders[id].path) === normalizedPath);
+      if (matchedId) {
+        store.set('linesCurrentFolder', matchedId);
+      }
+    }
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('switch-line-request', lineName, throughOperationTarget, folderPath);
+      const target = throughOperationTarget;
+      throughOperationTarget = null;
+      return { ok: true, target: target };
+    }
+    return { ok: false, error: '主窗口不存在' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 处理线路管理器的云控线路应用请求（传递完整线路数据）
+ipcMain.handle('line-manager/switch-runtime-line', async (event, lineData) => {
+  try {
+    if (mainWin && !mainWin.isDestroyed()) {
+      const target = throughOperationTarget;
+      if (target === 'lineA' || target === 'lineB' || typeof target === 'number' || (typeof target === 'string' && target.startsWith('segment-'))) {
+        mainWin.webContents.send('switch-runtime-line', {
+          lineData,
+          target,
+          forThroughOperation: true
+        });
+        throughOperationTarget = null;
+        return { ok: true, target, forThroughOperation: true };
+      }
+      mainWin.webContents.send('switch-runtime-line', lineData);
+      // 不自动关闭线路管理器，方便用户确认主窗口已应用后再手动关闭
+      return { ok: true };
+    }
+    return { ok: false, error: '主窗口不存在' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// 处理关闭窗口请求
+ipcMain.handle('line-manager/close', async (event) => {
+  try {
+    if (lineManagerWin && !lineManagerWin.isDestroyed()) {
+      lineManagerWin.close();
+      return { ok: true };
+    }
+    return { ok: false, error: '窗口不存在' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
