@@ -2208,14 +2208,22 @@ export default {
         try {
             let effectiveLineData = lineData;
             const lineName = String(lineData.meta.lineName || '').trim();
-            const hasCloudMap = !!(lineData.meta && lineData.meta.cloudAudioFiles && typeof lineData.meta.cloudAudioFiles === 'object' && Object.keys(lineData.meta.cloudAudioFiles).length > 0);
+            const hasCloudAudioHint = !!(
+                (lineData.meta && lineData.meta.cloudAudioAvailable === true) ||
+                (lineData.meta && Number(lineData.meta.cloudAudioCount || 0) > 0) ||
+                (lineData.meta && lineData.meta.cloudAudioFiles && typeof lineData.meta.cloudAudioFiles === 'object' && Object.keys(lineData.meta.cloudAudioFiles).length > 0)
+            );
 
-            if (!hasCloudMap && lineName) {
+            if (!hasCloudAudioHint && lineName) {
                 try {
                     const full = await cloudConfig.getRuntimeLine(lineName);
                     const fetched = full?.data || full?.line || null;
-                    const fetchedHasCloudMap = !!(fetched?.meta?.cloudAudioFiles && typeof fetched.meta.cloudAudioFiles === 'object' && Object.keys(fetched.meta.cloudAudioFiles).length > 0);
-                    if (fetched && fetchedHasCloudMap) {
+                    const fetchedHasCloudAudioHint = !!(
+                        fetched?.meta?.cloudAudioAvailable === true ||
+                        Number(fetched?.meta?.cloudAudioCount || 0) > 0 ||
+                        (fetched?.meta?.cloudAudioFiles && typeof fetched.meta.cloudAudioFiles === 'object' && Object.keys(fetched.meta.cloudAudioFiles).length > 0)
+                    );
+                    if (fetched && fetchedHasCloudAudioHint) {
                         effectiveLineData = fetched;
                     }
                 } catch (e) {

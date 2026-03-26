@@ -2911,7 +2911,7 @@ export default {
                       :title="t(opt.labelKey)"
                     >
                       <span class="se-dyn-tab-label">{{ t(opt.labelKey) }}</span>
-                      <span v-if="(stationAudioBrokenCountByDialectKey[opt.key] || 0) > 0 && sectionMode === 'audio'" class="se-audio-broken-dot" :title="t('stationEditor.audioBroken')">
+                      <span v-if="(stationAudioBrokenCountByDialectKey[opt.key] || 0) > 0" class="se-audio-broken-dot" :title="t('stationEditor.audioBroken')">
                         <i class="fas fa-exclamation-triangle" style="color:#fff; font-size:12px;"></i>
                         <span class="se-audio-broken-dot-count">{{ stationAudioBrokenCountByDialectKey[opt.key] }}</span>
                       </span>

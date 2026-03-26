@@ -4,11 +4,71 @@
  */
 import { calculateNextStationIndex } from '../utils/displayStationCalculator'
 import { i18n } from '../locales/index.js'
+import { CLOUD_API_BASE } from './useCloudConfig.js'
 
 // 用于系统媒体控制面板（Windows/锁屏/全局媒体控制）。
 // 这里用 module-scope 状态，避免多次注册 action handler。
 let __mediaSessionHandlersRegistered = false
 let __stationAudioInstanceSeq = 0
+const __cloudAudioBlobUrlCache = new Map() // key -> { url, usedAt }
+const __cloudAudioBlobUrlCacheLimit = 30
+
+const __normalizeCloudAudioRelPath = (p) => String(p || '')
+  .replace(/\\/g, '/')
+  .replace(/^\/+/, '')
+  .replace(/^\.\//, '')
+  .trim()
+
+const __normalizeRuntimeLineName = (name) => {
+  const raw = String(name || '')
+    .replace(/<[^>]+>([^<]*)<\/>/g, '$1')
+    .trim()
+  return raw
+}
+
+const __touchCloudAudioCache = (key) => {
+  const ent = __cloudAudioBlobUrlCache.get(key)
+  if (!ent) return
+  ent.usedAt = Date.now()
+  __cloudAudioBlobUrlCache.delete(key)
+  __cloudAudioBlobUrlCache.set(key, ent)
+}
+
+const __setCloudAudioBlobCache = (key, url) => {
+  __cloudAudioBlobUrlCache.set(key, { url, usedAt: Date.now() })
+  while (__cloudAudioBlobUrlCache.size > __cloudAudioBlobUrlCacheLimit) {
+    const firstKey = __cloudAudioBlobUrlCache.keys().next().value
+    if (!firstKey) break
+    const first = __cloudAudioBlobUrlCache.get(firstKey)
+    __cloudAudioBlobUrlCache.delete(firstKey)
+    try { if (first?.url) URL.revokeObjectURL(first.url) } catch (e) {}
+  }
+}
+
+const __fetchCloudAudioBlobUrl = async (lineName, relativePath) => {
+  const ln = __normalizeRuntimeLineName(lineName)
+  const rel = __normalizeCloudAudioRelPath(relativePath)
+  if (!ln || !rel) return ''
+  const cacheKey = `${ln}::${rel.toLowerCase()}`
+  const cached = __cloudAudioBlobUrlCache.get(cacheKey)
+  if (cached?.url) {
+    __touchCloudAudioCache(cacheKey)
+    return cached.url
+  }
+  const base = String(CLOUD_API_BASE || '').replace(/\/+$/, '')
+  if (!base) return ''
+  const url = `${base}/runtime/lines/${encodeURIComponent(ln)}/audio?path=${encodeURIComponent(rel)}`
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { Accept: 'audio/*,application/octet-stream;q=0.9,*/*;q=0.8' }
+  })
+  if (!res.ok) return ''
+  const blob = await res.blob()
+  if (!blob || !blob.size) return ''
+  const objectUrl = URL.createObjectURL(blob)
+  __setCloudAudioBlobCache(cacheKey, objectUrl)
+  return objectUrl
+}
 
 export function useStationAudio(state) {
   if (!state) return { playArrive: () => {}, playDepart: () => {} }
@@ -17,6 +77,7 @@ export function useStationAudio(state) {
   let playSessionId = 0
   let currentAudio = null
   let hasMediaStartedForSession = false
+  let pausedByMedia = false
 
   let lastStationPlayback = null // { type: 'arrive'|'depart', idx: number }
   const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
@@ -161,10 +222,11 @@ export function useStationAudio(state) {
   // “暂停”仅用于系统媒体面板：停止当前串行队列，但把卡片保留为 paused 状态。
   // 由于这里无法从“暂停点”继续播放，之后点击系统 Play 会从“最后一次进/出站”重新开始。
   const pauseForMediaPanel = async () => {
-    playSessionId++
-    stopCurrentPlayback()
-    stopDomAudios()
-    hasMediaStartedForSession = false
+    // 真暂停：不改变 playSessionId，不终止队列，让 playAudioFile 进入“等待恢复”状态。
+    pausedByMedia = true
+    try {
+      if (currentAudio) currentAudio.pause()
+    } catch (e) {}
     setPlaybackState('paused')
     await Promise.resolve()
   }
@@ -172,6 +234,7 @@ export function useStationAudio(state) {
   // “停止”用于系统媒体面板：停止并清除卡片。
   const stopForMediaPanel = async () => {
     playSessionId++
+    pausedByMedia = false
     stopCurrentPlayback()
     stopDomAudios()
     hasMediaStartedForSession = false
@@ -731,7 +794,19 @@ export function useStationAudio(state) {
       }
     }
 
-    // 云控线路回退：使用内嵌在 meta.cloudAudioFiles 的 data URL
+    // 云控线路：优先按需流式获取单条音频，避免把 cloudAudioFiles 全量留在前端内存中
+    const runtimeLineName = cleanLineName(state?.appData?.meta?.lineName || '')
+    const cloudAudioAvailable = !!(state?.appData?.meta?.cloudAudioAvailable || Number(state?.appData?.meta?.cloudAudioCount || 0) > 0)
+    if (runtimeLineName && cloudAudioAvailable) {
+      for (const rel of resolveCandidates) {
+        try {
+          const streamUrl = await __fetchCloudAudioBlobUrl(runtimeLineName, rel)
+          if (streamUrl) return { url: streamUrl, absolutePath: '', relativePath: rel }
+        } catch (e) {}
+      }
+    }
+
+    // 兼容旧数据：云控线路回退到内嵌 meta.cloudAudioFiles 的 data URL
     const cloudMap = state?.appData?.meta?.cloudAudioFiles
     if (cloudMap && typeof cloudMap === 'object') {
       const lowerIndex = new Map()
@@ -837,6 +912,7 @@ export function useStationAudio(state) {
       let stallIntervalId = null
       let lastProgressTime = 0
       let lastCurrentTime = -1
+      let pausedWaiting = false
       const stallMs = 6000
       const cleanup = () => {
         if (timeoutId) clearTimeout(timeoutId)
@@ -844,6 +920,12 @@ export function useStationAudio(state) {
         audio.onended = null
         audio.onpause = null
         audio.onerror = null
+      }
+      const clearTimers = () => {
+        if (timeoutId) clearTimeout(timeoutId)
+        if (stallIntervalId) clearInterval(stallIntervalId)
+        timeoutId = null
+        stallIntervalId = null
       }
       const finishResolve = () => {
         if (done) return
@@ -864,21 +946,64 @@ export function useStationAudio(state) {
         console.warn('[useStationAudio][playAudioFile][start]', { sessionId, url, urlDisplay })
       }
 
-      timeoutId = setTimeout(() => {
-        if (audioDebug) {
-          console.warn('[useStationAudio][playAudioFile][timeout]', { sessionId, url, urlDisplay, timeoutMs })
-        }
-        try {
-          audio.pause()
-          audio.currentTime = 0
-        } catch (e) {}
-        finishReject(new Error(`audio timeout after ${timeoutMs}ms`))
-      }, timeoutMs)
+      const armTimeoutAndStallDetection = () => {
+        clearTimers()
+        timeoutId = setTimeout(() => {
+          if (audioDebug) {
+            console.warn('[useStationAudio][playAudioFile][timeout]', { sessionId, url, urlDisplay, timeoutMs })
+          }
+          try {
+            audio.pause()
+            audio.currentTime = 0
+          } catch (e) {}
+          finishReject(new Error(`audio timeout after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }
+      armTimeoutAndStallDetection()
 
       audio.onended = () => finishResolve()
-      audio.onpause = () => finishResolve()
       audio.onerror = (err) => finishReject(err)
+      audio.onpause = () => {
+        // 如果是系统媒体面板触发的暂停：进入“等待恢复”，不要把这当作播放结束。
+        if (sessionId === playSessionId && pausedByMedia) {
+          pausedWaiting = true
+          clearTimers()
+          setPlaybackState('paused')
+          if (audioDebug) {
+            console.warn('[useStationAudio][playAudioFile][paused-by-media]', { sessionId, url, urlDisplay })
+          }
+          return
+        }
+        // 其它 pause（例如结束/被打断）仍按“结束”处理
+        finishResolve()
+      }
 
+      const ensureResumeLoop = () => {
+        // 当处于 pausedWaiting 时，轮询等待恢复/会话变化
+        if (!pausedWaiting) return
+        const tick = async () => {
+          if (done) return
+          if (sessionId !== playSessionId) return finishResolve()
+          if (!pausedByMedia) {
+            pausedWaiting = false
+            armTimeoutAndStallDetection()
+            try {
+              await audio.play()
+              if (sessionId === playSessionId && !hasMediaStartedForSession) {
+                hasMediaStartedForSession = true
+              }
+              setPlaybackState('playing')
+              if (audioDebug) console.warn('[useStationAudio][playAudioFile][resumed]', { sessionId, url, urlDisplay })
+            } catch (e) {
+              return finishReject(e)
+            }
+          }
+          if (pausedWaiting) setTimeout(tick, 120)
+        }
+        setTimeout(tick, 120)
+      }
+
+      // 初始播放
       // play() 的 Promise resolve 表示已经开始播放；再把 playbackState 置为 playing，
       // 避免“提前置 playing 但实际未播放成功”导致 Windows 不显示媒体控制。
       audio.play().then(() => {
@@ -896,6 +1021,7 @@ export function useStationAudio(state) {
         lastProgressTime = Date.now()
         stallIntervalId = setInterval(() => {
           if (done) return
+          if (pausedWaiting) return
           const ct = Number.isFinite(audio.currentTime) ? audio.currentTime : -1
           // 当 currentTime 没有前进，认为可能卡死；同时要求 readyState 有一定数据，避免刚加载阶段误判
           if (ct !== lastCurrentTime) {
@@ -924,8 +1050,18 @@ export function useStationAudio(state) {
           }
         }, 500)
       }).catch((err) => finishReject(err))
+
+      // 如果刚好在 play() 之后被系统暂停，也要进入等待恢复
+      ensureResumeLoop()
     }).then(() => ({ ok: true })).catch((err) => ({ ok: false, err }))
-    if (!result.ok && sessionId === playSessionId) {
+    const isExpectedPlayInterrupt = (err) => {
+      if (!err) return false
+      const name = String(err?.name || '').trim()
+      if (name === 'AbortError') return true
+      const msg = String(err?.message || '').toLowerCase()
+      return msg.includes('play() request was interrupted by a call to pause')
+    }
+    if (!result.ok && sessionId === playSessionId && !isExpectedPlayInterrupt(result.err)) {
       console.warn('[useStationAudio] playAudioFile failed', result.err)
     }
     if (sessionId !== playSessionId) stopCurrentPlayback()
@@ -1023,7 +1159,9 @@ export function useStationAudio(state) {
     }
     // 当前会话的串行列表播放结束
     if (sessionId === playSessionId) {
-      setPlaybackState('none')
+      // 为了让系统媒体控制面板常驻显示：结束后置为 paused，而不是 none
+      // none 在部分平台上会让媒体卡片立即消失。
+      setPlaybackState('paused')
       if (dynDebug) {
         console.warn('[useStationAudio][playList][done]', {
           sessionId,
@@ -1053,6 +1191,7 @@ export function useStationAudio(state) {
     }
     playSessionId++
     hasMediaStartedForSession = false
+    pausedByMedia = false
     stopCurrentPlayback()
     const sessionId = playSessionId
     const station = stations[idx]
@@ -1188,6 +1327,7 @@ export function useStationAudio(state) {
     }
     playSessionId++
     hasMediaStartedForSession = false
+    pausedByMedia = false
     stopCurrentPlayback()
     const sessionId = playSessionId
     const station = stations[idx]

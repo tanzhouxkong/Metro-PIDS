@@ -502,11 +502,23 @@ async function deleteShardKeys(env, keys) {
   }
 }
 
-async function hydrateRuntimeLineCloudAudio(env, line) {
+async function hydrateRuntimeLineCloudAudio(env, line, options = {}) {
+  const includeCloudAudioFiles = options?.includeCloudAudioFiles === true;
   if (!line || !line.meta || typeof line.meta !== 'object') return line;
-  if (line.meta.cloudAudioFiles && typeof line.meta.cloudAudioFiles === 'object') return line;
+  if (line.meta.cloudAudioFiles && typeof line.meta.cloudAudioFiles === 'object') {
+    if (!includeCloudAudioFiles) {
+      line.meta.cloudAudioCount = Object.keys(line.meta.cloudAudioFiles).length;
+      line.meta.cloudAudioSource = line.meta.cloudAudioSource || 'embedded';
+      line.meta.cloudAudioAvailable = line.meta.cloudAudioCount > 0;
+      delete line.meta.cloudAudioFiles;
+    }
+    return line;
+  }
   const shardKeys = collectShardKeysFromLine(line);
-  if (!shardKeys.length) return line;
+  if (!shardKeys.length) {
+    line.meta.cloudAudioAvailable = false;
+    return line;
+  }
 
   const merged = {};
   for (const shardKey of shardKeys) {
@@ -526,10 +538,45 @@ async function hydrateRuntimeLineCloudAudio(env, line) {
     }
   }
 
-  line.meta.cloudAudioFiles = merged;
   line.meta.cloudAudioCount = Object.keys(merged).length;
   line.meta.cloudAudioSource = line.meta.cloudAudioSource || 'embedded';
+  line.meta.cloudAudioAvailable = line.meta.cloudAudioCount > 0;
+  if (includeCloudAudioFiles) {
+    line.meta.cloudAudioFiles = merged;
+  } else {
+    delete line.meta.cloudAudioFiles;
+  }
   return line;
+}
+
+function decodeBase64ToUint8Array(base64Text) {
+  const clean = String(base64Text || '').replace(/\s+/g, '');
+  const binary = atob(clean);
+  const len = binary.length;
+  const out = new Uint8Array(len);
+  for (let i = 0; i < len; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+function decodeCloudAudioDataUrl(input) {
+  if (typeof input !== 'string' || !input) return null;
+  const raw = input.trim();
+  if (!raw) return null;
+  const m = raw.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?,(.*)$/i);
+  if (!m) return null;
+  const contentType = (m[1] || 'application/octet-stream').trim();
+  const isBase64 = !!m[2];
+  const payload = m[3] || '';
+  try {
+    if (isBase64) {
+      return { contentType, bytes: decodeBase64ToUint8Array(payload) };
+    }
+    const text = decodeURIComponent(payload);
+    const encoder = new TextEncoder();
+    return { contentType, bytes: encoder.encode(text) };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -582,7 +629,7 @@ const RuntimeLinesHandler = {
   },
 
   // GET /runtime/lines/:lineName - 获取单个运控线路
-  async get(env, lineName) {
+  async get(env, lineName, options = {}) {
     const norm = normalizeRuntimeLineName(lineName);
     const key = this.PREFIX + norm;
     let raw = await env.LINES.get(key);
@@ -616,7 +663,41 @@ const RuntimeLinesHandler = {
     if (!line) {
       throw { status: 500, error: '运控线路数据格式无效' };
     }
-    return await hydrateRuntimeLineCloudAudio(env, line);
+    return await hydrateRuntimeLineCloudAudio(env, line, {
+      includeCloudAudioFiles: options?.includeCloudAudioFiles === true
+    });
+  },
+
+  // GET /runtime/lines/:lineName/audio?path=audio/xx.mp3
+  async getAudio(env, lineName, relativePath) {
+    const rel = String(relativePath || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '')
+      .replace(/^(\.\.\/)+/, '')
+      .trim();
+    if (!rel) throw { status: 400, error: '缺少音频路径参数 path' };
+
+    const line = await this.get(env, lineName, { includeCloudAudioFiles: true });
+    const cloudAudioFiles = line?.meta?.cloudAudioFiles;
+    if (!cloudAudioFiles || typeof cloudAudioFiles !== 'object') {
+      throw { status: 404, error: '线路未包含云端音频' };
+    }
+    const payload = cloudAudioFiles[rel] || cloudAudioFiles[rel.toLowerCase()] || null;
+    if (!payload || typeof payload !== 'string') {
+      throw { status: 404, error: '音频不存在' };
+    }
+    const decoded = decodeCloudAudioDataUrl(payload);
+    if (!decoded || !decoded.bytes) {
+      throw { status: 500, error: '音频数据格式无效' };
+    }
+
+    return new Response(decoded.bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': decoded.contentType || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=86400'
+      }
+    });
   },
 
   // PUT /runtime/lines/:lineName - 更新/创建运控线路（始终用规范化名称作 key，新上传覆盖老版本）
@@ -2464,6 +2545,7 @@ async function handleRequest(request, env) {
           { method: 'DELETE', path: '/preset/:lineName', description: '' },
           { method: 'GET', path: '/runtime/lines', description: '' },
           { method: 'GET', path: '/runtime/lines/:lineName', description: '' },
+          { method: 'GET', path: '/runtime/lines/:lineName/audio?path=audio/xx.mp3', description: '' },
           { method: 'PUT', path: '/runtime/lines/:lineName', description: '' },
           { method: 'DELETE', path: '/runtime/lines/:lineName', description: '' },
           { method: 'GET', path: '/releases', description: '' },
@@ -2573,6 +2655,20 @@ async function handleRequest(request, env) {
         return json({ ok: false, error: 'lineName 不能为空' }, 400, corsHeaders);
       }
       return json(await RuntimeLinesHandler.uploadShard(env, lineName, body), 200, corsHeaders);
+    }
+    if (pathname.startsWith('/runtime/lines/') && pathname.endsWith('/audio') && method === 'GET') {
+      const lineName = decodeURIComponent(pathname.slice('/runtime/lines/'.length, -('/audio'.length)));
+      const relPath = url.searchParams.get('path') || '';
+      try {
+        const audioRes = await RuntimeLinesHandler.getAudio(env, lineName, relPath);
+        const headers = new Headers(audioRes.headers || {});
+        Object.entries(corsHeaders).forEach(([k, v]) => headers.set(k, v));
+        return new Response(audioRes.body, { status: audioRes.status, headers });
+      } catch (e) {
+        const status = (e && e.status) ? e.status : 500;
+        const error = (e && e.error) ? e.error : String(e);
+        return json({ ok: false, error }, status, corsHeaders);
+      }
     }
     if (pathname.startsWith('/runtime/lines/') && pathname.length > '/runtime/lines/'.length) {
       const lineName = decodeURIComponent(pathname.slice('/runtime/lines/'.length));
