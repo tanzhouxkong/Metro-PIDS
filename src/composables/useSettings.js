@@ -81,7 +81,12 @@ export function useSettings() {
 
     function loadSettings() {
         try {
-            const s = JSON.parse(localStorage.getItem('pids_settings_v1') || 'null');
+            const raw = localStorage.getItem('pids_settings_v1');
+            // 容错：历史版本可能误把 undefined 写入 localStorage（JSON.parse('undefined') 会抛错）
+            if (raw === 'undefined' || raw === 'null') {
+                try { localStorage.removeItem('pids_settings_v1'); } catch (_) {}
+            }
+            const s = JSON.parse((raw && raw !== 'undefined' && raw !== 'null') ? raw : 'null');
             if (s) {
                 Object.assign(settings, s);
                 // 确保嵌套对象在缺失时正确合并
@@ -159,7 +164,12 @@ export function useSettings() {
             }
         }
         
-        localStorage.setItem('pids_settings_v1', JSON.stringify(settings));
+        // JSON.stringify(undefined) 会返回 undefined，localStorage.setItem 会把它写成字符串 "undefined"
+        // 这里兜底保证写入的一定是 JSON 字符串
+        let serialized = null;
+        try { serialized = JSON.stringify(settings); } catch (_) { serialized = null; }
+        if (typeof serialized !== 'string' || !serialized) serialized = '{}';
+        localStorage.setItem('pids_settings_v1', serialized);
         applyThemeMode();
         applyBlurSetting();
         

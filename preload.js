@@ -213,14 +213,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getLineDir: async (lineFilePath) => {
       try { return await ipcRenderer.invoke('lines/getLineDir', lineFilePath); } catch (e) { return { ok: false, error: String(e) }; }
     },
-    copyAudioToLineDir: async (lineDirOrLineFilePath, sourceFilePath) => {
-      try { return await ipcRenderer.invoke('lines/copyAudioToLineDir', lineDirOrLineFilePath, sourceFilePath); } catch (e) { return { ok: false, error: String(e) }; }
+    copyAudioToLineDir: async (lineDirOrLineFilePath, sourceFilePath, options) => {
+      try {
+        return await ipcRenderer.invoke('lines/copyAudioToLineDir', lineDirOrLineFilePath, sourceFilePath, options);
+      } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    listAudioFilesInDir: async (dirPath, options) => {
+      try { return await ipcRenderer.invoke('lines/listAudioFilesInDir', dirPath, options || {}); } catch (e) { return { ok: false, error: String(e) }; }
     },
     copyImageToLineDir: async (lineDirOrLineFilePath, sourceFilePath) => {
       try { return await ipcRenderer.invoke('lines/copyImageToLineDir', lineDirOrLineFilePath, sourceFilePath); } catch (e) { return { ok: false, error: String(e) }; }
     },
     resolveAudioPath: async (lineFilePath, relativePath) => {
       try { return await ipcRenderer.invoke('lines/resolveAudioPath', lineFilePath, relativePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    findAudioByStationName: async (lineFilePath, stationName, opts) => {
+      try { return await ipcRenderer.invoke('lines/findAudioByStationName', lineFilePath, stationName, opts || {}); } catch (e) { return { ok: false, error: String(e) }; }
     },
     resolveImagePath: async (lineFilePath, relativePath) => {
       try { return await ipcRenderer.invoke('lines/resolveImagePath', lineFilePath, relativePath); } catch (e) { return { ok: false, error: String(e) }; }

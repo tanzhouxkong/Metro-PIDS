@@ -8,12 +8,13 @@ import { useStationAudio } from '../composables/useStationAudio.js'
 import { useFileIO } from '../composables/useFileIO.js'
 import StationEditor from './StationEditor.vue'
 import dialogService from '../utils/dialogService.js'
+import { calculateNextStationIndex } from '../utils/displayStationCalculator'
 
 export default {
   name: 'AdminApp',
   components: { StationEditor, Teleport },
   setup() {
-    const { t } = useI18n()
+    const { t, locale } = useI18n()
     const { state } = usePidsState()
     const { sync, next, move, setArr, setDep, jumpTo, getStep } = useController()
     const { settings } = useSettings()
@@ -108,16 +109,134 @@ export default {
             const token = ++stationAudioBrokenScanToken
             try {
                 const stations = state.appData?.stations
-                const lineFilePath = state.currentFilePath || ''
-                if (!Array.isArray(stations) || !stations.length || !lineFilePath) {
+                const lineFileOrDir = state.currentFilePath || currentLineFolderPath.value || ''
+                const meta = state.appData?.meta || {}
+                const languageKey = (() => {
+                  try { return locale?.value || 'zh-CN' } catch (e) { return 'zh-CN' }
+                })()
+
+                if (!Array.isArray(stations) || !stations.length || !lineFileOrDir) {
                     if (token === stationAudioBrokenScanToken) stationAudioBrokenByIdx.value = {}
                     return
                 }
                 const api = typeof window !== 'undefined' ? window.electronAPI : null
                 const resolveAudioPath = api?.lines?.resolveAudioPath
-                if (typeof resolveAudioPath !== 'function') return
+                const findAudioByStationName = api?.lines?.findAudioByStationName
+
+                const canCheckResolve = typeof resolveAudioPath === 'function' && !!lineFileOrDir
+                const canCheckDynamic = typeof findAudioByStationName === 'function' && !!lineFileOrDir
+                if (!canCheckResolve && !canCheckDynamic) return
+
+                const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+                const normalizeDynamicRoleKey = (roleKey) => {
+                  const rk = String(roleKey || '').trim()
+                  if (!rk) return ''
+                  return rk === 'end' ? 'terminal' : rk
+                }
+                const isDynamicPlaceholderObject = (x) => {
+                  return !!(x && typeof x === 'object' && DYNAMIC_ROLE_KEYS.has(String(x.role || '').trim()) && !x.path)
+                }
+
+                const getStationNameByLang = (st) => {
+                  if (!st || typeof st !== 'object') return ''
+                  if (languageKey === 'en') return st.en || st.name || ''
+                  if (String(languageKey || '').startsWith('zh')) return st.name || st.en || ''
+                  return st.name || st.en || ''
+                }
+
+                const appDataForCalc = { stations, meta }
+                const getTargetStationByRoleAndIdx = (roleKey, currentIdxForRole) => {
+                  if (!Array.isArray(stations) || !stations.length) return null
+                  if (roleKey === 'current') return stations[currentIdxForRole] || null
+                  if (roleKey === 'next') {
+                    const nextIdx = calculateNextStationIndex(currentIdxForRole, appDataForCalc)
+                    return stations[nextIdx] || null
+                  }
+                  if (roleKey === 'start') {
+                    const startIdx = typeof meta.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
+                    return stations[startIdx] || null
+                  }
+                  if (roleKey === 'terminal') {
+                    const termIdx = typeof meta.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : (stations.length - 1)
+                    return stations[termIdx] || null
+                  }
+                  return null
+                }
+
+                const getStationNameCandidatesByTargetDialect = (st, targetDialectKey) => {
+                  if (!st || typeof st !== 'object') return []
+                  const d = String(targetDialectKey || '').toLowerCase()
+                  const uniqPush = (arr, v) => {
+                    const s = (v === undefined || v === null) ? '' : String(v)
+                    const t = s.trim()
+                    if (!t) return
+                    if (!arr.includes(t)) arr.push(t)
+                  }
+
+                  const out = []
+                  const isEnglish = d === 'en' || d.startsWith('en')
+                  if (isEnglish) {
+                    uniqPush(out, st.en)
+                    uniqPush(out, st.name)
+                    uniqPush(out, st.cn)
+                    uniqPush(out, st.zh)
+                    return out
+                  }
+
+                  const isJa = d === 'ja' || d.startsWith('ja')
+                  const isKo = d === 'ko' || d.startsWith('ko')
+                  if (isJa) {
+                    uniqPush(out, st.ja)
+                    uniqPush(out, st.name)
+                    uniqPush(out, st.en)
+                    uniqPush(out, st.zh)
+                    uniqPush(out, st.cn)
+                    return out
+                  }
+                  if (isKo) {
+                    uniqPush(out, st.ko)
+                    uniqPush(out, st.name)
+                    uniqPush(out, st.en)
+                    uniqPush(out, st.zh)
+                    uniqPush(out, st.cn)
+                    return out
+                  }
+
+                  if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh')) {
+                    uniqPush(out, st.name)
+                    uniqPush(out, st.zh)
+                    uniqPush(out, st.cn)
+                    uniqPush(out, st.en)
+                    return out
+                  }
+
+                  // 其它方言/语种：兼容混合命名
+                  uniqPush(out, st.name)
+                  uniqPush(out, st.en)
+                  uniqPush(out, st.zh)
+                  uniqPush(out, st.cn)
+                  return out
+                }
+
+                const getTargetStationNameByRoleAndIdx = (roleKey, currentIdxForRole) => {
+                  if (roleKey === 'current') return getStationNameByLang(stations[currentIdxForRole])
+                  if (roleKey === 'next') {
+                    const nextIdx = calculateNextStationIndex(currentIdxForRole, appDataForCalc)
+                    return getStationNameByLang(stations[nextIdx])
+                  }
+                  if (roleKey === 'start') {
+                    const startIdx = typeof meta.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
+                    return getStationNameByLang(stations[startIdx])
+                  }
+                  if (roleKey === 'terminal') {
+                    const termIdx = typeof meta.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : (stations.length - 1)
+                    return getStationNameByLang(stations[termIdx])
+                  }
+                  return ''
+                }
 
                 const okCache = new Map() // itemPath -> ok:boolean
+                const dynamicOkCache = new Map() // dynCacheKey -> boolean
                 const next = {}
 
                 for (let i = 0; i < stations.length; i++) {
@@ -128,44 +247,118 @@ export default {
                     let hasBroken = false
                     const dirs = sa.separateDirection ? ['up', 'down'] : ['up']
 
-                    for (const dir of dirs) {
-                        const list = sa?.[dir]?.list
-                        if (!Array.isArray(list) || list.length === 0) continue
-                        for (let j = 0; j < list.length; j++) {
-                            const item = list[j]
-                            // 兼容旧数据：可能用 path/src/filePath 或直接存字符串路径
-                            const p =
-                                typeof item === 'string'
-                                    ? item
-                                    : (item?.path || item?.src || item?.filePath || '')
-                            if (!p) {
-                                hasBroken = true
-                                break
-                            }
+                    const dialectLists = (sa.dialectLists && typeof sa.dialectLists === 'object') ? sa.dialectLists : null
+                    const curDynamicDialect = (typeof sa.dynamicDialect === 'string') ? sa.dynamicDialect.trim() : ''
 
-                            if (okCache.has(p)) {
-                                if (!okCache.get(p)) {
-                                    hasBroken = true
-                                    break
-                                }
-                                continue
-                            }
+                    const dialectKeysToScan = (() => {
+                      const tabs = Array.isArray(sa.dynamicDialectTabs) ? sa.dynamicDialectTabs : []
+                      const fromTabs = tabs
+                        .map((k) => String(k || '').trim())
+                        .filter(Boolean)
+                      const uniqTabs = Array.from(new Set(fromTabs))
+                      if (uniqTabs.length) return uniqTabs
 
-                            try {
-                                const res = await resolveAudioPath(lineFilePath, p)
-                                const ok = !!res?.ok
-                                okCache.set(p, ok)
-                                if (!ok) {
-                                    hasBroken = true
-                                    break
-                                }
-                            } catch (e) {
-                                okCache.set(p, false)
-                                hasBroken = true
-                                break
-                            }
+                      const fromLists = dialectLists
+                        ? Object.keys(dialectLists).map((k) => String(k || '').trim()).filter(Boolean)
+                        : []
+                      const uniqLists = Array.from(new Set(fromLists))
+                      if (uniqLists.length) return uniqLists
+
+                      const fallback = curDynamicDialect || 'cmn'
+                      return fallback ? [fallback] : ['cmn']
+                    })()
+
+                    for (const dialectKey of dialectKeysToScan) {
+                      if (hasBroken) break
+
+                      for (const dir of dirs) {
+                        let list = null
+
+                        if (dialectLists && dialectLists[dialectKey] && dialectLists[dialectKey][dir] && Array.isArray(dialectLists[dialectKey][dir].list)) {
+                          list = dialectLists[dialectKey][dir].list
+                        } else if (dialectKey && curDynamicDialect && dialectKey === curDynamicDialect && Array.isArray(sa?.[dir]?.list)) {
+                          // 兼容旧逻辑：如果没有 dialectLists，退回到当前 dialect 的 up/down list
+                          list = sa[dir].list
+                        } else if (!dialectLists && Array.isArray(sa?.[dir]?.list)) {
+                          // 旧结构：没有方言桶，只能扫描当前 up/down
+                          list = sa[dir].list
                         }
+
+                        if (!Array.isArray(list) || list.length === 0) continue
+
+                        for (let j = 0; j < list.length; j++) {
+                          const item = list[j]
+                          // 兼容旧数据：可能用 path/src/filePath 或直接存字符串路径
+                          const p =
+                            typeof item === 'string'
+                              ? item
+                              : (item?.path || item?.src || item?.filePath || '')
+
+                          if (!p) {
+                            // 动态占位项：没有 path 也允许通过 audio/ 目录按站名匹配
+                            if (isDynamicPlaceholderObject(item) && canCheckDynamic) {
+                              const roleKey = normalizeDynamicRoleKey(item.role)
+                              const stationForRole = getTargetStationByRoleAndIdx(roleKey, i)
+                              const candidates = getStationNameCandidatesByTargetDialect(stationForRole, dialectKey)
+                              if (!candidates || !candidates.length) { hasBroken = true; break }
+
+                              let foundOk = false
+                              for (const stationNameForRole of candidates) {
+                                const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}`
+                                if (dynamicOkCache.has(dynCacheKey)) {
+                                  if (dynamicOkCache.get(dynCacheKey)) {
+                                    foundOk = true
+                                    break
+                                  }
+                                  continue
+                                }
+                                try {
+                                  const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey })
+                                  const ok = !!res?.ok && !!res?.relativePath
+                                  dynamicOkCache.set(dynCacheKey, ok)
+                                  if (ok) {
+                                    foundOk = true
+                                    break
+                                  }
+                                } catch (e) {
+                                  dynamicOkCache.set(dynCacheKey, false)
+                                }
+                              }
+                              if (!foundOk) { hasBroken = true; break }
+                              continue
+                            }
+
+                            hasBroken = true
+                            break
+                          }
+
+                          if (okCache.has(p)) {
+                            if (!okCache.get(p)) {
+                              hasBroken = true
+                              break
+                            }
+                            continue
+                          }
+
+                          try {
+                            if (!canCheckResolve) continue
+                            const res = await resolveAudioPath(lineFileOrDir, p)
+                            const ok = !!res?.ok
+                            okCache.set(p, ok)
+                            if (!ok) {
+                              hasBroken = true
+                              break
+                            }
+                          } catch (e) {
+                            okCache.set(p, false)
+                            hasBroken = true
+                            break
+                          }
+                        }
+
                         if (hasBroken) break
+                      }
+                      if (hasBroken) break
                     }
 
                     if (hasBroken) next[i] = true
@@ -193,8 +386,17 @@ export default {
         return { upCount, downCount, total: upCount + downCount }
     }
     const hasEditingStationAudio = () => getEditingAudioStats().total > 0
+    const isEditorDebugEnabled = () => {
+        try {
+            return typeof localStorage !== 'undefined' && localStorage.getItem('metro_pids_debug_admin_editor') === '1'
+        } catch (e) {
+            return false
+        }
+    }
     const onEditorModelValueChange = (nextVal) => {
-        if (hasEditingStationAudio()) {
+        // 防抖：忽略重复的同值更新，避免一次关闭触发多次日志/后续逻辑
+        if (showEditor.value === nextVal) return
+        if (isEditorDebugEnabled() && hasEditingStationAudio()) {
             console.warn('[AdminApp][EditorDebug] update:modelValue', {
                 from: showEditor.value,
                 to: nextVal,
@@ -207,6 +409,7 @@ export default {
     }
     watch(showEditor, (val, oldVal) => {
         if (!oldVal || val || !hasEditingStationAudio()) return
+        if (!isEditorDebugEnabled()) return
         console.warn('[AdminApp][EditorDebug] showEditor-false', {
             from: oldVal,
             to: val,
@@ -316,11 +519,31 @@ export default {
     }
 
     const fileIO = useFileIO(state)
+    const stableStringify = (obj) => {
+        if (obj === null || typeof obj !== 'object') return JSON.stringify(obj)
+        if (Array.isArray(obj)) return '[' + obj.map((x) => stableStringify(x)).join(',') + ']'
+        const keys = Object.keys(obj).sort()
+        return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}'
+    }
+    const buildStationAudioSummary = (stationLike) => {
+        const sa = stationLike?.stationAudio
+        if (!sa || typeof sa !== 'object') return 'no-station-audio'
+        return stableStringify({
+            separateDirection: sa.separateDirection !== false,
+            dynamicDialect: sa.dynamicDialect || '',
+            dynamicDialectTabs: Array.isArray(sa.dynamicDialectTabs) ? sa.dynamicDialectTabs : [],
+            up: sa.up || {},
+            down: sa.down || {},
+            dialectLists: sa.dialectLists || {}
+        })
+    }
 
     async function saveStation(data) {
         ensureCommonAudio()
         const stations = state.appData?.stations
         if (!Array.isArray(stations)) return
+        let savedStationIndex = -1
+        const expectedAudioSummary = buildStationAudioSummary(data)
 
         if (isNewStation.value) {
             // 新建站点：按指定位置“插入”，避免覆盖编辑已有站点
@@ -329,18 +552,22 @@ export default {
                     ? stations.length
                     : Math.min(stations.length, Math.max(0, Number(editingIndex.value)))
             stations.splice(insertIndex, 0, data)
+            savedStationIndex = insertIndex
             // 更新当前索引：插入在当前站点前面则整体右移
             if (state.rt.idx >= insertIndex) state.rt.idx++
         } else {
             // 编辑已有站点：覆盖指定索引
             if (editingIndex.value >= 0 && editingIndex.value < stations.length) {
                 stations[editingIndex.value] = data
+                savedStationIndex = editingIndex.value
             } else if (stations.length > 0) {
                 // 容错：索引异常时，落在边界内
                 const idx = Math.min(stations.length - 1, Math.max(0, Number(editingIndex.value)))
                 stations[idx] = data
+                savedStationIndex = idx
             } else {
                 stations.push(data)
+                savedStationIndex = 0
             }
         }
         // 同一线路内同名换乘线路颜色同步：更改某一站某条换乘线颜色后，本线路所有站点的同名换乘线同步该颜色
@@ -360,6 +587,26 @@ export default {
                 })
             })
         }
+
+        // 关键：如果编辑站点调整了“动态语音 Tab（dialectTabs）顺序”，则同步到同一线路的其它站点，
+        // 让其它站点 Tab 排列保持一致（同时避免影响本站点保存校验：不改动编辑站点自身）。
+        const tabsToApply = Array.isArray(data?.stationAudio?.dynamicDialectTabs)
+            ? data.stationAudio.dynamicDialectTabs
+            : null
+        if (savedStationIndex >= 0 && Array.isArray(tabsToApply) && tabsToApply.length) {
+            state.appData.stations.forEach((st, idx) => {
+                if (idx === savedStationIndex) return
+                if (!st || typeof st !== 'object') return
+                if (!st.stationAudio || typeof st.stationAudio !== 'object') return
+
+                // 保持其它站点当前 dialect 选择尽量不变；只在其不在 tabsToApply 内时才回退到第一个。
+                st.stationAudio.dynamicDialectTabs = JSON.parse(JSON.stringify(tabsToApply))
+                if (typeof st.stationAudio.dynamicDialect === 'string') {
+                    const cur = st.stationAudio.dynamicDialect.trim()
+                    if (!tabsToApply.includes(cur)) st.stationAudio.dynamicDialect = tabsToApply[0]
+                }
+            })
+        }
         // 先立即关闭弹窗，再后台执行同步与落盘，避免“保存后等待一会儿才关闭”
         showEditor.value = false
         editingIndex.value = -1
@@ -374,8 +621,61 @@ export default {
             } catch (e) {
                 console.warn('[AdminApp] fileIO.saveCurrentLine failed', e)
             }
+            // 保存后自检：若站点音频摘要不一致，明确提示而不是静默丢失
+            if (savedStationIndex >= 0 && savedStationIndex < stations.length) {
+                const actualAudioSummary = buildStationAudioSummary(stations[savedStationIndex])
+                if (actualAudioSummary !== expectedAudioSummary) {
+                    console.error('[AdminApp] station audio verification failed', {
+                        savedStationIndex,
+                        expectedAudioSummary,
+                        actualAudioSummary
+                    })
+                    try {
+                        await dialogService.alert('站点音频保存校验失败：检测到保存后内容与编辑内容不一致，请重新保存并检查音频列表。', '保存失败')
+                    } catch (e) {}
+                }
+            }
         } catch (e) {
             console.error('[AdminApp] sync failed in saveStation', e);
+        }
+    }
+
+    async function autoSaveStationAudioDraft(payload) {
+        ensureCommonAudio()
+        const stations = state.appData?.stations
+        if (!Array.isArray(stations) || isNewStation.value) return
+        const idx = Number(editingIndex.value)
+        if (!Number.isInteger(idx) || idx < 0 || idx >= stations.length) return
+        const stationPayload = payload?.station && typeof payload.station === 'object'
+            ? JSON.parse(JSON.stringify(payload.station))
+            : null
+        if (!stationPayload) return
+        stations[idx] = stationPayload
+
+        // 与 saveStation 一致：自动保存时也把 dialectTabs 顺序同步到其它站点。
+        const tabsToApply = Array.isArray(stationPayload?.stationAudio?.dynamicDialectTabs)
+            ? stationPayload.stationAudio.dynamicDialectTabs
+            : null
+        if (Array.isArray(tabsToApply) && tabsToApply.length) {
+            state.appData.stations.forEach((st, sIdx) => {
+                if (sIdx === idx) return
+                if (!st || typeof st !== 'object') return
+                if (!st.stationAudio || typeof st.stationAudio !== 'object') return
+                st.stationAudio.dynamicDialectTabs = JSON.parse(JSON.stringify(tabsToApply))
+                if (typeof st.stationAudio.dynamicDialect === 'string') {
+                    const cur = st.stationAudio.dynamicDialect.trim()
+                    if (!tabsToApply.includes(cur)) st.stationAudio.dynamicDialect = tabsToApply[0]
+                }
+            })
+        }
+        if (payload?.commonAudio && typeof payload.commonAudio === 'object') {
+            state.appData.meta.commonAudio = JSON.parse(JSON.stringify(payload.commonAudio))
+        }
+        sync()
+        try {
+            await fileIO.saveCurrentLine({ silent: true })
+        } catch (e) {
+            console.warn('[AdminApp] autoSaveStationAudioDraft saveCurrentLine failed', e)
         }
     }
 
@@ -387,26 +687,64 @@ export default {
         fileIO.saveCurrentLine({ silent: true }).catch((e) => console.warn('[AdminApp] saveCurrentLine after saveLineCommonAudio failed', e))
     }
 
-    function applyAudioToAllStations({ dir, items, indices, target = 'both', separateDirection }) {
+    function applyAudioToAllStations({ dir, items, indices, target = 'both', separateDirection, dialectKey }) {
         const stations = state.appData?.stations
         if (!stations || !Array.isArray(stations) || !items || !items.length) return
         const listCopy = JSON.parse(JSON.stringify(items))
         const idxCopy = Array.isArray(indices) ? indices.map((n) => Number(n)).filter((n) => n >= 0) : []
 
-        const applyToDir = (st, dirKey) => {
-            if (!st.stationAudio[dirKey] || typeof st.stationAudio[dirKey] !== 'object') st.stationAudio[dirKey] = { list: [] }
-            const list = Array.isArray(st.stationAudio[dirKey].list) ? st.stationAudio[dirKey].list : (st.stationAudio[dirKey].list = [])
+        const dk = String(dialectKey || 'cmn').trim() || 'cmn'
+        const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+        const DEFAULT_DYNAMIC_TAB_KEYS = ['cmn', 'en']
+        const isDynamicPlaceholderItem = (it) => {
+            if (!it || typeof it !== 'object') return false
+            const role = String(it.role || '').trim()
+            if (!DYNAMIC_ROLE_KEYS.has(role)) return false
+            // 仅当它是“占位符”(无 path)时才更新 dialectKey
+            const hasPath = !!(it.path || it.src || it.filePath)
+            return !hasPath
+        }
+
+        const ensureDialectBucket = (st, dialectKey) => {
+            if (!st.stationAudio || typeof st.stationAudio !== 'object') st.stationAudio = { separateDirection: true, up: { list: [] }, down: { list: [] }, dialectLists: {} }
+            if (!st.stationAudio.dialectLists || typeof st.stationAudio.dialectLists !== 'object') st.stationAudio.dialectLists = {}
+            // 保证编辑器 Tab 列表包含当前 dialectKey，避免 apply 了也看不到/无法继续按 Tab 导入
+            const prevTabs = Array.isArray(st.stationAudio.dynamicDialectTabs) ? st.stationAudio.dynamicDialectTabs : DEFAULT_DYNAMIC_TAB_KEYS
+            const nextTabsSet = new Set(prevTabs.map((x) => String(x || '').trim()).filter(Boolean))
+            nextTabsSet.add(dialectKey)
+            st.stationAudio.dynamicDialectTabs = Array.from(nextTabsSet)
+            // 同步当前 dialect，便于后续保存/导入默认落盘一致
+            if (st.stationAudio.dynamicDialect !== dialectKey) st.stationAudio.dynamicDialect = dialectKey
+            if (!st.stationAudio.dialectLists[dialectKey] || typeof st.stationAudio.dialectLists[dialectKey] !== 'object') {
+                st.stationAudio.dialectLists[dialectKey] = { up: { list: [] }, down: { list: [] } }
+            }
+            if (!st.stationAudio.dialectLists[dialectKey].up || typeof st.stationAudio.dialectLists[dialectKey].up !== 'object') st.stationAudio.dialectLists[dialectKey].up = { list: [] }
+            if (!Array.isArray(st.stationAudio.dialectLists[dialectKey].up.list)) st.stationAudio.dialectLists[dialectKey].up.list = []
+            if (!st.stationAudio.dialectLists[dialectKey].down || typeof st.stationAudio.dialectLists[dialectKey].down !== 'object') st.stationAudio.dialectLists[dialectKey].down = { list: [] }
+            if (!Array.isArray(st.stationAudio.dialectLists[dialectKey].down.list)) st.stationAudio.dialectLists[dialectKey].down.list = []
+        }
+
+        const applyToDialectDir = (st, dirKey) => {
+            ensureDialectBucket(st, dk)
+            const bucket = st.stationAudio.dialectLists[dk]
+            const list = Array.isArray(bucket?.[dirKey]?.list) ? bucket[dirKey].list : (bucket[dirKey].list = [])
+
             if (idxCopy.length === listCopy.length && idxCopy.length > 0) {
                 idxCopy.forEach((idx, i) => {
                     const nextItem = JSON.parse(JSON.stringify(listCopy[i]))
-                    if (idx < list.length) {
-                        list[idx] = nextItem
-                    } else {
-                        list.push(nextItem)
+                    // 只同步动态占位符：确保它们解析/匹配时用目标语种目录
+                    if (isDynamicPlaceholderItem(nextItem)) {
+                        nextItem.dialectKey = dk
                     }
+                    if (idx < list.length) list[idx] = nextItem
+                    else list.push(nextItem)
                 })
             } else {
-                list.push(...JSON.parse(JSON.stringify(listCopy)))
+                const clonedItems = JSON.parse(JSON.stringify(listCopy))
+                for (const it of clonedItems) {
+                    if (isDynamicPlaceholderItem(it)) it.dialectKey = dk
+                }
+                list.push(...clonedItems)
             }
         }
 
@@ -417,10 +755,18 @@ export default {
             if (!st.stationAudio.up || typeof st.stationAudio.up !== 'object') st.stationAudio.up = { list: [] }
             if (!st.stationAudio.down || typeof st.stationAudio.down !== 'object') st.stationAudio.down = { list: [] }
 
-            if (target === 'up' || target === 'both') applyToDir(st, 'up')
-            if (target === 'down' || target === 'both') applyToDir(st, 'down')
+            if (target === 'up' || target === 'both') applyToDialectDir(st, 'up')
+            if (target === 'down' || target === 'both') applyToDialectDir(st, 'down')
         })
         sync()
+
+        // 关键：同步当前正在编辑的站点副本，避免 UI “看起来没应用”
+        try {
+            if (showEditor.value && Number.isInteger(editingIndex.value) && editingIndex.value >= 0 && editingIndex.value < (state.appData?.stations || []).length) {
+                editingStation.value = JSON.parse(JSON.stringify(state.appData.stations[editingIndex.value]))
+            }
+        } catch (e) {}
+
         fileIO.saveCurrentLine({ silent: true }).catch((e) => console.warn('[AdminApp] saveCurrentLine after applyAudioToAllStations failed', e))
     }
 
@@ -951,6 +1297,7 @@ export default {
             commonAudioRef,
             openEditor, saveStation, saveLineCommonAudio, deleteStation, applyAudioToAllStations,
             commonAudioRef,
+            autoSaveStationAudioDraft,
             currentStation, routeInfo, statusDesc, serviceModeLabel, 
             lineModeLabel, directionLabel,
             stationRouteInfo, routeTextRef,
@@ -1087,10 +1434,14 @@ export default {
             :is-new="isNewStation"
             :current-line-file-path="state.currentFilePath || ''"
             :current-line-folder-path="currentLineFolderPath"
+            :current-station-index="editingIndex"
+            :line-meta="state.appData?.meta || {}"
+            :line-stations="state.appData?.stations || []"
             :line-common-audio="commonAudioRef"
             @save="saveStation"
             @save-line-audio="saveLineCommonAudio"
             @apply-audio-to-all="applyAudioToAllStations"
+            @autosave-station-audio="autoSaveStationAudioDraft"
         />
         
         <!-- 站点右键菜单 - 使用 Teleport 传送到 body，允许溢出窗口 -->

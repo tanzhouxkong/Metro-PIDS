@@ -2144,7 +2144,19 @@ function mkNode(st, i, mode, appData, rtState) {
   }
   if (isPassed) node.classList.add('passed');
   if (isCurr) node.classList.add('curr');
-  const shortTurnEnabled = appData && appData.meta && ((appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1) || (appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1));
+  const hasStartIdx = appData && appData.meta && appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1;
+  const hasTermIdx = appData && appData.meta && appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1;
+  const shortTurnEnabled = (() => {
+    if (!hasStartIdx || !hasTermIdx || !appData || !Array.isArray(appData.stations)) return false;
+    const total = appData.stations.length;
+    if (total <= 0) return false;
+    const sIdx = Number(appData.meta.startIdx);
+    const eIdx = Number(appData.meta.termIdx);
+    if (!Number.isInteger(sIdx) || !Number.isInteger(eIdx)) return false;
+    if (sIdx < 0 || eIdx < 0 || sIdx >= total || eIdx >= total) return false;
+    // 仅当运营区间小于全线时才认定为短交路（首末站全程不算短交路）
+    return (Math.abs(eIdx - sIdx) + 1) < total;
+  })();
   let xferHTML = '';
   if (st.xfer) {
     st.xfer.forEach((x) => {
@@ -4947,15 +4959,22 @@ export function initDisplayWindow(rootElement) {
         const dot = node.querySelector('.dot');
         // 判断是否已过站
         const isPassed = node.classList.contains('passed');
+        const isStopAllowed = isStopAllowedAtIndex(realIdx, appData);
         
         if (realIdx === rt.idx) {
           if (dot) {
-            // 到达站圆点：白底 + 主题色描边 + 放大呼吸动画
-            const accent = getThemeColorByStationIndex(meta, realIdx, '#00b894');
             dot.style.background = '#fff';
-            dot.style.borderColor = accent;
             dot.style.boxShadow = 'none';
-            dot.style.animation = 'dot-target-scale-pulse 1.1s ease-in-out infinite';
+            if (!isStopAllowed) {
+              // 不停靠站按“已过站/暂缓”灰色空心样式显示
+              dot.style.setProperty('border-color', '#ccc', 'important');
+              dot.style.animation = 'none';
+            } else {
+              // 到达站圆点：白底 + 主题色描边 + 放大呼吸动画
+              const accent = getThemeColorByStationIndex(meta, realIdx, '#00b894');
+              dot.style.borderColor = accent;
+              dot.style.animation = 'dot-target-scale-pulse 1.1s ease-in-out infinite';
+            }
           }
           const name = node.querySelector('.name');
           const en = node.querySelector('.en');
@@ -4967,7 +4986,7 @@ export function initDisplayWindow(rootElement) {
         } else if (dot) {
           // 如果已过站，使用灰色（保持passed类的样式）
           // 优先检查 passed 类，确保已过站的圆点显示为灰色
-          if (isPassed || node.classList.contains('passed')) {
+          if (isPassed || node.classList.contains('passed') || !isStopAllowed) {
             dot.style.background = '#fff';
             dot.style.setProperty('border-color', '#ccc', 'important');
           } else {
@@ -4995,7 +5014,8 @@ export function initDisplayWindow(rootElement) {
         if (
           stNode && Array.isArray(stNode.xfer) && stNode.xfer.length > 0 &&
           !(isPassed || node.classList.contains('passed')) &&
-          !(stNode && stNode.skip)
+          !(stNode && stNode.skip) &&
+          isStopAllowedAtIndex(realIdx, appData)
         ) {
           const name = node.querySelector('.name');
           const en = node.querySelector('.en');
@@ -5250,15 +5270,21 @@ export function initDisplayWindow(rootElement) {
       const dot = node.querySelector('.dot');
       // 判断是否已过站
       const isPassed = node.classList.contains('passed');
+      const isStopAllowed = isStopAllowedAtIndex(realIdx, appData);
       
       if (realIdx === rt.idx) {
         if (dot) {
-          // 到达站圆点：白底 + 主题色描边 + 放大呼吸动画
-          const accent = getThemeColorByStationIndex(meta, realIdx, '#00b894');
           dot.style.background = '#fff';
-          dot.style.borderColor = accent;
           dot.style.boxShadow = 'none';
-          dot.style.animation = 'dot-target-scale-pulse 1.1s ease-in-out infinite';
+          if (!isStopAllowed) {
+            dot.style.setProperty('border-color', '#ccc', 'important');
+            dot.style.animation = 'none';
+          } else {
+            // 到达站圆点：白底 + 主题色描边 + 放大呼吸动画
+            const accent = getThemeColorByStationIndex(meta, realIdx, '#00b894');
+            dot.style.borderColor = accent;
+            dot.style.animation = 'dot-target-scale-pulse 1.1s ease-in-out infinite';
+          }
         }
         const name = node.querySelector('.name');
         const en = node.querySelector('.en');
@@ -5270,7 +5296,7 @@ export function initDisplayWindow(rootElement) {
       } else if (dot) {
         // 如果已过站，使用灰色（保持passed类的样式）
         // 优先检查 passed 类，确保已过站的圆点显示为灰色
-        if (isPassed || node.classList.contains('passed')) {
+        if (isPassed || node.classList.contains('passed') || !isStopAllowed) {
           dot.style.background = '#fff';
           dot.style.setProperty('border-color', '#ccc', 'important');
         } else {
@@ -5298,7 +5324,8 @@ export function initDisplayWindow(rootElement) {
       if (
         stNode && Array.isArray(stNode.xfer) && stNode.xfer.length > 0 &&
         !(isPassed || node.classList.contains('passed')) &&
-        !(stNode && stNode.skip)
+        !(stNode && stNode.skip) &&
+        isStopAllowedAtIndex(realIdx, appData)
       ) {
         const name = node.querySelector('.name');
         const en = node.querySelector('.en');
@@ -6164,7 +6191,7 @@ export function initDisplayWindow(rootElement) {
           const dotThemeColor = getDotThemeColor();
 
           // 暂缓停靠车站 & 已过站：统一为灰色空心圆，尺寸等参数保持一致
-          if (st.skip || isPassedNode) {
+          if (st.skip || isPassedNode || !isStopAllowedAtIndex(idx, appData)) {
             dot.style.background = '#fff';
             dot.style.setProperty('border-color', '#ccc', 'important');
             dot.style.boxShadow = 'none';
@@ -6199,7 +6226,7 @@ export function initDisplayWindow(rootElement) {
         }
 
         // 与直线模式保持一致：未过站且非暂缓的换乘站，站名统一红色
-        if (st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !node.classList.contains('passed')) {
+        if (st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !node.classList.contains('passed') && isStopAllowedAtIndex(idx, appData)) {
           const infoBtm = node.querySelector('.info-btm');
           if (infoBtm) {
             const nameEl = infoBtm.querySelector('.name');
@@ -6573,7 +6600,8 @@ export function initDisplayWindow(rootElement) {
             });
           }
         } else {
-          if (st.skip && dot) {
+          const isStopAllowed = isStopAllowedAtIndex(i, appData);
+          if ((st.skip || !isStopAllowed) && dot) {
             dot.style.background = '#fff';
             dot.style.borderColor = '#ccc';
             dot.style.width = dotSize + 'px';
@@ -6618,7 +6646,7 @@ export function initDisplayWindow(rootElement) {
             }
           }
           // 规则：换乘站只要未过站，站名始终红色（优先级高）
-          if (st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !node.classList.contains('passed')) {
+          if (st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !node.classList.contains('passed') && isStopAllowedAtIndex(i, appData)) {
             if (name) name.style.color = '#c00';
             if (en) en.style.color = '#c00';
           }
@@ -6754,7 +6782,8 @@ export function initDisplayWindow(rootElement) {
             });
           }
         } else {
-          if (st.skip && dot) {
+          const isStopAllowed = isStopAllowedAtIndex(i, appData);
+          if ((st.skip || !isStopAllowed) && dot) {
             dot.style.background = '#fff';
             dot.style.borderColor = '#ccc';
             dot.style.width = '28px';
@@ -6799,7 +6828,7 @@ export function initDisplayWindow(rootElement) {
             }
           }
           // 规则：换乘站只要未过站，站名始终红色（优先级高）
-          if (st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !node.classList.contains('passed')) {
+          if (st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !node.classList.contains('passed') && isStopAllowedAtIndex(i, appData)) {
             if (name) name.style.color = '#c00';
             if (en) en.style.color = '#c00';
           }
@@ -7352,7 +7381,8 @@ export function initDisplayWindow(rootElement) {
         label.style.transform = `translate(-100%, 0) rotate(${angle}deg)`;
       }
       const dot = node.querySelector('.dot');
-      if (st.skip && dot) {
+      const isStopAllowed = isStopAllowedAtIndex(i, appData);
+      if ((st.skip || !isStopAllowed) && dot) {
         dot.style.background = '#fff';
         dot.style.borderColor = '#ccc';
         dot.style.width = '24px';
@@ -7418,7 +7448,7 @@ export function initDisplayWindow(rootElement) {
         if (label) label.style.color = '#999';
       }
       // 规则：换乘站只要未过站，站名始终红色（优先级高）
-      if (label && st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !isOutsideRange) {
+      if (label && st && Array.isArray(st.xfer) && st.xfer.length > 0 && !st.skip && !isOutsideRange && isStopAllowedAtIndex(i, appData)) {
         let isPast = false;
         try {
           isPast = getRunStatus(i) === 'past';

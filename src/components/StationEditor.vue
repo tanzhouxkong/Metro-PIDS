@@ -3,6 +3,7 @@ import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, o
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 import { getEffectiveViewportRect } from '../utils/effectiveViewportRect.js'
+import { calculateNextStationIndex } from '../utils/displayStationCalculator'
 
 export default {
   name: 'StationEditor',
@@ -13,13 +14,48 @@ export default {
     lineCommonAudio: { type: Object, default: () => null },
     isNew: { type: Boolean, default: false },
     currentLineFilePath: { type: String, default: '' },
-    currentLineFolderPath: { type: String, default: '' }
+    currentLineFolderPath: { type: String, default: '' },
+    // 供“动态占位符音频”的健康扫描使用（start/current/next/terminal）
+    currentStationIndex: { type: Number, default: -1 },
+    lineMeta: { type: Object, default: () => ({}) },
+    lineStations: { type: Array, default: () => [] }
   },
-  emits: ['update:modelValue', 'save', 'apply-audio-to-all', 'save-line-audio'],
+  emits: ['update:modelValue', 'save', 'apply-audio-to-all', 'save-line-audio', 'autosave-station-audio'],
   setup(props, { emit }) {
-    const { t } = useI18n()
+    const { t, locale } = useI18n()
+    const ALL_DYNAMIC_AUDIO_TABS = [
+      { key: 'cmn', labelKey: 'stationEditor.audioDynamicDialectCmn' },
+      { key: 'yue', labelKey: 'stationEditor.audioDynamicDialectYue' },
+      { key: 'wuu', labelKey: 'stationEditor.audioDynamicDialectWuu' },
+      { key: 'nan', labelKey: 'stationEditor.audioDynamicDialectNan' },
+      { key: 'wzh', labelKey: 'stationEditor.audioDynamicDialectWzh' },
+      { key: 'en', labelKey: 'stationEditor.audioDynamicDialectEn' },
+      { key: 'ja', labelKey: 'stationEditor.audioDynamicDialectJa' },
+      { key: 'ko', labelKey: 'stationEditor.audioDynamicDialectKo' }
+    ]
+    const DEFAULT_DYNAMIC_AUDIO_TAB_KEYS = ['cmn', 'en']
+    const normalizeDynamicTabKeys = (keys) => {
+      const src = Array.isArray(keys) ? keys.map((k) => String(k || '').trim()).filter(Boolean) : []
+      const allowed = new Set(ALL_DYNAMIC_AUDIO_TABS.map((x) => x.key))
+      const seen = new Set()
+      const normalized = []
+      for (const k of src) {
+        if (!allowed.has(k)) continue
+        if (seen.has(k)) continue
+        seen.add(k)
+        normalized.push(k)
+      }
+      return normalized.length ? normalized : [...DEFAULT_DYNAMIC_AUDIO_TAB_KEYS]
+    }
     const defaultStationAudio = () => ({
       separateDirection: true,
+      // 动态占位音频的“语音版本/方言”偏好：用于同站多套语音
+      // 常用：'cmn' | 'yue' | 'wuu' | 'en' | 'ja' | 'ko'
+      dynamicDialect: 'cmn',
+      // 站点编辑器顶部的“语音版本”Tab 列表（可增删/排序）
+      dynamicDialectTabs: [...DEFAULT_DYNAMIC_AUDIO_TAB_KEYS],
+      // 多语音版本音频列表容器：key -> { up:{list:[]}, down:{list:[]} }
+      dialectLists: {},
       up: { list: [] },
       down: { list: [] }
     })
@@ -66,11 +102,49 @@ export default {
           : []
         if (newVal.stationAudio && typeof newVal.stationAudio === 'object') {
           const sa = newVal.stationAudio
+          const nextTabs = normalizeDynamicTabKeys(sa.dynamicDialectTabs)
+          const nextDialect = (typeof sa.dynamicDialect === 'string' && sa.dynamicDialect.trim()) ? sa.dynamicDialect.trim() : 'cmn'
+          const normalizedDialect = nextTabs.includes(nextDialect) ? nextDialect : nextTabs[0]
+          const srcDialectLists = (sa.dialectLists && typeof sa.dialectLists === 'object') ? sa.dialectLists : null
+          const ensureDialectBucket = (key) => {
+            if (!form.stationAudio.dialectLists || typeof form.stationAudio.dialectLists !== 'object') form.stationAudio.dialectLists = {}
+            if (!form.stationAudio.dialectLists[key] || typeof form.stationAudio.dialectLists[key] !== 'object') {
+              form.stationAudio.dialectLists[key] = { up: { list: [] }, down: { list: [] } }
+            }
+            if (!form.stationAudio.dialectLists[key].up || typeof form.stationAudio.dialectLists[key].up !== 'object') form.stationAudio.dialectLists[key].up = { list: [] }
+            if (!Array.isArray(form.stationAudio.dialectLists[key].up.list)) form.stationAudio.dialectLists[key].up.list = []
+            if (!form.stationAudio.dialectLists[key].down || typeof form.stationAudio.dialectLists[key].down !== 'object') form.stationAudio.dialectLists[key].down = { list: [] }
+            if (!Array.isArray(form.stationAudio.dialectLists[key].down.list)) form.stationAudio.dialectLists[key].down.list = []
+          }
           form.stationAudio = {
             separateDirection: true,
-            up: { list: migrateToAudioList(sa.up) },
-            down: { list: migrateToAudioList(sa.down) }
+            dynamicDialect: normalizedDialect,
+            dynamicDialectTabs: nextTabs,
+            dialectLists: {},
+            up: { list: [] },
+            down: { list: [] }
           }
+
+          // 先合并旧数据/新数据到 dialectLists
+          if (srcDialectLists) {
+            for (const k of Object.keys(srcDialectLists)) {
+              const kk = String(k || '').trim()
+              if (!kk) continue
+              const b = srcDialectLists[kk]
+              ensureDialectBucket(kk)
+              form.stationAudio.dialectLists[kk].up.list = migrateToAudioList(b?.up)
+              form.stationAudio.dialectLists[kk].down.list = migrateToAudioList(b?.down)
+            }
+          }
+          // 兼容：老结构只有 up/down，把它放进当前 dialect bucket（若该 bucket 为空）
+          ensureDialectBucket(normalizedDialect)
+          if (!form.stationAudio.dialectLists[normalizedDialect].up.list.length && !form.stationAudio.dialectLists[normalizedDialect].down.list.length) {
+            form.stationAudio.dialectLists[normalizedDialect].up.list = migrateToAudioList(sa.up)
+            form.stationAudio.dialectLists[normalizedDialect].down.list = migrateToAudioList(sa.down)
+          }
+          // 切换到当前 dialect 对应的列表
+          form.stationAudio.up.list = [...form.stationAudio.dialectLists[normalizedDialect].up.list]
+          form.stationAudio.down.list = [...form.stationAudio.dialectLists[normalizedDialect].down.list]
         } else {
           form.stationAudio = defaultStationAudio()
         }
@@ -138,9 +212,159 @@ export default {
         console.warn('[StationEditor][CrashTrace] log-failed', String(e))
       }
     }
+    const isCloseDebugEnabled = () => {
+      try {
+        return localStorage.getItem('metro_pids_debug_station_editor_close') === '1'
+          || localStorage.getItem('metro_pids_debug_station_editor') === '1'
+      } catch (e) {
+        return false
+      }
+    }
     const setSectionMode = (mode) => {
       seDebugLog('set-section-mode', { from: sectionMode.value, to: mode })
       sectionMode.value = mode
+    }
+
+    const dynamicAudioTabs = computed(() => {
+      const keys = normalizeDynamicTabKeys(form?.stationAudio?.dynamicDialectTabs)
+      return keys.map((k) => ALL_DYNAMIC_AUDIO_TABS.find((x) => x.key === k)).filter(Boolean)
+    })
+    const availableDynamicAudioTabOptions = computed(() => {
+      const current = new Set(dynamicAudioTabs.value.map((x) => x.key))
+      return ALL_DYNAMIC_AUDIO_TABS.filter((x) => !current.has(x.key))
+    })
+    const setDynamicDialectFromTab = (dialectKey) => {
+      const k = String(dialectKey || '').trim()
+      if (!k) return
+      const keys = normalizeDynamicTabKeys(form?.stationAudio?.dynamicDialectTabs)
+      if (!keys.includes(k)) return
+      // 先把当前列表存回当前 dialect bucket，再切换加载目标 dialect bucket
+      const prev = String(form.stationAudio.dynamicDialect || '').trim() || keys[0]
+      if (!form.stationAudio.dialectLists || typeof form.stationAudio.dialectLists !== 'object') form.stationAudio.dialectLists = {}
+      if (!form.stationAudio.dialectLists[prev] || typeof form.stationAudio.dialectLists[prev] !== 'object') {
+        form.stationAudio.dialectLists[prev] = { up: { list: [] }, down: { list: [] } }
+      }
+      if (!form.stationAudio.dialectLists[prev].up) form.stationAudio.dialectLists[prev].up = { list: [] }
+      if (!form.stationAudio.dialectLists[prev].down) form.stationAudio.dialectLists[prev].down = { list: [] }
+      form.stationAudio.dialectLists[prev].up.list = JSON.parse(JSON.stringify(getAudioList('up')))
+      form.stationAudio.dialectLists[prev].down.list = JSON.parse(JSON.stringify(getAudioList('down')))
+
+      if (!form.stationAudio.dialectLists[k] || typeof form.stationAudio.dialectLists[k] !== 'object') {
+        form.stationAudio.dialectLists[k] = { up: { list: [] }, down: { list: [] } }
+      }
+      if (!form.stationAudio.dialectLists[k].up) form.stationAudio.dialectLists[k].up = { list: [] }
+      if (!Array.isArray(form.stationAudio.dialectLists[k].up.list)) form.stationAudio.dialectLists[k].up.list = []
+      if (!form.stationAudio.dialectLists[k].down) form.stationAudio.dialectLists[k].down = { list: [] }
+      if (!Array.isArray(form.stationAudio.dialectLists[k].down.list)) form.stationAudio.dialectLists[k].down.list = []
+
+      form.stationAudio.up.list = JSON.parse(JSON.stringify(form.stationAudio.dialectLists[k].up.list))
+      form.stationAudio.down.list = JSON.parse(JSON.stringify(form.stationAudio.dialectLists[k].down.list))
+      form.stationAudio.dynamicDialect = k
+      setSectionMode('audio')
+    }
+    const syncCurrentDialectListsForSave = () => {
+      if (!form?.stationAudio || typeof form.stationAudio !== 'object') return
+      const tabs = normalizeDynamicTabKeys(form.stationAudio.dynamicDialectTabs)
+      const currentDialect = (() => {
+        const k = String(form.stationAudio.dynamicDialect || '').trim()
+        if (k && tabs.includes(k)) return k
+        return tabs[0] || 'cmn'
+      })()
+      if (!form.stationAudio.dialectLists || typeof form.stationAudio.dialectLists !== 'object') {
+        form.stationAudio.dialectLists = {}
+      }
+      if (!form.stationAudio.dialectLists[currentDialect] || typeof form.stationAudio.dialectLists[currentDialect] !== 'object') {
+        form.stationAudio.dialectLists[currentDialect] = { up: { list: [] }, down: { list: [] } }
+      }
+      if (!form.stationAudio.dialectLists[currentDialect].up || typeof form.stationAudio.dialectLists[currentDialect].up !== 'object') {
+        form.stationAudio.dialectLists[currentDialect].up = { list: [] }
+      }
+      if (!form.stationAudio.dialectLists[currentDialect].down || typeof form.stationAudio.dialectLists[currentDialect].down !== 'object') {
+        form.stationAudio.dialectLists[currentDialect].down = { list: [] }
+      }
+      form.stationAudio.dialectLists[currentDialect].up.list = JSON.parse(JSON.stringify(getAudioList('up')))
+      form.stationAudio.dialectLists[currentDialect].down.list = JSON.parse(JSON.stringify(getAudioList('down')))
+      form.stationAudio.dynamicDialect = currentDialect
+      form.stationAudio.dynamicDialectTabs = tabs
+    }
+    const addDynamicAudioTab = (dialectKey) => {
+      const k = String(dialectKey || '').trim()
+      if (!k) return
+      const keys = normalizeDynamicTabKeys(form?.stationAudio?.dynamicDialectTabs)
+      if (keys.includes(k)) return
+      const next = [...keys, k]
+      form.stationAudio.dynamicDialectTabs = normalizeDynamicTabKeys(next)
+      if (!form.stationAudio.dynamicDialect) form.stationAudio.dynamicDialect = k
+      setSectionMode('audio')
+    }
+    const removeDynamicAudioTab = (dialectKey) => {
+      const k = String(dialectKey || '').trim()
+      const keys = normalizeDynamicTabKeys(form?.stationAudio?.dynamicDialectTabs)
+      if (keys.length <= 1) return
+      const next = keys.filter((x) => x !== k)
+      const normalized = normalizeDynamicTabKeys(next)
+      form.stationAudio.dynamicDialectTabs = normalized
+      if (!normalized.includes(form.stationAudio.dynamicDialect)) {
+        form.stationAudio.dynamicDialect = normalized[0]
+      }
+    }
+    const moveDynamicAudioTab = (fromIdx, delta) => {
+      const keys = normalizeDynamicTabKeys(form?.stationAudio?.dynamicDialectTabs)
+      const from = Number(fromIdx)
+      const to = from + Number(delta)
+      if (!Number.isFinite(from) || !Number.isFinite(to)) return
+      if (from < 0 || from >= keys.length) return
+      if (to < 0 || to >= keys.length) return
+      const next = [...keys]
+      const tmp = next[from]
+      next[from] = next[to]
+      next[to] = tmp
+      form.stationAudio.dynamicDialectTabs = normalizeDynamicTabKeys(next)
+    }
+    const moveDynamicAudioTabTo = (fromKey, toKey) => {
+      const src = String(fromKey || '').trim()
+      const dst = String(toKey || '').trim()
+      if (!src || !dst || src === dst) return
+      const keys = normalizeDynamicTabKeys(form?.stationAudio?.dynamicDialectTabs)
+      const fromIdx = keys.indexOf(src)
+      const toIdx = keys.indexOf(dst)
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return
+      const next = [...keys]
+      const item = next.splice(fromIdx, 1)[0]
+      next.splice(toIdx, 0, item)
+      form.stationAudio.dynamicDialectTabs = normalizeDynamicTabKeys(next)
+    }
+    const draggingDynamicTabKey = ref('')
+    const dynamicTabDragOverKey = ref('')
+    const onDynamicTabDragStart = (ev, key) => {
+      const k = String(key || '').trim()
+      if (!k) return
+      draggingDynamicTabKey.value = k
+      if (ev?.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move'
+        ev.dataTransfer.setData('text/dynamic-tab-key', k)
+      }
+    }
+    const onDynamicTabDragOver = (ev, key) => {
+      if (!ev) return
+      ev.preventDefault()
+      const k = String(key || '').trim()
+      if (!k) return
+      dynamicTabDragOverKey.value = k
+      if (ev?.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+    }
+    const onDynamicTabDrop = (ev, key) => {
+      if (!ev) return
+      ev.preventDefault()
+      const dst = String(key || '').trim()
+      const src = (ev?.dataTransfer?.getData('text/dynamic-tab-key') || draggingDynamicTabKey.value || '').trim()
+      if (src && dst) moveDynamicAudioTabTo(src, dst)
+      draggingDynamicTabKey.value = ''
+      dynamicTabDragOverKey.value = ''
+    }
+    const onDynamicTabDragEnd = () => {
+      draggingDynamicTabKey.value = ''
+      dynamicTabDragOverKey.value = ''
     }
     const hasStationAudio = computed(() => {
       const up = form?.stationAudio?.up?.list
@@ -154,6 +378,7 @@ export default {
     }
     const lastInternalCloseMeta = ref(null)
     const debugCloseLog = (event, extra = {}) => {
+      if (!isCloseDebugEnabled()) return
       if (!hasStationAudio.value) return
       const stats = getAudioDebugStats()
       console.warn('[StationEditor][CloseDebug]', {
@@ -255,6 +480,8 @@ export default {
       }
       disarmSaveClick()
       if (!form.name) return
+      // 保存前将当前编辑中的 up/down 音频回写到当前方言桶，避免重开后“丢失”
+      syncCurrentDialectListsForSave()
       const isAudioSection = sectionMode.value === 'audio' || sectionMode.value === 'commonAudio'
       const payload = JSON.parse(JSON.stringify(form))
       payload.stationAudio.separateDirection = true
@@ -268,6 +495,20 @@ export default {
         return
       }
       close('save')
+    }
+    const emitAudioAutoSave = () => {
+      // 自动保存仅用于“已存在站点”的音频编辑，避免新增站点未落位时误写入
+      if (props.isNew) return
+      syncCurrentDialectListsForSave()
+      const stationPayload = JSON.parse(JSON.stringify(form))
+      stationPayload.stationAudio.separateDirection = true
+      if (!form.stationAudio.separateDirection) {
+        stationPayload.stationAudio.down = JSON.parse(JSON.stringify(form.stationAudio.up))
+      }
+      emit('autosave-station-audio', {
+        station: stationPayload,
+        commonAudio: JSON.parse(JSON.stringify(commonAudio))
+      })
     }
     watch(
       () => props.modelValue,
@@ -355,6 +596,7 @@ export default {
         const insertIdx = afterIdx < 0 ? form.xfer.length : afterIdx + 1
         clip.data.forEach((x, i) => form.xfer.splice(insertIdx + i, 0, norm(x)))
       }
+      if (added > 0) emitAudioAutoSave()
     }
     const hasClipboard = computed(() => !!xferClipboard.value)
 
@@ -410,6 +652,55 @@ export default {
       menuVisible.value = true
       adjustMenuPosition(e.clientX, e.clientY)
     }
+    const openDynamicTabMenu = (e, dialectKey) => {
+      menuX.value = e.clientX
+      menuY.value = e.clientY
+      menuContext.value = { type: 'dynamicAudioTab', dialectKey: String(dialectKey || '').trim() }
+      menuVisible.value = true
+      adjustMenuPosition(e.clientX, e.clientY)
+    }
+    const openDynamicTabRowMenu = (e) => {
+      menuX.value = e.clientX
+      menuY.value = e.clientY
+      menuContext.value = { type: 'dynamicAudioTabRow' }
+      menuVisible.value = true
+      adjustMenuPosition(e.clientX, e.clientY)
+    }
+    const openSectionToggleMenu = (e) => {
+      const target = e?.target
+      if (!target || typeof target.closest !== 'function') {
+        openSectionMenu(e)
+        return
+      }
+      const tabBtn = target.closest('.se-dyn-tab')
+      if (tabBtn) {
+        const key = tabBtn.getAttribute('data-dialect-key') || ''
+        openDynamicTabMenu(e, key)
+        return
+      }
+      const tabRow = target.closest('.se-dyn-tabs')
+      if (tabRow) {
+        openDynamicTabRowMenu(e)
+        return
+      }
+      openSectionMenu(e)
+    }
+    const openSmartSectionMenu = (e) => {
+      const target = e?.target
+      if (target && typeof target.closest === 'function') {
+        if (target.closest('.se-dyn-tab')) {
+          const btn = target.closest('.se-dyn-tab')
+          const key = btn?.getAttribute('data-dialect-key') || ''
+          openDynamicTabMenu(e, key)
+          return
+        }
+        if (target.closest('.se-dyn-tabs') || target.closest('.se-section-head')) {
+          openDynamicTabRowMenu(e)
+          return
+        }
+      }
+      openSectionMenu(e)
+    }
     const toggleAudioSeparateDirection = () => {
       form.stationAudio.separateDirection = !form.stationAudio.separateDirection
       closeMenu()
@@ -444,6 +735,15 @@ export default {
     const audioHealthByKey = ref({})
     const audioHealthScanTimer = ref(null)
     const audioHealthScanVersion = ref(0)
+    const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+    const normalizeDynamicRoleKey = (roleKey) => {
+      const rk = String(roleKey || '').trim()
+      if (!rk) return ''
+      return rk === 'end' ? 'terminal' : rk
+    }
+    const isDynamicPlaceholderItemRole = (item) => {
+      return !!(item && typeof item === 'object' && DYNAMIC_ROLE_KEYS.has(String(item.role || '').trim()))
+    }
     const getAudioHealthKey = (scope, dir, idx, item) => {
       const path = getAudioItemPath(item)
       return `${scope || 'station'}:${dir || 'up'}:${idx}:${path}`
@@ -454,7 +754,7 @@ export default {
     }
     const isAudioBroken = (scope, dir, idx, item) => {
       const itemPath = getAudioItemPath(item)
-      if (!itemPath) return true
+      if (!itemPath) return isDynamicPlaceholderItemRole(item) ? getAudioHealthStatus(scope, dir, idx, item) === 'broken' : true
       return getAudioHealthStatus(scope, dir, idx, item) === 'broken'
     }
     const setAudioHealthStatus = (scope, dir, idx, item, status) => {
@@ -484,34 +784,140 @@ export default {
           if (activeKeys.has(k)) nextHealthByKey[k] = v
         })
 
+        const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+        const isDynamicPlaceholderItem = (itItem) => {
+          if (!itItem || typeof itItem !== 'object') return false
+          if (!DYNAMIC_ROLE_KEYS.has(String(itItem.role || '').trim())) return false
+          return !getAudioItemPath(itItem)
+        }
+
         // 先标记：没 path -> broken
         // 有 path -> 优先保留已有的 broken/ok；否则标记为 checking（避免 canCheck 暂时不可用时把 broken 覆盖掉）
         for (const it of stationItems) {
           const itemPath = getAudioItemPath(it.item)
           const key = getAudioHealthKey(it.scope, it.dir, it.idx, it.item)
           if (!itemPath) {
-            nextHealthByKey[key] = 'broken'
+            if (isDynamicPlaceholderItem(it.item)) {
+              const prev = audioHealthByKey.value[key]
+              nextHealthByKey[key] = prev === 'broken' ? 'broken' : 'checking'
+            } else {
+              nextHealthByKey[key] = 'broken'
+            }
             continue
           }
           const prev = audioHealthByKey.value[key]
           if (prev === 'broken' || prev === 'ok') nextHealthByKey[key] = prev
           else nextHealthByKey[key] = 'checking'
         }
-        audioHealthByKey.value = nextHealthByKey
-
         const doScan = async () => {
           const api = typeof window !== 'undefined' ? window.electronAPI : null
           const resolveAudioPath = api?.lines?.resolveAudioPath
+          const findAudioByStationName = api?.lines?.findAudioByStationName
           const lineFileOrDir =
             currentLineFilePathRef.value || currentLineFolderPathRef.value || (typeof window !== 'undefined' ? window.__currentLineFilePath || '' : '')
-          const canCheck = typeof resolveAudioPath === 'function' && !!lineFileOrDir
+          const canCheckResolve = typeof resolveAudioPath === 'function' && !!lineFileOrDir
+          const canCheckDynamic = typeof findAudioByStationName === 'function' && !!lineFileOrDir
 
           // 缓存：同一个 itemPath 只解析一次
           const okCache = new Map()
+          const dynamicOkCache = new Map() // `${lineFileOrDir}::${role}::${stationName}::${language}::${dialect}`
 
-          // 如果当前线路路径/IPC 暂时不可用：直接保留我们上面算好的状态（尤其是 broken）
-          if (!canCheck) {
-            if (scanVersion === audioHealthScanVersion.value) audioHealthByKey.value = nextHealthByKey
+          const languageKey = (() => {
+            try {
+              return locale?.value || 'zh-CN'
+            } catch (e) {
+              return 'zh-CN'
+            }
+          })()
+          const dialectKey = (form?.stationAudio && typeof form.stationAudio.dynamicDialect === 'string' && form.stationAudio.dynamicDialect.trim())
+            ? form.stationAudio.dynamicDialect.trim()
+            : 'cmn'
+
+          const lineMeta = props.lineMeta || {}
+          const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
+          const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
+          const appDataForNext = { stations: lineStations, meta: lineMeta }
+
+          // 动态占位符“按站名找音频”：不能只用 UI i18n 的 languageKey 取单一字段；
+          // 否则 dialect tab（如 en/ja/ko）对应的数据目录里即使存在正确音频，也可能因为站名字段选错而被误判 broken。
+          const getTargetStationByRole = (roleKey) => {
+            if (!lineStations.length) return null
+            if (roleKey === 'start') {
+              const idx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
+              return lineStations[idx] || null
+            }
+            if (roleKey === 'terminal' || roleKey === 'end') {
+              const idx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
+              return lineStations[idx] || null
+            }
+            if (roleKey === 'current') return lineStations[runtimeIdx] || null
+            if (roleKey === 'next') {
+              const nextIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+              return lineStations[nextIdx] || null
+            }
+            return null
+          }
+
+          const getStationNameCandidatesByTargetDialect = (st) => {
+            if (!st || typeof st !== 'object') return []
+            const d = String(dialectKey || '').toLowerCase()
+            const uniqPush = (arr, v) => {
+              const s = (v === undefined || v === null) ? '' : String(v)
+              const t = s.trim()
+              if (!t) return
+              if (!arr.includes(t)) arr.push(t)
+            }
+
+            const out = []
+            const isJa = d === 'ja' || d.startsWith('ja')
+            const isKo = d === 'ko' || d.startsWith('ko')
+            const isEnglish = d === 'en' || d.startsWith('en')
+            if (isEnglish) {
+              uniqPush(out, st.en)
+              uniqPush(out, st.name)
+              uniqPush(out, st.cn)
+              uniqPush(out, st.zh)
+              uniqPush(out, st.name || st.en)
+              return out
+            }
+
+            // 日/韩：优先使用各自字段（如果数据源里有这些字段）
+            if (isJa) {
+              uniqPush(out, st.ja)
+              uniqPush(out, st.name)
+              uniqPush(out, st.en)
+              uniqPush(out, st.zh)
+              uniqPush(out, st.cn)
+              return out
+            }
+            if (isKo) {
+              uniqPush(out, st.ko)
+              uniqPush(out, st.name)
+              uniqPush(out, st.en)
+              uniqPush(out, st.zh)
+              uniqPush(out, st.cn)
+              return out
+            }
+
+            // 中文系列：优先中文字段（用于 zhcn/zhtw 目录）
+            if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh') || d.includes('zhcn') || d.includes('zhtw')) {
+              uniqPush(out, st.name)
+              uniqPush(out, st.zh)
+              uniqPush(out, st.cn)
+              uniqPush(out, st.en)
+              return out
+            }
+
+            // 其它方言/语种：尽量兼容混合命名
+            uniqPush(out, st.name)
+            uniqPush(out, st.en)
+            uniqPush(out, st.zh)
+            uniqPush(out, st.cn)
+            return out
+          }
+
+          // 如果当前线路路径/IPC 暂时不可用：保留当前状态，避免“损坏提示闪一下后消失”
+          if (!canCheckResolve && !canCheckDynamic) {
             return
           }
 
@@ -521,10 +927,46 @@ export default {
             const key = getAudioHealthKey(it.scope, it.dir, it.idx, it.item)
 
             if (!itemPath) {
-              nextHealthByKey[key] = 'broken'
+              if (isDynamicPlaceholderItem(it.item) && canCheckDynamic) {
+                const roleKey = it.item.role
+                const stationForRole = getTargetStationByRole(roleKey)
+                const stationNameCandidates = getStationNameCandidatesByTargetDialect(stationForRole)
+                if (!stationNameCandidates.length) {
+                  nextHealthByKey[key] = 'broken'
+                  continue
+                }
+
+                let foundOk = false
+                for (const stationNameForRole of stationNameCandidates) {
+                  const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}`
+                  if (dynamicOkCache.has(dynCacheKey)) {
+                    if (dynamicOkCache.get(dynCacheKey)) {
+                      foundOk = true
+                      break
+                    }
+                    continue
+                  }
+
+                  try {
+                    const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey })
+                    const ok = !!res?.ok && !!res?.relativePath
+                    dynamicOkCache.set(dynCacheKey, ok)
+                    if (ok) {
+                      foundOk = true
+                      break
+                    }
+                  } catch (e) {
+                    dynamicOkCache.set(dynCacheKey, false)
+                  }
+                }
+                nextHealthByKey[key] = foundOk ? 'ok' : 'broken'
+              } else {
+                nextHealthByKey[key] = 'broken'
+              }
               continue
             }
 
+            if (!canCheckResolve) continue
             if (okCache.has(itemPath)) {
               nextHealthByKey[key] = okCache.get(itemPath) ? 'ok' : 'broken'
               continue
@@ -549,6 +991,209 @@ export default {
         void doScan()
       }, 140)
     }
+
+    // 预扫描：为每个 dialect tab 统计“缺失/损坏数量”
+    // 目的：不需要用户点开对应 Tab，也能在 tab 旁边直接提示异常。
+    const stationAudioBrokenCountByDialectKey = ref({})
+    let stationAudioBrokenCountScanToken = 0
+    const stationAudioBrokenCountScanTimer = ref(null)
+
+    const getStationNameCandidatesByTargetDialectForScan = (st, targetDialectKey) => {
+      if (!st || typeof st !== 'object') return []
+      const d = String(targetDialectKey || '').toLowerCase()
+      const uniqPush = (arr, v) => {
+        const s = (v === undefined || v === null) ? '' : String(v)
+        const t = s.trim()
+        if (!t) return
+        if (!arr.includes(t)) arr.push(t)
+      }
+
+      const out = []
+      const isEnglish = d === 'en' || d.startsWith('en')
+      if (isEnglish) {
+        uniqPush(out, st.en)
+        uniqPush(out, st.name)
+        uniqPush(out, st.cn)
+        uniqPush(out, st.zh)
+        return out
+      }
+
+      const isJa = d === 'ja' || d.startsWith('ja')
+      const isKo = d === 'ko' || d.startsWith('ko')
+      if (isJa) {
+        uniqPush(out, st.ja)
+        uniqPush(out, st.name)
+        uniqPush(out, st.en)
+        uniqPush(out, st.zh)
+        uniqPush(out, st.cn)
+        return out
+      }
+      if (isKo) {
+        uniqPush(out, st.ko)
+        uniqPush(out, st.name)
+        uniqPush(out, st.en)
+        uniqPush(out, st.zh)
+        uniqPush(out, st.cn)
+        return out
+      }
+
+      // 中文系列：优先中文字段（用于 zhcn/zhtw 目录）
+      if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh') || d.includes('zhcn') || d.includes('zhtw')) {
+        uniqPush(out, st.name)
+        uniqPush(out, st.zh)
+        uniqPush(out, st.cn)
+        uniqPush(out, st.en)
+        return out
+      }
+
+      // 其它方言/语种：兼容混合命名
+      uniqPush(out, st.name)
+      uniqPush(out, st.en)
+      uniqPush(out, st.zh)
+      uniqPush(out, st.cn)
+      return out
+    }
+
+    const queueStationAudioBrokenCountScan = () => {
+      if (stationAudioBrokenCountScanTimer.value) {
+        clearTimeout(stationAudioBrokenCountScanTimer.value)
+        stationAudioBrokenCountScanTimer.value = null
+      }
+      stationAudioBrokenCountScanTimer.value = setTimeout(async () => {
+        const token = ++stationAudioBrokenCountScanToken
+        try {
+          const api = typeof window !== 'undefined' ? window.electronAPI : null
+          const resolveAudioPath = api?.lines?.resolveAudioPath
+          const findAudioByStationName = api?.lines?.findAudioByStationName
+
+          const canCheckResolve = typeof resolveAudioPath === 'function' && !!(currentLineFilePathRef.value || currentLineFolderPathRef.value || (typeof window !== 'undefined' ? window.__currentLineFilePath || '' : ''))
+          const canCheckDynamic = typeof findAudioByStationName === 'function' && !!(currentLineFilePathRef.value || currentLineFolderPathRef.value || (typeof window !== 'undefined' ? window.__currentLineFilePath || '' : ''))
+          if (!canCheckResolve && !canCheckDynamic) return
+
+          const lineFileOrDir = currentLineFilePathRef.value || currentLineFolderPathRef.value || (typeof window !== 'undefined' ? window.__currentLineFilePath || '' : '')
+          const languageKey = (() => {
+            try { return locale?.value || 'zh-CN' } catch (e) { return 'zh-CN' }
+          })()
+          const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
+          const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
+          const lineMeta = props.lineMeta || {}
+          const appDataForNext = { stations: lineStations, meta: lineMeta }
+
+          const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+          const normalizeDynamicRoleKey = (roleKey) => {
+            const rk = String(roleKey || '').trim()
+            if (!rk) return ''
+            return rk === 'end' ? 'terminal' : rk
+          }
+          const isDynamicPlaceholderItemRole = (item) => {
+            return !!(item && typeof item === 'object' && DYNAMIC_ROLE_KEYS.has(String(item.role || '').trim()))
+          }
+          const getTargetStationByRole = (roleKey) => {
+            if (!lineStations.length) return null
+            if (roleKey === 'current') return lineStations[runtimeIdx] || null
+            if (roleKey === 'next') {
+              const nextIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+              return lineStations[nextIdx] || null
+            }
+            if (roleKey === 'start') {
+              const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
+              return lineStations[startIdx] || null
+            }
+            if (roleKey === 'terminal') {
+              const termIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
+              return lineStations[termIdx] || null
+            }
+            return null
+          }
+
+          const dialectKeysToCheck = (dynamicAudioTabs.value || []).map((x) => x.key)
+          const dialectKeys = dialectKeysToCheck.length ? dialectKeysToCheck : ['cmn']
+
+          const okCache = new Map()
+          const dynamicOkCache = new Map()
+          const countsByDialectKey = {}
+
+          for (const dialectKey of dialectKeys) {
+            let brokenCount = 0
+            const dialectBucket = form?.stationAudio?.dialectLists && typeof form.stationAudio.dialectLists === 'object'
+              ? form.stationAudio.dialectLists[dialectKey]
+              : null
+            const dirs = form?.stationAudio?.separateDirection ? ['up', 'down'] : ['up']
+
+            for (const dir of dirs) {
+              const list =
+                dialectBucket && dialectBucket[dir] && Array.isArray(dialectBucket[dir].list)
+                  ? dialectBucket[dir].list
+                  : (dialectKey === String(form?.stationAudio?.dynamicDialect || '').trim() && Array.isArray(form?.stationAudio?.[dir]?.list))
+                    ? form.stationAudio[dir].list
+                    : []
+              if (!Array.isArray(list) || !list.length) continue
+
+              for (let idx = 0; idx < list.length; idx++) {
+                const item = list[idx]
+                const itemPath = getAudioItemPath(item)
+                if (!itemPath) {
+                  if (isDynamicPlaceholderItemRole(item) && canCheckDynamic) {
+                    const roleKey = normalizeDynamicRoleKey(item.role)
+                    const stationForRole = getTargetStationByRole(roleKey)
+                    const candidates = getStationNameCandidatesByTargetDialectForScan(stationForRole, dialectKey)
+                    if (!candidates.length) {
+                      brokenCount++
+                      continue
+                    }
+
+                    let foundOk = false
+                    for (const stationNameForRole of candidates) {
+                      const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}`
+                      if (dynamicOkCache.has(dynCacheKey)) {
+                        if (dynamicOkCache.get(dynCacheKey)) { foundOk = true; break }
+                        continue
+                      }
+                      try {
+                        const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey })
+                        const ok = !!res?.ok && !!res?.relativePath
+                        dynamicOkCache.set(dynCacheKey, ok)
+                        if (ok) { foundOk = true; break }
+                      } catch (e) {
+                        dynamicOkCache.set(dynCacheKey, false)
+                      }
+                    }
+                    if (!foundOk) brokenCount++
+                  } else {
+                    // 非动态占位符（或无法检查动态）：缺失 path 视为异常计数
+                    if (canCheckResolve || canCheckDynamic) brokenCount++
+                  }
+                  continue
+                }
+
+                if (!canCheckResolve) continue
+                if (okCache.has(itemPath)) {
+                  if (!okCache.get(itemPath)) brokenCount++
+                  continue
+                }
+                try {
+                  const res = await resolveAudioPath(lineFileOrDir, itemPath)
+                  const ok = !!res?.ok
+                  okCache.set(itemPath, ok)
+                  if (!ok) brokenCount++
+                } catch (e) {
+                  okCache.set(itemPath, false)
+                  brokenCount++
+                }
+              }
+            }
+            countsByDialectKey[dialectKey] = brokenCount
+          }
+
+          if (token === stationAudioBrokenCountScanToken) {
+            stationAudioBrokenCountByDialectKey.value = countsByDialectKey
+          }
+        } catch (e) {
+          // keep silent
+        }
+      }, 160)
+    }
+
     const stationAudioSignature = computed(() => {
       const up = getAudioList('up').map((it) => getAudioItemPath(it)).join('|')
       const down = getAudioList('down').map((it) => getAudioItemPath(it)).join('|')
@@ -569,8 +1214,13 @@ export default {
           const item = list[idx]
           const itemPath = getAudioItemPath(item)
           if (!itemPath) {
-            c++
-            continue
+              if (isDynamicPlaceholderItemRole(item)) {
+                const st = getAudioHealthStatus('station', dir, idx, item)
+                if (st === 'broken' || st === 'checking') c++
+              } else {
+                c++
+              }
+              continue
           }
           const st = getAudioHealthStatus('station', dir, idx, item)
           // tab 需要在“扫描中”就能及时提示，所以把 checking 也算进去
@@ -590,7 +1240,12 @@ export default {
         const item = list[idx]
         const itemPath = getAudioItemPath(item)
         if (!itemPath) {
-          c++
+          if (isDynamicPlaceholderItemRole(item)) {
+            const st = getAudioHealthStatus('common', dir, idx, item)
+            if (st === 'broken' || st === 'checking') c++
+          } else {
+            c++
+          }
           continue
         }
         const st = getAudioHealthStatus('common', dir, idx, item)
@@ -627,6 +1282,18 @@ export default {
       }
     }
     const AUDIO_FILE_FILTER = { name: 'Audio', extensions: ['mp3', 'flac', 'ogg', 'wav'] }
+    const getCurrentDialectAudioSubDir = () => {
+      const raw = String(form?.stationAudio?.dynamicDialect || 'cmn').trim().toLowerCase()
+      const safe = raw.replace(/[^a-z0-9_-]/g, '')
+      // UI dialect key 的 `cmn` 对应落盘目录我们统一用 `zhcn`。
+      if (!safe) return 'zhcn'
+      if (safe === 'cmn') return 'zhcn'
+      return safe
+    }
+    // 导入音频的落盘目录必须以“当前编辑器选中的语言/方言 Tab”为准：
+    // - 用户在某个 Tab 下点“导入”，就应写入对应 audio/<tab>/ 目录
+    // - 不应根据用户本地源文件夹名称推断语种
+    const ensureDynamicAudioSubDir = () => getCurrentDialectAudioSubDir()
     const addAudioItem = async (dir) => {
       const api = typeof window !== 'undefined' ? window.electronAPI : null
       let lineFilePath = currentLineFilePathRef.value
@@ -661,7 +1328,10 @@ export default {
         const fileName = sourcePath.replace(/^.*[\\/]/, '')
         try {
           // copyAudioToLineDir 支持传入线路目录或线路文件路径
-          const res = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath)
+          const res = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
+            // 按当前 Tab 决定落盘目录（需要时自动创建对应子目录）
+            subDir: ensureDynamicAudioSubDir()
+          })
           if (res && res.ok && res.relativePath) {
             list.push({ path: res.relativePath, name: fileName })
             added++
@@ -672,6 +1342,364 @@ export default {
           console.warn('addAudioItem copyAudioToLineDir failed', err)
           if (added === 0) notify(t('stationEditor.audioAddCopyFailed'), t('stationEditor.audioAdd'))
         }
+      }
+    }
+
+    const addDynamicAudioPlaceholder = (dir, roleKey) => {
+      if (!dir || !form?.stationAudio) return
+      const targetList = form.stationAudio[dir]?.list
+      if (!Array.isArray(targetList)) return
+
+      const roleName =
+        roleKey === 'start' ? t('stationEditor.audioDynamicRoleStart')
+          : roleKey === 'next' ? t('stationEditor.audioDynamicRoleNext')
+            : roleKey === 'current' ? t('stationEditor.audioDynamicRoleCurrent')
+              : roleKey === 'terminal' ? t('stationEditor.audioDynamicRoleTerminal')
+                : (roleKey || '')
+
+      targetList.push({ role: roleKey, name: roleName, dialectKey: form.stationAudio.dynamicDialect || 'cmn' })
+      queueAudioHealthScan()
+      queueStationAudioBrokenCountScan()
+    }
+
+    const importStationAudioFiles = async (dir, filePaths) => {
+      if (!dir || !Array.isArray(filePaths) || !filePaths.length) return
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.lines?.copyAudioToLineDir) return
+
+      const list = form.stationAudio[dir]?.list
+      if (!Array.isArray(list)) return
+
+      let added = 0
+      for (const sourcePath of filePaths) {
+        if (!sourcePath || typeof sourcePath !== 'string') continue
+        const fileName = sourcePath.replace(/^.*[\\/]/, '')
+        try {
+          const res = await api.lines.copyAudioToLineDir(
+            currentLineFilePathRef.value || currentLineFolderPathRef.value || '',
+            sourcePath,
+            { subDir: ensureDynamicAudioSubDir() }
+          )
+          if (res && res.ok && res.relativePath) {
+            list.push({ path: res.relativePath, name: fileName })
+            added++
+          }
+        } catch (e) {
+          // ignore single file errors; we keep importing others
+        }
+      }
+
+      if (added > 0) {
+        queueAudioHealthScan()
+        queueStationAudioBrokenCountScan()
+        emitAudioAutoSave()
+      }
+    }
+
+    const importStationAudioSingle = async (dir) => {
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.showOpenDialog || !api?.lines?.copyAudioToLineDir) {
+        notify(t('stationEditor.audioAddNeedElectron'), t('stationEditor.audioAdd'))
+        return
+      }
+      const lineDirOrFilePath = currentLineFilePathRef.value || currentLineFolderPathRef.value
+      if (!lineDirOrFilePath) {
+        notify(t('stationEditor.audioAddNeedSaveLine'), t('stationEditor.audioAdd'))
+        return
+      }
+      const openRes = await api.showOpenDialog({
+        filters: [AUDIO_FILE_FILTER],
+        properties: ['openFile']
+      })
+      if (openRes?.canceled || !openRes.filePaths || !openRes.filePaths.length) return
+      await importStationAudioFiles(dir || 'up', openRes.filePaths)
+    }
+
+    const importStationAudioMultiple = async (dir) => {
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.showOpenDialog || !api?.lines?.copyAudioToLineDir) {
+        notify(t('stationEditor.audioAddNeedElectron'), t('stationEditor.audioAdd'))
+        return
+      }
+      const lineDirOrFilePath = currentLineFilePathRef.value || currentLineFolderPathRef.value
+      if (!lineDirOrFilePath) {
+        notify(t('stationEditor.audioAddNeedSaveLine'), t('stationEditor.audioAdd'))
+        return
+      }
+      const openRes = await api.showOpenDialog({
+        filters: [AUDIO_FILE_FILTER],
+        properties: ['openFile', 'multiSelections']
+      })
+      if (openRes?.canceled || !openRes.filePaths || !openRes.filePaths.length) return
+      await importStationAudioFiles(dir || 'up', openRes.filePaths)
+    }
+
+    const importDynamicAudioFiles = async () => {
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.showOpenDialog || !api?.lines?.copyAudioToLineDir || !api?.lines?.findAudioByStationName) {
+        notify(t('stationEditor.audioAddNeedElectron'), t('stationEditor.audioAdd'))
+        return
+      }
+      const lineDirOrFilePath = currentLineFilePathRef.value || currentLineFolderPathRef.value
+      if (!lineDirOrFilePath) {
+        notify(t('stationEditor.audioAddNeedSaveLine'), t('stationEditor.audioAdd'))
+        return
+      }
+
+      const openRes = await api.showOpenDialog({
+        filters: [AUDIO_FILE_FILTER],
+        properties: ['openFile', 'multiSelections']
+      })
+      if (openRes?.canceled || !openRes.filePaths || !openRes.filePaths.length) return
+
+      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+      const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
+      const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
+      const lineMeta = props.lineMeta || {}
+      const languageKey = (() => {
+        try { return locale?.value || 'zh-CN' } catch (e) { return 'zh-CN' }
+      })()
+      const dialectKey = (form?.stationAudio && typeof form.stationAudio.dynamicDialect === 'string' && form.stationAudio.dynamicDialect.trim())
+        ? form.stationAudio.dynamicDialect.trim()
+        : 'cmn'
+      const getStationNameByLang = (st) => {
+        if (!st || typeof st !== 'object') return ''
+        if (languageKey === 'en') return st.en || st.name || ''
+        if (String(languageKey || '').startsWith('zh')) return st.name || st.zh || st.cn || st.en || ''
+        return st.name || st.en || ''
+      }
+
+      const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
+      const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
+
+      const appDataForNext = { stations: lineStations, meta: lineMeta }
+
+      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName }
+      const dirs = form.stationAudio.separateDirection ? ['up', 'down'] : ['up']
+      for (const dir of dirs) {
+        const list = getAudioList(dir)
+        for (const item of list) {
+          if (!item || typeof item !== 'object') continue
+          const rawRoleKey = String(item.role || '').trim()
+          if (!DYNAMIC_ROLE_KEYS.has(rawRoleKey)) continue
+          const roleKey = normalizeDynamicRoleKey(rawRoleKey)
+          const hasPath = !!(item.path || item.src || item.filePath)
+          if (hasPath) continue
+
+          let targetIdx = -1
+          if (roleKey === 'start') targetIdx = startIdx
+          else if (roleKey === 'terminal') targetIdx = terminalIdx
+          else if (roleKey === 'current') targetIdx = runtimeIdx
+          else if (roleKey === 'next') targetIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+          if (typeof targetIdx !== 'number' || targetIdx < 0 || targetIdx >= lineStations.length) continue
+
+          const stationName = getStationNameByLang(lineStations[targetIdx])
+          if (!stationName) continue
+          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName })
+        }
+      }
+      // 兼容无占位项的线路：退化为“按站名匹配”统计
+      if (!requiredTargets.size) {
+        for (let i = 0; i < lineStations.length; i++) {
+          const stationName = getStationNameByLang(lineStations[i])
+          if (!stationName) continue
+          requiredTargets.set(`nameOnly::${i}`, { roleKey: '', stationName })
+        }
+      }
+
+      audioImportModalVisible.value = true
+      audioImportStage.value = 'copy'
+      audioImportProcessed.value = 0
+      audioImportTotal.value = openRes.filePaths.length
+      audioImportCopyOk.value = 0
+      audioImportCopyFail.value = 0
+      audioImportSuccessStations.value = 0
+      audioImportFailStations.value = 0
+      audioImportFailedStations.value = []
+
+      for (let i = 0; i < openRes.filePaths.length; i++) {
+        const sourcePath = openRes.filePaths[i]
+        audioImportProcessed.value = i + 1
+        const subDir = ensureDynamicAudioSubDir()
+        if (!subDir) {
+          audioImportCopyFail.value++
+          continue
+        }
+        const resCopy = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
+          subDir
+        })
+        if (resCopy && resCopy.ok) audioImportCopyOk.value++
+        else audioImportCopyFail.value++
+      }
+
+      audioImportStage.value = 'match'
+
+      const targets = Array.from(requiredTargets.values())
+      for (const target of targets) {
+        const opts = target.roleKey
+          ? { role: target.roleKey, languageKey, dialectKey }
+          : { languageKey, dialectKey }
+        const resFind = await api.lines.findAudioByStationName(lineDirOrFilePath, target.stationName, opts)
+        if (resFind?.ok && resFind?.relativePath) {
+          audioImportSuccessStations.value++
+        } else {
+          audioImportFailStations.value++
+          audioImportFailedStations.value.push(target.stationName)
+        }
+      }
+
+      audioImportFailedStations.value = Array.from(new Set(audioImportFailedStations.value))
+      audioImportStage.value = 'done'
+      queueAudioHealthScan()
+      queueStationAudioBrokenCountScan()
+      if (audioImportSuccessStations.value === 0 && audioImportFailStations.value === 0) {
+        console.warn('[StationEditor][DynamicAudioImport] import finished with 0/0, keep result modal', {
+          source: 'files',
+          lineDirOrFilePath,
+          languageKey,
+          dialectKey,
+          selectedFileCount: openRes.filePaths.length
+        })
+      }
+    }
+
+    const importDynamicAudioFolder = async () => {
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.showOpenDialog || !api?.lines?.copyAudioToLineDir || !api?.lines?.listAudioFilesInDir || !api?.lines?.findAudioByStationName) {
+        notify(t('stationEditor.audioAddNeedElectron'), t('stationEditor.audioAdd'))
+        return
+      }
+      const lineDirOrFilePath = currentLineFilePathRef.value || currentLineFolderPathRef.value
+      if (!lineDirOrFilePath) {
+        notify(t('stationEditor.audioAddNeedSaveLine'), t('stationEditor.audioAdd'))
+        return
+      }
+
+      const openRes = await api.showOpenDialog({
+        properties: ['openDirectory']
+      })
+      if (openRes?.canceled || !openRes.filePaths || !openRes.filePaths.length) return
+      const folderPath = openRes.filePaths[0]
+
+      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+      const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
+      const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
+      const lineMeta = props.lineMeta || {}
+      const languageKey = (() => {
+        try { return locale?.value || 'zh-CN' } catch (e) { return 'zh-CN' }
+      })()
+      const dialectKey = (form?.stationAudio && typeof form.stationAudio.dynamicDialect === 'string' && form.stationAudio.dynamicDialect.trim())
+        ? form.stationAudio.dynamicDialect.trim()
+        : 'cmn'
+      const getStationNameByLang = (st) => {
+        if (!st || typeof st !== 'object') return ''
+        if (languageKey === 'en') return st.en || st.name || ''
+        if (String(languageKey || '').startsWith('zh')) return st.name || st.zh || st.cn || st.en || ''
+        return st.name || st.en || ''
+      }
+
+      const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
+      const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
+
+      const appDataForNext = { stations: lineStations, meta: lineMeta }
+
+      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName }
+      const dirs = form.stationAudio.separateDirection ? ['up', 'down'] : ['up']
+      for (const dir of dirs) {
+        const list = getAudioList(dir)
+        for (const item of list) {
+          if (!item || typeof item !== 'object') continue
+          const rawRoleKey = String(item.role || '').trim()
+          if (!DYNAMIC_ROLE_KEYS.has(rawRoleKey)) continue
+          const roleKey = normalizeDynamicRoleKey(rawRoleKey)
+          const hasPath = !!(item.path || item.src || item.filePath)
+          if (hasPath) continue
+
+          let targetIdx = -1
+          if (roleKey === 'start') targetIdx = startIdx
+          else if (roleKey === 'terminal') targetIdx = terminalIdx
+          else if (roleKey === 'current') targetIdx = runtimeIdx
+          else if (roleKey === 'next') targetIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+          if (typeof targetIdx !== 'number' || targetIdx < 0 || targetIdx >= lineStations.length) continue
+
+          const stationName = getStationNameByLang(lineStations[targetIdx])
+          if (!stationName) continue
+          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName })
+        }
+      }
+      // 兼容无占位项的线路：退化为“按站名匹配”统计
+      if (!requiredTargets.size) {
+        for (let i = 0; i < lineStations.length; i++) {
+          const stationName = getStationNameByLang(lineStations[i])
+          if (!stationName) continue
+          requiredTargets.set(`nameOnly::${i}`, { roleKey: '', stationName })
+        }
+      }
+
+      audioImportModalVisible.value = true
+      audioImportStage.value = 'copy'
+      audioImportProcessed.value = 0
+      audioImportTotal.value = 0
+      audioImportCopyOk.value = 0
+      audioImportCopyFail.value = 0
+      audioImportSuccessStations.value = 0
+      audioImportFailStations.value = 0
+      audioImportFailedStations.value = []
+
+      const listRes = await api.lines.listAudioFilesInDir(folderPath, { extensions: ['mp3', 'wav', 'ogg', 'flac'], maxFiles: 20000 })
+      if (!listRes?.ok || !Array.isArray(listRes.files) || !listRes.files.length) {
+        notify(listRes?.error || t('stationEditor.audioImportNoFiles'), t('stationEditor.audioImportDynamicTitle'))
+        closeAudioImportModal()
+        return
+      }
+
+      audioImportTotal.value = listRes.files.length
+
+      for (let i = 0; i < listRes.files.length; i++) {
+        const sourcePath = listRes.files[i]
+        audioImportProcessed.value = i + 1
+        const subDir = ensureDynamicAudioSubDir()
+        if (!subDir) {
+          audioImportCopyFail.value++
+          continue
+        }
+        const resCopy = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
+          subDir
+        })
+        if (resCopy && resCopy.ok) audioImportCopyOk.value++
+        else audioImportCopyFail.value++
+      }
+
+      audioImportStage.value = 'match'
+
+      const targets = Array.from(requiredTargets.values())
+      for (const target of targets) {
+        const opts = target.roleKey
+          ? { role: target.roleKey, languageKey, dialectKey }
+          : { languageKey, dialectKey }
+        const resFind = await api.lines.findAudioByStationName(lineDirOrFilePath, target.stationName, opts)
+        if (resFind?.ok && resFind?.relativePath) {
+          audioImportSuccessStations.value++
+        } else {
+          audioImportFailStations.value++
+          audioImportFailedStations.value.push(target.stationName)
+        }
+      }
+
+      // 去重 failed station 名称（按最终展示更友好）
+      audioImportFailedStations.value = Array.from(new Set(audioImportFailedStations.value))
+
+      audioImportStage.value = 'done'
+      queueAudioHealthScan()
+      if (audioImportSuccessStations.value === 0 && audioImportFailStations.value === 0) {
+        console.warn('[StationEditor][DynamicAudioImport] import finished with 0/0, keep result modal', {
+          source: 'folder',
+          lineDirOrFilePath,
+          folderPath,
+          languageKey,
+          dialectKey,
+          scannedFileCount: listRes.files.length
+        })
       }
     }
     const removeAudioItem = (dir, idx) => {
@@ -694,6 +1722,16 @@ export default {
     const closeMenu = () => {
       menuVisible.value = false
       menuContext.value = null
+      dynamicAudioHover.value = false
+      importAudioHover.value = false
+      if (dynamicAudioHoverTimer) {
+        clearTimeout(dynamicAudioHoverTimer)
+        dynamicAudioHoverTimer = null
+      }
+      if (importAudioHoverTimer) {
+        clearTimeout(importAudioHoverTimer)
+        importAudioHoverTimer = null
+      }
     }
     const runAndClose = (fn) => {
       if (typeof fn === 'function') fn()
@@ -725,6 +1763,7 @@ export default {
     const showAudioNameEdit = ref(false)
     const audioNameEditDir = ref('up')
     const audioNameEditIdx = ref(-1)
+    const audioNameEditApplyIndices = ref([])
     const audioNameEditScope = ref('station')
     const audioNameEditValue = ref('')
     const openAudioNameEdit = (dir, idx, scope = 'station') => {
@@ -732,19 +1771,33 @@ export default {
       if (idx < 0 || idx >= list.length) return
       audioNameEditScope.value = scope
       audioNameEditDir.value = dir || 'up'
-      audioNameEditIdx.value = idx
+      const applyIndices = []
+      if (scope === 'station') {
+        const selected = getSelectedAudioIndicesOrdered(dir)
+        if (selected && selected.length) applyIndices.push(...selected)
+        else applyIndices.push(idx)
+      } else {
+        applyIndices.push(idx)
+      }
+      audioNameEditApplyIndices.value = Array.from(new Set(applyIndices))
+      audioNameEditIdx.value = audioNameEditApplyIndices.value[0] ?? idx
       audioNameEditValue.value = getAudioItemDisplayName(list[idx]) === '—' ? '' : getAudioItemDisplayName(list[idx])
       showAudioNameEdit.value = true
     }
     const closeAudioNameEdit = () => {
       showAudioNameEdit.value = false
       audioNameEditIdx.value = -1
+      audioNameEditApplyIndices.value = []
     }
     const confirmAudioNameEdit = () => {
-      if (audioNameEditIdx.value >= 0) {
-        const list = audioNameEditScope.value === 'common' ? getCommonAudioList(audioNameEditDir.value) : form.stationAudio[audioNameEditDir.value]?.list
-        const item = list && list[audioNameEditIdx.value]
-        if (item) item.name = (audioNameEditValue.value || '').trim()
+      const dir = audioNameEditDir.value || 'up'
+      const list = audioNameEditScope.value === 'common' ? getCommonAudioList(dir) : form.stationAudio[dir]?.list
+      if (Array.isArray(list) && audioNameEditApplyIndices.value && audioNameEditApplyIndices.value.length) {
+        const v = (audioNameEditValue.value || '').trim()
+        for (const i of audioNameEditApplyIndices.value) {
+          const item = list[i]
+          if (item) item.name = v
+        }
       }
       closeAudioNameEdit()
     }
@@ -857,13 +1910,28 @@ export default {
     let __prevBlurDisabledClass = null
     let __blurDisabledMutationObserver = null
     watch(
-      [() => props.modelValue, () => sectionMode.value, stationAudioSignature, commonAudioSignature, () => currentLineFilePathRef.value, () => currentLineFolderPathRef.value],
+      [
+        () => props.modelValue,
+        () => sectionMode.value,
+        stationAudioSignature,
+        commonAudioSignature,
+        () => currentLineFilePathRef.value,
+        () => currentLineFolderPathRef.value,
+        // 动态音频健康扫描依赖：站名字段的语言/方言选择、以及“当前运行站点索引”
+        // 如果不把这些纳入依赖，可能导致“提示已经过期”：显示损坏但实际文件没坏，或反过来漏提示。
+        () => form?.stationAudio?.dynamicDialect,
+        () => locale?.value,
+        () => props.currentStationIndex,
+        () => props.lineMeta?.startIdx,
+        () => props.lineMeta?.termIdx
+      ],
       ([visible, mode]) => {
         if (!visible || audioSectionCrashed.value) return
         seDebugLog('watch-scan-trigger', { mode, visible })
         // 弹窗可见时，尽量保证“音频缺失提示(按钮圆点/三角形)”及时更新
         // 这样即使当前子页不是 audio，也能在站点编辑页先显示状态
         queueAudioHealthScan()
+        queueStationAudioBrokenCountScan()
       }
     )
     watch(
@@ -917,6 +1985,7 @@ export default {
           audioSectionCrashed.value = false
           // 打开站点编辑弹窗后就预扫描一次，确保“车站音频”按钮上的缺失提示也能立刻显示
           queueAudioHealthScan()
+          queueStationAudioBrokenCountScan()
         }
       }
     )
@@ -1015,7 +2084,9 @@ export default {
         items,
         indices,
         target: target || 'both', // 'up' | 'down' | 'both'
-        separateDirection: true
+        separateDirection: true,
+        // 当前语音 Tab（方言/语言版本）的 key：用于把“应用到所有站”的结果写到正确的 dialect bucket
+        dialectKey: String(form?.stationAudio?.dynamicDialect || 'cmn')
       })
       closeMenu()
     }
@@ -1060,16 +2131,125 @@ export default {
     }
     const audioClipboard = ref(null)
     const copyAudioItem = (dir, idx) => {
-      const list = form.stationAudio[dir].list
+      const list = form.stationAudio?.[dir]?.list
       const item = list && list[idx]
-      if (item) audioClipboard.value = { item: JSON.parse(JSON.stringify(item)) }
+      if (!item) return
+      audioClipboard.value = { items: [JSON.parse(JSON.stringify(item))] }
     }
-    const pasteAudioItem = (dir, afterIdx) => {
-      if (!audioClipboard.value) return
+    const copyAudioItems = (dir, indices) => {
+      const list = form.stationAudio?.[dir]?.list
+      if (!Array.isArray(list)) return
+      const safeIndices = Array.isArray(indices) ? indices : []
+      const items = safeIndices
+        .map((i) => list?.[i])
+        .filter(Boolean)
+        .map((it) => JSON.parse(JSON.stringify(it)))
+      if (items.length) audioClipboard.value = { items }
+    }
+    const pasteAudioItem = (dir, afterIdx, item) => {
       const list = form.stationAudio[dir].list
       if (!Array.isArray(list)) return
+      if (!item) return
       const insertIdx = afterIdx < 0 ? list.length : afterIdx + 1
-      list.splice(insertIdx, 0, JSON.parse(JSON.stringify(audioClipboard.value.item)))
+      const cloned = JSON.parse(JSON.stringify(item))
+      // 动态占位符（start/current/next/terminal）在不同语音 Tab 之间复制时，
+      // dialectKey 应随“当前 Tab”变化，否则会导致匹配/解析仍按旧语种进行。
+      if (isDynamicPlaceholderItemRole(cloned) && !getAudioItemPath(cloned)) {
+        const curDialect = String(form?.stationAudio?.dynamicDialect || 'cmn').trim() || 'cmn'
+        cloned.dialectKey = curDialect
+      }
+      list.splice(insertIdx, 0, cloned)
+    }
+    const getAudioClipboardItems = () => {
+      const clip = audioClipboard.value
+      if (!clip) return []
+      if (Array.isArray(clip.items)) return clip.items
+      // 兼容旧结构
+      if (clip.item) return [clip.item]
+      return []
+    }
+    const pasteAudioToSelectionOrEnd = (dir) => {
+      const clipItems = getAudioClipboardItems()
+      if (!clipItems.length) return
+      const targets = getSelectedAudioIndicesOrdered(dir)
+      if (targets && targets.length) {
+        // 从大到小插入，避免前面的插入改变后续索引
+        // 如果 clipboard items 数量与 targets 数量一致，则按顺序一一对应插入；否则回退为复制第 1 个 item。
+        const oneToOne = clipItems.length === targets.length
+        const idxMap = new Map(targets.map((t, i) => [t, i]))
+        const desc = [...targets].sort((a, b) => b - a)
+        for (const afterIdx of desc) {
+          const ci = oneToOne ? idxMap.get(afterIdx) : 0
+          const item = clipItems[typeof ci === 'number' ? ci : 0] || clipItems[0]
+          pasteAudioItem(dir, afterIdx, item)
+        }
+        return
+      }
+      // 无选中行：把 clipboard 的多个条目按顺序追加到末尾
+      const list = form.stationAudio?.[dir]?.list
+      if (!Array.isArray(list)) return
+      list.push(...clipItems.map((it) => {
+        const cloned = JSON.parse(JSON.stringify(it))
+        if (isDynamicPlaceholderItemRole(cloned) && !getAudioItemPath(cloned)) {
+          const curDialect = String(form?.stationAudio?.dynamicDialect || 'cmn').trim() || 'cmn'
+          cloned.dialectKey = curDialect
+        }
+        return cloned
+      }))
+    }
+    const getMenuTargetAudioIndices = (dir, idx) => {
+      const selected = getSelectedAudioIndicesOrdered(dir)
+      if (selected && selected.length) return selected
+      return [idx]
+    }
+    const playAudioForMenuSelection = (dir, idx) => {
+      const targets = getMenuTargetAudioIndices(dir, idx)
+      const list = form.stationAudio?.[dir]?.list || []
+      const hasPathTargets = targets.filter((i) => !!getAudioItemPath(list?.[i]))
+      const targetIdx = hasPathTargets.length
+        ? (hasPathTargets.includes(idx) ? idx : hasPathTargets[0])
+        : targets[0]
+      if (typeof targetIdx !== 'number') return
+      playAudioItem(dir, targetIdx)
+    }
+    const copyAudioForMenuSelection = (dir, idx) => {
+      const targets = getMenuTargetAudioIndices(dir, idx)
+      if (!targets || !targets.length) return
+      // 右键菜单触发时，如果存在多选，则把多选对应的多个音频一起放入剪贴板
+      copyAudioItems(dir, targets)
+    }
+    const pasteAudioForMenuSelection = (dir, idx) => {
+      const targets = getMenuTargetAudioIndices(dir, idx)
+      if (!targets || !targets.length) return
+      const clipItems = getAudioClipboardItems()
+      if (!clipItems.length) return
+      // 从大到小插入，避免索引在插入过程中被影响
+      // 如果 clipboard items 数量与 targets 数量一致，则按顺序一一对应插入；否则回退为复制第 1 个 item。
+      const oneToOne = clipItems.length === targets.length
+      const idxMap = new Map(targets.map((t, i) => [t, i]))
+      const desc = [...targets].sort((a, b) => b - a)
+      for (const afterIdx of desc) {
+        const ci = oneToOne ? idxMap.get(afterIdx) : 0
+        const item = clipItems[typeof ci === 'number' ? ci : 0] || clipItems[0]
+        pasteAudioItem(dir, afterIdx, item)
+      }
+    }
+    const deleteAudioForMenuSelection = (dir, idx) => {
+      const targets = getMenuTargetAudioIndices(dir, idx)
+      if (!targets || !targets.length) return
+      const list = form.stationAudio?.[dir]?.list
+      if (!Array.isArray(list)) return
+      const desc = [...targets].sort((a, b) => b - a)
+      for (const delIdx of desc) {
+        if (delIdx >= 0 && delIdx < list.length) list.splice(delIdx, 1)
+      }
+      audioSelectedByDir.value = { ...audioSelectedByDir.value, [dir]: new Set() }
+      audioLastClickedIndex.value = { ...audioLastClickedIndex.value, [dir]: -1 }
+    }
+    const isAudioPlayDisabledForMenu = (dir, idx) => {
+      const targets = getMenuTargetAudioIndices(dir, idx)
+      const list = form.stationAudio?.[dir]?.list || []
+      return targets.every((i) => !getAudioItemPath(list?.[i]))
     }
     const hasAudioClipboard = computed(() => !!audioClipboard.value)
     const commonAudioClipboard = ref(null)
@@ -1150,12 +2330,107 @@ export default {
       const list = scope === 'common' ? getCommonAudioList(dir) : form.stationAudio[dir]?.list
       const item = list && list[idx]
       const itemPath = getAudioItemPath(item)
-      if (!itemPath) return
       const api = typeof window !== 'undefined' ? window.electronAPI : null
       if (!api?.lines?.resolveAudioPath) return
       let lineFilePath = currentLineFilePathRef.value || currentLineFolderPathRef.value
       if (!lineFilePath && typeof window !== 'undefined') lineFilePath = window.__currentLineFilePath || ''
       if (!lineFilePath) return
+
+      // 动态占位符：右键播放时 item 本身没有 path，需要先通过站名解析相对音频路径再播放。
+      if (!itemPath && isDynamicPlaceholderItemRole(item)) {
+        // role 可能包含 `end`，但动态匹配用的逻辑里会把 end 视为 terminal
+        const roleKey = normalizeDynamicRoleKey(item?.role)
+        const stations = Array.isArray(props.lineStations) ? props.lineStations : []
+        const lineMeta = props.lineMeta || {}
+        const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
+
+        const languageKey = (() => {
+          try { return locale?.value || 'zh-CN' } catch (e) { return 'zh-CN' }
+        })()
+
+        // 优先使用占位项的 dialectKey，其次使用当前 tab 的 dynamicDialect
+        const dialectKey = (() => {
+          const d = typeof item?.dialectKey === 'string' && item.dialectKey.trim() ? item.dialectKey.trim() : ''
+          const fallback = typeof form?.stationAudio?.dynamicDialect === 'string' && form.stationAudio.dynamicDialect.trim()
+            ? form.stationAudio.dynamicDialect.trim()
+            : 'cmn'
+          return d || fallback
+        })()
+
+        const getStationNameByTargetDialect = (st) => {
+          const d = String(dialectKey || '').toLowerCase()
+          const isEnglish = d === 'en' || d.startsWith('en')
+          if (isEnglish) return st?.en || st?.name || ''
+          // 中文系列（cmn/zhcn/zhtw）默认用中文站名字段去匹配 zhcn 目录
+          if (d.startsWith('cmn') || d === 'cmn' || d.startsWith('zh') || d === 'zhcn' || d === 'zhtw' || d.startsWith('auto') === false) {
+            return st?.name || st?.zh || st?.cn || st?.en || ''
+          }
+          return st?.name || st?.en || ''
+        }
+
+        const getTargetStationByRole = () => {
+          if (!stations.length) return null
+          if (roleKey === 'start') {
+            const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
+            return stations[startIdx] || null
+          }
+          if (roleKey === 'terminal') {
+            const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (stations.length - 1)
+            return stations[terminalIdx] || null
+          }
+          if (roleKey === 'current') {
+            return stations[runtimeIdx] || null
+          }
+          if (roleKey === 'next') {
+            const appDataForNext = { stations, meta: lineMeta }
+            const nextIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+            return stations[nextIdx] || null
+          }
+          return null
+        }
+
+        const findAudioByStationName = api?.lines?.findAudioByStationName
+        if (typeof findAudioByStationName !== 'function') return
+        const targetStation = getTargetStationByRole()
+        const stationNameForRole = getStationNameByTargetDialect(targetStation)
+        if (!stationNameForRole) return
+
+        // 为了方便你验证语种选择是否正确，打印关键参数（只在右键播放时触发）
+        console.warn('[StationEditor][dynamic-rightplay]', {
+          role: roleKey,
+          languageKey,
+          dialectKey,
+          stationNameForRole,
+          lineFileOrDir: lineFilePath
+        })
+
+        api.lines.findAudioByStationName(lineFilePath, stationNameForRole, { role: item?.role, languageKey, dialectKey })
+          .then((res) => {
+            if (!res || !res.ok || !res.relativePath) return
+            console.warn('[StationEditor][dynamic-rightplay][resolved]', {
+              relativePath: res.relativePath,
+              role: roleKey
+            })
+            return api.lines.resolveAudioPath(lineFilePath, res.relativePath)
+          })
+          .then((resolveRes) => {
+            if (!resolveRes || !resolveRes.ok) return
+            const url = resolveRes.playableUrl || ('file:///' + (resolveRes.path || '').replace(/\\/g, '/'))
+            if (!url || url === 'file:///') return
+            stopPreviewAudio()
+            const a = new Audio(url)
+            previewAudio = a
+            const clear = () => { if (previewAudio === a) previewAudio = null }
+            a.onended = clear
+            a.onpause = clear
+            a.onerror = clear
+            a.play().catch(() => { if (previewAudio === a) previewAudio = null })
+          })
+          .catch(() => {})
+        return
+      }
+
+      if (!itemPath) return
       // 先打断正在播放的进/出站音频（使用 useStationAudio 暴露的全局停止函数）
       if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') {
         try { window.__stopStationAudio() } catch (e) {}
@@ -1176,6 +2451,9 @@ export default {
     }
 
     const audioDropTarget = ref(null)
+    const dynamicAudioHover = ref(false)
+    const dynamicAudioSubmenuPos = reactive({ x: 0, y: 0 })
+    let dynamicAudioHoverTimer = null
     const applyAllHoverDir = ref(null)
     const applyAllHoverTimer = ref(null)
     const applyAllSubmenuPos = reactive({ x: 0, y: 0 })
@@ -1188,6 +2466,61 @@ export default {
       const rect = ev.currentTarget.getBoundingClientRect()
       targetPos.x = Math.max(8, Math.round(rect.right + 4))
       targetPos.y = Math.max(8, Math.round(rect.top - 6))
+    }
+    const setDynamicAudioHover = (ev = null) => {
+      if (dynamicAudioHoverTimer) {
+        clearTimeout(dynamicAudioHoverTimer)
+        dynamicAudioHoverTimer = null
+      }
+      dynamicAudioHover.value = true
+      if (ev) updateSubmenuPosition(ev, dynamicAudioSubmenuPos)
+    }
+    const clearDynamicAudioHover = () => {
+      if (dynamicAudioHoverTimer) clearTimeout(dynamicAudioHoverTimer)
+      dynamicAudioHoverTimer = setTimeout(() => {
+        dynamicAudioHover.value = false
+        dynamicAudioHoverTimer = null
+      }, 140)
+    }
+
+    const importAudioHover = ref(false)
+    const importAudioSubmenuPos = reactive({ x: 0, y: 0 })
+    let importAudioHoverTimer = null
+    const setImportAudioHover = (ev = null) => {
+      if (importAudioHoverTimer) {
+        clearTimeout(importAudioHoverTimer)
+        importAudioHoverTimer = null
+      }
+      importAudioHover.value = true
+      if (ev) updateSubmenuPosition(ev, importAudioSubmenuPos)
+    }
+    const clearImportAudioHover = () => {
+      if (importAudioHoverTimer) clearTimeout(importAudioHoverTimer)
+      importAudioHoverTimer = setTimeout(() => {
+        importAudioHover.value = false
+        importAudioHoverTimer = null
+      }, 140)
+    }
+
+    const audioImportModalVisible = ref(false)
+    const audioImportStage = ref('copy') // 'copy'|'match'|'done'
+    const audioImportProcessed = ref(0)
+    const audioImportTotal = ref(0)
+    const audioImportCopyOk = ref(0)
+    const audioImportCopyFail = ref(0)
+    const audioImportSuccessStations = ref(0)
+    const audioImportFailStations = ref(0)
+    const audioImportFailedStations = ref([])
+    const closeAudioImportModal = () => {
+      audioImportModalVisible.value = false
+      audioImportStage.value = 'copy'
+      audioImportProcessed.value = 0
+      audioImportTotal.value = 0
+      audioImportCopyOk.value = 0
+      audioImportCopyFail.value = 0
+      audioImportSuccessStations.value = 0
+      audioImportFailStations.value = 0
+      audioImportFailedStations.value = []
     }
     const setModeHover = (key, ev = null) => {
       if (modeHoverTimer.value) {
@@ -1216,6 +2549,7 @@ export default {
       if (!commonAudio[dir] || typeof commonAudio[dir] !== 'object') commonAudio[dir] = { list: [] }
       if (!Array.isArray(commonAudio[dir].list)) commonAudio[dir].list = []
       const list = commonAudio[dir].list
+      let added = 0
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         if (!audioExt.test(file.name || '')) continue
@@ -1223,7 +2557,9 @@ export default {
         let relativePath = ''
         if (api?.lines?.copyAudioToLineDir && lineDirOrFilePath) {
           try {
-            const res = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath)
+            // commonAudio 同样按当前 Tab 的语种/方言落盘（与站点音频一致）
+            const subDir = ensureDynamicAudioSubDir()
+            const res = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, { subDir })
             if (res && res.ok && res.relativePath) {
               relativePath = res.relativePath
             }
@@ -1234,7 +2570,9 @@ export default {
         const finalPath = relativePath || sourcePath || ''
         if (!finalPath) continue
         list.push({ path: finalPath, name: file.name || '' })
+        added++
       }
+      if (added > 0) emitAudioAutoSave()
     }
     const onCommonAudioDrop = (e, dir) => {
       if (e && typeof e.preventDefault === 'function') e.preventDefault()
@@ -1276,22 +2614,28 @@ export default {
       const lineFilePath = currentLineFilePathRef.value
       const lineFolderPath = currentLineFolderPathRef.value
       const lineDirOrFilePath = lineFilePath || lineFolderPath || ''
+      let added = 0
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         if (!audioExt.test(file.name || '')) continue
         const sourcePath = api.getPathForFile ? api.getPathForFile(file) : (file.path || '')
         if (!sourcePath) continue
         try {
-          const res = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath)
+          const res = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
+            // 按当前 Tab 的语种/方言落盘
+            subDir: ensureDynamicAudioSubDir()
+          })
           if (res && res.ok && res.relativePath) {
             const list = form.stationAudio[dir].list
             if (!Array.isArray(list)) form.stationAudio[dir].list = []
             form.stationAudio[dir].list.push({ path: res.relativePath, name: file.name || '' })
+            added++
           }
         } catch (err) {
           console.warn('copyAudioToLineDir failed', err)
         }
       }
+      if (added > 0) emitAudioAutoSave()
     }
 
     const removeCommonAudioItem = (dir, idx) => {
@@ -1354,10 +2698,27 @@ export default {
       addFilesToCommonAudio,
       sectionMode,
       setSectionMode,
+      dynamicAudioTabs,
+      availableDynamicAudioTabOptions,
+      setDynamicDialectFromTab,
+      addDynamicAudioTab,
+      removeDynamicAudioTab,
+      moveDynamicAudioTab,
+      draggingDynamicTabKey,
+      dynamicTabDragOverKey,
+      onDynamicTabDragStart,
+      onDynamicTabDragOver,
+      onDynamicTabDrop,
+      onDynamicTabDragEnd,
+      openDynamicTabMenu,
+      openDynamicTabRowMenu,
+      openSectionToggleMenu,
+      openSmartSectionMenu,
       audioSectionCrashed,
       toggleAudioSeparateDirection,
       getAudioList,
       addAudioItem,
+      addDynamicAudioPlaceholder,
       removeAudioItem,
       moveAudioItem,
       openAudioRowMenu,
@@ -1365,6 +2726,7 @@ export default {
       audioClipboard,
       copyAudioItem,
       pasteAudioItem,
+      pasteAudioToSelectionOrEnd,
       hasAudioClipboard,
       commonAudioClipboard,
       pasteCommonAudioItem,
@@ -1375,6 +2737,11 @@ export default {
       anySelectedHasMode,
       toggleCommonAudioApplied,
       playAudioItem,
+      playAudioForMenuSelection,
+      copyAudioForMenuSelection,
+      pasteAudioForMenuSelection,
+      deleteAudioForMenuSelection,
+      isAudioPlayDisabledForMenu,
       applyAllHoverDir,
       applyAllSubmenuPos,
       setApplyAllHover,
@@ -1384,6 +2751,28 @@ export default {
       modeCommonSubmenuPos,
       setModeHover,
       clearModeHover,
+      dynamicAudioHover,
+      dynamicAudioSubmenuPos,
+      setDynamicAudioHover,
+      clearDynamicAudioHover,
+      importAudioHover,
+      importAudioSubmenuPos,
+      setImportAudioHover,
+      clearImportAudioHover,
+      audioImportModalVisible,
+      audioImportStage,
+      audioImportProcessed,
+      audioImportTotal,
+      audioImportCopyOk,
+      audioImportCopyFail,
+      audioImportSuccessStations,
+      audioImportFailStations,
+      audioImportFailedStations,
+      closeAudioImportModal,
+      importStationAudioSingle,
+      importStationAudioMultiple,
+      importDynamicAudioFiles,
+      importDynamicAudioFolder,
       audioDropTarget,
       onAudioBlockDragover,
       onAudioBlockDragLeave,
@@ -1398,6 +2787,7 @@ export default {
       getAudioItemPath,
       isAudioBroken,
       stationAudioBrokenCount,
+      stationAudioBrokenCountByDialectKey,
       commonAudioBrokenCount,
       getCommonApplyLabel,
       getAudioArriveDepartColor,
@@ -1499,21 +2889,34 @@ export default {
                 </div>
               </div>
 
-            <div class="se-section" @contextmenu.prevent="openSectionMenu($event)">
+            <div class="se-section" @contextmenu.prevent="openSmartSectionMenu($event)">
               <div class="se-section-head">
-                <div class="se-section-toggle">
+                <div class="se-section-toggle" @contextmenu.prevent.stop="openSectionToggleMenu($event)">
                   <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'xfer' }" @click="setSectionMode('xfer')">{{ t('stationEditor.xferSectionTitle') }}</button>
-                  <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'audio' }" @click="setSectionMode('audio')">
-                    {{ t('stationEditor.audioSectionTitle') }}
-                    <span
-                      v-if="stationAudioBrokenCount > 0"
-                      class="se-audio-broken-dot"
-                      :title="t('stationEditor.audioBroken')"
+                  <div class="se-dyn-tabs" @contextmenu.prevent.stop="openDynamicTabRowMenu($event)">
+                    <button
+                      v-for="opt in dynamicAudioTabs"
+                      :key="opt.key"
+                      type="button"
+                      :data-dialect-key="opt.key"
+                      class="se-seg-btn se-mini se-dyn-tab"
+                      :class="{ on: sectionMode === 'audio' && form.stationAudio.dynamicDialect === opt.key, 'se-dyn-tab-dragover': dynamicTabDragOverKey === opt.key }"
+                      @click.stop="setDynamicDialectFromTab(opt.key)"
+                      @contextmenu.prevent.stop="openDynamicTabMenu($event, opt.key)"
+                      draggable="true"
+                      @dragstart="onDynamicTabDragStart($event, opt.key)"
+                      @dragover="onDynamicTabDragOver($event, opt.key)"
+                      @drop="onDynamicTabDrop($event, opt.key)"
+                      @dragend="onDynamicTabDragEnd"
+                      :title="t(opt.labelKey)"
                     >
-                      <i class="fas fa-exclamation-triangle" style="color:#fff; font-size:12px;"></i>
-                      <span class="se-audio-broken-dot-count">{{ stationAudioBrokenCount }}</span>
-                    </span>
-                  </button>
+                      <span class="se-dyn-tab-label">{{ t(opt.labelKey) }}</span>
+                      <span v-if="(stationAudioBrokenCountByDialectKey[opt.key] || 0) > 0 && sectionMode === 'audio'" class="se-audio-broken-dot" :title="t('stationEditor.audioBroken')">
+                        <i class="fas fa-exclamation-triangle" style="color:#fff; font-size:12px;"></i>
+                        <span class="se-audio-broken-dot-count">{{ stationAudioBrokenCountByDialectKey[opt.key] }}</span>
+                      </span>
+                    </button>
+                  </div>
                   <button
                     type="button"
                     class="se-seg-btn se-mini"
@@ -1537,7 +2940,7 @@ export default {
                       ? t('stationEditor.audioSelectHint')
                       : sectionMode === 'commonAudio'
                         ? (t('stationEditor.audioCommonDesc') || '')
-                        : t('stationEditor.xferSectionHint')
+                      : t('stationEditor.xferSectionHint')
                   }}
                 </span>
               </div>
@@ -1616,12 +3019,11 @@ export default {
                           </span>
                           <div class="se-xfer-name-wrap">
                             <span class="se-xfer-name">{{ getAudioItemDisplayName(item) }}</span>
-                            <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.disabledInNormal || item.role === 'terminal'" class="se-xfer-badges">
+                            <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.disabledInNormal || item.role === 'terminal' || item.role === 'end'" class="se-xfer-badges">
                               <span v-if="item.modes?.shortTurn" class="se-xfer-badge se-audio-badge-shortTurn">{{ t('stationEditor.audioModeShortTurn') }}</span>
                               <span v-if="item.modes?.express" class="se-xfer-badge se-audio-badge-express">{{ t('stationEditor.audioModeExpress') }}</span>
                               <span v-if="item.modes?.direct" class="se-xfer-badge se-audio-badge-direct">{{ t('stationEditor.audioModeDirect') }}</span>
                               <span v-if="item.disabledInNormal" class="se-xfer-badge se-audio-badge-disabled">{{ t('stationEditor.audioDisabledInNormal') }}</span>
-                              <span v-if="item.role === 'terminal'" class="se-xfer-badge se-audio-badge-terminal">{{ t('stationEditor.audioTerminalTag') }}</span>
                             </div>
                           </div>
                         </div>
@@ -1681,12 +3083,11 @@ export default {
                             <span class="se-audio-num">{{ getCommonApplyLabel(dir, idx) || '—' }}</span>
                             <div class="se-xfer-name-wrap">
                               <span class="se-xfer-name">{{ getAudioItemDisplayName(item) }}</span>
-                              <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.disabledInNormal || item.role === 'terminal'" class="se-xfer-badges">
+                              <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.disabledInNormal || item.role === 'terminal' || item.role === 'end'" class="se-xfer-badges">
                                 <span v-if="item.modes?.shortTurn" class="se-xfer-badge se-audio-badge-shortTurn">{{ t('stationEditor.audioModeShortTurn') }}</span>
                                 <span v-if="item.modes?.express" class="se-xfer-badge se-audio-badge-express">{{ t('stationEditor.audioModeExpress') }}</span>
                                 <span v-if="item.modes?.direct" class="se-xfer-badge se-audio-badge-direct">{{ t('stationEditor.audioModeDirect') }}</span>
                                 <span v-if="item.disabledInNormal" class="se-xfer-badge se-audio-badge-disabled">{{ t('stationEditor.audioDisabledInNormal') }}</span>
-                                <span v-if="item.role === 'terminal'" class="se-xfer-badge se-audio-badge-terminal">{{ t('stationEditor.audioTerminalTag') }}</span>
                               </div>
                             </div>
                           </div>
@@ -1759,6 +3160,40 @@ export default {
                   <i class="fas fa-trash-alt"></i> {{ t('stationEditor.menuDelete') }}
                 </div>
               </template>
+              <template v-else-if="menuContext?.type === 'dynamicAudioTab'">
+                <div
+                  class="station-context-menu-item"
+                  :class="{ disabled: dynamicAudioTabs.length <= 1 }"
+                  @click="dynamicAudioTabs.length > 1 && runAndClose(() => removeDynamicAudioTab(menuContext.dialectKey))"
+                >
+                  <i class="fas fa-trash-alt"></i> {{ t('stationEditor.menuDelete') }}
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div v-if="!availableDynamicAudioTabOptions.length" class="station-context-menu-item disabled">
+                  <i class="fas fa-plus"></i> {{ t('stationEditor.audioAdd') }}
+                </div>
+                <div
+                  v-for="opt in availableDynamicAudioTabOptions"
+                  :key="opt.key"
+                  class="station-context-menu-item"
+                  @click="runAndClose(() => addDynamicAudioTab(opt.key))"
+                >
+                  <i class="fas fa-plus"></i> {{ t(opt.labelKey) }}
+                </div>
+              </template>
+              <template v-else-if="menuContext?.type === 'dynamicAudioTabRow'">
+                <div v-if="!availableDynamicAudioTabOptions.length" class="station-context-menu-item disabled">
+                  <i class="fas fa-plus"></i> {{ t('stationEditor.audioAdd') }}
+                </div>
+                <div
+                  v-for="opt in availableDynamicAudioTabOptions"
+                  :key="opt.key"
+                  class="station-context-menu-item"
+                  @click="runAndClose(() => addDynamicAudioTab(opt.key))"
+                >
+                  <i class="fas fa-plus"></i> {{ t(opt.labelKey) }}
+                </div>
+              </template>
               <template v-else-if="menuContext?.type === 'section' && menuContext?.audio">
                 <div
                   class="station-context-menu-item"
@@ -1766,11 +3201,70 @@ export default {
                   @click="
                     menuContext.audioScope === 'common'
                       ? (hasCommonAudioClipboard && runAndClose(() => pasteCommonAudioItem(menuContext.audioDir || 'up', -1)))
-                      : (hasAudioClipboard && runAndClose(() => pasteAudioItem(menuContext.audioDir || 'up', -1)))
+                      : (hasAudioClipboard && runAndClose(() => pasteAudioToSelectionOrEnd(menuContext.audioDir || 'up')))
                   "
                 >
                   <i class="fas fa-paste"></i> {{ t('stationEditor.audioPasteToEnd') }}
                 </div>
+                <div class="station-context-menu-divider"></div>
+                <div
+                  v-if="menuContext.audioScope === 'station'"
+                  class="station-context-menu-item"
+                  @mouseenter="setImportAudioHover($event)"
+                  @mouseleave="clearImportAudioHover"
+                >
+                  <i class="fas fa-magic"></i> {{ t('stationEditor.audioDynamicMenuTitle') }}
+                  <i class="fas fa-caret-right apply-all-arrow"></i>
+                </div>
+                <Teleport to="body">
+                  <div
+                    v-if="menuContext.audioScope === 'station' && importAudioHover"
+                    class="apply-all-submenu glass-submenu"
+                    :style="{ position: 'fixed', left: importAudioSubmenuPos.x + 'px', top: importAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
+                    @mouseenter="setImportAudioHover()"
+                    @mouseleave="clearImportAudioHover"
+                  >
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => importDynamicAudioFiles())">
+                      <i class="fas fa-file-import"></i> {{ t('stationEditor.audioImportDynamicTitle') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => importDynamicAudioFolder())">
+                      <i class="fas fa-folder-open"></i> {{ t('stationEditor.audioImportDynamicFolder') }}
+                    </div>
+                  </div>
+                </Teleport>
+
+                <div
+                  v-if="menuContext.audioScope === 'station'"
+                  class="station-context-menu-item"
+                  @mouseenter="setDynamicAudioHover($event)"
+                  @mouseleave="clearDynamicAudioHover"
+                >
+                  <i class="fas fa-magic"></i> {{ t('stationEditor.audioAddDynamicAudio') }}
+                  <i class="fas fa-caret-right apply-all-arrow"></i>
+                </div>
+
+                <Teleport to="body">
+                  <div
+                    v-if="menuContext.audioScope === 'station' && dynamicAudioHover"
+                    class="apply-all-submenu glass-submenu"
+                    :style="{ position: 'fixed', left: dynamicAudioSubmenuPos.x + 'px', top: dynamicAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
+                    @mouseenter="setDynamicAudioHover()"
+                    @mouseleave="clearDynamicAudioHover"
+                  >
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'start'))">
+                      <i class="fas fa-circle-notch"></i> {{ t('stationEditor.audioDynamicRoleStart') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'next'))">
+                      <i class="fas fa-step-forward"></i> {{ t('stationEditor.audioDynamicRoleNext') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'current'))">
+                      <i class="fas fa-station"></i> {{ t('stationEditor.audioDynamicRoleCurrent') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'terminal'))">
+                      <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioDynamicRoleTerminal') }}
+                    </div>
+                  </div>
+                </Teleport>
               </template>
               <template v-else-if="menuContext?.type === 'section'">
                 <div
@@ -1795,25 +3289,79 @@ export default {
               <template v-else-if="menuContext?.type === 'audioRow'">
                 <div
                   class="station-context-menu-item"
-                  :class="{ disabled: !form.stationAudio[menuContext.dir]?.list?.[menuContext.idx]?.path }"
-                  @click="form.stationAudio[menuContext.dir]?.list?.[menuContext.idx]?.path && runAndClose(() => playAudioItem(menuContext.dir, menuContext.idx))"
+                  :class="{ disabled: isAudioPlayDisabledForMenu(menuContext.dir, menuContext.idx) }"
+                  @click="!isAudioPlayDisabledForMenu(menuContext.dir, menuContext.idx) && runAndClose(() => playAudioForMenuSelection(menuContext.dir, menuContext.idx))"
                 >
                   <i class="fas fa-play"></i> {{ t('stationEditor.audioPlay') }}
                 </div>
                 <div class="station-context-menu-item" @click="runAndClose(() => openAudioNameEdit(menuContext.dir, menuContext.idx))">
                   <i class="fas fa-edit"></i> {{ t('stationEditor.audioRename') }}
                 </div>
-                <div class="station-context-menu-item" @click="runAndClose(() => copyAudioItem(menuContext.dir, menuContext.idx))">
+                <div class="station-context-menu-item" @click="runAndClose(() => copyAudioForMenuSelection(menuContext.dir, menuContext.idx))">
                   <i class="fas fa-copy"></i> {{ t('stationEditor.audioCopy') }}
                 </div>
                 <div
                   class="station-context-menu-item"
                   :class="{ disabled: !hasAudioClipboard }"
-                  @click="hasAudioClipboard && runAndClose(() => pasteAudioItem(menuContext.dir, menuContext.idx))"
+                  @click="hasAudioClipboard && runAndClose(() => pasteAudioForMenuSelection(menuContext.dir, menuContext.idx))"
                 >
                   <i class="fas fa-paste"></i> {{ t('stationEditor.audioPaste') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
+                <div
+                  class="station-context-menu-item"
+                  @mouseenter="setImportAudioHover($event)"
+                  @mouseleave="clearImportAudioHover"
+                >
+                  <i class="fas fa-magic"></i> {{ t('stationEditor.audioDynamicMenuTitle') }}
+                  <i class="fas fa-caret-right apply-all-arrow"></i>
+                </div>
+                <Teleport to="body">
+                  <div
+                    v-if="menuContext?.type === 'audioRow' && importAudioHover"
+                    class="apply-all-submenu glass-submenu"
+                    :style="{ position: 'fixed', left: importAudioSubmenuPos.x + 'px', top: importAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
+                    @mouseenter="setImportAudioHover()"
+                    @mouseleave="clearImportAudioHover"
+                  >
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => importDynamicAudioFiles())">
+                      <i class="fas fa-file-import"></i> {{ t('stationEditor.audioImportDynamicTitle') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => importDynamicAudioFolder())">
+                      <i class="fas fa-folder-open"></i> {{ t('stationEditor.audioImportDynamicFolder') }}
+                    </div>
+                  </div>
+                </Teleport>
+                <div
+                  class="station-context-menu-item"
+                  @mouseenter="setDynamicAudioHover($event)"
+                  @mouseleave="clearDynamicAudioHover"
+                >
+                  <i class="fas fa-magic"></i> {{ t('stationEditor.audioAddDynamicAudio') }}
+                  <i class="fas fa-caret-right apply-all-arrow"></i>
+                </div>
+                <Teleport to="body">
+                  <div
+                    v-if="dynamicAudioHover"
+                    class="apply-all-submenu glass-submenu"
+                    :style="{ position: 'fixed', left: dynamicAudioSubmenuPos.x + 'px', top: dynamicAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
+                    @mouseenter="setDynamicAudioHover()"
+                    @mouseleave="clearDynamicAudioHover"
+                  >
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'start'))">
+                      <i class="fas fa-circle-notch"></i> {{ t('stationEditor.audioDynamicRoleStart') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'next'))">
+                      <i class="fas fa-step-forward"></i> {{ t('stationEditor.audioDynamicRoleNext') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'current'))">
+                      <i class="fas fa-station"></i> {{ t('stationEditor.audioDynamicRoleCurrent') }}
+                    </div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'terminal'))">
+                      <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioDynamicRoleTerminal') }}
+                    </div>
+                  </div>
+                </Teleport>
                 <div
                   class="station-context-menu-item apply-all"
                   :class="{ open: applyAllHoverDir === menuContext.dir }"
@@ -1885,7 +3433,7 @@ export default {
                   </div>
                 </Teleport>
                 <div class="station-context-menu-divider"></div>
-                <div class="station-context-menu-item danger" @click="runAndClose(() => removeAudioItem(menuContext.dir, menuContext.idx))">
+                <div class="station-context-menu-item danger" @click="runAndClose(() => deleteAudioForMenuSelection(menuContext.dir, menuContext.idx))">
                   <i class="fas fa-trash-alt"></i> {{ t('stationEditor.audioDelete') }}
                 </div>
               </template>
@@ -1996,6 +3544,65 @@ export default {
                   <div class="se-name-edit-actions">
                     <button type="button" class="se-btn se-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
                     <button type="button" class="se-btn se-btn-green" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </Teleport>
+
+          <!-- 音频导入进度弹窗（导入动态音频文件夹） -->
+          <Teleport to="body">
+            <Transition name="fade">
+              <div
+                v-if="audioImportModalVisible"
+                class="se-name-edit-overlay"
+                style="z-index: 1000003"
+                @click.self="audioImportStage === 'done' && closeAudioImportModal()"
+              >
+                <div
+                  class="se-name-edit-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  style="width: 720px; max-width: 95%;"
+                >
+                  <div class="se-name-edit-title" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                    <span>{{ t('stationEditor.audioImportModalTitle') }}</span>
+                    <span style="font-size:12px; color:var(--muted,#888)">{{ audioImportStage === 'copy' ? t('stationEditor.audioImportStageCopy') : audioImportStage === 'match' ? t('stationEditor.audioImportStageMatch') : t('stationEditor.audioImportStageDone') }}</span>
+                  </div>
+
+                  <div style="margin-top: 12px;">
+                    <div
+                      style="height: 10px; border-radius: 999px; background: rgba(0,0,0,0.08); overflow:hidden; border: 1px solid rgba(0,0,0,0.06);"
+                    >
+                      <div
+                        style="height: 100%; background: linear-gradient(135deg, #1677ff 0%, #ff9f43 100%); width: 0%; transition: width 0.2s ease;"
+                        :style="{ width: audioImportTotal > 0 ? (audioImportProcessed / audioImportTotal * 100).toFixed(1) + '%' : '0%' }"
+                      ></div>
+                    </div>
+
+                    <div style="margin-top:10px; font-size:13px; color: var(--text,#333);">
+                      <template v-if="audioImportStage === 'copy'">
+                        {{ audioImportProcessed }}/{{ audioImportTotal }} ({{ t('stationEditor.audioImportCopyOk') }}: {{ audioImportCopyOk }}, {{ t('stationEditor.audioImportCopyFail') }}: {{ audioImportCopyFail }})
+                      </template>
+                      <template v-else-if="audioImportStage === 'match'">
+                        {{ t('stationEditor.audioImportMatching') }}
+                      </template>
+                      <template v-else>
+                        <div style="line-height:1.6;">
+                          {{ t('stationEditor.audioImportResultSummary', { success: audioImportSuccessStations, fail: audioImportFailStations }) }}
+                        </div>
+                        <div v-if="audioImportFailStations > 0" style="margin-top:10px; font-size:13px; color: var(--muted,#888);">
+                          {{ t('stationEditor.audioImportFailedStations') }}：
+                          <span style="color: var(--text,#333)">{{ audioImportFailedStations.join('、') }}</span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div class="se-name-edit-actions" style="margin-top: 18px;">
+                    <button type="button" class="se-btn se-btn-gray" @click="closeAudioImportModal" :disabled="audioImportStage !== 'done'">
+                      {{ t('stationEditor.closeLabel') }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2265,10 +3872,35 @@ export default {
 .se-section-toggle {
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 .se-section-toggle .se-mini {
   padding: 6px 12px;
   font-size: 12px;
+}
+.se-dyn-tabs{
+  display:flex;
+  gap:4px;
+  align-items:center;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
+  max-width: 100%;
+  padding-bottom: 2px;
+}
+.se-dyn-tab{
+  position: relative;
+  cursor: grab;
+}
+.se-dyn-tab:active { cursor: grabbing; }
+.se-dyn-tab-dragover{
+  outline: 2px dashed rgba(22, 119, 255, 0.7);
+  outline-offset: 1px;
+}
+.se-dyn-tab-label{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
 }
 .se-section-title {
   font-weight: 800;

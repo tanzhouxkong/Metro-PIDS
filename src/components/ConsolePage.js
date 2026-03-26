@@ -51,14 +51,43 @@ export default {
         return station ? `[${idx + 1}] ${station.name}` : '无'
     })
 
-    const selectShortTurnStart = (idx) => {
+    const isLoopFullRangeShortTurn = (startIdx, termIdx) => {
+        const meta = pidsState?.appData?.meta || {}
+        const stations = pidsState?.appData?.stations || []
+        if (meta.mode !== 'loop') return false
+        if (!Array.isArray(stations) || stations.length <= 0) return false
+        if (startIdx === -1 || termIdx === -1) return false
+        if (!Number.isInteger(startIdx) || !Number.isInteger(termIdx)) return false
+        if (startIdx < 0 || termIdx < 0 || startIdx >= stations.length || termIdx >= stations.length) return false
+        return (Math.abs(termIdx - startIdx) + 1) >= stations.length
+    }
+
+    const isInvalidShortTurnSelection = (startIdx, termIdx) => {
+        if (startIdx === -1 || termIdx === -1) return false
+        if (Number.isInteger(startIdx) && Number.isInteger(termIdx) && startIdx === termIdx) return true
+        return isLoopFullRangeShortTurn(startIdx, termIdx)
+    }
+
+    const selectShortTurnStart = async (idx) => {
+        const currentTerm = pidsState.appData?.meta?.termIdx
+        if (isInvalidShortTurnSelection(idx, currentTerm)) {
+            await showMsg(t('console.invalidRouteRuleRetry'))
+            showShortTurnStartDropdown.value = false
+            return
+        }
         pidsState.appData.meta.startIdx = idx
         unlockAutoShortTurn()
         saveCfg()
         showShortTurnStartDropdown.value = false
     }
 
-    const selectShortTurnEnd = (idx) => {
+    const selectShortTurnEnd = async (idx) => {
+        const currentStart = pidsState.appData?.meta?.startIdx
+        if (isInvalidShortTurnSelection(currentStart, idx)) {
+            await showMsg(t('console.invalidRouteRuleRetry'))
+            showShortTurnEndDropdown.value = false
+            return
+        }
         pidsState.appData.meta.termIdx = idx
         unlockAutoShortTurn()
         saveCfg()
@@ -613,6 +642,12 @@ export default {
     }
     
     async function applyShortTurn() {
+        const startIdx = pidsState.appData?.meta?.startIdx
+        const termIdx = pidsState.appData?.meta?.termIdx
+        if (isInvalidShortTurnSelection(startIdx, termIdx)) {
+            await showMsg(t('console.invalidRouteRuleRetry'))
+            return
+        }
         // 一旦用户手动应用短交路，视为“手动设置”，避免被自动短交路逻辑覆盖
         if (pidsState?.appData?.meta) {
             pidsState.appData.meta.autoShortTurn = false;
@@ -1296,6 +1331,10 @@ export default {
             await showMsg('请先设置短交路的起点和终点');
             return;
         }
+        if (isInvalidShortTurnSelection(startIdx, termIdx)) {
+            await showMsg(t('console.invalidRouteRuleRetry'));
+            return;
+        }
         const startName = pidsState.appData.stations[startIdx]?.name || `站点${startIdx + 1}`;
         const termName = pidsState.appData.stations[termIdx]?.name || `站点${termIdx + 1}`;
         const defaultName = `${startName}→${termName}`;
@@ -1363,6 +1402,10 @@ export default {
 
                 if (startIdxResolved === -1 || termIdxResolved === -1) {
                     await showMsg('预设的起点/终点与当前线路不匹配（可能线路站点已被增删或调整），请重新设置短交路并重新保存预设。');
+                    return;
+                }
+                if (isInvalidShortTurnSelection(startIdxResolved, termIdxResolved)) {
+                    await showMsg(t('console.invalidRouteRuleRetry'));
                     return;
                 }
 

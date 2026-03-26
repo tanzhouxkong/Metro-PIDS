@@ -343,17 +343,29 @@ export default {
       const highlight = (rt.value.state === 1 && nextStationIdx.value >= 0)
         ? Math.max(0, Math.min(nextStationIdx.value, last))
         : current
-      const base = Math.max(0, current - 1)
-      const idxList = [base, base + 1, base + 2, base + 3].map(i => Math.max(0, Math.min(i, last)))
+      // 固定 4 槽位，使用连续窗口避免末站重复（如 last,last,last）
+      // 规则：
+      // 1) 站点>=4：始终展示连续 4 站，靠近末站时右侧对齐到终点站
+      // 2) 站点<4：展示已有站点并补 '--' 占位
+      const windowSize = 4
+      const maxStart = Math.max(0, len - windowSize)
+      let start = Math.max(0, highlight - 1)
+      start = Math.min(start, maxStart)
+      const idxList = Array.from({ length: windowSize }, (_, i) => {
+        const idx = start + i
+        return idx >= 0 && idx < len ? idx : -1
+      })
 
       return idxList.map((idx, i) => {
         let state = 'future'
-        if (idx < highlight) state = 'past'
-        else if (idx === highlight) state = 'current'
+        if (idx >= 0) {
+          if (idx < highlight) state = 'past'
+          else if (idx === highlight) state = 'current'
+        }
         return {
           key: `s${i + 1}`,
           idx,
-          name: stations.value[idx]?.name || '--',
+          name: idx >= 0 ? (stations.value[idx]?.name || '--') : '--',
           state
         }
       })

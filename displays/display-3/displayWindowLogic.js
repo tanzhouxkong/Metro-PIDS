@@ -1905,7 +1905,19 @@ function mkNode(st, i, mode, appData, rtState) {
   }
   if (isPassed) node.classList.add('passed');
   if (isCurr) node.classList.add('curr');
-  const shortTurnEnabled = appData && appData.meta && ((appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1) || (appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1));
+  const hasStartIdx = appData && appData.meta && appData.meta.startIdx !== undefined && appData.meta.startIdx !== -1;
+  const hasTermIdx = appData && appData.meta && appData.meta.termIdx !== undefined && appData.meta.termIdx !== -1;
+  const shortTurnEnabled = (() => {
+    if (!hasStartIdx || !hasTermIdx || !appData || !Array.isArray(appData.stations)) return false;
+    const total = appData.stations.length;
+    if (total <= 0) return false;
+    const sIdx = Number(appData.meta.startIdx);
+    const eIdx = Number(appData.meta.termIdx);
+    if (!Number.isInteger(sIdx) || !Number.isInteger(eIdx)) return false;
+    if (sIdx < 0 || eIdx < 0 || sIdx >= total || eIdx >= total) return false;
+    // 仅当运营区间小于全线时才认定为短交路（首末站全程不算短交路）
+    return (Math.abs(eIdx - sIdx) + 1) < total;
+  })();
   let xferHTML = '';
   if (st.xfer) {
     st.xfer.forEach((x) => {

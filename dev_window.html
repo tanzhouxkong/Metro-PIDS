@@ -282,6 +282,31 @@
             font-size: 18px;
             font-weight: bold;
         }
+
+        .hdr-canvas-wrap {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #111;
+            overflow-x: auto;
+        }
+
+        #hdr-test-canvas {
+            width: 100%;
+            max-width: 1100px;
+            height: 300px;
+            border-radius: 8px;
+            display: block;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: #000;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: var(--muted, #666);
+            margin-top: 8px;
+            line-height: 1.6;
+        }
         
         .f12-toggle-container {
             margin-top: 20px;
@@ -428,6 +453,56 @@
                     <label>设备ID</label>
                     <value id="device-id" style="font-size: 12px; word-break: break-all;">-</value>
                 </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><i class="fas fa-sun"></i> HDR 实验检测</h2>
+            <div class="test-group">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>动态范围查询</label>
+                        <value id="hdr-dynamic-range">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>广色域查询</label>
+                        <value id="hdr-color-gamut">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>屏幕色深</label>
+                        <value id="hdr-screen-depth">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Canvas 色域/P3</label>
+                        <value id="hdr-canvas-p3">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>WebGL 扩展能力</label>
+                        <value id="hdr-webgl">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>实验结论</label>
+                        <value id="hdr-summary">-</value>
+                    </div>
+                </div>
+                <div style="margin-top: 12px;">
+                    <button class="btn btn-secondary" onclick="refreshHdrInfo()">
+                        <i class="fas fa-sync"></i> 刷新 HDR 检测
+                    </button>
+                </div>
+                <div id="hdr-detail" class="code-block" style="margin-top:10px; min-height:80px; font-size:13px;">等待检测...</div>
+                <div class="hdr-canvas-wrap">
+                    <canvas id="hdr-test-canvas" width="1100" height="300"></canvas>
+                </div>
+                <div style="margin-top: 8px;">
+                    <button class="btn btn-secondary" onclick="renderHdrTestPattern()">
+                        <i class="fas fa-image"></i> 渲染可视化测试图案
+                    </button>
+                </div>
+                <p class="help-text">
+                    左半区是 SDR 基准灰阶，右半区是高亮阶梯与高饱和色块（P3 优先）。建议在同一画面下切换 Windows HDR 开/关做 A/B 对比：
+                    若 HDR 生效，右侧亮部层次通常更明显，不会过早“死白”。
+                </p>
             </div>
         </div>
         
@@ -1254,6 +1329,230 @@
             };
             
             document.getElementById('debug-info').textContent = JSON.stringify(info, null, 2);
+        }
+
+        // ===== HDR 实验检测 =====
+        function safeMatchMedia(query) {
+            try {
+                if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+                    return !!window.matchMedia(query).matches;
+                }
+            } catch (e) {
+                // ignore
+            }
+            return false;
+        }
+
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        function refreshHdrInfo() {
+            try {
+                const dynamicRangeHigh = safeMatchMedia('(dynamic-range: high)');
+                const dynamicRangeStandard = safeMatchMedia('(dynamic-range: standard)');
+                const gamutRec2020 = safeMatchMedia('(color-gamut: rec2020)');
+                const gamutP3 = safeMatchMedia('(color-gamut: p3)');
+                const gamutSRGB = safeMatchMedia('(color-gamut: srgb)');
+
+                const screenDepth = (typeof window !== 'undefined' && window.screen)
+                    ? `${window.screen.colorDepth || '-'} / ${window.screen.pixelDepth || '-'}`
+                    : 'N/A';
+
+                let canvasP3 = false;
+                let canvasInfo = '不支持/未知';
+                try {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' });
+                    if (ctx) {
+                        canvasP3 = true;
+                        canvasInfo = '支持 (2D context colorSpace=display-p3)';
+                    }
+                } catch (e) {
+                    canvasInfo = '不支持/异常';
+                }
+
+                let webglInfo = '未知';
+                try {
+                    const canvas = document.createElement('canvas');
+                    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    if (gl) {
+                        const extNames = [];
+                        if (gl.getExtension('EXT_color_buffer_half_float')) extNames.push('half-float');
+                        if (gl.getExtension('EXT_color_buffer_float')) extNames.push('float');
+                        if (gl.getExtension('OES_texture_half_float')) extNames.push('tex-half-float');
+                        webglInfo = extNames.length ? `可用(${extNames.join(', ')})` : '可用(未检测到HDR相关扩展)';
+                    } else {
+                        webglInfo = '不可用';
+                    }
+                } catch (e) {
+                    webglInfo = '检测异常';
+                }
+
+                const dynamicText = dynamicRangeHigh
+                    ? 'high (可能支持 HDR)'
+                    : (dynamicRangeStandard ? 'standard' : 'unknown');
+                const gamutText = gamutRec2020
+                    ? 'rec2020'
+                    : (gamutP3 ? 'p3' : (gamutSRGB ? 'srgb' : 'unknown'));
+
+                setText('hdr-dynamic-range', dynamicText);
+                setText('hdr-color-gamut', gamutText);
+                setText('hdr-screen-depth', screenDepth);
+                setText('hdr-canvas-p3', canvasInfo);
+                setText('hdr-webgl', webglInfo);
+
+                const maybeHdr = dynamicRangeHigh || gamutRec2020 || (canvasP3 && gamutP3);
+                const summary = maybeHdr
+                    ? '可能支持 HDR（实验性结果）'
+                    : '未检测到明显 HDR 能力';
+                setText('hdr-summary', summary);
+
+                const details = {
+                    dynamicRange: {
+                        high: dynamicRangeHigh,
+                        standard: dynamicRangeStandard
+                    },
+                    colorGamut: {
+                        rec2020: gamutRec2020,
+                        p3: gamutP3,
+                        srgb: gamutSRGB
+                    },
+                    screen: {
+                        colorDepth: (window.screen && window.screen.colorDepth) || null,
+                        pixelDepth: (window.screen && window.screen.pixelDepth) || null
+                    },
+                    canvas: {
+                        p3Context: canvasP3
+                    },
+                    webgl: webglInfo,
+                    userAgent: navigator.userAgent
+                };
+                const detailEl = document.getElementById('hdr-detail');
+                if (detailEl) detailEl.textContent = JSON.stringify(details, null, 2);
+
+                addLog('HDR 实验检测已刷新', maybeHdr ? 'success' : 'info', details);
+            } catch (e) {
+                setText('hdr-summary', '检测失败');
+                const detailEl = document.getElementById('hdr-detail');
+                if (detailEl) detailEl.textContent = 'HDR 检测失败: ' + e.message;
+                addLog('HDR 检测失败: ' + e.message, 'error');
+            }
+        }
+
+        function drawGrid(ctx, w, h) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= w; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, h);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= h; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        function renderHdrTestPattern() {
+            const canvas = document.getElementById('hdr-test-canvas');
+            if (!canvas) {
+                addLog('未找到 HDR 测试画布', 'error');
+                return;
+            }
+
+            const w = canvas.width;
+            const h = canvas.height;
+
+            let ctx = null;
+            let usingP3 = false;
+            try {
+                ctx = canvas.getContext('2d', { colorSpace: 'display-p3' });
+                usingP3 = !!ctx;
+            } catch (e) {
+                ctx = null;
+            }
+            if (!ctx) {
+                ctx = canvas.getContext('2d');
+            }
+            if (!ctx) {
+                addLog('无法创建 2D 画布上下文', 'error');
+                return;
+            }
+
+            // 背景
+            const bg = ctx.createLinearGradient(0, 0, 0, h);
+            bg.addColorStop(0, '#0b0b0b');
+            bg.addColorStop(1, '#000000');
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, w, h);
+
+            drawGrid(ctx, w, h);
+
+            // 左侧：SDR 灰阶
+            const leftX = 40;
+            const leftY = 60;
+            const leftW = Math.floor(w * 0.42);
+            const barH = 36;
+            ctx.fillStyle = '#f0f0f0';
+            ctx.font = '14px Segoe UI, Arial, sans-serif';
+            ctx.fillText('SDR 基准灰阶（左）', leftX, 34);
+
+            const grayLevels = [16, 32, 64, 96, 128, 160, 192, 224, 255];
+            grayLevels.forEach((v, i) => {
+                const y = leftY + i * (barH - 2);
+                ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+                ctx.fillRect(leftX, y, leftW, barH - 4);
+                ctx.fillStyle = v > 180 ? '#111' : '#eee';
+                ctx.fillText(String(v), leftX + leftW + 8, y + 24);
+            });
+
+            // 右侧：高亮阶梯 + 广色域色块
+            const rightX = Math.floor(w * 0.55);
+            const rightW = w - rightX - 30;
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillText(`HDR 倾向测试区（右）${usingP3 ? ' - display-p3' : ' - sRGB fallback'}`, rightX, 34);
+
+            const nitsLike = [220, 280, 360, 460, 620, 800, 1000];
+            nitsLike.forEach((n, i) => {
+                // 仅用于视觉分级，不代表真实 nits 输出
+                const t = i / (nitsLike.length - 1);
+                const v = Math.min(255, Math.round(220 + t * 35));
+                const y = leftY + i * 36;
+                ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+                ctx.fillRect(rightX, y, Math.floor(rightW * 0.62), 30);
+                ctx.fillStyle = '#ddd';
+                ctx.fillText(`${n}nit*`, rightX + Math.floor(rightW * 0.62) + 8, y + 20);
+            });
+
+            // 高饱和色块（P3 优先）
+            const colorY = 215;
+            const sw = Math.floor((rightW - 20) / 4);
+            const colors = usingP3
+                ? ['color(display-p3 1 0.18 0.16)', 'color(display-p3 0.2 1 0.25)', 'color(display-p3 0.2 0.5 1)', 'color(display-p3 1 0.8 0.1)']
+                : ['rgb(255, 70, 70)', 'rgb(70, 255, 90)', 'rgb(70, 150, 255)', 'rgb(255, 210, 80)'];
+            const names = ['Red', 'Green', 'Blue', 'Yellow'];
+
+            colors.forEach((c, i) => {
+                const x = rightX + i * (sw + 6);
+                ctx.fillStyle = c;
+                ctx.fillRect(x, colorY, sw, 56);
+                ctx.fillStyle = '#f3f3f3';
+                ctx.font = '12px Segoe UI, Arial, sans-serif';
+                ctx.fillText(names[i], x + 6, colorY + 74);
+            });
+
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.font = '12px Segoe UI, Arial, sans-serif';
+            ctx.fillText('* 该图用于主观对比，不代表绝对亮度标定', 40, h - 14);
+
+            addLog('HDR 可视化测试图案已渲染', 'success', { usingP3 });
         }
 
         // ===== 运控云控测试：本地 API & GitHub =====
@@ -2140,6 +2439,8 @@
         window.addEventListener('DOMContentLoaded', () => {
             loadEnvInfo();
             showAppInfo();
+            refreshHdrInfo();
+            renderHdrTestPattern();
             refreshSettings();
             initBroadcastChannel();
             loadGithubCloudConfig();

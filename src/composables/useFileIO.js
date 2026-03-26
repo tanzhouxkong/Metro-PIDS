@@ -1,5 +1,6 @@
 import dialogService from '../utils/dialogService.js'
 import { showNotification } from '../utils/notificationService.js'
+import { i18n } from '../locales/index.js'
 
 /**
  * 清理文件名，移除不符合文件系统规则的字符
@@ -70,6 +71,47 @@ export function useFileIO(state) {
     
     const showMsg = async (msg, title) => dialogService.alert(msg, title)
     const askUser = async (msg, title) => dialogService.confirm(msg, title)
+    const tr = (key, fallback, params = {}) => {
+        try {
+            const out = i18n?.global?.t?.(key, params)
+            if (typeof out === 'string' && out && out !== key) return out
+        } catch (e) {}
+        return fallback
+    }
+    const isMplFileLockedError = (errLike) => {
+        const raw = String(
+            (errLike && (errLike.error || errLike.message || errLike.code)) ||
+            errLike ||
+            ''
+        ).toLowerCase();
+        if (!raw) return false;
+        return (
+            raw.includes('ebusy') ||
+            raw.includes('eperm') ||
+            raw.includes('eacces') ||
+            raw.includes('resource busy') ||
+            raw.includes('being used') ||
+            raw.includes('used by another process') ||
+            raw.includes('sharing violation') ||
+            raw.includes('锁定') ||
+            raw.includes('占用') ||
+            raw.includes('正在使用')
+        );
+    };
+    const notifyMplFileLocked = async (targetPath, errLike) => {
+        const lockMsg = tr(
+            'lineManagerWindow.mplFileLockedMsg',
+            '线路文件正在被其它程序占用，请关闭占用后重试。\n{path}',
+            { path: targetPath || '' }
+        ).trim();
+        const failTitle = tr('lineManagerWindow.saveFailed', '保存失败');
+        const notifyTitle = tr('lineManagerWindow.mplFileLockedNotifyTitle', '保存失败：文件被占用');
+        const detailPrefix = tr('lineManagerWindow.mplFileLockedDetailPrefix', '详细信息：');
+        try {
+            showNotification(notifyTitle, lockMsg);
+        } catch (e) {}
+        await showMsg(lockMsg + (errLike ? `\n\n${detailPrefix}${String(errLike.error || errLike.message || errLike)}` : ''), failTitle);
+    };
 
     function normalizeLine(line) {
         if (!line || !line.meta) return line;
@@ -356,9 +398,17 @@ export function useFileIO(state) {
                             .catch((e) => console.warn('[saveCurrentLine] cleanupAudioDir failed', e));
                     }
                 } else {
+                    if (isMplFileLockedError(res)) {
+                        await notifyMplFileLocked(filePath, res);
+                        return;
+                    }
                     await showMsg('保存失败: ' + (res && res.error), '保存失败');
                 }
             } catch (e) { 
+                if (isMplFileLockedError(e)) {
+                    await notifyMplFileLocked(filePath, e);
+                    return;
+                }
                 await showMsg('保存失败: ' + e.message, '保存失败');
             }
             return;

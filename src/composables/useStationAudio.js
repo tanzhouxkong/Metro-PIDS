@@ -3,6 +3,7 @@
  * - 导航式打断：新的播放立即停止旧播放
  */
 import { calculateNextStationIndex } from '../utils/displayStationCalculator'
+import { i18n } from '../locales/index.js'
 
 // 用于系统媒体控制面板（Windows/锁屏/全局媒体控制）。
 // 这里用 module-scope 状态，避免多次注册 action handler。
@@ -110,7 +111,18 @@ export function useStationAudio(state) {
   // 规范化站名/文件名，便于模糊匹配
   const normalizeName = (s) => {
     if (!s || typeof s !== 'string') return ''
-    return s.replace(/站$/u, '').replace(/[\s-_]/g, '').replace(/[()（）\[\]【】]/g, '').toLowerCase()
+    let v = s
+    // 去掉末尾站名后缀
+    v = v.replace(/(站|駅|역)$/u, '')
+    // 去掉英文常见站名后缀
+    v = v.replace(/(station|st|st\.)$/iu, '')
+    // 去掉常见分隔符/括号
+    v = v.replace(/[\s\-_]/g, '')
+    v = v.replace(/[()（）\[\]【】]/g, '')
+    // 去掉中英文标点/符号
+    v = v.replace(/[,:;.!?，。；：!“”"'‘’、\/\\|]/g, '')
+    v = v.trim()
+    return v.toLowerCase()
   }
 
   // 导航式打断：停止并清空当前播放
@@ -120,9 +132,9 @@ export function useStationAudio(state) {
       const a = currentAudio
       a.muted = true
       a.volume = 0
-      a.onended = null
-      a.onpause = null
-      a.onerror = null
+      // 不在这里清空 onended/onpause/onerror：
+      // playAudioFile 内部会用这些事件/超时来 resolve/reject Promise，
+      // 清空会导致队列等待永远无法结束。
       a.pause()
       a.currentTime = 0
       // 彻底清空源，避免浏览器延迟触发 onpause/onended
@@ -193,6 +205,15 @@ export function useStationAudio(state) {
     return merged
   }
 
+  const isDynamicAudioDebugEnabled = () => {
+    try {
+      return window?.localStorage?.getItem('metro_pids_debug_dynamic_audio') === '1'
+        || localStorage?.getItem?.('metro_pids_debug_dynamic_audio') === '1'
+    } catch (e) {
+      return false
+    }
+  }
+
   // 按站名/角色匹配音频条目（去重）
   const pickStationItems = (list, stations, idx, roleKey) => {
     if (!Array.isArray(list) || !stations || !stations.length) return []
@@ -215,12 +236,90 @@ export function useStationAudio(state) {
   // 根据是否分离方向决定使用上/下行
   const getDirKey = (sa, meta) => {
     if (!sa || typeof sa !== 'object') return 'up'
-    if (sa.separateDirection) return meta.dirType === 'down' ? 'down' : 'up'
+    // meta.dirType 的语义是：up/outer => 上行，down/inner => 下行
+    if (sa.separateDirection) return (meta?.dirType === 'down' || meta?.dirType === 'inner') ? 'down' : 'up'
     return 'up'
   }
 
+  const normalizeDynamicDialectTabs = (sa) => {
+    if (!sa || typeof sa !== 'object') return []
+    const raw = Array.isArray(sa.dynamicDialectTabs) ? sa.dynamicDialectTabs : []
+    const out = []
+    const seen = new Set()
+    for (const it of raw) {
+      const k = String(it || '').trim()
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      out.push(k)
+    }
+    if (!out.length) {
+      const cur = String(sa.dynamicDialect || '').trim()
+      if (cur) out.push(cur)
+    }
+    // 如果仍然没有动态方言配置，但 dialectLists 本身有内容，
+    // 则回退为“使用 dialectLists 的所有 key”，确保播放能覆盖到多方言数据。
+    if (!out.length) {
+      const dialectLists = sa.dialectLists && typeof sa.dialectLists === 'object' ? sa.dialectLists : null
+      if (dialectLists) {
+        const keys = Object.keys(dialectLists)
+          .map((k) => String(k || '').trim())
+          .filter(Boolean)
+        for (const k of keys) {
+          if (seen.has(k)) continue
+          seen.add(k)
+          out.push(k)
+        }
+      }
+    }
+    return out
+  }
+
+  // 按 Tab 顺序组装多语种播放列表（每条保留 dialectKey）
+  // 注意：这里是“逐 Tab 独立筛选后再拼接”，确保播放顺序为：
+  // tab1(到/出站) -> tab2(到/出站) -> tab3...
+  const buildDialectOrderedFilteredList = ({
+    sa,
+    dir,
+    forArrive,
+    serviceMode,
+    isShortTurn,
+    stations,
+    meta,
+    currentIdx
+  }) => {
+    if (!sa || typeof sa !== 'object') return []
+    const tabs = normalizeDynamicDialectTabs(sa)
+    const dialectLists = sa.dialectLists && typeof sa.dialectLists === 'object' ? sa.dialectLists : null
+    if (!dialectLists || !tabs.length) {
+      const bucket = dir === 'down' ? sa.down || {} : sa.up || {}
+      const rawList = collectBucketList(bucket)
+      return getFilteredList(rawList, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx)
+    }
+    const merged = []
+    for (const key of tabs) {
+      const dialectBucket = dialectLists[key]
+      if (!dialectBucket || typeof dialectBucket !== 'object') continue
+      const primary = dir === 'down' ? dialectBucket.down : dialectBucket.up
+      const fallback = dir === 'down' ? dialectBucket.up : dialectBucket.down
+      const rawList = collectBucketList(primary || fallback || {})
+      const tabFiltered = getFilteredList(rawList, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx)
+      for (const item of tabFiltered) {
+        if (!item || typeof item !== 'object') continue
+        merged.push({
+          ...item,
+          dialectKey: (typeof item.dialectKey === 'string' && item.dialectKey.trim()) ? item.dialectKey.trim() : key
+        })
+      }
+    }
+    if (merged.length) return merged
+    // 多方言筛选都返回空时，回退到单一方言，但仍需应用 forArrive 筛选
+    const bucket = dir === 'down' ? sa.down || {} : sa.up || {}
+    const fallbackList = collectBucketList(bucket)
+    return getFilteredList(fallbackList, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx)
+  }
+
   // 根据模式/短交路/进出站筛选可播放列表，并附加首末站角色条目
-  const getFilteredList = (list, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx) => {
+  const getFilteredList = (list, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx, debugTag) => {
     if (!Array.isArray(list)) return []
     const filtered = list.filter((item) => {
       const hasArriveFlag = item.modes && item.modes.arrive === true
@@ -268,12 +367,54 @@ export function useStationAudio(state) {
     }
 
     const seen = new Set()
-    return [...filtered, ...extras].filter((item) => {
-      const key = item.path || item.name || JSON.stringify(item)
+    const merged = [...filtered, ...extras].filter((item) => {
+      // 去重 key：
+      // - 对有 path 的条目，用 path 去重（同一文件不重复播放）
+      // - 对“动态占位符”（无 path 但有 role）的条目，必须把 role/dialectKey 纳入 key，
+      //   否则多个动态音频（如 start/terminal/next）会因 name 相同或为空而互相覆盖，导致只能播放部分。
+      const key = (() => {
+        const p = item?.path
+        if (typeof p === 'string' && p.trim()) return `path::${p.trim()}`
+        const role = item?.role
+        if (typeof role === 'string' && role.trim()) {
+          const dk = (typeof item?.dialectKey === 'string' && item.dialectKey.trim()) ? item.dialectKey.trim() : ''
+          const n = (typeof item?.name === 'string' && item.name.trim()) ? item.name.trim() : ''
+          return `role::${role.trim()}::dialect::${dk}::name::${n}`
+        }
+        const n = item?.name
+        if (typeof n === 'string' && n.trim()) return `name::${n.trim()}`
+        return `json::${JSON.stringify(item)}`
+      })()
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
+    if (isDynamicAudioDebugEnabled() && merged.length === 0 && Array.isArray(list) && typeof currentIdx === 'number') {
+      const startIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
+      const termIdx = typeof meta?.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : (Array.isArray(stations) ? stations.length - 1 : -1)
+      const payload = {
+        debugTag,
+        currentIdx,
+        dir,
+        forArrive,
+        serviceMode,
+        isShortTurn,
+        startIdx,
+        termIdx,
+        rawListLength: list.length,
+        filteredLength: filtered.length,
+        extrasLength: extras.length,
+        sampleModes: list.slice(0, 3).map((it) => ({
+          path: it?.path,
+          name: it?.name,
+          disabledInNormal: it?.disabledInNormal,
+          modes: it?.modes
+        }))
+      }
+      // 用 JSON.stringify 固化输出，避免 devtools 在复制时把字段省略成 …
+      console.warn('[useStationAudio][getFilteredList][empty]', JSON.stringify(payload))
+    }
+    return merged
   }
 
   // 计算下一站索引（兼容环线/内外圈）
@@ -338,7 +479,7 @@ export function useStationAudio(state) {
   }
 
   // 将占位音频（start/terminal/current/next）映射为实际可播放条目
-  const resolvePlaceholderItem = (item, dir, ctx) => {
+  const resolvePlaceholderItem = async (item, dir, ctx) => {
     if (!item || item.path) return item
     const role = item.role
     if (!role) return item
@@ -347,6 +488,159 @@ export function useStationAudio(state) {
     const meta = ctx?.meta || state.appData?.meta || {}
     const appData = ctx?.appData || state.appData || { stations, meta }
     const currentIdx = typeof ctx?.currentIdx === 'number' ? ctx.currentIdx : -1
+
+    const langKey = (() => {
+      try {
+        return i18n?.global?.locale?.value || 'zh-CN'
+      } catch (e) {
+        return 'zh-CN'
+      }
+    })()
+
+    const dialectKey = (() => {
+      // 优先：占位项上显式指定（同站可多套语音版本）
+      if (item && typeof item === 'object' && typeof item.dialectKey === 'string' && item.dialectKey.trim()) return item.dialectKey.trim()
+      // 其次：线路 meta 上的全局配置（可选）
+      const m = meta && typeof meta === 'object' ? meta : {}
+      const v = m.dynamicAudioDialect || m.dynamicDialect || m.audioDialect
+      if (typeof v === 'string' && v.trim()) return v.trim()
+      // 默认：中文 -> 普通话
+      return 'cmn'
+    })()
+
+    // 动态占位符“找音频文件”时，关键是传给主进程的 stationName 要能命中音频文件名。
+    // 因为不同数据源可能出现“英文目录里的文件名其实是中文/混合命名”的情况，
+    // 所以这里返回“候选站名列表”，在失败时可降级尝试。
+    const getStationNameCandidatesByTargetDialect = (st) => {
+      if (!st || typeof st !== 'object') return []
+      const d = String(dialectKey || '').toLowerCase()
+      const isEnglish = d === 'en' || d.startsWith('en')
+
+      const uniqPush = (arr, v) => {
+        const s = (v === undefined || v === null) ? '' : String(v)
+        const t = s.trim()
+        if (!t) return
+        if (!arr.includes(t)) arr.push(t)
+      }
+
+      const out = []
+      if (isEnglish) {
+        // 优先用英文站名；如果文件名是中文/混合，则再尝试中文字段
+        uniqPush(out, st.en)
+        uniqPush(out, st.name)
+        uniqPush(out, st.cn)
+        uniqPush(out, st.zh)
+        // 兜底
+        uniqPush(out, st.name || st.en)
+        return out
+      }
+
+      // 中文系列：优先中文字段（用于 zhcn/zhtw 目录）
+      if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh') || d === 'zhcn' || d === 'zhtw') {
+        uniqPush(out, st.name)
+        uniqPush(out, st.zh)
+        uniqPush(out, st.cn)
+        uniqPush(out, st.en)
+        return out
+      }
+
+      // 其它方言/语种：尽量兼容混合命名
+      uniqPush(out, st.name)
+      uniqPush(out, st.en)
+      uniqPush(out, st.zh)
+      uniqPush(out, st.cn)
+      return out
+    }
+
+    const resolveCache = resolvePlaceholderItem.__dynamicCache || new Map()
+    resolvePlaceholderItem.__dynamicCache = resolveCache
+
+    const tryResolveDynamicFromDir = async (targetIdx, roleKey) => {
+      if (targetIdx < 0 || targetIdx >= stations.length) return null
+      const st = stations[targetIdx]
+      const stationNameCandidates = getStationNameCandidatesByTargetDialect(st)
+      if (!stationNameCandidates || !stationNameCandidates.length) return null
+      if (typeof window === 'undefined') return null
+      const ipc = window?.electronAPI?.lines?.findAudioByStationName
+      if (typeof ipc !== 'function') return null
+
+      const lineFilePath = getLineDirOrFilePath()
+      if (!lineFilePath) return null
+
+      const dynDebug = isDynamicAudioDebugEnabled()
+      if (dynDebug) {
+        console.warn('[useStationAudio][dynamic-placeholder][try]', {
+          roleKey,
+          targetIdx,
+          dialectKey,
+          languageKey: langKey,
+          candidates: stationNameCandidates
+        })
+      }
+
+      for (const stationNameForLang of stationNameCandidates) {
+        const cacheKey = `${lineFilePath}::${roleKey}::${langKey}::${dialectKey}::${normalizeName(stationNameForLang)}`
+        if (resolveCache.has(cacheKey)) {
+          const cached = resolveCache.get(cacheKey)
+          if (dynDebug) {
+            console.warn('[useStationAudio][dynamic-placeholder][cache-hit]', {
+              roleKey,
+              dialectKey,
+              languageKey: langKey,
+              stationNameForLang,
+              cachedPath: cached?.path || null
+            })
+          }
+          // 如果运行过程中曾缓存过失败（null），则跳过该候选继续尝试
+          if (!cached) continue
+          return cached
+        }
+
+        try {
+          if (dynDebug) {
+            console.warn('[useStationAudio][dynamic-placeholder][ipc-call]', {
+              roleKey,
+              dialectKey,
+              languageKey: langKey,
+              stationNameForLang
+            })
+          }
+          const res = await ipc(lineFilePath, stationNameForLang, { role: roleKey, languageKey: langKey, dialectKey })
+          const ok = !!res?.ok && typeof res?.relativePath === 'string' && res.relativePath
+          const resolved = ok ? { ...item, path: res.relativePath, name: item.name || stationNameForLang, role: roleKey } : null
+          if (resolved) {
+            // 只缓存“正结果”：避免 mpl 解包/目录扫描的时序竞争把“暂时没找到”缓存成 null，
+            // 后续动态解析就会永远跳过，导致只剩少数站点正常。
+            resolveCache.set(cacheKey, resolved)
+            if (dynDebug) {
+              console.warn('[useStationAudio][dynamic-placeholder][resolved]', {
+                roleKey,
+                dialectKey,
+                languageKey: langKey,
+                stationNameForLang,
+                relativePath: res.relativePath
+              })
+            }
+            return resolved
+          }
+          // 当前候选没命中，继续尝试下一个候选
+        } catch (e) {
+          // 不缓存失败：让后续站点/后续调用有机会在资源就绪后重新尝试
+          // 当前候选失败，继续尝试下一个候选
+        }
+      }
+
+      if (isDynamicAudioDebugEnabled()) {
+        console.warn('[useStationAudio][dynamic-placeholder][not-found]', {
+          roleKey,
+          dialectKey,
+          languageKey: langKey,
+          targetIdx,
+          candidates: stationNameCandidates
+        })
+      }
+      return null
+    }
 
     const resolveWithIdx = (targetIdx, opts = {}) => {
       if (targetIdx < 0 || targetIdx >= stations.length) return null
@@ -359,29 +653,39 @@ export function useStationAudio(state) {
     }
 
     if (role === 'start' || role === 'terminal') {
-      const preferIdx = role === 'start'
-        ? (typeof meta.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0)
-        : (typeof meta.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : stations.length - 1)
+      const startIdx = (typeof meta.startIdx === 'number' && meta.startIdx >= 0) ? meta.startIdx : 0
+      const termIdx = (typeof meta.termIdx === 'number' && meta.termIdx >= 0) ? meta.termIdx : (stations.length - 1)
+      const isReversed = meta?.dirType === 'down' || meta?.dirType === 'inner'
+      // “start/terminal” 以运营方向为准：反向运行时两者对调
+      const travelStartIdx = isReversed ? termIdx : startIdx
+      const travelTerminalIdx = isReversed ? startIdx : termIdx
+      const preferIdx = role === 'start' ? travelStartIdx : travelTerminalIdx
       const resolved = resolveWithIdx(preferIdx, { roleKey: role })
-      if (resolved && resolved.path) return resolved
+      if (resolved?.path) return resolved
 
       const fromOther = resolveFromStations({ stations, dir, role, allowNameMatch: false, stationName: null })
       if (fromOther?.item?.path) return { ...item, path: fromOther.item.path, name: item.name || fromOther.item.name, role }
 
       const fromCommon = resolveFromCommon(role, dir)
       if (fromCommon) return { ...item, path: fromCommon.path, name: item.name || fromCommon.name, role }
-      return item
+
+      const dynResolved = await tryResolveDynamicFromDir(preferIdx, role)
+      return dynResolved || item
     }
 
     if (role === 'current') {
       const resolved = resolveWithIdx(currentIdx, { roleKey: role, allowNameMatch: true, useNameForCommon: true })
-      return resolved || item
+      if (resolved?.path) return resolved
+      const dynResolved = await tryResolveDynamicFromDir(currentIdx, role)
+      return dynResolved || item
     }
 
     if (role === 'next') {
       const nextIdx = getNextStationIdx(currentIdx, appData)
       const resolved = resolveWithIdx(nextIdx, { roleKey: role, allowNameMatch: true, useNameForCommon: true })
-      return resolved || item
+      if (resolved?.path) return resolved
+      const dynResolved = await tryResolveDynamicFromDir(nextIdx, role)
+      return dynResolved || item
     }
 
     return item
@@ -400,11 +704,31 @@ export function useStationAudio(state) {
     const normalizePath = (p) => String(p || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
     const normalizedPath = normalizePath(rawPath)
 
-    const res = await window.electronAPI?.lines?.resolveAudioPath?.(lineFilePath, item.path)
-    if (res && res.ok) {
-      const url = res.playableUrl || ('file:///' + (res.path || '').replace(/\\/g, '/'))
-      const absolutePath = res.path || ''
-      return { url, absolutePath, relativePath: rawPath }
+    const dialectKeyFromItem = (typeof item?.dialectKey === 'string' && item.dialectKey.trim())
+      ? item.dialectKey.trim()
+      : ''
+    const fallbackDialectOrder = ['cmn', 'yue', 'wuu', 'nan', 'wzh', 'en', 'ja', 'ko']
+    const resolveCandidates = []
+    const pushCandidate = (p) => {
+      const n = normalizePath(p)
+      if (!n) return
+      if (!resolveCandidates.includes(n)) resolveCandidates.push(n)
+    }
+    pushCandidate(rawPath)
+    if (normalizedPath.startsWith('audio/')) {
+      const tail = normalizedPath.slice('audio/'.length)
+      if (dialectKeyFromItem) pushCandidate(`audio/${dialectKeyFromItem}/${tail}`)
+      for (const dk of fallbackDialectOrder) pushCandidate(`audio/${dk}/${tail}`)
+    }
+    for (const rel of resolveCandidates) {
+      const res = await window.electronAPI?.lines?.resolveAudioPath?.(lineFilePath, rel)
+      if (res && res.ok) {
+        // 确保包含中文/空格等字符时也能正确被浏览器当作 URL 解析
+        const fallbackFilePath = (res.path || '').replace(/\\/g, '/')
+        const url = res.playableUrl || ('file:///' + encodeURI(fallbackFilePath))
+        const absolutePath = res.path || ''
+        return { url, absolutePath, relativePath: rel }
+      }
     }
 
     // 云控线路回退：使用内嵌在 meta.cloudAudioFiles 的 data URL
@@ -482,18 +806,124 @@ export function useStationAudio(state) {
     if (!url || url === 'file:///') return
     const audio = new Audio(url)
     currentAudio = audio
+    const audioDebug = isDynamicAudioDebugEnabled()
+    // 站点播报一般不会超过十几秒；更短的超时能避免队列“看起来完全卡死”
+    const timeoutMs = 12000
+    const formatUrlForDebug = (u) => {
+      try {
+        if (typeof u !== 'string' || !u) return ''
+        const p1 = 'local-audio://file/'
+        const p2 = 'audio://file/'
+        const p3 = 'file:///'
+        if (u.startsWith(p1)) {
+          const enc = u.slice(p1.length)
+          return decodeURIComponent(enc).replace(/\//g, '\\')
+        }
+        if (u.startsWith(p2)) {
+          const enc = u.slice(p2.length)
+          return decodeURIComponent(enc).replace(/\//g, '\\')
+        }
+        if (u.startsWith(p3)) {
+          const enc = u.slice(p3.length)
+          return decodeURIComponent(enc).replace(/\//g, '\\')
+        }
+      } catch (e) {}
+      return u
+    }
+    const urlDisplay = audioDebug ? formatUrlForDebug(url) : ''
     const result = await new Promise((resolve, reject) => {
-      audio.onended = () => { if (currentAudio === audio) currentAudio = null; resolve() }
-      audio.onpause = () => { if (currentAudio === audio) currentAudio = null; resolve() }
-      audio.onerror = (err) => { if (currentAudio === audio) currentAudio = null; reject(err) }
-      // play() 的 Promise resolve 表示已经开始播放，这时再把 playbackState 置为 playing，
+      let done = false
+      let timeoutId = null
+      let stallIntervalId = null
+      let lastProgressTime = 0
+      let lastCurrentTime = -1
+      const stallMs = 6000
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId)
+        if (stallIntervalId) clearInterval(stallIntervalId)
+        audio.onended = null
+        audio.onpause = null
+        audio.onerror = null
+      }
+      const finishResolve = () => {
+        if (done) return
+        done = true
+        cleanup()
+        if (currentAudio === audio) currentAudio = null
+        resolve()
+      }
+      const finishReject = (err) => {
+        if (done) return
+        done = true
+        cleanup()
+        if (currentAudio === audio) currentAudio = null
+        reject(err)
+      }
+
+      if (audioDebug) {
+        console.warn('[useStationAudio][playAudioFile][start]', { sessionId, url, urlDisplay })
+      }
+
+      timeoutId = setTimeout(() => {
+        if (audioDebug) {
+          console.warn('[useStationAudio][playAudioFile][timeout]', { sessionId, url, urlDisplay, timeoutMs })
+        }
+        try {
+          audio.pause()
+          audio.currentTime = 0
+        } catch (e) {}
+        finishReject(new Error(`audio timeout after ${timeoutMs}ms`))
+      }, timeoutMs)
+
+      audio.onended = () => finishResolve()
+      audio.onpause = () => finishResolve()
+      audio.onerror = (err) => finishReject(err)
+
+      // play() 的 Promise resolve 表示已经开始播放；再把 playbackState 置为 playing，
       // 避免“提前置 playing 但实际未播放成功”导致 Windows 不显示媒体控制。
       audio.play().then(() => {
         if (sessionId === playSessionId && !hasMediaStartedForSession) {
           hasMediaStartedForSession = true
           setPlaybackState('playing')
         }
-      }).catch(reject)
+        if (audioDebug) {
+          console.warn('[useStationAudio][playAudioFile][playing]', { sessionId, url, urlDisplay })
+        }
+
+        // 防御：有些 wav 可能既不触发 onended，也不触发 onerror（会导致队列卡住）。
+        // 使用 currentTime 是否在前进做“卡死检测”。
+        lastCurrentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : -1
+        lastProgressTime = Date.now()
+        stallIntervalId = setInterval(() => {
+          if (done) return
+          const ct = Number.isFinite(audio.currentTime) ? audio.currentTime : -1
+          // 当 currentTime 没有前进，认为可能卡死；同时要求 readyState 有一定数据，避免刚加载阶段误判
+          if (ct !== lastCurrentTime) {
+            lastCurrentTime = ct
+            lastProgressTime = Date.now()
+            return
+          }
+          const rs = audio.readyState // 0..4
+          const stalledFor = Date.now() - lastProgressTime
+          if (rs >= 2 && stalledFor >= stallMs) {
+            if (audioDebug) {
+              console.warn('[useStationAudio][playAudioFile][stalled]', {
+                sessionId,
+                url,
+                urlDisplay,
+                stallMs,
+                currentTime: ct,
+                readyState: rs
+              })
+            }
+            try {
+              audio.pause()
+              audio.currentTime = 0
+            } catch (e) {}
+            finishReject(new Error(`audio stalled: currentTime no progress for ${stallMs}ms`))
+          }
+        }, 500)
+      }).catch((err) => finishReject(err))
     }).then(() => ({ ok: true })).catch((err) => ({ ok: false, err }))
     if (!result.ok && sessionId === playSessionId) {
       console.warn('[useStationAudio] playAudioFile failed', result.err)
@@ -503,9 +933,22 @@ export function useStationAudio(state) {
 
   // 串行播放列表，检测会话变更立即打断
   const playList = async (sessionId, dir, list, ctx) => {
+    const dynDebug = isDynamicAudioDebugEnabled()
+    const stationIdxForLog = typeof ctx?.currentIdx === 'number' ? ctx.currentIdx : undefined
+    const listKindForLog = ctx?.listKind || ctx?.__listKind || undefined
+    const startedAt = Date.now()
+    let playedCount = 0
+    let skippedNoPlaceholder = 0
+    let skippedNoSource = 0
+    let errorCount = 0
+    let endedBy = 'completed' // or 'session-changed' | 'aborted-due-to-stop'
+
     if (!list.length) {
       if (sessionId === playSessionId) {
         setPlaybackState('none')
+      }
+      if (dynDebug && sessionId === playSessionId) {
+        console.warn('[useStationAudio][playList][empty]', { sessionId, stationIdxForLog, dir, listKindForLog, listLength: list.length })
       }
       return
     }
@@ -513,19 +956,46 @@ export function useStationAudio(state) {
     if (typeof window === 'undefined') return
 
     for (const raw of list) {
-      if (sessionId !== playSessionId) { stopCurrentPlayback(); return }
+      if (sessionId !== playSessionId) {
+        endedBy = 'session-changed'
+        if (dynDebug) {
+          console.warn('[useStationAudio][playList][abort]', {
+            sessionId,
+            stationIdxForLog,
+            dir,
+            listLength: list.length,
+            playedCount,
+            skippedNoPlaceholder,
+            skippedNoSource,
+            errorCount,
+            endedBy
+          })
+        }
+        stopCurrentPlayback()
+        return
+      }
       if (typeof window !== 'undefined' && typeof window.__stopCommonAudio === 'function') {
         try { window.__stopCommonAudio() } catch (e) {}
       }
-      const item = resolvePlaceholderItem(raw, dir, ctx)
-      if (!item || !item.path) continue
+      const item = await resolvePlaceholderItem(raw, dir, ctx)
+      if (!item || !item.path) {
+        skippedNoPlaceholder++
+        continue
+      }
       try {
         const source = await resolveAudioSource(lineFilePath, item)
         if (!source || !source.url) {
-          if (sessionId === playSessionId) console.warn('[useStationAudio] unresolved audio source', item.path)
+          skippedNoSource++
+          if (sessionId === playSessionId && dynDebug) {
+            console.warn('[useStationAudio][playList][skip][no-source]', { sessionId, stationIdxForLog, dir, itemPath: item.path })
+          }
           continue
         }
-        if (sessionId !== playSessionId) { stopCurrentPlayback(); return }
+        if (sessionId !== playSessionId) {
+          endedBy = 'session-changed'
+          stopCurrentPlayback()
+          return
+        }
 
         try {
           if (
@@ -545,13 +1015,29 @@ export function useStationAudio(state) {
         } catch (e) {}
 
         await playAudioFile(sessionId, source.url)
+        playedCount++
       } catch (e) {
+        errorCount++
         if (sessionId === playSessionId) console.warn('[useStationAudio] play error', item.path, e)
       }
     }
     // 当前会话的串行列表播放结束
     if (sessionId === playSessionId) {
       setPlaybackState('none')
+      if (dynDebug) {
+        console.warn('[useStationAudio][playList][done]', {
+          sessionId,
+          stationIdxForLog,
+          dir,
+          listLength: list.length,
+          playedCount,
+          skippedNoPlaceholder,
+          skippedNoSource,
+          errorCount,
+          endedBy,
+          durationMs: Date.now() - startedAt
+        })
+      }
     }
   }
 
@@ -607,19 +1093,86 @@ export function useStationAudio(state) {
     const dir = getDirKey(sa, meta)
     const bucket = dir === 'down' ? sa.down || {} : sa.up || {}
 
-    if (Array.isArray(bucket.list)) {
-      const filtered = getFilteredList(bucket.list, serviceMode, isShortTurn, true, stations, meta, dir, idx)
-      ;(async () => { await playList(sessionId, dir, filtered, { currentIdx: idx, stations, meta, appData: state.appData }) })()
+    const dialectOrderedList = buildDialectOrderedFilteredList({
+      sa,
+      dir,
+      forArrive: true,
+      serviceMode,
+      isShortTurn,
+      stations,
+      meta,
+      currentIdx: idx
+    })
+    if (dialectOrderedList.length) {
+      ;(async () => { await playList(sessionId, dir, dialectOrderedList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'dialectOrderedList' }) })()
       return
     }
 
-    const welcomeList = getFilteredList(bucket.welcome || [], serviceMode, isShortTurn, null, stations, meta, dir, idx)
-    const arriveList = getFilteredList(bucket.arrive || [], serviceMode, isShortTurn, true, stations, meta, dir, idx)
-    const endList = getFilteredList(bucket.end || [], serviceMode, isShortTurn, null, stations, meta, dir, idx)
+    // 新版数据结构只有 bucket.list，旧版才有 welcome/arrive/end 分桶。
+    // 统一用 collectBucketList 读取，再按 forArrive 标志筛选。
+    const rawList = collectBucketList(bucket)
+
+    // 如果站点音频为空，回退到通用音频（commonAudio）
+    const effectiveList = rawList.length > 0 ? rawList : (() => {
+      const common = state.appData?.meta?.commonAudio
+      if (!common || typeof common !== 'object') return []
+      const useSeparate = common.separateDirection !== false
+      const commonBucket = useSeparate ? (dir === 'down' ? common.down || {} : common.up || {}) : (common.up || {})
+      return collectBucketList(commonBucket)
+    })()
+
+    const dynDebug = isDynamicAudioDebugEnabled()
+    if (!effectiveList.length) {
+      if (dynDebug) {
+        const stName = station?.name ? String(station.name) : `#${idx}`
+        const ca = state.appData?.meta?.commonAudio
+        const commonUpLen = Array.isArray(ca?.up?.list) ? ca.up.list.length : 0
+        const commonDownLen = Array.isArray(ca?.down?.list) ? ca.down.list.length : 0
+        const dialectTabs = normalizeDynamicDialectTabs(sa)
+        const dialectLists = sa?.dialectLists && typeof sa.dialectLists === 'object' ? sa.dialectLists : {}
+        const dialectKeysAll = Object.keys(dialectLists || {})
+        const dialectKeysToSum = (dialectTabs && dialectTabs.length) ? dialectTabs : dialectKeysAll
+        let dialectTotalUpLen = 0
+        let dialectTotalDownLen = 0
+        for (const dk of dialectKeysToSum) {
+          const db = dialectLists[dk]
+          dialectTotalUpLen += collectBucketList(db?.up || {}).length
+          dialectTotalDownLen += collectBucketList(db?.down || {}).length
+        }
+        const payload = {
+          sessionId,
+          stationIdxForLog: idx,
+          stationName: stName,
+          dir,
+          serviceMode,
+          isShortTurn,
+          stationUpLen: Array.isArray(sa?.up?.list) ? sa.up.list.length : 0,
+          stationDownLen: Array.isArray(sa?.down?.list) ? sa.down.list.length : 0,
+          commonUpLen,
+          commonDownLen,
+          dynamicDialect: sa?.dynamicDialect ? String(sa.dynamicDialect) : '',
+          dialectTabs,
+          dialectKeysAll,
+          dialectTotalUpLen,
+          dialectTotalDownLen
+        }
+        console.warn('[useStationAudio][playArrive][emptyEffectiveList]', JSON.stringify(payload))
+      }
+    }
+
+    const arriveList = effectiveList.length
+      ? getFilteredList(effectiveList, serviceMode, isShortTurn, true, stations, meta, dir, idx, 'arriveList')
+      : []
+    const welcomeList = effectiveList.length
+      ? getFilteredList(effectiveList, serviceMode, isShortTurn, null, stations, meta, dir, idx, 'welcomeList')
+      : []
+    const endList = effectiveList.length
+      ? getFilteredList(effectiveList, serviceMode, isShortTurn, null, stations, meta, dir, idx, 'endList')
+      : []
     ;(async () => {
-      if (idx === startIdx && welcomeList.length) await playList(sessionId, dir, welcomeList, { currentIdx: idx, stations, meta, appData: state.appData })
-      await playList(sessionId, dir, arriveList, { currentIdx: idx, stations, meta, appData: state.appData })
-      if (idx === termIdx && endList.length) await playList(sessionId, dir, endList, { currentIdx: idx, stations, meta, appData: state.appData })
+      if (idx === startIdx && welcomeList.length) await playList(sessionId, dir, welcomeList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'welcomeList' })
+      await playList(sessionId, dir, arriveList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'arriveList' })
+      if (idx === termIdx && endList.length) await playList(sessionId, dir, endList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'endList' })
     })()
   }
 
@@ -673,14 +1226,80 @@ export function useStationAudio(state) {
     const dir = getDirKey(sa, meta)
     const bucket = dir === 'down' ? sa.down || {} : sa.up || {}
 
-    if (Array.isArray(bucket.list)) {
-      const filtered = getFilteredList(bucket.list, serviceMode, isShortTurn, false, stations, meta, dir, idx)
-      ;(async () => { await playList(sessionId, dir, filtered, { currentIdx: idx, stations, meta, appData: state.appData }) })()
+    const dialectOrderedList = buildDialectOrderedFilteredList({
+      sa,
+      dir,
+      forArrive: false,
+      serviceMode,
+      isShortTurn,
+      stations,
+      meta,
+      currentIdx: idx
+    })
+    if (dialectOrderedList.length) {
+      ;(async () => { await playList(sessionId, dir, dialectOrderedList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'dialectOrderedList' }) })()
       return
     }
 
-    const departList = getFilteredList(bucket.depart || [], serviceMode, isShortTurn, false, stations, meta, dir, idx)
-    ;(async () => { await playList(sessionId, dir, departList, { currentIdx: idx, stations, meta, appData: state.appData }) })()
+    // 新版数据结构只有 bucket.list，旧版才有 depart 分桶。
+    // 统一用 collectBucketList 读取。
+    const rawList = collectBucketList(bucket)
+
+    // 如果站点音频为空，回退到通用音频（commonAudio）
+    const effectiveList = rawList.length > 0 ? rawList : (() => {
+      const common = state.appData?.meta?.commonAudio
+      if (!common || typeof common !== 'object') return []
+      const useSeparate = common.separateDirection !== false
+      const commonBucket = useSeparate ? (dir === 'down' ? common.down || {} : common.up || {}) : (common.up || {})
+      return collectBucketList(commonBucket)
+    })()
+
+    const dynDebug = isDynamicAudioDebugEnabled()
+    if (!effectiveList.length) {
+      if (dynDebug) {
+        const stName = station?.name ? String(station.name) : `#${idx}`
+        const ca = state.appData?.meta?.commonAudio
+        const commonUpLen = Array.isArray(ca?.up?.list) ? ca.up.list.length : 0
+        const commonDownLen = Array.isArray(ca?.down?.list) ? ca.down.list.length : 0
+        const dialectTabs = normalizeDynamicDialectTabs(sa)
+        const dialectLists = sa?.dialectLists && typeof sa.dialectLists === 'object' ? sa.dialectLists : {}
+        const dialectKeysAll = Object.keys(dialectLists || {})
+        const dialectKeysToSum = (dialectTabs && dialectTabs.length) ? dialectTabs : dialectKeysAll
+        let dialectTotalUpLen = 0
+        let dialectTotalDownLen = 0
+        for (const dk of dialectKeysToSum) {
+          const db = dialectLists[dk]
+          dialectTotalUpLen += collectBucketList(db?.up || {}).length
+          dialectTotalDownLen += collectBucketList(db?.down || {}).length
+        }
+        const payload = {
+          sessionId,
+          stationIdxForLog: idx,
+          stationName: stName,
+          dir,
+          serviceMode,
+          isShortTurn,
+          stationUpLen: Array.isArray(sa?.up?.list) ? sa.up.list.length : 0,
+          stationDownLen: Array.isArray(sa?.down?.list) ? sa.down.list.length : 0,
+          commonUpLen,
+          commonDownLen,
+          dynamicDialect: sa?.dynamicDialect ? String(sa.dynamicDialect) : '',
+          dialectTabs,
+          dialectKeysAll,
+          dialectTotalUpLen,
+          dialectTotalDownLen
+        }
+        console.warn('[useStationAudio][playDepart][emptyEffectiveList]', JSON.stringify(payload))
+      }
+    }
+
+    const departList = effectiveList.length
+      ? getFilteredList(effectiveList, serviceMode, isShortTurn, false, stations, meta, dir, idx, 'departList')
+      : []
+
+    if (departList.length) {
+      ;(async () => { await playList(sessionId, dir, departList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'departList' }) })()
+    }
   }
 
   return { playArrive, playDepart }

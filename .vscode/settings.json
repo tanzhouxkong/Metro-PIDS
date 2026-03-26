@@ -1,4 +1,5 @@
 {
     "git.ignoreLimitWarning": true,
-    "cursor.general.disableHttp2": true
+    "cursor.general.disableHttp2": true,
+    "kiroAgent.configureMCP": "Disabled"
 }

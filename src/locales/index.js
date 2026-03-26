@@ -5,6 +5,33 @@ import en from './en.json'
 import ja from './ja.json'
 import ko from './ko.json'
 
+function normalizeLocaleKey(input) {
+  const raw = String(input || '').trim()
+  if (!raw) return null
+
+  const canonical = raw.replace(/_/g, '-')
+  const lowerNoDash = canonical.replace(/-/g, '').toLowerCase()
+  const lower = canonical.toLowerCase()
+
+  // 容错：忽略 zhcn 的大小写（以及常见分隔写法）
+  if (lowerNoDash === 'zhcn' || lower === 'zh-cn') return 'zh-CN'
+  if (lowerNoDash === 'zhtw' || lower === 'zh-tw') return 'zh-TW'
+
+  if (lower === 'en') return 'en'
+  if (lower === 'ja') return 'ja'
+  if (lower === 'ko') return 'ko'
+
+  // 容错：例如 zh / zh-hans / zh-hant / zh-hk 等
+  if (lower.startsWith('zh')) {
+    if (/(^|-)tw($|-)/.test(lower) || /(^|-)hk($|-)/.test(lower) || /(^|-)mo($|-)/.test(lower)) {
+      return 'zh-TW'
+    }
+    return 'zh-CN'
+  }
+
+  return null
+}
+
 // 根据系统语言自动检测首选语言
 function detectLocale() {
   if (typeof navigator === 'undefined') return 'en'
@@ -28,8 +55,9 @@ let currentLanguage = detectLocale()
 
 // 如果本地已经有用户选择，优先使用用户选择
 const saved = window.localStorage.getItem('mpids-locale')
-if (saved === 'zh-CN' || saved === 'zh-TW' || saved === 'en' || saved === 'ja' || saved === 'ko') {
-  currentLanguage = saved
+const normalizedSaved = normalizeLocaleKey(saved)
+if (normalizedSaved) {
+  currentLanguage = normalizedSaved
 }
 
 export const i18n = createI18n({
@@ -57,9 +85,10 @@ export const langs = [
 ]
 
 export function setLang(lang) {
-  i18n.global.locale.value = lang
+  const normalized = normalizeLocaleKey(lang) || lang
+  i18n.global.locale.value = normalized
   try {
-    window.localStorage.setItem('mpids-locale', lang)
+    window.localStorage.setItem('mpids-locale', normalized)
   } catch (e) {}
 }
 
