@@ -135,8 +135,15 @@ export default {
 <template>
   <Teleport to="body">
     <Transition name="cp-fade">
-      <div v-if="showDialog" class="cp-overlay" @click.self="cancel">
-        <div class="cp-dialog" role="dialog" aria-modal="true" @click.stop @paste.stop>
+      <div v-if="showDialog" class="cp-overlay cp-overlay--picker" @click.self="cancel">
+        <div
+          class="cp-dialog cp-dialog--compact"
+          role="dialog"
+          aria-modal="true"
+          v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+          @click.stop
+          @paste.stop
+        >
           <div class="cp-header">
             <div class="cp-header-left">
               <div class="cp-icon">
@@ -236,7 +243,7 @@ export default {
             </button>
             <div class="cp-footer-right">
               <button @click="cancel" class="cp-btn cp-btn-gray">{{ t('colorPicker.btnCancel') }}</button>
-              <button @click="confirm" class="cp-btn cp-btn-green">{{ t('colorPicker.btnConfirm') }}</button>
+              <button @click="confirm" class="cp-btn cp-btn-primary">{{ t('colorPicker.btnConfirm') }}</button>
             </div>
           </div>
         </div>
@@ -246,103 +253,7 @@ export default {
 </template>
 
 <style>
-.cp-fade-enter-active,
-.cp-fade-leave-active {
-  transition: opacity 0.25s ease;
-}
-.cp-fade-enter-from,
-.cp-fade-leave-to {
-  opacity: 0;
-}
-
-.cp-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* 必须盖过 StationEditor 右键菜单遮罩（z-index: 1000000） */
-  z-index: 1000003;
-  background: transparent;
-}
-
-.cp-dialog {
-  width: 420px;
-  max-width: 95%;
-  display: flex;
-  flex-direction: column;
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.5) inset;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.cp-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.4);
-}
-.cp-header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.cp-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-.cp-icon i {
-  color: #fff;
-  font-size: 18px;
-}
-.cp-title {
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  color: var(--text, #333);
-}
-.cp-subtitle {
-  font-size: 12px;
-  color: var(--muted, #999);
-  margin-top: 2px;
-}
-.cp-close {
-  background: none;
-  border: none;
-  color: var(--muted, #999);
-  cursor: pointer;
-  font-size: 20px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-.cp-close:hover {
-  color: var(--text, #333);
-  background: rgba(0, 0, 0, 0.04);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.cp-content {
-  flex: 1;
-  padding: 20px 24px;
-  background: rgba(255, 255, 255, 0.35);
-}
+@import '../styles/cp-glass-modal-shell.css';
 
 .cp-preview-section {
   margin-bottom: 16px;
@@ -378,8 +289,8 @@ export default {
   box-sizing: border-box;
 }
 .cp-input:focus {
-  border-color: var(--accent, #1677ff);
-  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+  border-color: var(--cp-ant-primary);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
 }
 .cp-input-hex {
   font-family: monospace;
@@ -419,89 +330,35 @@ export default {
   margin-bottom: 4px;
 }
 
-.cp-footer {
-  padding: 16px 24px;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.4);
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  align-items: center;
-}
-.cp-footer-right {
-  display: flex;
-  gap: 12px;
-}
-
-.cp-btn {
-  padding: 10px 18px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 70px;
-  transition: all 0.15s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.cp-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.cp-btn-gray {
-  background: var(--btn-gray-bg, #f5f5f5);
-  color: var(--btn-gray-text, #666);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-.cp-btn-gray:hover:not(:disabled) {
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
-}
-.cp-btn-green {
-  background: #2ed573;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(46, 213, 115, 0.4);
-}
-.cp-btn-green:hover:not(:disabled) {
-  box-shadow: 0 5px 14px rgba(46, 213, 115, 0.5);
-}
-.cp-btn-picker {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-.cp-btn-picker:hover:not(:disabled) {
-  box-shadow: 0 5px 14px rgba(102, 126, 234, 0.45);
-}
-
 @media (prefers-color-scheme: dark) {
-  .cp-dialog {
-    background: rgba(30, 30, 30, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .cp-header {
-    background: rgba(30, 30, 30, 0.4) !important;
-    border-bottom-color: rgba(255, 255, 255, 0.1);
-  }
-  .cp-content {
-    background: rgba(30, 30, 30, 0.3) !important;
-  }
-  .cp-footer {
-    background: rgba(30, 30, 30, 0.4) !important;
-    border-top-color: rgba(255, 255, 255, 0.1);
-  }
   .cp-input {
-    background: rgba(50, 50, 50, 0.6);
+    background: rgba(50, 50, 50, 0.55);
     border-color: rgba(255, 255, 255, 0.12);
     color: var(--text, #eee);
   }
   .cp-preview {
     border-color: rgba(255, 255, 255, 0.12);
   }
-  .cp-close:hover {
-    background: rgba(255, 255, 255, 0.06);
+  .cp-label,
+  .cp-rgb-label {
+    color: var(--muted, #9aa6b2);
   }
+}
+
+html.dark .cp-input,
+html[data-theme='dark'] .cp-input {
+  background: rgba(50, 50, 50, 0.55);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text, #eee);
+}
+html.dark .cp-preview,
+html[data-theme='dark'] .cp-preview {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+html.dark .cp-label,
+html.dark .cp-rgb-label,
+html[data-theme='dark'] .cp-label,
+html[data-theme='dark'] .cp-rgb-label {
+  color: var(--muted, #9aa6b2);
 }
 </style>

@@ -23,7 +23,6 @@ export default {
       minWidth: props.minWidth + 'px'
     }))
 
-    // 根据窗口大小自动调整菜单位置，避免被裁剪
     async function adjustPosition() {
       if (!props.modelValue) return
       await nextTick()
@@ -76,129 +75,28 @@ export default {
     <div
       v-if="modelValue"
       ref="menuRef"
-      class="lmcm"
+      data-line-context-menu
+      class="station-context-menu station-context-menu--glass-shell"
+      v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
       :style="style"
       @click.stop
       @contextmenu.prevent
     >
       <template v-for="(it, idx) in items" :key="idx">
-        <div v-if="it.type === 'sep'" class="lmcm-sep"></div>
+        <div v-if="it.type === 'sep'" class="station-context-menu-divider"></div>
         <div
           v-else
-          class="lmcm-item"
+          class="station-context-menu-item"
           :class="{ danger: !!it.danger, disabled: !!it.disabled }"
           @click="onSelect(it)"
         >
-          <i v-if="it.icon" :class="it.icon" class="lmcm-icon"></i>
-          <span class="lmcm-label">{{ it.label }}</span>
+          <i v-if="it.icon" :class="it.icon"></i>
+          <span>{{ it.label }}</span>
         </div>
       </template>
     </div>
   </Teleport>
   <Teleport to="body">
-    <div v-if="modelValue" class="lmcm-mask" @click="close"></div>
+    <div v-if="modelValue" class="station-context-menu-mask" @click="close"></div>
   </Teleport>
 </template>
-
-<style>
-.lmcm{
-  position: fixed;
-  z-index: 10000;
-  background: rgba(255, 255, 255, 0.68);
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
-  border: 1px solid rgba(255,255,255,0.45);
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  padding: 8px;
-}
-.lmcm-item{
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  user-select: none;
-  font-size: 13px;
-  color: var(--text, #333);
-}
-.lmcm-item:hover{
-  background: rgba(0,0,0,0.05);
-}
-.lmcm-item.danger{ color: var(--btn-red-bg, #ff4444); }
-.lmcm-item.disabled{
-  opacity: .5;
-  cursor: not-allowed;
-}
-.lmcm-icon{
-  width: 16px;
-  text-align: center;
-  color: var(--muted, #666);
-  font-size: 12px;
-}
-.lmcm-item.danger .lmcm-icon{ color: var(--btn-red-bg, #ff4444); }
-.lmcm-sep{
-  height: 1px;
-  margin: 6px 4px;
-  background: var(--divider, rgba(0,0,0,0.08));
-}
-.lmcm-mask{
-  position: fixed;
-  inset: 0;
-  z-index: 9998;
-  background: transparent;
-}
-
-/* 深色模式 */
-html.dark .lmcm{
-  background: rgba(28, 28, 32, 0.62);
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
-  border: 1px solid rgba(255,255,255,0.18);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.34), 0 0 0 1px rgba(255,255,255,0.06);
-}
-html.dark .lmcm-item{
-  color: var(--text);
-}
-html.dark .lmcm-item:hover{
-  background: rgba(255,255,255,0.10);
-}
-html.dark .lmcm-item.danger{
-  color: var(--btn-red-bg);
-}
-html.dark .lmcm-item.danger .lmcm-icon{
-  color: var(--btn-red-bg);
-}
-html.dark .lmcm-icon{
-  color: var(--muted);
-}
-html.dark .lmcm-sep{
-  background: var(--divider);
-}
-
-html.blur-disabled .lmcm{
-  background: #ffffff;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22);
-}
-html.blur-disabled .lmcm-item:hover{
-  background: #f5f7fb;
-}
-html.blur-disabled.dark .lmcm,
-html.blur-disabled[data-theme="dark"] .lmcm{
-  background: #1c1c20;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid rgba(255,255,255,0.16);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.42);
-}
-html.blur-disabled.dark .lmcm-item:hover,
-html.blur-disabled[data-theme="dark"] .lmcm-item:hover{
-  background: rgba(255,255,255,0.08);
-}
-</style>
-

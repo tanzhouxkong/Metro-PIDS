@@ -200,6 +200,12 @@
     "presetShare": "공유",
     "presetImport": "공유 코드로 가져오기",
     "presetDelete": "삭제",
+    "presetSavedSuccess": "단선 프리셋이 저장되었습니다",
+    "presetSavedNotifyDesc": "목록이 업데이트되었습니다.",
+    "presetDeletedSuccess": "단선 프리셋이 삭제되었습니다",
+    "presetDeletedNotifyDesc": "해당 단선 프리셋이 로컬에서 제거되었습니다.",
+    "presetShareCopiedTitle": "공유 코드가 복사되었습니다",
+    "presetShareCopiedDesc": "공유 ID: {shareId}, 길이: {length}자",
     "presetShareCode": "공유 코드",
     "presetShareId": "공유 ID",
     "presetEmpty": "프리셋이 없습니다. \"프리셋 저장\"을 클릭하여 현재 단구간 운행 설정을 저장하세요",
@@ -362,6 +368,11 @@
     "btnCancel": "취소",
     "btnConfirm": "확인",
     "closeLabel": "닫기"
+  },
+  "unifiedDialog": {
+    "copy": "복사",
+    "paste": "붙여넣기",
+    "shareCodeLabel": "공유 코드"
   },
   "lineManagerWindow": {
     "noAvailableFolders": "현재 사용 가능한 폴더가 없습니다. 직통 노선을 저장할 폴더를 먼저 만드세요:",

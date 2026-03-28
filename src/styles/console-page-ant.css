@@ -1,0 +1,239 @@
+/* PIDS 控制台：线路管理「打开管理器 / 保存当前线路」— 紧凑高度（原 72px） */
+.pids-console-ant .pids-console-line-btn.ant-btn {
+  height: 52px !important;
+  min-height: 52px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07);
+  gap: 8px;
+  padding-left: 14px;
+  padding-right: 14px;
+  line-height: 1.2;
+}
+
+.pids-console-ant .pids-console-line-btn.ant-btn > i.fas,
+.pids-console-ant .pids-console-line-btn.ant-btn > i.fab {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.pids-console-ant .pids-console-line-btn--manager.ant-btn-primary {
+  background: #ff9f43 !important;
+  border-color: #ff9f43 !important;
+  color: #fff !important;
+}
+
+.pids-console-ant .pids-console-line-btn--save {
+  background: #dfe4ea !important;
+  border: none !important;
+  color: #2f3542 !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* 环线 / 单线：两个独立按钮（与原 radio 体量一致） */
+.pids-console-ant .pids-console-line-mode-btns {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+}
+
+.pids-console-ant .pids-console-line-mode-btn.ant-btn {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px !important;
+  height: auto !important;
+  padding: 0 14px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  border-radius: 8px !important;
+}
+
+/* 环线 / 单线 / 内圈外圈：与加大后的字号一致 */
+.pids-console-ant .pids-console-radio-wrap.ant-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pids-console-ant .pids-console-radio-wrap:not(.pids-console-radio-wrap--stack):not(.pids-console-radio-wrap--updown-row):not(.pids-console-radio-wrap--service-row) .ant-radio-button-wrapper {
+  font-size: 15px;
+  font-weight: 600;
+  min-height: 46px;
+  line-height: 44px;
+  padding: 0 18px;
+}
+
+/* 运营模式：普通 / 大站 / 直达 — 同一行三列（与竖排款相同字号与高度） */
+.pids-console-ant .pids-console-radio-wrap.pids-console-radio-wrap--service-row.ant-radio-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  gap: 10px;
+}
+
+.pids-console-ant .pids-console-radio-wrap--service-row .ant-radio-button-wrapper {
+  margin-inline-start: 0 !important;
+  border-radius: 8px !important;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  min-height: 50px;
+  line-height: 1.35;
+  padding: 12px 8px;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pids-console-ant .pids-console-radio-wrap--service-row .ant-radio-button-wrapper::before {
+  display: none !important;
+}
+
+/* 运营模式：普通 / 大站 / 直达 — 竖排整行按钮（与环线·单线同款实心按钮样式） */
+.pids-console-ant .pids-console-radio-wrap--stack.ant-radio-group {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 10px;
+}
+
+.pids-console-ant .pids-console-radio-wrap--stack .ant-radio-button-wrapper {
+  width: 100% !important;
+  margin-inline-start: 0 !important;
+  border-radius: 8px !important;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  min-height: 50px;
+  line-height: 1.35;
+  padding: 12px 14px;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pids-console-ant .pids-console-radio-wrap--stack .ant-radio-button-wrapper::before {
+  display: none !important;
+}
+
+.pids-console-ant .pids-console-radio-wrap--stack.ant-radio-group {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pids-console-ant .pids-console-radio-wrap--stack .ant-radio-button-wrapper + .ant-radio-button-wrapper {
+  border-top: 1px solid var(--divider, rgba(0, 0, 0, 0.12)) !important;
+  border-inline-start: 0 !important;
+}
+
+/* 单线：上行 / 下行 — 固定同一行两列，文字可换行 */
+.pids-console-ant .pids-console-radio-wrap--updown-row.ant-radio-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  gap: 10px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pids-console-ant .pids-console-radio-wrap--updown-row .ant-radio-button-wrapper {
+  white-space: normal;
+  height: auto;
+  min-height: 56px;
+  line-height: 1.35;
+  padding: 12px 10px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pids-console-ant .pids-console-radio-wrap--updown-row .ant-radio-button-wrapper::before {
+  display: none !important;
+}
+
+/* 贯通线路等：紧凑主按钮（约 32px 高） */
+.pids-console-ant button.pids-console-through-btn.ant-btn {
+  min-height: 32px !important;
+  height: 32px !important;
+  max-height: 32px !important;
+  padding: 0 12px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  gap: 6px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.pids-console-ant button.pids-console-through-btn.ant-btn > i.fas {
+  font-size: 13px !important;
+  margin-right: 0 !important;
+}
+
+/* 短交路预设「保存预设 / 刷新」等：同一视觉权重下略大，便于点击 */
+.pids-console-ant button.pids-console-compact-btn.ant-btn {
+  min-height: 40px !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 0 16px !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  gap: 8px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.pids-console-ant button.pids-console-compact-btn.ant-btn > i.fas {
+  font-size: 14px !important;
+  margin-right: 0 !important;
+}
+
+.pids-console-ant button.pids-console-compact-btn.ant-btn.ant-btn-block {
+  width: 100% !important;
+  display: flex !important;
+}
+
+/* 贯通线路卡片：减小 Ant Card 内边距与标题留白 */
+.pids-console-ant .pids-console-through-outer.ant-card .ant-card-body {
+  padding: 12px 14px !important;
+}
+
+.pids-console-ant .pids-console-through-outer .pids-ant-card-title--violet {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.pids-console-ant .pids-console-through-box {
+  padding: 8px !important;
+  margin-bottom: 8px !important;
+  border-radius: 6px !important;
+}
+
+.pids-console-ant button.pids-console-through-footer.ant-btn {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 15px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  box-sizing: border-box !important;
+}

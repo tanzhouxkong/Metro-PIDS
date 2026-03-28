@@ -200,6 +200,12 @@
     "presetShare": "Share",
     "presetImport": "Import from Share Code",
     "presetDelete": "Delete",
+    "presetSavedSuccess": "Short-turn preset saved",
+    "presetSavedNotifyDesc": "The list has been updated.",
+    "presetDeletedSuccess": "Short-turn preset removed",
+    "presetDeletedNotifyDesc": "This short-turn preset has been removed from local storage.",
+    "presetShareCopiedTitle": "Share code copied",
+    "presetShareCopiedDesc": "Share ID: {shareId}, length: {length} characters",
     "presetShareCode": "Share Code",
     "presetShareId": "Share ID",
     "presetEmpty": "No presets yet. Click “Save Preset” to save the current short‑turn settings.",
@@ -362,6 +368,11 @@
     "btnCancel": "Cancel",
     "btnConfirm": "OK",
     "closeLabel": "Close"
+  },
+  "unifiedDialog": {
+    "copy": "Copy",
+    "paste": "Paste",
+    "shareCodeLabel": "Share code"
   },
   "lineManagerWindow": {
     "noAvailableFolders": "No folders available. Please create a folder first to save the through line:",

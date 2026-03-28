@@ -200,6 +200,12 @@
     "presetShare": "分享",
     "presetImport": "从分享码导入",
     "presetDelete": "删除",
+    "presetSavedSuccess": "短交路预设已保存",
+    "presetSavedNotifyDesc": "列表已更新，可继续管理或分享。",
+    "presetDeletedSuccess": "已删除短交路预设",
+    "presetDeletedNotifyDesc": "该短交路预设已从本地移除。",
+    "presetShareCopiedTitle": "分享码已复制",
+    "presetShareCopiedDesc": "分享 ID：{shareId}，长度：{length} 字符",
     "presetShareCode": "分享码",
     "presetShareId": "分享ID",
     "presetEmpty": "暂无预设，点击\"保存预设\"保存当前短交路设置",
@@ -373,6 +379,11 @@
     "btnCancel": "取消",
     "btnConfirm": "确定",
     "closeLabel": "关闭"
+  },
+  "unifiedDialog": {
+    "copy": "复制",
+    "paste": "粘贴",
+    "shareCodeLabel": "分享码"
   },
   "lineManagerWindow": {
     "noAvailableFolders": "当前没有可用文件夹，请先创建一个文件夹用于保存贯通线路：",

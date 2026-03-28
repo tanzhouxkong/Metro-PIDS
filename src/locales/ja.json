@@ -200,6 +200,12 @@
     "presetShare": "共有",
     "presetImport": "共有コードからインポート",
     "presetDelete": "削除",
+    "presetSavedSuccess": "短絡プリセットを保存しました",
+    "presetSavedNotifyDesc": "一覧を更新しました。",
+    "presetDeletedSuccess": "短絡プリセットを削除しました",
+    "presetDeletedNotifyDesc": "この短絡プリセットをローカルから削除しました。",
+    "presetShareCopiedTitle": "共有コードをコピーしました",
+    "presetShareCopiedDesc": "共有 ID：{shareId}、長さ：{length} 文字",
     "presetShareCode": "共有コード",
     "presetShareId": "共有ID",
     "presetEmpty": "プリセットはありません。「プリセットを保存」をクリックして現在の区間運転設定を保存してください",
@@ -362,6 +368,11 @@
     "btnCancel": "キャンセル",
     "btnConfirm": "決定",
     "closeLabel": "閉じる"
+  },
+  "unifiedDialog": {
+    "copy": "コピー",
+    "paste": "貼り付け",
+    "shareCodeLabel": "共有コード"
   },
   "lineManagerWindow": {
     "noAvailableFolders": "現在利用可能なフォルダがありません。直通路線を保存するためのフォルダを先に作成してください：",

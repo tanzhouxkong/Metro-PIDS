@@ -1,0 +1,182 @@
+/**
+ * 站点列表 / 管理端右键菜单样式（与 index.html 内联块一致）。
+ * 独立窗口（线路管理器）通过此文件引用，与主界面统一。
+ */
+
+.station-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 140px;
+  padding: 6px 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--divider, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+html.dark .station-context-menu,
+html[data-theme='dark'] .station-context-menu {
+  background: rgba(28, 28, 30, 0.95);
+  border-color: var(--divider, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+html.blur-disabled .station-context-menu {
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: rgba(15, 23, 42, 0.16);
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22);
+}
+
+html.blur-disabled.dark .station-context-menu,
+html.blur-disabled[data-theme='dark'] .station-context-menu {
+  background: #1c1c20;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.42);
+}
+
+.station-context-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.2s;
+}
+
+.station-context-menu-item i {
+  font-size: 12px;
+  color: var(--muted);
+  width: 16px;
+}
+
+.station-context-menu-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+html.dark .station-context-menu-item:hover,
+html[data-theme='dark'] .station-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html.blur-disabled .station-context-menu-item:hover {
+  background: #f5f7fb;
+}
+
+html.blur-disabled.dark .station-context-menu-item:hover,
+html.blur-disabled[data-theme='dark'] .station-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.station-context-menu-item.disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.station-context-menu-item.disabled i {
+  color: var(--muted);
+}
+
+.station-context-menu-item.disabled:hover {
+  background: transparent;
+}
+
+.station-context-menu-item.danger {
+  color: var(--btn-red-bg);
+}
+
+.station-context-menu-item.danger i {
+  color: var(--btn-red-bg);
+}
+
+.station-context-menu-item.danger:hover {
+  background: rgba(255, 68, 68, 0.1);
+}
+
+html.dark .station-context-menu-item.danger:hover,
+html[data-theme='dark'] .station-context-menu-item.danger:hover {
+  background: rgba(255, 68, 68, 0.2);
+}
+
+.station-context-menu-divider {
+  height: 1px;
+  background: var(--divider, rgba(0, 0, 0, 0.1));
+  margin: 4px 0;
+}
+
+html.dark .station-context-menu-divider,
+html[data-theme='dark'] .station-context-menu-divider {
+  background: var(--divider, rgba(255, 255, 255, 0.12));
+}
+
+.station-context-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: transparent;
+}
+
+/**
+ * 根节点使用 v-glassmorphism 时：条目悬停需用提亮叠色，与 SlidePanel.glassItemHoverBackground 一致，
+ * 否则 rgba(0,0,0,0.05) 在毛玻璃上几乎无反馈，与带玻璃时站点列表／线路菜单预期不符。
+ *
+ * 条目圆角 + 面板左右内缩：与 StationEditor 内站点右键菜单（border-radius: 8px 行、面板 padding 留白）一致。
+ */
+.station-context-menu.station-context-menu--glass-shell {
+  padding: 8px;
+}
+
+.station-context-menu--glass-shell .station-context-menu-item {
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.station-context-menu--glass-shell .station-context-menu-divider {
+  margin: 6px 4px;
+}
+
+.station-context-menu--glass-shell .station-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+html.dark .station-context-menu--glass-shell .station-context-menu-item:hover,
+html[data-theme='dark'] .station-context-menu--glass-shell .station-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html.blur-disabled .station-context-menu--glass-shell .station-context-menu-item:hover {
+  background: #f5f7fb;
+}
+
+html.blur-disabled.dark .station-context-menu--glass-shell .station-context-menu-item:hover,
+html.blur-disabled[data-theme='dark'] .station-context-menu--glass-shell .station-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.station-context-menu--glass-shell .station-context-menu-item.danger:hover {
+  background: rgba(255, 107, 107, 0.18);
+}
+
+html.dark .station-context-menu--glass-shell .station-context-menu-item.danger:hover,
+html[data-theme='dark'] .station-context-menu--glass-shell .station-context-menu-item.danger:hover {
+  background: rgba(255, 107, 107, 0.26);
+}
+
+html.blur-disabled .station-context-menu--glass-shell .station-context-menu-item.danger:hover {
+  background: rgba(255, 68, 68, 0.1);
+}
+
+html.blur-disabled.dark .station-context-menu--glass-shell .station-context-menu-item.danger:hover,
+html.blur-disabled[data-theme='dark'] .station-context-menu--glass-shell .station-context-menu-item.danger:hover {
+  background: rgba(255, 68, 68, 0.2);
+}
+
+.station-context-menu--glass-shell .station-context-menu-item.disabled:hover {
+  background: transparent !important;
+}

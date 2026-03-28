@@ -1,0 +1,127 @@
+/**
+ * 主窗口控制台 / 线路管理器共用：与 SlidePanel 预设右键菜单一致的毛玻璃菜单
+ */
+
+.preset-context-menu {
+  position: fixed;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.5) inset;
+  min-width: 140px;
+  padding: 6px 0;
+  z-index: 10000;
+}
+
+.preset-context-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text, #333);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.2s;
+}
+
+.preset-context-menu-item > i.fas,
+.preset-context-menu-item > i.fab {
+  font-size: 12px;
+  color: var(--muted, #666);
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.preset-context-menu-item.danger > i.fas,
+.preset-context-menu-item.danger > i.fab {
+  color: var(--btn-red-bg, #ff4444);
+}
+
+.preset-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.preset-context-menu-item.danger {
+  color: var(--btn-red-bg, #ff4444);
+}
+
+.preset-context-menu-item.danger:hover {
+  background: rgba(255, 68, 68, 0.1);
+}
+
+.preset-context-menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preset-context-menu-divider {
+  height: 1px;
+  background: rgba(224, 224, 224, 0.5);
+  margin: 4px 0;
+}
+
+.preset-context-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .preset-context-menu {
+    background: rgba(30, 30, 30, 0.85);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .preset-context-menu-item {
+    color: var(--text, #fff);
+  }
+
+  .preset-context-menu-divider {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+html.dark .preset-context-menu,
+html[data-theme='dark'] .preset-context-menu {
+  background: rgba(30, 30, 30, 0.4);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .preset-context-menu-item,
+html[data-theme='dark'] .preset-context-menu-item {
+  color: var(--text, #fff);
+}
+
+html.dark .preset-context-menu-divider,
+html[data-theme='dark'] .preset-context-menu-divider {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.blur-disabled .preset-context-menu {
+  background: #ffffff;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22);
+}
+
+html.blur-disabled .preset-context-menu-item:hover {
+  background: #f5f7fb;
+}
+
+html.blur-disabled.dark .preset-context-menu,
+html.blur-disabled[data-theme='dark'] .preset-context-menu {
+  background: #1c1c20;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+}
+
+html.blur-disabled.dark .preset-context-menu-item:hover,
+html.blur-disabled[data-theme='dark'] .preset-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}

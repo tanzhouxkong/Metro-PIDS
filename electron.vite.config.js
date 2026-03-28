@@ -299,7 +299,15 @@ export default defineConfig({
       cssCodeSplit: true
     },
     optimizeDeps: {
-      include: ['vue', 'vue-i18n'],
+      // antdv-next 的语言包为 deep import，不加入 include 时易在 HMR/缓存更新后出现 504 Outdated Optimize Dep
+      include: [
+        'vue',
+        'vue-i18n',
+        'antdv-next',
+        'antdv-next/locale/zh_CN',
+        '@v-c/pagination/locale/zh_CN',
+        '@antdv-next/cssinjs'
+      ],
       exclude: [],
       // 强制重新预构建（开发环境）- 临时启用以修复缓存问题
       force: process.env.FORCE_VITE_OPTIMIZE === 'true', // 通过环境变量控制

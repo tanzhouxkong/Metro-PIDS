@@ -1,7 +1,8 @@
 // 侧边栏入口文件（用于 BrowserView）
 // 使用静态导入，与 1.6.3 行为对齐
 import { createApp } from 'vue'
-import LeftRail from './components/LeftRail.js'
+import LeftRail from './components/LeftRail.vue'
+import { installAntd } from './installAntd.js'
 
 // 检查容器元素（侧边栏 BrowserView 只包含侧边栏，不包含顶部栏）
 const leftrailContainer = document.getElementById('leftrail-app')
@@ -18,6 +19,7 @@ if (!LeftRail) {
 } else {
     console.log('[Sidebar] 开始挂载 LeftRail 组件...')
     const leftrailApp = createApp(LeftRail)
+    installAntd(leftrailApp)
     leftrailApp.mount('#leftrail-app')
     console.log('[Sidebar] ✅ LeftRail 组件挂载成功')
     

@@ -200,6 +200,12 @@
     "presetShare": "分享",
     "presetImport": "從分享碼匯入",
     "presetDelete": "刪除",
+    "presetSavedSuccess": "短交路預設已儲存",
+    "presetSavedNotifyDesc": "列表已更新，可繼續管理或分享。",
+    "presetDeletedSuccess": "已刪除短交路預設",
+    "presetDeletedNotifyDesc": "此短交路預設已從本機移除。",
+    "presetShareCopiedTitle": "分享碼已複製",
+    "presetShareCopiedDesc": "分享 ID：{shareId}，長度：{length} 字元",
     "presetShareCode": "分享碼",
     "presetShareId": "分享 ID",
     "presetEmpty": "暫無預設，點擊「儲存預設」儲存目前短交路設定",
@@ -362,6 +368,11 @@
     "btnCancel": "取消",
     "btnConfirm": "確定",
     "closeLabel": "關閉"
+  },
+  "unifiedDialog": {
+    "copy": "複製",
+    "paste": "貼上",
+    "shareCodeLabel": "分享碼"
   },
   "lineManagerWindow": {
     "noAvailableFolders": "目前沒有可用資料夾，請先建立一個資料夾用於儲存貫通路線：",

@@ -65,6 +65,10 @@
             
             /* Typography */
             --font: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+            /* 主页站点列表：选中 / 拖拽悬停（浅色） */
+            --admin-station-active-bg: rgba(22, 119, 255, 0.08);
+            --admin-station-dragover-bg: rgba(0, 0, 0, 0.04);
         }
 
         /* Dark Theme（与 PIDS 控制台一致） */
@@ -96,6 +100,10 @@
             --surface-primary: rgba(0, 0, 0, 0.82);      /* Primary: R0 G0 B0 */
             --surface-secondary: rgba(28, 28, 30, 0.82); /* Secondary: R28 G28 B30 */
             --surface-tertiary: rgba(44, 44, 46, 0.82);  /* Tertiary: R44 G44 B46 */
+
+            /* 主页站点列表：选中 / 拖拽悬停（深色） */
+            --admin-station-active-bg: rgba(22, 119, 255, 0.22);
+            --admin-station-dragover-bg: rgba(255, 255, 255, 0.08);
         }
 
         /* 关闭高斯模糊时的全局覆盖 */
@@ -422,20 +430,33 @@
             border-color: rgba(255, 255, 255, 0.12);
         }
 
-        /* 主页顶栏卡片 - 进站 / 运营模式 普通（与应用主色一致） */
+        /* 主页顶栏卡片 - 进站 / 运营模式（毛玻璃 + Ant Card 根节点） */
         .admin-header-card {
-            padding: 18px 24px;
             display: flex;
             flex-direction: column;
             gap: 12px;
+            border-radius: 12px;
+        }
+        .admin-header-card.ant-card {
+            padding: 0;
+            border: none;
             border-left: 4px solid var(--accent, #00b894);
             border-radius: 12px;
-            background: rgba(255, 255, 255, 0.1);
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+            background: rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(16px) saturate(170%);
+            -webkit-backdrop-filter: blur(16px) saturate(170%);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
         }
-        html.dark .admin-header-card {
+        html.dark .admin-header-card.ant-card {
             background: rgba(255, 255, 255, 0.1) !important;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+        }
+        #admin-app-vue .admin-header-card .ant-card-body {
+            padding: 18px 24px;
+        }
+        #admin-app-vue .admin-header-card.ant-card,
+        #admin-app-vue .admin-station-card.ant-card {
+            margin-bottom: 0;
         }
         .admin-header-inner {
             display: flex;
@@ -527,23 +548,117 @@
 
         .admin-station-card {
             flex: 1;
+            min-height: 0;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            border-radius: 12px;
+        }
+        .admin-station-card.ant-card {
             padding: 0;
+            border: none;
             border-left: 6px solid #FF9F43;
             border-radius: 12px;
-            background: rgba(255, 255, 255, 0.1);
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+            background: rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(16px) saturate(170%);
+            -webkit-backdrop-filter: blur(16px) saturate(170%);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
         }
-        html.dark .admin-station-card {
+        html.dark .admin-station-card.ant-card {
             background: rgba(255, 255, 255, 0.1) !important;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+        }
+        #admin-app-vue .admin-station-card .ant-card-body {
+            padding: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
         }
         .admin-station-card .st-list {
             flex: 1;
             overflow-y: auto;
             padding: 0;
+            min-height: 0;
+        }
+
+        /*
+         * 主页站点列表：站名与换乘标签同一套排版（字号/字重/行高），避免色块白字与正文粗体观感不一致；
+         * Ant Card token 可能压小继承字号，此处对列表行显式指定。
+         */
+        #admin-app-vue .admin-station-card .st-list .item {
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #admin-app-vue .admin-station-card .st-list .item .admin-station-index {
+            font-weight: 600;
+            color: var(--muted);
+            width: 32px;
+            flex-shrink: 0;
+            font-size: 16px;
+            line-height: 22px;
+        }
+        #admin-app-vue .admin-station-card .st-list .item .admin-station-name-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            font-weight: 600;
+            font-size: 16px;
+            line-height: 22px;
+        }
+        #admin-app-vue .admin-station-card .st-list .item .admin-station-name {
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+            color: var(--text);
+            font-weight: 600;
+            font-size: 16px;
+            line-height: 22px;
+        }
+        #admin-app-vue .admin-station-card .st-list .item .admin-station-name-en {
+            font-weight: 500;
+            font-size: 16px;
+            line-height: 22px;
+            color: var(--muted);
+        }
+        #admin-app-vue .admin-station-card .st-list .item .admin-station-xfer.badge {
+            font-weight: 600;
+            font-size: 16px;
+            line-height: 22px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            gap: 2px;
+            box-sizing: border-box;
+        }
+
+        /* 主页控制台按钮：对齐原 b-gray / b-org / b-blue / b-red */
+        #admin-app-vue .admin-home-btn-muted.ant-btn-default {
+            background: var(--btn-gray-bg) !important;
+            border-color: var(--btn-gray-bg) !important;
+            color: var(--btn-gray-text) !important;
+        }
+        #admin-app-vue .admin-home-btn-muted.ant-btn-default:hover {
+            filter: brightness(1.04);
+            border-color: var(--btn-gray-bg) !important;
+            color: var(--btn-gray-text) !important;
+        }
+        #admin-app-vue .admin-home-btn-org.ant-btn-default {
+            background: var(--btn-org-bg) !important;
+            border-color: var(--btn-org-bg) !important;
+            color: #fff !important;
+        }
+        #admin-app-vue .admin-home-btn-org.ant-btn-default:hover {
+            filter: brightness(1.06);
+            border-color: var(--btn-org-bg) !important;
+            color: #fff !important;
         }
 
         .btn {
@@ -580,6 +695,72 @@
         .b-gray { 
             background: var(--btn-gray-bg); 
             color: var(--btn-gray-text); 
+        }
+
+        /* ========== PIDS 控制台 / 设置：Ant Design Vue 卡片与表单（与主页毛玻璃一致） ========== */
+        .pids-ant-page {
+            font-family: var(--font);
+        }
+        .pids-ant-page .pids-ant-card.ant-card {
+            margin-bottom: 28px;
+            border-radius: 12px;
+            border: none;
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+        }
+        html.dark .pids-ant-page .pids-ant-card.ant-card {
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+        }
+        .pids-ant-page .pids-ant-card .ant-card-body {
+            padding: 16px;
+        }
+        .pids-ant-page .pids-ant-card--orange.ant-card { border-left: 6px solid #ff9f43; }
+        .pids-ant-page .pids-ant-card--red.ant-card { border-left: 6px solid #ff4757; }
+        .pids-ant-page .pids-ant-card--purple.ant-card { border-left: 6px solid #5f27cd; }
+        .pids-ant-page .pids-ant-card--violet.ant-card { border-left: 6px solid #9b59b6; }
+        .pids-ant-page .pids-ant-card--blue.ant-card { border-left: 6px solid #1e90ff; }
+        .pids-ant-page .pids-ant-card--recording.ant-card { border-left: 6px solid #e74c3c; }
+        .pids-ant-page .pids-ant-card--green.ant-card { border-left: 6px solid #2ed573; }
+        .pids-ant-page .pids-ant-card--sky.ant-card { border-left: 6px solid #4a90e2; }
+        .pids-ant-page .pids-ant-card--coral.ant-card { border-left: 6px solid #ff6b6b; }
+        .pids-ant-page .pids-ant-card--emerald.ant-card { border-left: 6px solid #27ae60; }
+        .pids-ant-page .pids-ant-card--indigo.ant-card { border-left: 6px solid #4b7bec; }
+        .pids-ant-page .pids-ant-card--teal.ant-card { border-left: 6px solid #00b894; }
+        .pids-ant-card-title {
+            font-weight: bold;
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
+        .pids-ant-card-title--orange { color: #ff9f43; }
+        .pids-ant-card-title--red { color: #ff4757; }
+        .pids-ant-card-title--purple { color: #5f27cd; }
+        .pids-ant-card-title--violet { color: #9b59b6; }
+        .pids-ant-card-title--blue { color: #1e90ff; }
+        .pids-ant-card-title--recording { color: #e74c3c; }
+        .pids-ant-card-title--green { color: #2ed573; }
+        .pids-ant-card-title--sky { color: #4a90e2; }
+        .pids-ant-card-title--coral { color: #ff6b6b; }
+        .pids-ant-card-title--emerald { color: #27ae60; }
+        .pids-ant-card-title--indigo { color: #4b7bec; }
+        .pids-ant-card-title--teal { color: #00b894; }
+        .pids-ant-page .ant-input,
+        .pids-ant-page .ant-input-affix-wrapper,
+        .pids-ant-page .ant-input-number .ant-input-number-input {
+            background: var(--input-bg) !important;
+            color: var(--text) !important;
+        }
+        .pids-ant-page .ant-input,
+        .pids-ant-page .ant-input-affix-wrapper {
+            border-color: var(--divider) !important;
+        }
+        .pids-ant-page .ant-input-number {
+            background: var(--input-bg) !important;
+            border-color: var(--divider) !important;
+            width: 100%;
+        }
+        .pids-ant-page .ant-input-number .ant-input-number-input {
+            color: var(--text) !important;
         }
 
         /* 站点右键菜单（与顶栏/站点卡片统一：浅色用 var(--divider)、统一阴影） */

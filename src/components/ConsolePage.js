@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS } from '../utils/defaults.js'
 import { getEffectiveViewportRect } from '../utils/effectiveViewportRect.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { notification } from 'antdv-next'
 import ColorPicker from './ColorPicker.vue'
 
 export default {
@@ -137,8 +138,16 @@ export default {
 
     const isDarkThemeActive = () => dropdownThemeDark.value
     const isGlassBlurEnabled = () => settings.blurEnabled !== false
-    const shortTurnMenuBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(22px) saturate(180%)' : 'none')
     const shortTurnTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(18px) saturate(170%)' : 'none')
+
+    /** 下拉菜单面板：vue3-glassmorphism（与 SlidePanel / 弹窗一致） */
+    const glassDropdownDirective = computed(() => {
+        const dark = isDarkThemeActive()
+        if (!isGlassBlurEnabled()) {
+            return { blur: 0, opacity: 1, color: dark ? '#1c1c20' : '#ffffff' }
+        }
+        return { blur: 12, opacity: 0.2, color: dark ? '#1c1c20' : '#ffffff' }
+    })
 
     const shortTurnMenuBackground = () => {
         if (!isGlassBlurEnabled()) return isDarkThemeActive() ? '#1c1c20' : '#ffffff'
@@ -181,9 +190,6 @@ export default {
         bottom: shortTurnStartDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
         maxHeight: 'min(460px, 56vh)',
         overflowY: 'auto',
-        background: shortTurnMenuBackground(),
-        backdropFilter: shortTurnMenuBackdropFilter(),
-        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
         border: `1px solid ${shortTurnMenuBorder()}`,
         borderRadius: '12px',
         boxShadow: shortTurnMenuShadow(),
@@ -199,9 +205,6 @@ export default {
         bottom: shortTurnEndDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
         maxHeight: 'min(460px, 56vh)',
         overflowY: 'auto',
-        background: shortTurnMenuBackground(),
-        backdropFilter: shortTurnMenuBackdropFilter(),
-        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
         border: `1px solid ${shortTurnMenuBorder()}`,
         borderRadius: '12px',
         boxShadow: shortTurnMenuShadow(),
@@ -218,15 +221,15 @@ export default {
 
     const throughStationControlStyle = computed(() => ({
         width: '100%',
-        padding: '8px 12px',
-        borderRadius: '8px',
+        padding: '5px 10px',
+        borderRadius: '6px',
         border: `1px solid ${shortTurnMenuBorder()}`,
         background: shortTurnMenuBackground(),
         backdropFilter: shortTurnTriggerBackdropFilter(),
         WebkitBackdropFilter: shortTurnTriggerBackdropFilter(),
         color: 'var(--text)',
         fontSize: '12px',
-        minHeight: '32px',
+        minHeight: '28px',
         boxShadow: shortTurnMenuShadow()
     }))
 
@@ -237,9 +240,6 @@ export default {
         top: 'calc(100% + 8px)',
         maxHeight: 'min(320px, 42vh)',
         overflowY: 'auto',
-        background: shortTurnMenuBackground(),
-        backdropFilter: shortTurnMenuBackdropFilter(),
-        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
         border: `1px solid ${shortTurnMenuBorder()}`,
         borderRadius: '12px',
         boxShadow: shortTurnMenuShadow(),
@@ -279,9 +279,6 @@ export default {
         top: 'calc(100% + 8px)',
         maxHeight: 'min(320px, 42vh)',
         overflowY: 'auto',
-        background: shortTurnMenuBackground(),
-        backdropFilter: shortTurnMenuBackdropFilter(),
-        WebkitBackdropFilter: shortTurnMenuBackdropFilter(),
         border: `1px solid ${shortTurnMenuBorder()}`,
         borderRadius: '12px',
         boxShadow: shortTurnMenuShadow(),
@@ -622,7 +619,15 @@ export default {
         }
         saveCfg();
     }
-    
+
+    /** 环线 / 单线：独立按钮切换 */
+    function setLineMode(mode) {
+        const meta = pidsState.appData.meta || {};
+        if (meta.mode === mode) return;
+        meta.mode = mode;
+        saveCfg();
+    }
+
     function saveCfg() {
         // 归一化布尔值，避免字符串 "true"/"false" 影响显示端判断
         if (pidsState?.appData?.meta) {
@@ -1358,7 +1363,12 @@ export default {
             };
             const res = await window.electronAPI.shortturns.save(finalName, presetData);
             if (res && res.ok) {
-                await showMsg('预设已保存');
+                notification.success({
+                    message: t('console.presetSavedSuccess'),
+                    description: t('console.presetSavedNotifyDesc'),
+                    placement: 'topRight',
+                    duration: 4.5
+                })
                 await loadShortTurnPresets();
             } else {
                 await showMsg('保存失败: ' + (res && res.error));
@@ -1434,7 +1444,12 @@ export default {
         try {
             const res = await window.electronAPI.shortturns.delete(presetName);
             if (res && res.ok) {
-                await showMsg('预设已删除');
+                notification.success({
+                    message: t('console.presetDeletedSuccess'),
+                    description: t('console.presetDeletedNotifyDesc'),
+                    placement: 'topRight',
+                    duration: 4.5
+                })
                 await loadShortTurnPresets();
             } else {
                 await showMsg('删除失败: ' + (res && res.error));
@@ -2729,6 +2744,7 @@ export default {
         saveCfg,
         saveCfgAndPersistSilent,
         changeServiceMode,
+        setLineMode,
         hasElectronAPI,
         pickColor,
         showColorPicker,
@@ -2744,6 +2760,7 @@ export default {
         shortTurnStartDropdownRef,
         shortTurnEndDropdownRef,
         shortTurnDropdownTriggerStyle,
+        glassDropdownDirective,
         shortTurnStartDropdownMenuStyle,
         shortTurnEndDropdownMenuStyle,
         shortTurnItemHoverBackground,
@@ -2812,757 +2829,5 @@ export default {
                 openRecordingFolder,
                 loadAvailableEncoders,
     }
-  },
-  template: `
-    <div style="flex:1; display:flex; flex-direction:column; overflow:auto; background:var(--bg); padding:24px 16px;">
-      <!-- Header -->
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
-          <div style="text-align:left;">
-              <div style="font-size:24px; font-weight:800; color:var(--text); letter-spacing:1px;">{{ t('console.title') }}</div>
-              <div style="font-size:12px; font-weight:bold; color:var(--muted); opacity:0.7; margin-top:4px;">{{ t('console.versionTag') }}</div>
-          </div>
-      </div>
-      
-      <!-- Content -->
-      <div style="display:flex; flex-direction:column;">
-          <!-- Folder & Line Management -->
-          <div class="card" style="border-left: 6px solid #FF9F43; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-          <div style="color:#FF9F43; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.lineManager') }}</div>
-          
-          <!-- 当前线路显示 -->
-          <div style="margin-bottom:12px; padding:12px; background:rgba(255, 255, 255, 0.15); border-radius:8px; border:2px solid var(--divider);">
-              <div style="font-size:14px; color:var(--muted); margin-bottom:4px;">{{ t('console.currentLine') }}</div>
-              <div style="font-size:18px; font-weight:bold; color:var(--text);">{{ pidsState.appData?.meta?.lineName || '未选择' }}</div>
-          </div>
-          
-          <!-- 线路管理操作按钮：打开管理器 / 保存当前线路 -->
-          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
-              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#FF9F43; color:white; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.08);" @click="openLineManagerWindow()">
-                  <i class="fas fa-folder-open" style="font-size:18px;"></i> {{ t('console.openManager') }}
-              </button>
-              <button class="btn" style="height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 8px; background:#DFE4EA; color:#2F3542; border:none; border-radius:10px; font-size:12px; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,0.06);" @click="openLineManagerForSave('line')">
-                  <i class="fas fa-save" style="font-size:18px;"></i> {{ t('console.saveCurrentLine') }}
-              </button>
-          </div>
-          </div>
-          
-        <!-- Service Mode Settings -->
-        <div class="card" style="border-left: 6px solid #FF4757; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <div style="color:#FF4757; font-weight:bold; font-size:15px;">{{ t('console.serviceMode') }}</div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:12px; color:var(--muted);">{{ t('console.currentMode') }}</span>
-                    <div style="display:flex; gap:6px;">
-                        <span v-if="pidsState.appData.meta.serviceMode==='express'" style="padding:4px 8px; border-radius:4px; border:1px solid #ffa502; color:#ffa502; font-weight:bold; background:rgba(255,165,2,0.12);">{{ t('console.modeExpress') }}</span>
-                        <span v-else-if="pidsState.appData.meta.serviceMode==='direct'" style="padding:4px 8px; border-radius:4px; border:1px solid #ff4757; color:#ff4757; font-weight:bold; background:rgba(255,71,87,0.12);">{{ t('console.modeDirect') }}</span>
-                        <span v-else style="padding:4px 8px; border-radius:4px; border:1px solid var(--divider); color:var(--text); font-weight:bold; background:var(--input-bg);">{{ t('console.modeNormal') }}</span>
-                    </div>
-                </div>
-            </div>
-            
-            <input v-model="pidsState.appData.meta.lineName" placeholder="线路名称" @input="saveCfg()" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--divider); margin-bottom:12px; background:var(--input-bg); color:var(--text);">
-            
-            <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
-                <div style="position:relative; width:60px; height:42px;">
-                    <input 
-                        v-if="!hasElectronAPI"
-                        type="color" 
-                        v-model="pidsState.appData.meta.themeColor" 
-                        style="position:absolute; top:0; left:0; width:100%; height:100%; padding:0; margin:0; border:none; border-radius:6px; cursor:pointer; opacity:0; z-index:2;" 
-                        title="主题色" 
-                        @input="saveCfgAndPersistSilent()"
-                    >
-                    <div 
-                        :style="{position:'absolute', top:0, left:0, width:'100%', height:'100%', borderRadius:'6px', border:'2px solid var(--divider)', backgroundColor:pidsState.appData.meta.themeColor || '#00b894', pointerEvents:hasElectronAPI ? 'auto' : 'none', zIndex:1, cursor:'pointer'}"
-                        title="主题色"
-                        @click="pickColor"
-                    ></div>
-                </div>
-                <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1; align-items:center;">
-                    <button class="btn" :style="{
-                        height:'44px',
-                        padding:'10px 18px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.mode==='loop' ? '#10b981' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.mode==='loop' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.mode==='loop' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
-                        fontWeight:'800',
-                        minWidth:'110px'
-                    }" @click="pidsState.appData.meta.mode='loop'; saveCfg()">{{ t('console.loopLine') }}</button>
-                    <button class="btn" :style="{
-                        height:'44px',
-                        padding:'10px 18px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.mode==='linear' ? '#1e90ff' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.mode==='linear' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.mode==='linear' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
-                        fontWeight:'800',
-                        minWidth:'110px'
-                    }" @click="pidsState.appData.meta.mode='linear'; saveCfg()">{{ t('console.singleLine') }}</button>
-
-                    <template v-if="pidsState.appData.meta.mode === 'loop'">
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='outer' ? '#5F27CD' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='outer' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='outer' ? '0 6px 14px rgba(95,39,205,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'120px'
-                        }" @click="pidsState.appData.meta.dirType='outer'; saveCfg()">{{ t('console.outerLoop') }}</button>
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='inner' ? '#ffa502' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='inner' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='inner' ? '0 6px 14px rgba(255,165,2,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'120px'
-                        }" @click="pidsState.appData.meta.dirType='inner'; saveCfg()">{{ t('console.innerLoop') }}</button>
-                    </template>
-                    <template v-else>
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='up' ? '#1e90ff' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='up' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='up' ? '0 6px 14px rgba(30,144,255,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'180px'
-                        }" @click="pidsState.appData.meta.dirType='up'; saveCfg()">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} -> {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</button>
-                        <button class="btn" :style="{
-                            height:'44px',
-                            padding:'10px 18px',
-                            borderRadius:'10px',
-                            border:'1px solid var(--divider)',
-                            background: pidsState.appData.meta.dirType==='down' ? '#10b981' : 'var(--input-bg)',
-                            color: pidsState.appData.meta.dirType==='down' ? '#fff' : 'var(--text)',
-                            boxShadow: pidsState.appData.meta.dirType==='down' ? '0 6px 14px rgba(16,185,129,0.22)' : 'none',
-                            fontWeight:'800',
-                            minWidth:'180px'
-                        }" @click="pidsState.appData.meta.dirType='down'; saveCfg()">{{ t('console.dirLabelDown') || t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} -> {{ pidsState.appData.stations[0]?.name }})</button>
-                    </template>
-                </div>
-            </div>
-
-            <div style="margin-bottom:16px;">
-                <div style="font-size:13px; font-weight:bold; color:var(--muted); margin-bottom:8px;">{{ t('console.serviceMode') }}</div>
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                    <button class="btn" :style="{
-                        padding:'10px 14px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.serviceMode==='normal' ? 'var(--btn-blue-bg)' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.serviceMode==='normal' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.serviceMode==='normal' ? '0 4px 12px rgba(22,119,255,0.25)' : 'none',
-                        fontWeight:'bold',
-                        minWidth:'92px'
-                    }" @click="changeServiceMode('normal')">{{ t('console.modeNormal') }}</button>
-                    <button class="btn" :style="{
-                        padding:'10px 14px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.serviceMode==='express' ? '#ffa502' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.serviceMode==='express' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.serviceMode==='express' ? '0 4px 12px rgba(255,165,2,0.25)' : 'none',
-                        fontWeight:'bold',
-                        minWidth:'92px'
-                    }" @click="changeServiceMode('express')">{{ t('console.modeExpress') }}</button>
-                    <button class="btn" :style="{
-                        padding:'10px 14px',
-                        borderRadius:'10px',
-                        border:'1px solid var(--divider)',
-                        background: pidsState.appData.meta.serviceMode==='direct' ? '#ff4757' : 'var(--input-bg)',
-                        color: pidsState.appData.meta.serviceMode==='direct' ? '#fff' : 'var(--text)',
-                        boxShadow: pidsState.appData.meta.serviceMode==='direct' ? '0 4px 12px rgba(255,71,87,0.25)' : 'none',
-                        fontWeight:'bold',
-                        minWidth:'92px'
-                    }" @click="changeServiceMode('direct')">{{ t('console.modeDirect') }}</button>
-                </div>
-                <div style="font-size:12px; color:var(--muted); margin-top:8px; line-height:1.5;">
-                    {{ t('console.modeHint') }}
-                </div>
-            </div>
-        </div>
-        
-        <!-- Short Turn Settings -->
-        <div class="card" style="border-left: 6px solid #5F27CD; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-            <div style="color:#5F27CD; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.shortTurn') }}</div>
-            <div style="display:grid; grid-template-columns: 72px minmax(0, 1fr); gap:12px; align-items:center; margin-bottom:12px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnStart') }}</label>
-                <div ref="shortTurnStartDropdownRef" style="position:relative; min-width:0;">
-                    <div
-                        @click="toggleShortTurnStartDropdown"
-                        :style="shortTurnDropdownTriggerStyle"
-                    >
-                        <span style="font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ shortTurnStartTitle }}</span>
-                        <i :class="showShortTurnStartDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
-                    </div>
-                    <div v-if="showShortTurnStartDropdown" :style="shortTurnStartDropdownMenuStyle">
-                        <div @click="selectShortTurnStart(-1)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.startIdx === -1 ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.startIdx === -1 ? shortTurnItemActiveBackground() : 'transparent')">无</div>
-                        <div v-for="(s,i) in pidsState.appData.stations" :key="'s'+i" @click="selectShortTurnStart(i)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.startIdx === i ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.startIdx === i ? shortTurnItemActiveBackground() : 'transparent')">[{{i+1}}] {{s.name}}</div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display:grid; grid-template-columns: 72px minmax(0, 1fr); gap:12px; align-items:center; margin-bottom:16px;">
-                <label style="color:var(--muted);">{{ t('console.shortTurnEnd') }}</label>
-                <div ref="shortTurnEndDropdownRef" style="position:relative; min-width:0;">
-                    <div
-                        @click="toggleShortTurnEndDropdown"
-                        :style="shortTurnDropdownTriggerStyle"
-                    >
-                        <span style="font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ shortTurnEndTitle }}</span>
-                        <i :class="showShortTurnEndDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
-                    </div>
-                    <div v-if="showShortTurnEndDropdown" :style="shortTurnEndDropdownMenuStyle">
-                        <div @click="selectShortTurnEnd(-1)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.termIdx === -1 ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.termIdx === -1 ? shortTurnItemActiveBackground() : 'transparent')">无</div>
-                        <div v-for="(s,i) in pidsState.appData.stations" :key="'e'+i" @click="selectShortTurnEnd(i)" :style="{ padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', color:'var(--text)', background: pidsState.appData.meta.termIdx === i ? shortTurnItemActiveBackground() : 'transparent' }" @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()" @mouseout="$event.currentTarget.style.background = (pidsState.appData.meta.termIdx === i ? shortTurnItemActiveBackground() : 'transparent')">[{{i+1}}] {{s.name}}</div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
-                <button @click="clearShortTurn()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
-                <button @click="applyShortTurn()" class="btn" style="background:#5F27CD; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
-            </div>
-
-            <!-- 短交路预设管理 -->
-            <div style="font-size:13px; color:var(--muted); margin-bottom:12px; font-weight:bold;">{{ t('console.shortTurnPreset') }}</div>
-            <div style="display:flex; gap:8px; margin-bottom:12px;">
-                <button @click="saveShortTurnPreset()" class="btn" style="flex:1; background:#5F27CD; color:white; border:none; padding:8px; border-radius:6px; font-size:13px;">
-                    <i class="fas fa-save"></i> {{ t('console.shortTurnSavePreset') }}
-                </button>
-                <button @click="loadShortTurnPresets()" class="btn" style="flex:1; background:#00D2D3; color:white; border:none; padding:8px; border-radius:6px; font-size:13px;">
-                    <i class="fas fa-sync-alt"></i> {{ t('console.shortTurnRefresh') }}
-                </button>
-            </div>
-            <div 
-                v-if="shortTurnPresets.length > 0" 
-                style="max-height:200px; overflow-y:auto; border:1px solid var(--divider); border-radius:6px; padding:8px; margin-bottom:12px;"
-                @contextmenu.prevent="showPresetContextMenu($event, null)"
-            >
-                <div v-for="preset in shortTurnPresets" :key="preset.name" @contextmenu.prevent="showPresetContextMenu($event, preset)" style="display:flex; align-items:center; justify-content:space-between; padding:8px; margin-bottom:4px; background:var(--input-bg); border-radius:4px; cursor:pointer;" @click="loadShortTurnPreset(preset.name)">
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:2px;">{{ preset.name }}</div>
-                        <div style="font-size:11px; color:var(--muted);">
-                            {{ preset.startStationName || ('站点' + (preset.startIdx + 1)) }} → {{ preset.termStationName || ('站点' + (preset.termIdx + 1)) }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div 
-                v-else 
-                style="padding:12px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--divider); border-radius:6px; margin-bottom:12px; cursor:context-menu;"
-                @contextmenu.prevent="showPresetContextMenu($event, null)"
-            >
-                <!-- 可根据需要新增 i18n 文案 -->
-                暂无预设，点击"保存预设"保存当前短交路设置（右键此处可从分享码导入）
-            </div>
-        </div>
-
-        <!-- Through Line Settings -->
-        <div class="card" style="border-left: 6px solid #9B59B6; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-            <div style="color:#9B59B6; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.throughTitle') }}</div>
-            
-            <div style="background:var(--input-bg); border:1px solid var(--divider); border-radius:8px; padding:12px; margin-bottom:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div style="font-size:12px; font-weight:bold; color:var(--text);">{{ t('console.throughSegments') }}</div>
-                    <button @click="addThroughLineSegment()" class="btn" style="background:#2ED573; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer;" title="添加线路段">
-                        <i class="fas fa-plus"></i> {{ t('console.throughAdd') }}
-                    </button>
-                </div>
-                
-                <div v-if="throughLineSegments.length === 0" style="padding:12px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--divider); border-radius:4px; margin-bottom:8px;">
-                    {{ t('console.throughNoSegments') }}
-                </div>
-                
-                <div v-for="(segment, index) in throughLineSegments" :key="index" style="margin-bottom:12px; padding:10px; background:var(--bg); border:1px solid var(--divider); border-radius:6px;">
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                        <div style="min-width:60px; font-size:12px; font-weight:bold; color:var(--text);">
-                            {{ t('console.throughLineLabel') + String.fromCharCode('A'.charCodeAt(0) + index) }}
-                        </div>
-                        <div style="flex:1; padding:6px 12px; border-radius:4px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:12px; min-height:28px; display:flex; align-items:center;">
-                            {{ segment.lineName || t('console.throughNotSelected') }}
-                        </div>
-                        <button @click="openLineManagerForSegment(index)" class="btn" style="background:#9B59B6; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:12px; cursor:pointer; white-space:nowrap;" title="从线路管理器选择">
-                            <i class="fas fa-folder-open"></i> {{ t('console.throughSelect') }}
-                        </button>
-                        <button v-if="throughLineSegments.length > 2" @click="removeThroughLineSegment(index)" class="btn" style="background:#FF6B6B; color:white; border:none; padding:6px 10px; border-radius:4px; font-size:12px; cursor:pointer;" title="删除此段">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                    <div v-if="index < throughLineSegments.length - 1" style="display:grid; grid-template-columns: 60px 1fr; gap:8px; align-items:center; margin-top:8px;">
-                            <label :style="throughStationLabelStyle">{{ t('console.throughStation') }}</label>
-                        <div v-if="segment.candidateThroughStations && segment.candidateThroughStations.length > 1" class="through-station-dropdown" style="position:relative;">
-                            <div
-                                @click="toggleThroughStationDropdown(index)"
-                                :style="[{ ...throughStationControlStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }]"
-                            >
-                                <span>{{ segment.throughStationName || '请选择贯通站点' }}</span>
-                                <i :class="throughStationDropdownIndex === index ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
-                            </div>
-                            <div v-if="throughStationDropdownIndex === index" :style="throughStationDropdownMenuStyle">
-                                <div
-                                    @click="selectThroughStation(index, '')"
-                                    :style="{
-                                        padding: '9px 10px',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        color: 'var(--text)',
-                                        fontSize: '13px',
-                                        fontWeight: !segment.throughStationName ? '700' : '500',
-                                        background: !segment.throughStationName ? shortTurnItemActiveBackground() : 'transparent'
-                                    }"
-                                    @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                    @mouseout="$event.currentTarget.style.background = (!segment.throughStationName ? shortTurnItemActiveBackground() : 'transparent')"
-                                >
-                                    请选择贯通站点
-                                </div>
-                                <div
-                                    v-for="stationName in segment.candidateThroughStations"
-                                    :key="stationName"
-                                    @click="selectThroughStation(index, stationName)"
-                                    :style="{
-                                        padding: '9px 10px',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        color: 'var(--text)',
-                                        fontSize: '13px',
-                                        fontWeight: segment.throughStationName === stationName ? '700' : '500',
-                                        background: segment.throughStationName === stationName ? shortTurnItemActiveBackground() : 'transparent'
-                                    }"
-                                    @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                    @mouseout="$event.currentTarget.style.background = (segment.throughStationName === stationName ? shortTurnItemActiveBackground() : 'transparent')"
-                                >
-                                    {{ stationName }}
-                                </div>
-                            </div>
-                        </div>
-                        <div v-else :style="[{ ...throughStationControlStyle, display: 'flex', alignItems: 'center' }]">
-                            {{ segment.throughStationName || t('console.throughNotDetected') }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button @click="clearThroughOperation()" class="btn" style="background:#CED6E0; color:#2F3542; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnClear') }}</button>
-                <button @click="applyThroughOperation()" class="btn" style="background:#9B59B6; color:white; border:none; padding:6px 16px; border-radius:4px; font-size:13px;">{{ t('console.shortTurnApply') }}</button>
-            </div>
-        </div>
-        
-        <!-- Autoplay Control -->
-        <div class="card" style="border-left: 6px solid #1E90FF; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-          <div style="color:#1E90FF; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.autoplayTitle') }}</div>
-          
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-              <span style="color:var(--text);">{{ t('console.autoplayEnable') }}</span>
-              <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
-                  <input type="checkbox" :checked="isPlaying" @change="isPlaying ? stopWithUnlock() : startWithLock(settings.autoplay.intervalSec)" style="opacity:0; width:0; height:0;">
-                  <span :style="{
-                      position:'absolute', cursor:'pointer', top:0, left:0, right:0, bottom:0, 
-                      backgroundColor: isPlaying ? 'var(--accent)' : '#ccc', 
-                      transition:'.4s', borderRadius:'24px'
-                  }"></span>
-                  <span :style="{
-                      position:'absolute', content:'', height:'18px', width:'18px', left:'3px', bottom:'3px', 
-                      backgroundColor:'white', transition:'.4s', borderRadius:'50%',
-                      transform: isPlaying ? 'translateX(20px)' : 'translateX(0)'
-                  }"></span>
-              </label>
-          </div>
-          
-          <div style="display:flex; align-items:center; gap:12px;">
-              <span style="color:var(--muted); font-size:14px;">{{ t('console.autoplayInterval') }}</span>
-              <input type="number" v-model.number="settings.autoplay.intervalSec" min="1" max="3600" @change="applyAutoplayIntervalSec()" style="width:80px; padding:6px; border-radius:4px; border:1px solid var(--divider); text-align:center;">
-              <span v-if="isPlaying" style="font-size:12px; color:var(--muted);">({{ nextIn }}s)</span>
-          </div>
-        </div>
-        
-        <!-- Video Recording Control -->
-        <div class="card" style="border-left: 6px solid #E74C3C; border-radius:12px; padding:16px; background:rgba(255, 255, 255, 0.1); box-shadow:0 2px 12px rgba(0,0,0,0.05); margin-bottom:28px;">
-          <div style="color:#E74C3C; font-weight:bold; margin-bottom:12px; font-size:15px;">{{ t('console.recordingTitle') }}</div>
-          
-          <!-- Display Info (use settings page selection) -->
-          <div style="margin-bottom:12px;">
-            <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingDisplay') }}</label>
-            <div style="padding:8px 10px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text); font-size:13px;">
-              <span v-if="currentRecordingDisplay">
-                {{ currentRecordingDisplay.name }}
-              </span>
-              <span v-else style="color:var(--muted);">
-                {{ t('console.recordingSelectDisplay') }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Encoder Selection -->
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-            <div>
-              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingEncoder') }}</label>
-                            <div class="recording-dropdown" style="position:relative;">
-                                <div
-                                    @click="toggleRecordingDropdown('encoder')"
-                                    :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
-                                >
-                                    <span>{{ getRecordingOptionLabel(recordingEncoderOptions, recordingState.encoder) }}</span>
-                                    <i :class="recordingDropdownOpenKey === 'encoder' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
-                                </div>
-                                <div v-if="recordingDropdownOpenKey === 'encoder'" :style="recordingDropdownMenuStyle">
-                                    <div
-                                        v-for="opt in recordingEncoderOptions"
-                                        :key="'encoder-' + opt.value"
-                                        @click="selectRecordingDropdownValue('encoder', opt.value)"
-                                        :style="{
-                                            padding: '9px 10px',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            color: 'var(--text)',
-                                            fontSize: '13px',
-                                            fontWeight: recordingState.encoder === opt.value ? '700' : '500',
-                                            background: recordingState.encoder === opt.value ? shortTurnItemActiveBackground() : 'transparent'
-                                        }"
-                                        @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                        @mouseout="$event.currentTarget.style.background = (recordingState.encoder === opt.value ? shortTurnItemActiveBackground() : 'transparent')"
-                                    >
-                                        {{ opt.label }}
-                                    </div>
-                                </div>
-                            </div>
-            </div>
-            <div>
-              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingCodec') }}</label>
-                            <div class="recording-dropdown" style="position:relative;">
-                                <div
-                                    @click="toggleRecordingDropdown('codec')"
-                                    :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
-                                >
-                                    <span>{{ getRecordingOptionLabel(recordingCodecOptions, recordingState.codec) }}</span>
-                                    <i :class="recordingDropdownOpenKey === 'codec' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
-                                </div>
-                                <div v-if="recordingDropdownOpenKey === 'codec'" :style="recordingDropdownMenuStyle">
-                                    <div
-                                        v-for="opt in recordingCodecOptions"
-                                        :key="'codec-' + opt.value"
-                                        @click="selectRecordingDropdownValue('codec', opt.value)"
-                                        :style="{
-                                            padding: '9px 10px',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            color: 'var(--text)',
-                                            fontSize: '13px',
-                                            fontWeight: recordingState.codec === opt.value ? '700' : '500',
-                                            background: recordingState.codec === opt.value ? shortTurnItemActiveBackground() : 'transparent'
-                                        }"
-                                        @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                        @mouseout="$event.currentTarget.style.background = (recordingState.codec === opt.value ? shortTurnItemActiveBackground() : 'transparent')"
-                                    >
-                                        {{ opt.label }}
-                                    </div>
-                                </div>
-                            </div>
-            </div>
-          </div>
-
-          <!-- Container Selection -->
-          <div style="margin-bottom:12px;">
-            <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingContainer') }}</label>
-                        <div class="recording-dropdown" style="position:relative;">
-                            <div
-                                @click="toggleRecordingDropdown('container')"
-                                :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
-                            >
-                                <span>{{ getRecordingOptionLabel(recordingContainerOptions, recordingState.container) }}</span>
-                                <i :class="recordingDropdownOpenKey === 'container' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
-                            </div>
-                            <div v-if="recordingDropdownOpenKey === 'container'" :style="recordingDropdownMenuStyle">
-                                <div
-                                    v-for="opt in recordingContainerOptions"
-                                    :key="'container-' + opt.value"
-                                    @click="selectRecordingDropdownValue('container', opt.value)"
-                                    :style="{
-                                        padding: '9px 10px',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        color: 'var(--text)',
-                                        fontSize: '13px',
-                                        fontWeight: recordingState.container === opt.value ? '700' : '500',
-                                        background: recordingState.container === opt.value ? shortTurnItemActiveBackground() : 'transparent'
-                                    }"
-                                    @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                    @mouseout="$event.currentTarget.style.background = (recordingState.container === opt.value ? shortTurnItemActiveBackground() : 'transparent')"
-                                >
-                                    {{ opt.label }}
-                                </div>
-                            </div>
-                        </div>
-          </div>
-
-          <!-- Bitrate and FPS -->
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-            <div>
-              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingBitrate') }}</label>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <input
-                  type="number"
-                  v-model.number="recordingState.bitrate"
-                  :disabled="recordingState.isRecording"
-                  min="1"
-                  max="50"
-                  step="1"
-                  placeholder="1 - 50"
-                  style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
-                >
-                <span style="font-size:12px; color:var(--muted);">Mbps</span>
-              </div>
-            </div>
-            <div>
-              <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingFPS') }}</label>
-                            <div class="recording-dropdown" style="position:relative;">
-                                <div
-                                    @click="toggleRecordingDropdown('fps')"
-                                    :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
-                                >
-                                    <span>{{ getRecordingOptionLabel(recordingFpsOptions, recordingState.fps) }}</span>
-                                    <i :class="recordingDropdownOpenKey === 'fps' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
-                                </div>
-                                <div v-if="recordingDropdownOpenKey === 'fps'" :style="recordingDropdownMenuStyle">
-                                    <div
-                                        v-for="opt in recordingFpsOptions"
-                                        :key="'fps-' + opt.value"
-                                        @click="selectRecordingDropdownValue('fps', opt.value)"
-                                        :style="{
-                                            padding: '9px 10px',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            color: 'var(--text)',
-                                            fontSize: '13px',
-                                            fontWeight: Number(recordingState.fps) === Number(opt.value) ? '700' : '500',
-                                            background: Number(recordingState.fps) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent'
-                                        }"
-                                        @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                        @mouseout="$event.currentTarget.style.background = (Number(recordingState.fps) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent')"
-                                    >
-                                        {{ opt.label }}
-                                    </div>
-                                </div>
-                            </div>
-            </div>
-          </div>
-
-          <!-- Interval (like autoplay) -->
-          <div style="margin-bottom:12px;">
-            <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingIntervalLabel') }}</label>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <input
-                type="number"
-                v-model.number="recordingState.intervalSec"
-                :disabled="recordingState.isRecording"
-                min="1"
-                max="60"
-                step="1"
-                placeholder="8"
-                style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);"
-              >
-            </div>
-          </div>
-
-          <!-- Parallel Segment Recording -->
-          <div style="margin-bottom:12px; padding:10px; border-radius:10px; border:1px solid var(--divider); background:var(--input-bg);">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
-              <div style="font-size:13px; color:var(--muted); font-weight:bold;">{{ t('console.recordingParallelTitle') }}</div>
-              <div style="display:flex; align-items:center; gap:10px;">
-                                <label style="position:relative; display:inline-block; width:44px; height:24px; margin:0;">
-                                    <input
-                                        type="checkbox"
-                                        v-model="recordingState.parallelEnabled"
-                                        :disabled="recordingState.isRecording"
-                                        style="opacity:0; width:0; height:0;"
-                                    >
-                                    <span :style="{
-                                        position:'absolute', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', top:0, left:0, right:0, bottom:0,
-                                        backgroundColor: recordingState.parallelEnabled ? 'var(--accent)' : '#ccc',
-                                        transition:'.2s', borderRadius:'24px',
-                                        opacity: recordingState.isRecording ? 0.6 : 1
-                                    }"></span>
-                                    <span :style="{
-                                        position:'absolute', height:'18px', width:'18px', left:'3px', bottom:'3px',
-                                        backgroundColor:'white', transition:'.2s', borderRadius:'50%',
-                                        transform: recordingState.parallelEnabled ? 'translateX(20px)' : 'translateX(0)'
-                                    }"></span>
-                </label>
-              </div>
-            </div>
-            <div v-if="recordingState.parallelEnabled" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-              <div>
-                <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingParallelism') }}</label>
-                                <div class="recording-dropdown" style="position:relative;">
-                                    <div
-                                        @click="toggleRecordingDropdown('parallelism')"
-                                        :style="[{ ...recordingSelectStyle, display:'flex', alignItems:'center', justifyContent:'space-between', cursor: recordingState.isRecording ? 'not-allowed' : 'pointer', opacity: recordingState.isRecording ? 0.7 : 1 }]"
-                                    >
-                                        <span>{{ getRecordingOptionLabel(recordingParallelismOptions, recordingState.parallelism) }}</span>
-                                        <i :class="recordingDropdownOpenKey === 'parallelism' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:11px; color:var(--muted);"></i>
-                                    </div>
-                                    <div v-if="recordingDropdownOpenKey === 'parallelism'" :style="recordingDropdownMenuStyle">
-                                        <div
-                                            v-for="opt in recordingParallelismOptions"
-                                            :key="'parallelism-' + opt.value"
-                                            @click="selectRecordingDropdownValue('parallelism', opt.value)"
-                                            :style="{
-                                                padding: '9px 10px',
-                                                borderRadius: '8px',
-                                                cursor: 'pointer',
-                                                color: 'var(--text)',
-                                                fontSize: '13px',
-                                                fontWeight: Number(recordingState.parallelism) === Number(opt.value) ? '700' : '500',
-                                                background: Number(recordingState.parallelism) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent'
-                                            }"
-                                            @mouseover="$event.currentTarget.style.background=shortTurnItemHoverBackground()"
-                                            @mouseout="$event.currentTarget.style.background = (Number(recordingState.parallelism) === Number(opt.value) ? shortTurnItemActiveBackground() : 'transparent')"
-                                        >
-                                            {{ opt.label }}
-                                        </div>
-                                    </div>
-                                </div>
-              </div>
-              <div>
-                <label style="display:block; color:var(--muted); font-size:13px; margin-bottom:6px;">{{ t('console.recordingStepsPerSegment') }}</label>
-                <input type="number" v-model.number="recordingState.stepsPerSegment" :disabled="recordingState.isRecording" min="1" max="5000"
-                  style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--divider); background:var(--input-bg); color:var(--text);" />
-              </div>
-            </div>
-            <div v-if="recordingState.parallelEnabled" style="margin-top:8px; font-size:12px; color:var(--muted);">
-              {{ t('console.recordingParallelHint') }}
-            </div>
-          </div>
-
-          <!-- Progress Bar（整体录制进度 + 预计剩余时间 + 当前站/进出站状态） -->
-          <div v-if="recordingState.isRecording" style="margin-bottom:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <span style="font-size:13px; color:var(--muted);">
-                {{ t('console.recordingProgress') }}
-              </span>
-              <span style="font-size:13px; color:var(--text);">
-                <span>{{ Math.floor(recordingProgressPercent) }}%</span>
-                <span style="margin-left:8px;">
-                  {{ t('console.recordingRemainingTimeHint') }} {{ recordingRemainingTimeText }}
-                </span>
-              </span>
-            </div>
-            <div style="width:100%; height:8px; background:var(--input-bg); border-radius:4px; overflow:hidden;">
-              <div :style="{ width: Math.min(100, Math.max(0, recordingProgressPercent)) + '%', height: '100%', background: '#E74C3C', transition: 'width 0.3s' }"></div>
-            </div>
-            <div v-if="recordingState.mode!=='parallel'" style="margin-top:6px; display:flex; justify-content:space-between; font-size:12px; color:var(--muted);">
-              <span>
-                {{ t('console.recordingCurrentStation') }}：{{ recordingCurrentStationName }}
-              </span>
-              <span>
-                {{ recordingArrDepLabel }}
-              </span>
-            </div>
-            <div v-if="recordingState.mode==='parallel' && recordingState.segmentSummary" style="margin-top:6px; font-size:12px; color:var(--muted); display:flex; justify-content:space-between;">
-              <span>{{ t('console.recordingSegments') }}: {{ recordingState.segmentSummary.done }}/{{ recordingState.segmentSummary.total }}</span>
-              <span v-if="parallelStageLabel">{{ t('console.recordingStage') }}: {{ parallelStageLabel }}</span>
-            </div>
-          </div>
-
-          <!-- Control Buttons -->
-          <div style="display:flex; gap:10px;">
-            <button 
-              @click="toggleRecording" 
-              :disabled="!currentRecordingDisplay"
-              class="btn" 
-              style="flex:1; background:#E74C3C; color:white; border:none; padding:10px; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer; opacity: !currentRecordingDisplay ? 0.5 : 1;"
-            >
-              <i :class="recordingState.isRecording ? 'fas fa-stop' : 'fas fa-video'" style="margin-right:6px;"></i>
-              {{ recordingState.isRecording ? t('console.recordingStop') : t('console.recordingStart') }}
-            </button>
-            <button 
-              @click="openRecordingFolder" 
-              :disabled="false"
-              class="btn" 
-              style="flex:1; background:#95A5A6; color:white; border:none; padding:10px; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer;"
-            >
-              <i class="fas fa-folder-open" style="margin-right:6px;"></i>{{ t('console.recordingOpenFolder') }}
-            </button>
-          </div>
-        </div>
-        
-      </div>
-    </div>
-    
-    <!-- 预设右键菜单 - 使用 Teleport 传送到 body，复用站点右键菜单的视觉风格 -->
-    <Teleport to="body">
-        <div 
-            v-if="presetContextMenu.visible"
-            class="station-context-menu"
-            data-preset-context-menu
-            @click.stop
-            @contextmenu.prevent
-            :style="{
-                position: 'fixed',
-                left: presetContextMenu.x + 'px',
-                top: presetContextMenu.y + 'px',
-                zIndex: 9999
-            }"
-        >
-            <!-- 有选中预设时的菜单 -->
-            <template v-if="presetContextMenu.preset">
-                <div class="station-context-menu-item" @click="applyPresetFromMenu()">
-                    <i class="fas fa-download"></i>
-                    {{ t('console.presetLoad') }}
-                </div>
-                <div class="station-context-menu-divider"></div>
-                <div class="station-context-menu-item" @click="sharePresetOffline()">
-                    <i class="fas fa-share-alt"></i>
-                    {{ t('console.presetShare') }}
-                </div>
-                <div class="station-context-menu-divider"></div>
-                <div class="station-context-menu-item" @click="importPresetFromShareCode()">
-                    <i class="fas fa-file-import"></i>
-                    {{ t('console.presetImport') }}
-                </div>
-                <div class="station-context-menu-divider"></div>
-                <div class="station-context-menu-item danger" @click="deletePresetFromMenu()">
-                    <i class="fas fa-trash"></i>
-                    {{ t('console.presetDelete') }}
-                </div>
-            </template>
-            <!-- 没有预设时，仅提供从分享码导入 -->
-            <template v-else>
-                <div class="station-context-menu-item" @click="importPresetFromShareCode()">
-                    <i class="fas fa-file-import"></i>
-                    {{ t('console.presetImport') }}
-                </div>
-            </template>
-        </div>
-    </Teleport>
-    
-    <!-- 点击外部关闭预设右键菜单的遮罩 - 使用 Teleport 传送到 body -->
-    <Teleport to="body">
-        <div 
-            v-if="presetContextMenu.visible"
-            @click="closePresetContextMenu"
-            style="position: fixed; inset: 0; z-index: 9998; background: transparent;"
-        ></div>
-    </Teleport>
-    
-    <!-- Color Picker Dialog -->
-    <ColorPicker 
-      v-model="showColorPicker" 
-      :initial-color="colorPickerInitialColor"
-      @confirm="onColorConfirm"
-    />
-  `
+  }
 }
-

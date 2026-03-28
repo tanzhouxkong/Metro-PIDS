@@ -116,6 +116,7 @@ try {
   console.warn('[main] zip.js not available, fallback to archiver/extract-zip', e && e.message);
 }
 const crypto = require('crypto');
+const { distance: levenshteinDistance } = require('fastest-levenshtein');
 const { spawn } = require('child_process');
 const os = require('os');
 let WebSocketServer = null;
@@ -2674,17 +2675,49 @@ function createWindow() {
   
   // 将主进程日志发送到渲染进程（用于调试）
   const originalLog = console.log;
+  const originalWarn = console.warn;
   const originalError = console.error;
+  const formatMainConsoleArgs = (args) => {
+    const seen = new WeakSet();
+    const toText = (v) => {
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' || typeof v === 'boolean' || v == null) return String(v);
+      if (v instanceof Error) return `${v.name}: ${v.message}\n${v.stack || ''}`.trim();
+      try {
+        return JSON.stringify(v, (k, val) => {
+          if (typeof val === 'bigint') return String(val);
+          if (typeof val === 'function') return `[Function ${val.name || 'anonymous'}]`;
+          if (val && typeof val === 'object') {
+            if (seen.has(val)) return '[Circular]';
+            seen.add(val);
+          }
+          return val;
+        });
+      } catch (e) {
+        try { return String(v); } catch (e2) { return '[Unserializable]'; }
+      }
+    };
+    return (Array.isArray(args) ? args : []).map((a) => toText(a)).join(' ');
+  };
   console.log = (...args) => {
     originalLog.apply(console, args);
     try {
-      mainWin && mainWin.webContents.send('main-console-log', args.map(a => String(a)).join(' '));
+      const msg = formatMainConsoleArgs(args);
+      mainWin && mainWin.webContents.send('main-console-log', msg);
+    } catch (e) {}
+  };
+  console.warn = (...args) => {
+    originalWarn.apply(console, args);
+    try {
+      const msg = formatMainConsoleArgs(args);
+      mainWin && mainWin.webContents.send('main-console-log', msg);
     } catch (e) {}
   };
   console.error = (...args) => {
     originalError.apply(console, args);
     try {
-      mainWin && mainWin.webContents.send('main-console-error', args.map(a => String(a)).join(' '));
+      const msg = formatMainConsoleArgs(args);
+      mainWin && mainWin.webContents.send('main-console-error', msg);
     } catch (e) {}
   };
 
@@ -5960,10 +5993,11 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
   const raw = lineDirOrLineFilePath;
   if (raw != null && typeof raw === 'string' && raw.trim()) {
     const s = raw.trim();
-    if (s.endsWith('.json') || s.includes(path.sep) || s.includes('/')) {
-      lineDir = path.dirname(path.normalize(s));
+    const normalizedRaw = path.normalize(s);
+    if (/\.(json|mpl)$/i.test(normalizedRaw)) {
+      lineDir = path.dirname(normalizedRaw);
     } else {
-      lineDir = path.normalize(s);
+      lineDir = normalizedRaw;
     }
   }
   // 无有效目录时使用默认线路目录（支持按钮添加与拖拽添加）
@@ -6129,6 +6163,7 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
       const full = path.join(lineDir, rel.replace(/\//g, path.sep));
       try {
         await fsPromises.access(full);
+        invalidateAudioStationIndexCache(lineDir);
         return { ok: true, relativePath: rel };
       } catch (e) { /* file removed, continue */ }
     }
@@ -6167,6 +6202,7 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
       mtimeMs: st && typeof st.mtimeMs === 'number' ? st.mtimeMs : Date.now()
     };
     await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
+    invalidateAudioStationIndexCache(lineDir);
     return { ok: true, relativePath: relPath };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -6271,9 +6307,35 @@ ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePat
 const AUDIO_STATION_INDEX_TTL_MS = 10 * 60 * 1000;
 const audioStationIndexCache = new Map(); // audioDirAbs -> { expiresAt, entries }
 
+function invalidateAudioStationIndexCache(lineDirAbs) {
+  if (!lineDirAbs) return;
+  const audioDirAbs = path.join(lineDirAbs, 'audio');
+  audioStationIndexCache.delete(audioDirAbs);
+}
+
 function normalizeForStationMatch(input) {
   if (!input && input !== 0) return '';
   let s = String(input);
+  const chineseDigitMap = {
+    '零': '0',
+    '〇': '0',
+    '○': '0',
+    '一': '1',
+    '二': '2',
+    '两': '2',
+    '三': '3',
+    '四': '4',
+    '五': '5',
+    '六': '6',
+    '七': '7',
+    '八': '8',
+    '九': '9'
+  };
+  // 先做 Unicode 兼容归一化，兼容全角英文/数字（例如：ＡＡＡ、００１）
+  try { s = s.normalize('NFKC'); } catch (e) {}
+  // 兼容“中文数字命名”与“阿拉伯数字命名”的互相匹配
+  // 例如：浦东一号二号航站楼 <-> 浦东1号2号航站楼
+  s = s.replace(/[零〇○一二两三四五六七八九]/g, (m) => chineseDigitMap[m] || m);
   // 移除 Windows 不可见/富文本标记（尽量保持与前端 normalize 逻辑接近）
   s = s.replace(/<[^>]+>([^<]*)<\/>/g, '$1');
   // 去掉末尾站名后缀
@@ -6285,9 +6347,42 @@ function normalizeForStationMatch(input) {
   s = s.replace(/[()（）\[\]【】]/g, '');
   // 去掉常见中英文标点/符号
   s = s.replace(/[,:;.!?，。；：!“”"'‘’、\/\\|]/g, '');
-  // 归一化一下全角空格/奇怪字符
+  // 连接词归一化：把 "1 and 2" / "一与二" / "一和二" 等写法统一到同一匹配面
+  s = s.replace(/\b(and|amp)\b/giu, '');
+  s = s.replace(/[与和及]/gu, '');
+  // 再做一次统一清洗：仅保留字母/数字/中日韩文字，过滤其余符号（如 ·、&、# 等）
+  // 说明：这里保留数字，确保 001/K101/A12 这类站名可参与匹配
+  s = s.replace(/[^\p{L}\p{N}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu, '');
   s = s.trim();
   return s.toLowerCase();
+}
+
+function buildStationMatchTokens(input) {
+  if (!input && input !== 0) return [];
+  let raw = String(input);
+  try { raw = raw.normalize('NFKC'); } catch (e) {}
+  // 以“同类字符连续片段”提取 token：
+  // - 汉字
+  // - 日文假名
+  // - 韩文
+  // - 拉丁字母（可带数字）
+  // - 纯数字
+  const segs = raw.match(/[\p{Script=Han}]+|[\p{Script=Hiragana}\p{Script=Katakana}]+|[\p{Script=Hangul}]+|[A-Za-z]+[A-Za-z0-9]*|\d+/gu) || [];
+  const uniq = new Set();
+  for (const seg of segs) {
+    const t = normalizeForStationMatch(seg);
+    if (!t) continue;
+    // 过滤过短 token，避免噪声误匹配（例如单字母）
+    // 数字允许长度 >= 2（支持 01/001/K101 中的数字段）
+    const isNumeric = /^\d+$/.test(t);
+    if (isNumeric) {
+      if (t.length < 2) continue;
+    } else if (t.length < 2) {
+      continue;
+    }
+    uniq.add(t);
+  }
+  return Array.from(uniq);
 }
 
 function detectLangFlags(baseRaw, baseLower) {
@@ -6517,6 +6612,7 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
     if (!audioDirStat || !audioDirStat.isDirectory()) return { ok: false, error: 'no-audio-dir' };
 
     const targetNameNormalized = normalizeForStationMatch(stationName);
+    const targetTokens = buildStationMatchTokens(stationName);
     if (!targetNameNormalized) return { ok: false, error: 'empty-stationName' };
 
     const languageKey = opts && typeof opts === 'object' ? opts.languageKey : undefined;
@@ -6530,46 +6626,182 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
     if (!entries.length) return { ok: false, error: 'no-audio-entries' };
 
     // 遍历筛选：优先“包含关系”，再用语言标记评分做区分。
+    // 若前端传入本次已导入的 relativePath，则先在该子集中匹配，避免“目录语种偏好”导致导入校验误判。
     let best = null;
     let bestScore = -Infinity;
 
-    for (const e of entries) {
-      if (!e || !e.baseNormalized) continue;
-      if (!e.baseNormalized.includes(targetNameNormalized)) continue;
+    const targetRaw = String(stationName || '').trim().toLowerCase();
+    const targetRawCompact = targetRaw.replace(/[\s\-_.,/\\()[\]{}]+/g, '');
+    const targetNumericCompact = /^\d+$/.test(targetRawCompact) ? String(Number(targetRawCompact)) : '';
 
-      let score = 0;
-      if (e.baseNormalized === targetNameNormalized) score += 50;
-      else score += 20;
+    const importedRelativePaths = (opts && typeof opts === 'object' && Array.isArray(opts.importedRelativePaths))
+      ? opts.importedRelativePaths
+      : [];
+    const importedPathSet = new Set(
+      importedRelativePaths
+        .map((p) => String(p || '').replace(/\\/g, '/').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const importedEntries = importedPathSet.size
+      ? entries.filter((e) => importedPathSet.has(String(e?.relativePath || '').toLowerCase()))
+      : [];
+    const passPools = importedEntries.length
+      ? [{ items: importedEntries, boost: 40, tag: 'imported' }, { items: entries, boost: 0, tag: 'all' }]
+      : [{ items: entries, boost: 0, tag: 'all' }];
 
-      const flags = e.langFlags || {};
-      if (flags[targetLangCategory]) score += 30;
-
-      if (targetDialectCategory && flags[targetDialectCategory]) score += 25;
-
-      // 如果文件名带了其它语言标记，适当扣分，避免误选
-      if (flags.en && targetLangCategory !== 'en') score -= 5;
-      if (flags.ja && targetLangCategory !== 'ja') score -= 5;
-      if (flags.ko && targetLangCategory !== 'ko') score -= 5;
-      if (flags.zhCN && targetLangCategory !== 'zhCN') score -= 5;
-      if (flags.zhTW && targetLangCategory !== 'zhTW') score -= 5;
-
-      // 如果目标有方言偏好，而文件名带了其它方言标记，也适当扣分
-      if (targetDialectCategory) {
-        if (flags.cmn && targetDialectCategory !== 'cmn') score -= 3;
-        if (flags.yue && targetDialectCategory !== 'yue') score -= 3;
-        if (flags.wuu && targetDialectCategory !== 'wuu') score -= 3;
+    for (const pass of passPools) {
+      for (const e of pass.items) {
+        if (!e || !e.baseNormalized) continue;
+      // 兼容“站名比文件名更短/更长”的场景：
+      // - 文件名包含站名：wangfuzhuang_current 包含 wangfuzhuang
+      // - 站名包含文件名：wangfuzhuangstation 包含 wangfuzhuang
+      const baseNorm = String(e.baseNormalized || '');
+      const targetNorm = String(targetNameNormalized || '');
+      if (!baseNorm || !targetNorm) continue;
+      let tokenHitLen = 0;
+      for (const tk of targetTokens) {
+        if (tk && baseNorm.includes(tk)) tokenHitLen = Math.max(tokenHitLen, tk.length);
       }
+      const matched =
+        baseNorm.includes(targetNorm) ||
+        targetNorm.includes(baseNorm) ||
+        tokenHitLen > 0;
+      // 兜底：短英文/纯数字站名（如 AAA / 001）放宽到 raw 文件名匹配
+      const baseLowerRaw = String(e.baseLower || '').trim().toLowerCase();
+      const baseLowerCompact = baseLowerRaw.replace(/[\s\-_.,/\\()[\]{}]+/g, '');
+      const baseNumericCompact = /^\d+$/.test(baseLowerCompact) ? String(Number(baseLowerCompact)) : '';
+      const relaxedMatched = (
+        (!!targetRaw && !!baseLowerRaw && (
+          baseLowerRaw.includes(targetRaw) || targetRaw.includes(baseLowerRaw)
+        )) ||
+        (!!targetRawCompact && !!baseLowerCompact && (
+          baseLowerCompact.includes(targetRawCompact) || targetRawCompact.includes(baseLowerCompact)
+        )) ||
+        (!!targetNumericCompact && !!baseNumericCompact && targetNumericCompact === baseNumericCompact)
+      );
+        if (!matched && !relaxedMatched) continue;
 
-      // 轻微偏好：字符串越短越可能是纯站名音频
-      score += Math.max(0, 8 - (String(e.baseLower || '').length % 20) * 0.2);
+        let score = 0;
+        if (baseNorm === targetNorm) score += 50;
+        else score += 20;
+        // 命中更长 token（如 wangfuzhuang / 왕부좡 / 王府庄 / 001）时提高分数
+        if (tokenHitLen > 0) score += Math.min(20, tokenHitLen * 1.2);
+        if (relaxedMatched) score += 8;
+        score += pass.boost;
 
-      if (score > bestScore) {
-        best = e;
-        bestScore = score;
+        const flags = e.langFlags || {};
+        if (flags[targetLangCategory]) score += 30;
+
+        if (targetDialectCategory && flags[targetDialectCategory]) score += 25;
+
+        // 如果文件名带了其它语言标记，适当扣分，避免误选
+        if (flags.en && targetLangCategory !== 'en') score -= 5;
+        if (flags.ja && targetLangCategory !== 'ja') score -= 5;
+        if (flags.ko && targetLangCategory !== 'ko') score -= 5;
+        if (flags.zhCN && targetLangCategory !== 'zhCN') score -= 5;
+        if (flags.zhTW && targetLangCategory !== 'zhTW') score -= 5;
+
+        // 如果目标有方言偏好，而文件名带了其它方言标记，也适当扣分
+        if (targetDialectCategory) {
+          if (flags.cmn && targetDialectCategory !== 'cmn') score -= 3;
+          if (flags.yue && targetDialectCategory !== 'yue') score -= 3;
+          if (flags.wuu && targetDialectCategory !== 'wuu') score -= 3;
+        }
+
+        // 轻微偏好：字符串越短越可能是纯站名音频
+        score += Math.max(0, 8 - (String(e.baseLower || '').length % 20) * 0.2);
+
+        if (score > bestScore) {
+          best = e;
+          bestScore = score;
+        }
       }
     }
 
-    if (!best || !best.relativePath) return { ok: false, error: 'no-match', role };
+    if (!best || !best.relativePath) {
+      // 二次兜底：当严格规则全部未命中时，使用编辑距离做近似匹配。
+      // 这能覆盖“看起来同名但存在细微字符差异”的情况（例如中点符号差异、轻微错字）。
+      const fallbackPool = importedEntries.length ? importedEntries : entries;
+      let fuzzyBest = null;
+      let fuzzyBestRatio = Infinity;
+      for (const e of fallbackPool) {
+        const baseNorm = String(e?.baseNormalized || '');
+        if (!baseNorm || !targetNameNormalized) continue;
+        const dist = levenshteinDistance(targetNameNormalized, baseNorm);
+        const denom = Math.max(targetNameNormalized.length, baseNorm.length, 1);
+        const ratio = dist / denom;
+        if (ratio < fuzzyBestRatio) {
+          fuzzyBestRatio = ratio;
+          fuzzyBest = e;
+        }
+      }
+      // 阈值说明：
+      // - <= 0.22：允许少量字符差异（约 8~10 字内最多 1~2 处差异）
+      // - 同时要求长度接近，避免短文件名误命中长站名
+      if (fuzzyBest && fuzzyBest.relativePath && fuzzyBestRatio <= 0.22) {
+        const lenGap = Math.abs(String(fuzzyBest.baseNormalized || '').length - String(targetNameNormalized || '').length);
+        if (lenGap <= 3) {
+          return {
+            ok: true,
+            relativePath: fuzzyBest.relativePath,
+            role,
+            score: bestScore,
+            matchMode: 'fuzzy-levenshtein',
+            fuzzyDistanceRatio: Number(fuzzyBestRatio.toFixed(4))
+          };
+        }
+      }
+
+      const sampleEntries = entries.slice(0, 80).map((e) => ({
+        relativePath: e?.relativePath || '',
+        baseNormalized: e?.baseNormalized || '',
+        baseLower: e?.baseLower || ''
+      }));
+      try {
+        const isAsciiOrNumericStation = /^[a-z0-9_\-\s.]+$/i.test(String(stationName || '').trim());
+        // 重点输出“英文/数字站名”诊断，便于定位 AAA/001 这类不命中的原因。
+        if (isAsciiOrNumericStation) {
+          console.warn('[findAudioByStationName][no-match][ascii-or-numeric]', {
+            stationName,
+            targetNameNormalized,
+            targetTokens,
+            role: role || '',
+            languageKey: languageKey || '',
+            dialectKey: dialectKey || '',
+            targetLangCategory: targetLangCategory || '',
+            targetDialectCategory: targetDialectCategory || '',
+            entriesCount: entries.length,
+            sampleEntries
+          });
+        } else {
+          console.warn('[findAudioByStationName][no-match]', {
+            stationName,
+            targetNameNormalized,
+            targetTokens,
+            role: role || '',
+            languageKey: languageKey || '',
+            dialectKey: dialectKey || '',
+            entriesCount: entries.length
+          });
+        }
+      } catch (e) {}
+      return {
+        ok: false,
+        error: 'no-match',
+        role,
+        debug: {
+          stationName,
+          targetNameNormalized,
+          targetTokens,
+          languageKey: languageKey || '',
+          dialectKey: dialectKey || '',
+          targetLangCategory: targetLangCategory || '',
+          targetDialectCategory: targetDialectCategory || '',
+          entriesCount: entries.length,
+          sampleEntries
+        }
+      };
+    }
     return { ok: true, relativePath: best.relativePath, role, score: bestScore };
   } catch (e) {
     return { ok: false, error: String(e && e.message ? e.message : e) };

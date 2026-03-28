@@ -49,7 +49,13 @@ setTimeout(() => {
   console.log('[start-dev]   ELECTRON_DISABLE_SECURITY_WARNINGS:', env.ELECTRON_DISABLE_SECURITY_WARNINGS);
   console.log('[start-dev]   METRO_PIDS_AUTO_OPEN_DEVTOOLS:', env.METRO_PIDS_AUTO_OPEN_DEVTOOLS);
 
-  const electronVite = spawn('npx', ['electron-vite', 'dev'], {
+  // Windows 终端默认代码页可能不是 UTF-8，导致中文日志乱码（如“鏃ュ織...”）。
+  // 在开发启动前强制切到 65001，保证主进程/渲染进程日志可读。
+  const isWindows = process.platform === 'win32';
+  const devCommand = isWindows
+    ? 'chcp 65001>nul && npx electron-vite dev'
+    : 'npx electron-vite dev';
+  const electronVite = spawn(devCommand, {
     stdio: 'inherit',
     env,
     shell: true

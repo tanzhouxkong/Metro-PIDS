@@ -114,84 +114,6 @@ export default {
             await notifyMainWindow(null);
         }
 
-        const btnStyle = (panelId) => {
-            const isActive = uiState.activePanel === panelId
-            const btnColor = '#1677ff' // 使用和弹窗一样的蓝色
-            return {
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                border: 'none',
-                background: isActive ? `linear-gradient(135deg, ${btnColor} 0%, ${btnColor}dd 100%)` : 'var(--rail-btn-bg)',
-                color: isActive ? '#fff' : 'var(--rail-btn-text)',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: isActive ? `0 4px 12px ${btnColor}40` : '0 1px 4px rgba(0,0,0,0.08)',
-                margin: '0 auto' // 确保按钮在容器中居中
-            }
-        }
-
-        const homeBtnStyle = () => {
-            const isActive = uiState.activePanel === null
-            const btnColor = '#1677ff' // 使用和弹窗一样的蓝色
-            return {
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                border: 'none',
-                background: isActive ? `linear-gradient(135deg, ${btnColor} 0%, ${btnColor}dd 100%)` : 'var(--rail-btn-bg)',
-                color: isActive ? '#fff' : 'var(--rail-btn-text)',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: isActive ? `0 4px 12px ${btnColor}40` : '0 1px 4px rgba(0,0,0,0.08)',
-                margin: '0 auto' // 确保按钮在容器中居中
-            }
-        }
-
-        const displayBtnStyle = () => {
-            const isActive = uiState.showDisplay
-            const btnColor = '#1677ff' // 使用和弹窗一样的蓝色
-            return {
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                border: 'none',
-                background: isActive ? `linear-gradient(135deg, ${btnColor} 0%, ${btnColor}dd 100%)` : 'var(--rail-btn-bg)',
-                color: isActive ? '#fff' : 'var(--rail-btn-text)',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: isActive ? `0 4px 12px ${btnColor}40` : '0 1px 4px rgba(0,0,0,0.08)',
-                margin: '0 auto' // 确保按钮在容器中居中
-            }
-        }
-
-        const devBtnStyle = () => {
-            return {
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'var(--rail-btn-bg)',
-                color: 'var(--rail-btn-text)',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-                margin: '0 auto' // 确保按钮在容器中居中
-            }
-        }
-
         const closeBrowserDisplayWindow = () => {
             if (browserDisplayWindow && !browserDisplayWindow.closed) {
                 browserDisplayWindow.close()
@@ -813,10 +735,6 @@ export default {
             uiState,
             togglePanel: handleTogglePanel,
             closePanel: handleClosePanel,
-            btnStyle,
-            homeBtnStyle,
-            displayBtnStyle,
-            devBtnStyle,
             handleDisplayAction,
             openGithub,
             hasUpdate,
@@ -830,85 +748,4 @@ export default {
             shouldShowDevButton,
             currentDisplayInfo
         }
-    },
-    template: `
-    <div id="leftRail" class="left-rail-blur" style="position:relative; width:100%; height:100%; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:60px; padding-bottom:20px; overflow:hidden;">
-      
-      <!-- Top Section -->
-      <div id="railInner" style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:16px; flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding-bottom:8px; -webkit-overflow-scrolling:touch;">
-        
-        <button 
-            class="ft-btn" 
-            :style="homeBtnStyle()"
-            @click="closePanel()" 
-            title="主页"
-        >
-            <i class="fas fa-home" style="font-size:20px;"></i>
-        </button>
-        
-        <button 
-            class="ft-btn" 
-            :style="btnStyle('panel-1')"
-            @click="togglePanel('panel-1')"
-            title="PIDS 控制台"
-        >
-            <i class="fas fa-sliders-h" style="font-size:20px;"></i>
-        </button>
-
-        <button 
-            class="ft-btn" 
-            :style="displayBtnStyle()"
-            @click="handleDisplayAction()" 
-            :title="'显示预览 - ' + currentDisplayInfo.displayName"
-        >
-            <i class="fas fa-desktop" style="font-size:20px;"></i>
-        </button>
-        
-        <!-- 开发者按钮 -->
-        <button 
-            v-if="shouldShowDevButton"
-            class="ft-btn" 
-            :style="devBtnStyle()"
-            @click="openDevWindow()" 
-            title="开发者模式"
-        >
-            <i class="fas fa-code" style="font-size:20px;"></i>
-        </button>
-        
-        <!-- third-party display button removed -->
-      </div>
-
-      <!-- Bottom Section -->
-      <div style="width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:12px; margin-top:auto; flex:0 0 auto;">
-         <div style="position:relative;">
-            <button 
-                class="ft-btn" 
-                :style="btnStyle('panel-4')"
-                @click="togglePanel('panel-4')" 
-                title="设置"
-            >
-                <i class="fas fa-cog" style="font-size:20px;"></i>
-            </button>
-            <div 
-                v-if="hasUpdate" 
-                @click.stop="openReleaseNotes()"
-                style="position:absolute; top:-6px; right:-6px; background:#ff4757; color:white; padding:2px 6px; border-radius:8px; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(255,71,87,0.4); z-index:10; white-space:nowrap;"
-                title="查看更新日志"
-            >
-                NEW
-            </div>
-        </div>
-        <button
-            type="button"
-            class="ft-btn"
-            :style="{ width: '48px', height: '48px', borderRadius: '12px', border: 'none', background: 'var(--rail-btn-bg)', color: 'var(--rail-btn-text)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }"
-            @click="openGithub()"
-            title="Github"
-        >
-            <i class="fab fa-github" style="font-size:20px;"></i>
-        </button>
-      </div>
-
-    </div>
-    `
-}
+    }}

@@ -1,0 +1,54 @@
+/* 设置页：Antdv Next 组件与原先原生控件体量对齐（开关轨道 44×24，按钮不强制 32px 高） */
+
+/* 手柄 18px、轨道 24px → 上下留白各 3px；须重写 top/inset，否则仍沿用主题 token 会“歪” */
+.pids-settings-ant .pids-settings-switch.ant-switch {
+  min-width: 44px;
+  height: 24px;
+  line-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.pids-settings-ant .pids-settings-switch.ant-switch .ant-switch-handle {
+  width: 18px !important;
+  height: 18px !important; /* 与轨道垂直居中：top = (24 - 18) / 2 */
+  top: 3px !important;
+  inset-inline-start: 3px !important;
+}
+
+.pids-settings-ant .pids-settings-switch.ant-switch-checked .ant-switch-handle {
+  inset-inline-start: calc(100% - 18px - 3px) !important;
+}
+
+/* 禁用/加载态下 Ant :active 会改 ::before 内边距，避免圆点看起来偏移 */
+.pids-settings-ant .pids-settings-switch.ant-switch:active .ant-switch-handle::before,
+.pids-settings-ant .pids-settings-switch.ant-switch-checked:active .ant-switch-handle::before {
+  inset-inline-end: 0 !important;
+  inset-inline-start: 0 !important;
+}
+
+.pids-settings-ant .pids-settings-switch.ant-switch-checked {
+  background: var(--accent) !important;
+}
+
+.pids-settings-ant .pids-settings-switch.ant-switch:not(.ant-switch-checked) {
+  background: #ccc !important;
+}
+
+.pids-settings-ant .pids-settings-ant-btn.ant-btn {
+  height: auto !important;
+  min-height: 0 !important;
+  line-height: 1.35 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  box-shadow: none !important;
+}
+
+.pids-settings-ant .pids-settings-ant-btn.ant-btn > .ant-btn-icon,
+.pids-settings-ant .pids-settings-ant-btn.ant-btn > i {
+  line-height: 1;
+}

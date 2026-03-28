@@ -1468,13 +1468,47 @@ export default {
         if (String(languageKey || '').startsWith('zh')) return st.name || st.zh || st.cn || st.en || ''
         return st.name || st.en || ''
       }
+      const getStationNameCandidates = (st) => {
+        if (!st || typeof st !== 'object') return []
+        const out = []
+        const pushUniq = (v) => {
+          const t = String(v || '').trim()
+          if (!t) return
+          if (!out.includes(t)) out.push(t)
+        }
+        pushUniq(getStationNameByLang(st))
+        pushUniq(st.name)
+        pushUniq(st.en)
+        pushUniq(st.zh)
+        pushUniq(st.cn)
+        return out
+      }
+      const expandStationNameCandidates = (rawCandidates) => {
+        const out = []
+        const pushUniq = (v) => {
+          const t = String(v || '').trim()
+          if (!t) return
+          if (!out.includes(t)) out.push(t)
+        }
+        for (const c of (Array.isArray(rawCandidates) ? rawCandidates : [])) {
+          const s = String(c || '').trim()
+          if (!s) continue
+          pushUniq(s)
+          pushUniq(s.replace(/\s+/g, ''))
+          if (/^\d+$/.test(s)) {
+            const n = String(Number(s))
+            if (n !== 'NaN') pushUniq(n)
+          }
+        }
+        return out
+      }
 
       const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
       const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
 
       const appDataForNext = { stations: lineStations, meta: lineMeta }
 
-      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName }
+      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName, stationNameCandidates }
       const dirs = form.stationAudio.separateDirection ? ['up', 'down'] : ['up']
       for (const dir of dirs) {
         const list = getAudioList(dir)
@@ -1494,16 +1528,18 @@ export default {
           if (typeof targetIdx !== 'number' || targetIdx < 0 || targetIdx >= lineStations.length) continue
 
           const stationName = getStationNameByLang(lineStations[targetIdx])
+          const stationNameCandidates = getStationNameCandidates(lineStations[targetIdx])
           if (!stationName) continue
-          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName })
+          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName, stationNameCandidates })
         }
       }
       // 兼容无占位项的线路：退化为“按站名匹配”统计
       if (!requiredTargets.size) {
         for (let i = 0; i < lineStations.length; i++) {
           const stationName = getStationNameByLang(lineStations[i])
+          const stationNameCandidates = getStationNameCandidates(lineStations[i])
           if (!stationName) continue
-          requiredTargets.set(`nameOnly::${i}`, { roleKey: '', stationName })
+          requiredTargets.set(`nameOnly::${i}`, { roleKey: '', stationName, stationNameCandidates })
         }
       }
 
@@ -1513,9 +1549,13 @@ export default {
       audioImportTotal.value = openRes.filePaths.length
       audioImportCopyOk.value = 0
       audioImportCopyFail.value = 0
+      audioImportTargetStations.value = requiredTargets.size
       audioImportSuccessStations.value = 0
       audioImportFailStations.value = 0
       audioImportFailedStations.value = []
+      const importedRelativePaths = []
+      const copyFailures = []
+      const matchFailures = []
 
       for (let i = 0; i < openRes.filePaths.length; i++) {
         const sourcePath = openRes.filePaths[i]
@@ -1523,13 +1563,34 @@ export default {
         const subDir = ensureDynamicAudioSubDir()
         if (!subDir) {
           audioImportCopyFail.value++
+          copyFailures.push({
+            sourcePath,
+            subDir: '',
+            error: 'empty-subdir'
+          })
           continue
         }
         const resCopy = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
           subDir
         })
-        if (resCopy && resCopy.ok) audioImportCopyOk.value++
-        else audioImportCopyFail.value++
+        if (resCopy && resCopy.ok) {
+          audioImportCopyOk.value++
+          if (typeof resCopy.relativePath === 'string' && resCopy.relativePath) importedRelativePaths.push(resCopy.relativePath)
+        }
+        else {
+          audioImportCopyFail.value++
+          copyFailures.push({
+            sourcePath,
+            subDir,
+            error: String(resCopy?.error || 'copy-failed')
+          })
+          console.warn('[StationEditor][DynamicAudioImport][files][copy-fail]', {
+            sourcePath,
+            subDir,
+            lineDirOrFilePath,
+            error: String(resCopy?.error || '')
+          })
+        }
       }
 
       audioImportStage.value = 'match'
@@ -1537,18 +1598,71 @@ export default {
       const targets = Array.from(requiredTargets.values())
       for (const target of targets) {
         const opts = target.roleKey
-          ? { role: target.roleKey, languageKey, dialectKey }
-          : { languageKey, dialectKey }
-        const resFind = await api.lines.findAudioByStationName(lineDirOrFilePath, target.stationName, opts)
-        if (resFind?.ok && resFind?.relativePath) {
+          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths }
+          : { languageKey, dialectKey, importedRelativePaths }
+        const candidates = Array.isArray(target.stationNameCandidates) && target.stationNameCandidates.length
+          ? target.stationNameCandidates
+          : [target.stationName]
+        const expandedCandidates = expandStationNameCandidates(candidates)
+        let matched = false
+        let lastErr = ''
+        let lastRes = null
+        const candidateAttempts = []
+        for (const nameCandidate of expandedCandidates) {
+          const resFind = await api.lines.findAudioByStationName(lineDirOrFilePath, nameCandidate, opts)
+          lastRes = resFind
+          candidateAttempts.push({
+            candidate: nameCandidate,
+            ok: !!resFind?.ok,
+            relativePath: resFind?.relativePath || '',
+            error: String(resFind?.error || '')
+          })
+          if (resFind?.ok && resFind?.relativePath) {
+            matched = true
+            break
+          }
+          lastErr = String(resFind?.error || '')
+        }
+        if (matched) {
           audioImportSuccessStations.value++
         } else {
           audioImportFailStations.value++
           audioImportFailedStations.value.push(target.stationName)
+          matchFailures.push({
+            stationName: target.stationName,
+            role: target.roleKey || '',
+            languageKey,
+            dialectKey,
+            expandedCandidates,
+            lastErr,
+            candidateAttempts
+          })
+          console.warn('[StationEditor][DynamicAudioImport][files][no-match]', {
+            stationName: target.stationName,
+            role: target.roleKey || '',
+            dialectKey,
+            languageKey,
+            candidates: expandedCandidates,
+            lastErr,
+            debug: lastRes?.debug || null
+          })
         }
       }
 
       audioImportFailedStations.value = Array.from(new Set(audioImportFailedStations.value))
+      console.warn('[StationEditor][DynamicAudioImport][files][summary]', {
+        lineDirOrFilePath,
+        languageKey,
+        dialectKey,
+        selectedFileCount: openRes.filePaths.length,
+        copyOk: audioImportCopyOk.value,
+        copyFail: audioImportCopyFail.value,
+        matchSuccess: audioImportSuccessStations.value,
+        matchFail: audioImportFailStations.value,
+        failedStations: [...audioImportFailedStations.value],
+        copyFailures,
+        matchFailures
+      })
       audioImportStage.value = 'done'
       queueAudioHealthScan()
       queueStationAudioBrokenCountScan()
@@ -1597,13 +1711,47 @@ export default {
         if (String(languageKey || '').startsWith('zh')) return st.name || st.zh || st.cn || st.en || ''
         return st.name || st.en || ''
       }
+      const getStationNameCandidates = (st) => {
+        if (!st || typeof st !== 'object') return []
+        const out = []
+        const pushUniq = (v) => {
+          const t = String(v || '').trim()
+          if (!t) return
+          if (!out.includes(t)) out.push(t)
+        }
+        pushUniq(getStationNameByLang(st))
+        pushUniq(st.name)
+        pushUniq(st.en)
+        pushUniq(st.zh)
+        pushUniq(st.cn)
+        return out
+      }
+      const expandStationNameCandidates = (rawCandidates) => {
+        const out = []
+        const pushUniq = (v) => {
+          const t = String(v || '').trim()
+          if (!t) return
+          if (!out.includes(t)) out.push(t)
+        }
+        for (const c of (Array.isArray(rawCandidates) ? rawCandidates : [])) {
+          const s = String(c || '').trim()
+          if (!s) continue
+          pushUniq(s)
+          pushUniq(s.replace(/\s+/g, ''))
+          if (/^\d+$/.test(s)) {
+            const n = String(Number(s))
+            if (n !== 'NaN') pushUniq(n)
+          }
+        }
+        return out
+      }
 
       const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
       const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
 
       const appDataForNext = { stations: lineStations, meta: lineMeta }
 
-      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName }
+      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName, stationNameCandidates }
       const dirs = form.stationAudio.separateDirection ? ['up', 'down'] : ['up']
       for (const dir of dirs) {
         const list = getAudioList(dir)
@@ -1623,16 +1771,18 @@ export default {
           if (typeof targetIdx !== 'number' || targetIdx < 0 || targetIdx >= lineStations.length) continue
 
           const stationName = getStationNameByLang(lineStations[targetIdx])
+          const stationNameCandidates = getStationNameCandidates(lineStations[targetIdx])
           if (!stationName) continue
-          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName })
+          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName, stationNameCandidates })
         }
       }
       // 兼容无占位项的线路：退化为“按站名匹配”统计
       if (!requiredTargets.size) {
         for (let i = 0; i < lineStations.length; i++) {
           const stationName = getStationNameByLang(lineStations[i])
+          const stationNameCandidates = getStationNameCandidates(lineStations[i])
           if (!stationName) continue
-          requiredTargets.set(`nameOnly::${i}`, { roleKey: '', stationName })
+          requiredTargets.set(`nameOnly::${i}`, { roleKey: '', stationName, stationNameCandidates })
         }
       }
 
@@ -1642,9 +1792,13 @@ export default {
       audioImportTotal.value = 0
       audioImportCopyOk.value = 0
       audioImportCopyFail.value = 0
+      audioImportTargetStations.value = requiredTargets.size
       audioImportSuccessStations.value = 0
       audioImportFailStations.value = 0
       audioImportFailedStations.value = []
+      const importedRelativePaths = []
+      const copyFailures = []
+      const matchFailures = []
 
       const listRes = await api.lines.listAudioFilesInDir(folderPath, { extensions: ['mp3', 'wav', 'ogg', 'flac'], maxFiles: 20000 })
       if (!listRes?.ok || !Array.isArray(listRes.files) || !listRes.files.length) {
@@ -1661,13 +1815,34 @@ export default {
         const subDir = ensureDynamicAudioSubDir()
         if (!subDir) {
           audioImportCopyFail.value++
+          copyFailures.push({
+            sourcePath,
+            subDir: '',
+            error: 'empty-subdir'
+          })
           continue
         }
         const resCopy = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
           subDir
         })
-        if (resCopy && resCopy.ok) audioImportCopyOk.value++
-        else audioImportCopyFail.value++
+        if (resCopy && resCopy.ok) {
+          audioImportCopyOk.value++
+          if (typeof resCopy.relativePath === 'string' && resCopy.relativePath) importedRelativePaths.push(resCopy.relativePath)
+        }
+        else {
+          audioImportCopyFail.value++
+          copyFailures.push({
+            sourcePath,
+            subDir,
+            error: String(resCopy?.error || 'copy-failed')
+          })
+          console.warn('[StationEditor][DynamicAudioImport][folder][copy-fail]', {
+            sourcePath,
+            subDir,
+            lineDirOrFilePath,
+            error: String(resCopy?.error || '')
+          })
+        }
       }
 
       audioImportStage.value = 'match'
@@ -1675,19 +1850,73 @@ export default {
       const targets = Array.from(requiredTargets.values())
       for (const target of targets) {
         const opts = target.roleKey
-          ? { role: target.roleKey, languageKey, dialectKey }
-          : { languageKey, dialectKey }
-        const resFind = await api.lines.findAudioByStationName(lineDirOrFilePath, target.stationName, opts)
-        if (resFind?.ok && resFind?.relativePath) {
+          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths }
+          : { languageKey, dialectKey, importedRelativePaths }
+        const candidates = Array.isArray(target.stationNameCandidates) && target.stationNameCandidates.length
+          ? target.stationNameCandidates
+          : [target.stationName]
+        const expandedCandidates = expandStationNameCandidates(candidates)
+        let matched = false
+        let lastErr = ''
+        let lastRes = null
+        const candidateAttempts = []
+        for (const nameCandidate of expandedCandidates) {
+          const resFind = await api.lines.findAudioByStationName(lineDirOrFilePath, nameCandidate, opts)
+          lastRes = resFind
+          candidateAttempts.push({
+            candidate: nameCandidate,
+            ok: !!resFind?.ok,
+            relativePath: resFind?.relativePath || '',
+            error: String(resFind?.error || '')
+          })
+          if (resFind?.ok && resFind?.relativePath) {
+            matched = true
+            break
+          }
+          lastErr = String(resFind?.error || '')
+        }
+        if (matched) {
           audioImportSuccessStations.value++
         } else {
           audioImportFailStations.value++
           audioImportFailedStations.value.push(target.stationName)
+          matchFailures.push({
+            stationName: target.stationName,
+            role: target.roleKey || '',
+            languageKey,
+            dialectKey,
+            expandedCandidates,
+            lastErr,
+            candidateAttempts
+          })
+          console.warn('[StationEditor][DynamicAudioImport][folder][no-match]', {
+            stationName: target.stationName,
+            role: target.roleKey || '',
+            dialectKey,
+            languageKey,
+            candidates: expandedCandidates,
+            lastErr,
+            debug: lastRes?.debug || null
+          })
         }
       }
 
       // 去重 failed station 名称（按最终展示更友好）
       audioImportFailedStations.value = Array.from(new Set(audioImportFailedStations.value))
+      console.warn('[StationEditor][DynamicAudioImport][folder][summary]', {
+        lineDirOrFilePath,
+        folderPath,
+        languageKey,
+        dialectKey,
+        scannedFileCount: listRes.files.length,
+        copyOk: audioImportCopyOk.value,
+        copyFail: audioImportCopyFail.value,
+        matchSuccess: audioImportSuccessStations.value,
+        matchFail: audioImportFailStations.value,
+        failedStations: [...audioImportFailedStations.value],
+        copyFailures,
+        matchFailures
+      })
 
       audioImportStage.value = 'done'
       queueAudioHealthScan()
@@ -2054,11 +2283,12 @@ export default {
       seDebugLog('before-unmount')
     })
     // 进站/出站颜色条：进站=蓝色，出站=绿色，无=灰色
+    // 与 Ant Design 色板一致：主色 / 成功 / 警告
     const getAudioArriveDepartColor = (item) => {
       if (!item || !item.modes) return null
-      if (item.applied) return 'rgb(255, 159, 67)'
-      if (item.modes.arrive) return 'rgb(70, 130, 180)'
-      if (item.modes.depart) return 'rgb(46, 213, 115)'
+      if (item.applied) return '#faad14'
+      if (item.modes.arrive) return '#1677ff'
+      if (item.modes.depart) return '#52c41a'
       return null
     }
     const getSelectedAudioIndicesOrdered = (dir) => {
@@ -2508,6 +2738,7 @@ export default {
     const audioImportTotal = ref(0)
     const audioImportCopyOk = ref(0)
     const audioImportCopyFail = ref(0)
+    const audioImportTargetStations = ref(0)
     const audioImportSuccessStations = ref(0)
     const audioImportFailStations = ref(0)
     const audioImportFailedStations = ref([])
@@ -2518,6 +2749,7 @@ export default {
       audioImportTotal.value = 0
       audioImportCopyOk.value = 0
       audioImportCopyFail.value = 0
+      audioImportTargetStations.value = 0
       audioImportSuccessStations.value = 0
       audioImportFailStations.value = 0
       audioImportFailedStations.value = []
@@ -2765,6 +2997,7 @@ export default {
       audioImportTotal,
       audioImportCopyOk,
       audioImportCopyFail,
+      audioImportTargetStations,
       audioImportSuccessStations,
       audioImportFailStations,
       audioImportFailedStations,
@@ -2802,31 +3035,31 @@ export default {
 
 <template>
   <Teleport to="body">
-    <Transition name="fade">
-      <div v-if="modelValue" class="se-overlay" @mousedown="onOverlayMouseDown" @click="onOverlayClick">
+    <Transition name="cp-fade">
+      <div v-if="modelValue" class="cp-overlay cp-overlay--editor" @mousedown="onOverlayMouseDown" @click="onOverlayClick">
         <div
-          class="se-dialog"
+          class="cp-dialog cp-dialog--editor"
           v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
           role="dialog"
           aria-modal="true"
           @mousedown.stop
           @click.stop
         >
-          <div class="se-header">
-              <div class="se-header-left">
-                <div class="se-icon">
-                  <i :class="isNew ? 'fas fa-plus' : 'fas fa-edit'"></i>
-                </div>
-                <div class="se-titles">
-                  <div class="se-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
-                </div>
+          <div class="cp-header">
+            <div class="cp-header-left">
+              <div class="cp-icon">
+                <i :class="isNew ? 'fas fa-plus' : 'fas fa-edit'"></i>
               </div>
-            <button class="se-close" @click="close('header-close-btn')" :aria-label="t('stationEditor.closeLabel')">
+              <div class="cp-titles">
+                <div class="cp-title">{{ isNew ? t('stationEditor.titleNew') : t('stationEditor.titleEdit') }}</div>
+              </div>
+            </div>
+            <button class="cp-close" type="button" @click="close('header-close-btn')" :aria-label="t('stationEditor.closeLabel')">
               <i class="fas fa-times"></i>
             </button>
           </div>
 
-            <div class="se-content">
+            <div class="cp-content cp-content--scroll">
             <div class="se-section-head se-station-page-head">
               <div class="se-section-toggle">
                 <button type="button" class="se-seg-btn se-mini on" @click.prevent>{{ t('stationEditor.stationInfoPage') }}</button>
@@ -3112,7 +3345,7 @@ export default {
           <Teleport to="body">
             <div
               v-if="menuVisible"
-              class="station-context-menu"
+              class="station-context-menu station-context-menu--glass-shell"
               data-xfer-context-menu
               v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
               :style="{ left: menuX + 'px', top: menuY + 'px', position: 'fixed', zIndex: 1000001, pointerEvents: 'auto' }"
@@ -3521,8 +3754,8 @@ export default {
                     @keydown.enter="confirmXferNameEdit"
                   />
                   <div class="se-name-edit-actions">
-                    <button type="button" class="se-btn se-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
-                    <button type="button" class="se-btn se-btn-green" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                    <button type="button" class="cp-btn cp-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
+                    <button type="button" class="cp-btn cp-btn-primary" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
                   </div>
                 </div>
               </div>
@@ -3542,8 +3775,8 @@ export default {
                     @keydown.enter="confirmAudioNameEdit"
                   />
                   <div class="se-name-edit-actions">
-                    <button type="button" class="se-btn se-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
-                    <button type="button" class="se-btn se-btn-green" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                    <button type="button" class="cp-btn cp-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
+                    <button type="button" class="cp-btn cp-btn-primary" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
                   </div>
                 </div>
               </div>
@@ -3575,7 +3808,7 @@ export default {
                       style="height: 10px; border-radius: 999px; background: rgba(0,0,0,0.08); overflow:hidden; border: 1px solid rgba(0,0,0,0.06);"
                     >
                       <div
-                        style="height: 100%; background: linear-gradient(135deg, #1677ff 0%, #ff9f43 100%); width: 0%; transition: width 0.2s ease;"
+                        style="height: 100%; background: linear-gradient(90deg, #1677ff 0%, #4096ff 100%); width: 0%; transition: width 0.2s ease;"
                         :style="{ width: audioImportTotal > 0 ? (audioImportProcessed / audioImportTotal * 100).toFixed(1) + '%' : '0%' }"
                       ></div>
                     </div>
@@ -3591,6 +3824,9 @@ export default {
                         <div style="line-height:1.6;">
                           {{ t('stationEditor.audioImportResultSummary', { success: audioImportSuccessStations, fail: audioImportFailStations }) }}
                         </div>
+                        <div style="margin-top:6px; font-size:12px; color: var(--muted,#888);">
+                          目标站点总数（按占位项推导）：<span style="color: var(--text,#333)">{{ audioImportTargetStations }}</span>
+                        </div>
                         <div v-if="audioImportFailStations > 0" style="margin-top:10px; font-size:13px; color: var(--muted,#888);">
                           {{ t('stationEditor.audioImportFailedStations') }}：
                           <span style="color: var(--text,#333)">{{ audioImportFailedStations.join('、') }}</span>
@@ -3600,7 +3836,7 @@ export default {
                   </div>
 
                   <div class="se-name-edit-actions" style="margin-top: 18px;">
-                    <button type="button" class="se-btn se-btn-gray" @click="closeAudioImportModal" :disabled="audioImportStage !== 'done'">
+                    <button type="button" class="cp-btn cp-btn-gray" @click="closeAudioImportModal" :disabled="audioImportStage !== 'done'">
                       {{ t('stationEditor.closeLabel') }}
                     </button>
                   </div>
@@ -3609,9 +3845,9 @@ export default {
             </Transition>
           </Teleport>
 
-          <div class="se-footer">
-            <button class="se-btn se-btn-gray" @click="close('footer-cancel-btn')">{{ t('stationEditor.btnCancel') }}</button>
-            <button class="se-btn se-btn-green" @mousedown="armSaveClick" @click="save($event)" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
+          <div class="cp-footer cp-footer--end">
+            <button type="button" class="cp-btn cp-btn-gray" @click="close('footer-cancel-btn')">{{ t('stationEditor.btnCancel') }}</button>
+            <button type="button" class="cp-btn cp-btn-primary" @mousedown="armSaveClick" @click="save($event)" :disabled="!form.name">{{ t('stationEditor.btnSave') }}</button>
           </div>
         </div>
 
@@ -3622,108 +3858,23 @@ export default {
 </template>
 
 <style>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.25s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+@import '../styles/cp-glass-modal-shell.css';
 
-.se-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20000;
-  background: transparent; /* 不压暗 */
-}
-
-.se-dialog {
-  width: 900px;
-  max-width: 95%;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  background: rgba(255, 255, 255, 0.68);
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-}
-
-.se-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24px 28px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  background: transparent;
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
-}
-.se-header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.se-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #1677ff 0%, #ff9f43 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
-  flex: 0 0 auto;
-}
-.se-icon i {
-  color: #fff;
-  font-size: 18px;
-}
-.se-title {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  color: var(--text, #333);
-}
-.se-subtitle {
-  font-size: 12px;
-  color: var(--muted, #999);
-  margin-top: 2px;
-}
-.se-close {
-  background: none;
-  border: none;
-  color: var(--muted, #999);
-  cursor: pointer;
-  font-size: 20px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-.se-close:hover {
-  color: var(--text, #333);
-  background: rgba(0, 0, 0, 0.04);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.se-content {
-  flex: 1;
-  overflow: auto;
-  padding: 24px 28px;
-  background: transparent;
+/* Ant Design 色板变量：挂在站点编辑弹窗根节点（与取色器共用 cp-dialog 外壳） */
+.cp-dialog.cp-dialog--editor {
+  --se-ant-primary: #1677ff;
+  --se-ant-primary-hover: #4096ff;
+  --se-ant-primary-bg: rgba(22, 119, 255, 0.12);
+  --se-ant-primary-bg-soft: rgba(22, 119, 255, 0.06);
+  --se-ant-success: #52c41a;
+  --se-ant-success-text: #389e0d;
+  --se-ant-success-bg: rgba(82, 196, 26, 0.12);
+  --se-ant-warning: #faad14;
+  --se-ant-warning-text: #d48806;
+  --se-ant-warning-bg: rgba(250, 173, 20, 0.12);
+  --se-ant-error: #ff4d4f;
+  --se-ant-purple: #722ed1;
+  --se-ant-purple-bg: rgba(114, 46, 209, 0.1);
 }
 
 .se-grid2 {
@@ -3845,14 +3996,14 @@ export default {
   white-space: nowrap;
 }
 .se-seg-btn.on {
-  background: var(--accent, #1677ff);
+  background: var(--se-ant-primary);
   color: #fff;
   box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
 }
 .se-seg-btn.warn.on {
-  background: var(--btn-org-bg, #ff9f43);
+  background: var(--se-ant-warning);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(255, 159, 67, 0.35);
+  box-shadow: 0 2px 8px rgba(250, 173, 20, 0.4);
 }
 
 .se-section {
@@ -3941,12 +4092,12 @@ export default {
   color: var(--muted, #666);
 }
 .se-audio-direction-chip.up {
-  background: rgba(22, 119, 255, 0.12);
-  color: var(--accent, #1677ff);
+  background: var(--se-ant-primary-bg);
+  color: var(--se-ant-primary);
 }
 .se-audio-direction-chip.down {
-  background: rgba(46, 213, 115, 0.14);
-  color: #2ED573;
+  background: var(--se-ant-success-bg);
+  color: var(--se-ant-success-text);
 }
 .se-audio-common-panel {
   width: 280px;
@@ -3980,7 +4131,7 @@ export default {
 }
 .se-audio-common-text { font-size: 13px; color: var(--text, #333); font-weight: 600; }
 .se-audio-common-actions { display: flex; gap: 6px; }
-.se-btn.se-btn-mini {
+.cp-btn.cp-btn-mini {
   padding: 6px 8px;
   font-size: 12px;
   min-width: auto;
@@ -3988,17 +4139,17 @@ export default {
 .se-audio-common-actions-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .se-audio-common-count { font-size: 12px; color: var(--muted, #888); }
 .se-audio-drop-zone { margin-top: 10px; padding: 12px; border: 1px dashed rgba(0, 0, 0, 0.2); border-radius: 10px; display: flex; gap: 8px; align-items: center; color: var(--muted, #777); background: rgba(255, 255, 255, 0.6); }
-.se-audio-drop-zone i { color: var(--accent, #1677ff); }
+.se-audio-drop-zone i { color: var(--se-ant-primary); }
 .se-hidden-file-input { display: none; }
 .se-audio-common-row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.se-audio-hotkey { font-weight: 800; margin-right: 8px; color: var(--accent, #1677ff); min-width: 32px; display: inline-flex; justify-content: center; }
+.se-audio-hotkey { font-weight: 800; margin-right: 8px; color: var(--se-ant-primary); min-width: 32px; display: inline-flex; justify-content: center; }
 .se-audio-path { font-size: 11px; color: var(--muted, #777); margin-right: 8px; }
 .se-terminal-slot {
   margin-top: 10px;
   padding: 10px 12px;
-  border: 1px dashed rgba(111, 66, 193, 0.35);
+  border: 1px dashed rgba(114, 46, 209, 0.45);
   border-radius: 10px;
-  background: rgba(111, 66, 193, 0.06);
+  background: var(--se-ant-purple-bg);
 }
 .se-terminal-slot-head {
   display: flex;
@@ -4024,12 +4175,12 @@ export default {
   border-radius: 6px;
 }
 .se-audio-column-title.up {
-  background: rgba(22, 119, 255, 0.15);
-  color: var(--accent, #1677ff);
+  background: var(--se-ant-primary-bg);
+  color: var(--se-ant-primary);
 }
 .se-audio-column-title.down {
-  background: rgba(46, 213, 115, 0.15);
-  color: #2ED573;
+  background: var(--se-ant-success-bg);
+  color: var(--se-ant-success-text);
 }
 .se-audio-unified {
   background: rgba(0, 0, 0, 0.02);
@@ -4039,8 +4190,8 @@ export default {
   transition: background 0.15s, border-color 0.15s;
 }
 .se-audio-unified.se-audio-kind-dragover {
-  background: rgba(22, 119, 255, 0.06);
-  border-color: var(--accent, #1677ff);
+  background: var(--se-ant-primary-bg-soft);
+  border-color: var(--se-ant-primary);
   border-style: dashed;
 }
 .se-audio-unified-empty {
@@ -4049,10 +4200,10 @@ export default {
   color: var(--muted);
 }
 .se-xfer-row.se-audio-row { gap: 8px; }
-.se-xfer-row.se-audio-row.se-audio-row-selected { background: rgba(22, 119, 255, 0.12); border-color: var(--accent, #1677ff); }
-.se-xfer-row.se-audio-row.mode-shortTurn { border-left: 3px solid var(--accent, #1677ff); }
-.se-xfer-row.se-audio-row.mode-express { border-left: 3px solid var(--btn-org-bg, #FF9F43); }
-.se-xfer-row.se-audio-row.mode-direct { border-left: 3px solid #2ED573; }
+.se-xfer-row.se-audio-row.se-audio-row-selected { background: var(--se-ant-primary-bg); border-color: var(--se-ant-primary); }
+.se-xfer-row.se-audio-row.mode-shortTurn { border-left: 3px solid var(--se-ant-primary); }
+.se-xfer-row.se-audio-row.mode-express { border-left: 3px solid var(--se-ant-warning); }
+.se-xfer-row.se-audio-row.mode-direct { border-left: 3px solid var(--se-ant-success); }
 .se-xfer-row.se-audio-row.mode-disabled { opacity: 0.75; }
 .se-terminal-row { border-style: dashed; }
 .se-audio-arrdep-bar {
@@ -4108,18 +4259,18 @@ export default {
 .se-audio-crash-fallback {
   padding: 12px;
   border-radius: 8px;
-  border: 1px dashed var(--btn-org-bg, #ff9f43);
-  background: rgba(255, 159, 67, 0.08);
+  border: 1px dashed var(--se-ant-warning);
+  background: var(--se-ant-warning-bg);
   color: var(--text, #333);
   font-size: 12px;
 }
-.se-audio-badge-arrive { background: rgba(70, 130, 180, 0.2); color: #4682b4; }
-.se-audio-badge-depart { background: rgba(46, 213, 115, 0.2); color: #1e8c4a; }
-.se-audio-badge-shortTurn { background: rgba(22, 119, 255, 0.2); color: var(--accent, #1677ff); }
-.se-audio-badge-express { background: rgba(255, 159, 67, 0.2); color: #c76b1a; }
-.se-audio-badge-direct { background: rgba(46, 213, 115, 0.2); color: #1e8c4a; }
-.se-audio-badge-disabled { background: rgba(0, 0, 0, 0.1); color: var(--muted); }
-.se-audio-badge-terminal { background: rgba(111, 66, 193, 0.2); color: #6f42c1; }
+.se-audio-badge-arrive { background: var(--se-ant-primary-bg); color: var(--se-ant-primary); }
+.se-audio-badge-depart { background: var(--se-ant-success-bg); color: var(--se-ant-success-text); }
+.se-audio-badge-shortTurn { background: var(--se-ant-primary-bg); color: var(--se-ant-primary); }
+.se-audio-badge-express { background: var(--se-ant-warning-bg); color: var(--se-ant-warning-text); }
+.se-audio-badge-direct { background: var(--se-ant-success-bg); color: var(--se-ant-success-text); }
+.se-audio-badge-disabled { background: rgba(0, 0, 0, 0.06); color: var(--muted); }
+.se-audio-badge-terminal { background: var(--se-ant-purple-bg); color: var(--se-ant-purple); }
 .se-empty {
   color: var(--muted);
   font-size: 12px;
@@ -4141,8 +4292,8 @@ export default {
 }
 .se-audio-drop-add-bar:hover,
 .se-audio-kind-dragover .se-audio-drop-add-bar {
-  background: rgba(22, 119, 255, 0.08);
-  border-color: rgba(22, 119, 255, 0.35);
+  background: var(--se-ant-primary-bg-soft);
+  border-color: rgba(22, 119, 255, 0.45);
 }
 .se-audio-drop-add-text {
   font-size: 12px;
@@ -4191,12 +4342,12 @@ export default {
   font-weight: 600;
 }
 .se-xfer-badge.exit {
-  background: rgba(255, 159, 67, 0.2);
-  color: #c76b1a;
+  background: var(--se-ant-warning-bg);
+  color: var(--se-ant-warning-text);
 }
 .se-xfer-badge.suspended {
-  background: rgba(240, 173, 78, 0.25);
-  color: #b8860b;
+  background: rgba(250, 173, 20, 0.18);
+  color: var(--se-ant-warning-text);
 }
 .se-xfer-name-wrap {
   display: flex;
@@ -4216,11 +4367,11 @@ export default {
 
 /* 换乘线路右键菜单使用 .station-context-menu（与站点列表统一），此处仅补充分隔与选中态 */
 .station-context-menu-item.xfer-on {
-  background: rgba(22, 119, 255, 0.1);
-  color: var(--accent, #1677ff);
+  background: var(--se-ant-primary-bg-soft);
+  color: var(--se-ant-primary);
 }
 .station-context-menu-item.xfer-on i {
-  color: var(--accent, #1677ff);
+  color: var(--se-ant-primary);
 }
 .apply-all {
   display: flex;
@@ -4230,8 +4381,8 @@ export default {
   position: relative;
 }
 .apply-all.open {
-  background: rgba(22, 119, 255, 0.08);
-  color: var(--accent, #1677ff);
+  background: var(--se-ant-primary-bg-soft);
+  color: var(--se-ant-primary);
 }
 .apply-all .apply-all-main {
   display: flex;
@@ -4240,6 +4391,11 @@ export default {
 }
 .apply-all-arrow { margin-left: auto; color: var(--muted, #999); }
 .apply-all-submenu {
+  --se-ant-primary: #1677ff;
+  --se-ant-primary-hover: #4096ff;
+  --se-ant-primary-bg: rgba(22, 119, 255, 0.12);
+  --se-ant-primary-bg-soft: rgba(22, 119, 255, 0.06);
+  --se-ant-error: #ff4d4f;
   position: absolute;
   top: -6px;
   left: 100%;
@@ -4282,10 +4438,24 @@ export default {
   text-align: center;
 }
 .apply-all-submenu .station-context-menu-item:hover {
-  background: rgba(22, 119, 255, 0.1);
+  background: var(--se-ant-primary-bg);
   color: var(--text, #222);
 }
 .station-context-menu {
+  /* Teleport 到 body 时无 .cp-dialog--editor 祖先，需自带 Ant 色板变量 */
+  --se-ant-primary: #1677ff;
+  --se-ant-primary-hover: #4096ff;
+  --se-ant-primary-bg: rgba(22, 119, 255, 0.12);
+  --se-ant-primary-bg-soft: rgba(22, 119, 255, 0.06);
+  --se-ant-success: #52c41a;
+  --se-ant-success-text: #389e0d;
+  --se-ant-success-bg: rgba(82, 196, 26, 0.12);
+  --se-ant-warning: #faad14;
+  --se-ant-warning-text: #d48806;
+  --se-ant-warning-bg: rgba(250, 173, 20, 0.12);
+  --se-ant-error: #ff4d4f;
+  --se-ant-purple: #722ed1;
+  --se-ant-purple-bg: rgba(114, 46, 209, 0.1);
   min-width: 180px;
   background: rgba(255, 255, 255, 0.68);
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05);
@@ -4315,10 +4485,10 @@ export default {
   border-radius: 8px;
 }
 .station-context-menu-item.danger {
-  color: var(--btn-red-bg, #ff4444);
+  color: var(--se-ant-error);
 }
 .station-context-menu-item.danger:hover {
-  background: rgba(255, 68, 68, 0.12);
+  background: rgba(255, 77, 79, 0.12);
 }
 .station-context-menu-item.disabled {
   opacity: 0.5;
@@ -4372,18 +4542,6 @@ export default {
   justify-content: flex-end;
 }
 
-:global(html.blur-disabled) .se-dialog {
-  background: #ffffff !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(15, 23, 42, 0.16) !important;
-}
-:global(html.blur-disabled.dark) .se-dialog,
-:global(html.blur-disabled[data-theme='dark']) .se-dialog {
-  background: #1c1c20 !important;
-  border: 1px solid rgba(255,255,255,0.16) !important;
-}
-
 :global(html.blur-disabled) .station-context-menu,
 :global(html.blur-disabled) .apply-all-submenu,
 :global(html.blur-disabled) .glass-submenu {
@@ -4427,59 +4585,20 @@ export default {
   border: 1px solid rgba(255,255,255,0.16) !important;
 }
 
-.se-footer {
-  padding: 20px 28px;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-  background: transparent;
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-.se-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 80px;
-  transition: all 0.15s;
-}
-.se-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.se-btn-gray {
-  background: var(--btn-gray-bg, #f5f5f5);
-  color: var(--btn-gray-text, #666);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-.se-btn-gray:hover:not(:disabled) {
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
-}
-.se-btn-green {
-  background: #2ed573;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(46, 213, 115, 0.4);
-}
-.se-btn-green:hover:not(:disabled) {
-  box-shadow: 0 5px 14px rgba(46, 213, 115, 0.5);
-}
-
 @media (prefers-color-scheme: dark) {
-  .se-dialog {
-    background: rgba(255, 255, 255, 0.68) !important;
-    border: 1px solid rgba(255, 255, 255, 0.45) !important;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+  .cp-dialog.cp-dialog--editor {
+    background: rgba(28, 28, 32, 0.68) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
   }
-  .se-header {
+  .cp-header {
     background: transparent !important;
     border-bottom-color: rgba(255, 255, 255, 0.1);
   }
-  .se-content {
+  .cp-content {
     background: transparent !important;
   }
-  .se-footer {
+  .cp-footer {
     background: transparent !important;
     border-top-color: rgba(255, 255, 255, 0.1);
   }
@@ -4498,7 +4617,7 @@ export default {
   .se-xfer-swatch {
     border-color: rgba(255, 255, 255, 0.2);
   }
-  .se-close:hover {
+  .cp-close:hover {
     background: rgba(255, 255, 255, 0.06);
   }
   .se-name-edit-dialog {
@@ -4511,7 +4630,7 @@ export default {
   .se-audio-kind-dragover .se-xfer-list,
   .se-audio-kind-dragover .se-empty {
     background: rgba(22, 119, 255, 0.12);
-    border-color: var(--accent, #1677ff);
+    border-color: #1677ff;
   }
 }
 
@@ -4526,29 +4645,19 @@ export default {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-/* 兜底：放在样式末尾，避免被 prefers-color-scheme 深色规则覆盖 */
-:global(html.blur-disabled) .se-dialog {
-  background: #ffffff !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(15, 23, 42, 0.16) !important;
-}
-:global(html.blur-disabled.dark) .se-dialog,
-:global(html.blur-disabled[data-theme="dark"]) .se-dialog {
-  background: #1c1c20 !important;
-  border: 1px solid rgba(255,255,255,0.16) !important;
-}
-/* Override: StationEditor 内部必须保持毛玻璃（即使全局 html.blur-disabled 打开） */
-:global(html.blur-disabled) .se-dialog {
+/* 站点编辑主弹窗：blur-disabled 时仍保持毛玻璃（与 cp-glass-modal-shell 一致） */
+:global(html.blur-disabled) .cp-dialog.cp-dialog--editor {
   background: rgba(255, 255, 255, 0.68) !important;
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
 }
-:global(html.blur-disabled.dark) .se-dialog,
-:global(html.blur-disabled[data-theme="dark"]) .se-dialog {
+:global(html.blur-disabled.dark) .cp-dialog.cp-dialog--editor,
+:global(html.blur-disabled[data-theme="dark"]) .cp-dialog.cp-dialog--editor {
   background: rgba(28, 28, 32, 0.68) !important;
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 :global(html.blur-disabled) .station-context-menu,
 :global(html.blur-disabled) .apply-all-submenu,
@@ -4579,18 +4688,18 @@ export default {
   -webkit-backdrop-filter: blur(12px) !important;
 }
 
-::global(html.blur-disabled) .se-header,
-::global(html.blur-disabled) .se-content,
-::global(html.blur-disabled) .se-footer {
+:global(html.blur-disabled) .cp-header,
+:global(html.blur-disabled) .cp-content,
+:global(html.blur-disabled) .cp-footer {
   background: transparent !important;
 }
 
-::global(html.blur-disabled.dark) .se-header,
-::global(html.blur-disabled.dark) .se-content,
-::global(html.blur-disabled.dark) .se-footer,
-::global(html.blur-disabled[data-theme="dark"]) .se-header,
-::global(html.blur-disabled[data-theme="dark"]) .se-content,
-::global(html.blur-disabled[data-theme="dark"]) .se-footer {
+:global(html.blur-disabled.dark) .cp-header,
+:global(html.blur-disabled.dark) .cp-content,
+:global(html.blur-disabled.dark) .cp-footer,
+:global(html.blur-disabled[data-theme="dark"]) .cp-header,
+:global(html.blur-disabled[data-theme="dark"]) .cp-content,
+:global(html.blur-disabled[data-theme="dark"]) .cp-footer {
   background: transparent !important;
 }
 

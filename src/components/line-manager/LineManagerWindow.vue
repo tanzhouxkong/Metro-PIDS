@@ -2,8 +2,8 @@
 // 独立窗口线路管理器（现代扁平 + 云控线路虚拟文件夹）
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, Teleport, Transition } from 'vue'
 import { useI18n } from 'vue-i18n'
-import LineManagerDialog from '../LineManagerDialog.js'
-import LineManagerTopbar from '../LineManagerTopbar.js'
+import LineManagerDialog from '../LineManagerDialog.vue'
+import LineManagerTopbar from '../LineManagerTopbar.vue'
 import { useCloudConfig, CLOUD_API_BASE } from '../../composables/useCloudConfig.js'
 import { useSpotlightGuide, SPOTLIGHT_STEP_CONFIG } from '../../composables/useSpotlightGuide.js'
 import dialogService from '../../utils/dialogService.js'

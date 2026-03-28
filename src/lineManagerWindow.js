@@ -1,8 +1,11 @@
 import { createApp } from 'vue'
+import glassmorphism from 'vue3-glassmorphism'
 import LineManagerWindow from './components/line-manager/LineManagerWindow.vue'
-import LineManagerTopbar from './components/LineManagerTopbar.js'
-import LineManagerDialog from './components/LineManagerDialog.js'
+import LineManagerTopbar from './components/LineManagerTopbar.vue'
+import LineManagerDialog from './components/LineManagerDialog.vue'
 import { i18n } from './locales/index.js'
+import { installAntd } from './installAntd.js'
+import './styles/station-context-menu.css'
 
 // 应用主题模式（从localStorage读取设置）
 function applyThemeMode() {
@@ -52,6 +55,8 @@ function applyThemeMode() {
 applyThemeMode();
 
 const app = createApp(LineManagerWindow)
+installAntd(app)
+app.use(glassmorphism)
 // 安装国际化插件
 app.use(i18n)
 // 全局注册组件以确保可用
