@@ -161,6 +161,43 @@ export default {
             { key: 'light', title: i18n.global.t('settings.themeLight') },
             { key: 'dark', title: i18n.global.t('settings.themeDark') }
         ])
+        const dynamicAudioCloudModeAllow = new Set(['local-first', 'cloud-first', 'local-only', 'cloud-only'])
+        const dynamicAudioCloudModeOptions = computed(() => ([
+            { key: 'local-first', title: '本地优先（云端兜底）' },
+            { key: 'cloud-first', title: '云端优先（本地兜底）' },
+            { key: 'local-only', title: '仅本地动态音频' },
+            { key: 'cloud-only', title: '仅云端动态音频' }
+        ]))
+        const currentDynamicAudioCloudModeTitle = computed(() => {
+            const key = String(settings.dynamicAudioCloudMode || 'local-first')
+            const hit = dynamicAudioCloudModeOptions.value.find((x) => x.key === key)
+            return hit ? hit.title : '本地优先（云端兜底）'
+        })
+        const setDynamicAudioCloudMode = (modeKey) => {
+            const raw = (modeKey && typeof modeKey === 'object')
+                ? (modeKey.value ?? modeKey.key ?? '')
+                : modeKey
+            const next = String(raw || '').trim()
+            settings.dynamicAudioCloudMode = dynamicAudioCloudModeAllow.has(next) ? next : 'local-first'
+            saveSettings()
+        }
+        const cloudApiBaseDisplay = computed(() => {
+            const v = String(CLOUD_API_BASE || '').trim()
+            return v || 'https://metro.tanzhouxiang.dpdns.org'
+        })
+        watch(
+            () => settings.dynamicAudioCloudMode,
+            (v) => {
+                const next = String(v || '').trim()
+                const normalized = dynamicAudioCloudModeAllow.has(next) ? next : 'local-first'
+                if (normalized !== settings.dynamicAudioCloudMode) {
+                    settings.dynamicAudioCloudMode = normalized
+                    return
+                }
+                try { saveSettings() } catch (e) {}
+            },
+            { immediate: true }
+        )
 
         const currentThemeModeTitle = computed(() => {
             const option = themeModeOptions.value.find((opt) => opt.key === settings.themeMode)
@@ -726,14 +763,19 @@ export default {
                     document.body.removeChild(ta)
                 } catch (e) {}
             }
-            await showMsg(
-                copied
-                    ? i18n.global.t('multiScreen.copySuccessMsg')
-                    : i18n.global.t('multiScreen.copyFailMsg', { url }),
-                copied
-                    ? i18n.global.t('multiScreen.copySuccessTitle')
-                    : i18n.global.t('multiScreen.copyFailTitle')
-            )
+            if (copied) {
+                notification.success({
+                    message: i18n.global.t('multiScreen.copySuccessTitle'),
+                    description: i18n.global.t('multiScreen.copySuccessMsg'),
+                    placement: 'topRight'
+                })
+            } else {
+                notification.warning({
+                    message: i18n.global.t('multiScreen.copyFailTitle'),
+                    description: i18n.global.t('multiScreen.copyFailMsg', { url }),
+                    placement: 'topRight'
+                })
+            }
         }
     
     // 颜色选择器
@@ -4620,6 +4662,7 @@ export default {
             throughLineSegments, addThroughLineSegment, removeThroughLineSegment,
             cleanStationName,
             settings, saveSettings, keyMapDisplay, recordKey, clearKey, resetKeys,
+            dynamicAudioCloudModeOptions, currentDynamicAudioCloudModeTitle, setDynamicAudioCloudMode, cloudApiBaseDisplay,
             updateState, checkForUpdateClicked, downloadUpdateNow, clearCacheAndRedownload, installDownloadedUpdate, skipThisVersion, openGitHubReleases, openExternalUrl,
             version, hasElectronAPI, pickColor, openColorPicker,
             showColorPicker, colorPickerInitialColor, onColorConfirm,
@@ -4669,5 +4712,3 @@ export default {
             contextMenuBackdropFilter
         };
     }}
-
-

@@ -144,6 +144,13 @@ export function useSettings() {
                 if (settings.enableWebSocketBridge === undefined) settings.enableWebSocketBridge = DEFAULT_SETTINGS.enableWebSocketBridge;
                 if (settings.wsPort === undefined) settings.wsPort = DEFAULT_SETTINGS.wsPort;
                 if (settings.vehicleAudioEnabled === undefined) settings.vehicleAudioEnabled = DEFAULT_SETTINGS.vehicleAudioEnabled !== false;
+                const cloudMode = String(settings.dynamicAudioCloudMode || '').trim();
+                const cloudModeAllow = new Set(['local-first', 'cloud-first', 'local-only', 'cloud-only']);
+                if (!cloudModeAllow.has(cloudMode)) {
+                    settings.dynamicAudioCloudMode = DEFAULT_SETTINGS.dynamicAudioCloudMode || 'local-first';
+                } else {
+                    settings.dynamicAudioCloudMode = cloudMode;
+                }
             }
             // 新安装（无 s）或升级后都统一确保显示器1、2、3存在，避免卡片不显示
             ensureDisplayStructure();

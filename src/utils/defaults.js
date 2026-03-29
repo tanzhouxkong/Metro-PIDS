@@ -248,6 +248,7 @@ export const DEFAULT_SETTINGS = {
   enableWebSocketBridge: true,
     wsPort: 9400,
     vehicleAudioEnabled: true,
+    dynamicAudioCloudMode: 'local-first',
     keys: { arrdep: "Enter", prev: "ArrowLeft", next: "ArrowRight" },
     autoplay: { enabled: false, intervalSec: 8, key: "Space" },
     display: {

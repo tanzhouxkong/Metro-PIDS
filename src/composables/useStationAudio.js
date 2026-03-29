@@ -3,6 +3,7 @@
  * - 导航式打断：新的播放立即停止旧播放
  */
 import { calculateNextStationIndex } from '../utils/displayStationCalculator'
+import { collectPeerStationNamesForAudioMatch } from '../utils/stationAudioPeers.js'
 import { i18n } from '../locales/index.js'
 import { CLOUD_API_BASE } from './useCloudConfig.js'
 
@@ -68,6 +69,44 @@ const __fetchCloudAudioBlobUrl = async (lineName, relativePath) => {
   const objectUrl = URL.createObjectURL(blob)
   __setCloudAudioBlobCache(cacheKey, objectUrl)
   return objectUrl
+}
+
+const __findCloudAudioByStationName = async (lineName, stationName, opts = {}) => {
+  const ln = __normalizeRuntimeLineName(lineName)
+  const sn = String(stationName || '').trim()
+  if (!ln || !sn) return null
+  const base = String(CLOUD_API_BASE || '').replace(/\/+$/, '')
+  if (!base) return null
+  const url = `${base}/runtime/lines/${encodeURIComponent(ln)}/find-audio`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      stationName: sn,
+      opts: {
+        role: opts?.role || '',
+        languageKey: opts?.languageKey || '',
+        dialectKey: opts?.dialectKey || '',
+        peerStationNames: Array.isArray(opts?.peerStationNames) ? opts.peerStationNames : []
+      }
+    })
+  })
+  if (!res.ok) return null
+  const json = await res.json().catch(() => null)
+  if (!json || !json.ok || typeof json.relativePath !== 'string' || !json.relativePath) return null
+  return json.relativePath
+}
+
+const __getDynamicAudioCloudMode = () => {
+  try {
+    if (typeof localStorage === 'undefined') return 'local-first'
+    const raw = localStorage.getItem('pids_settings_v1')
+    if (!raw) return 'local-first'
+    const parsed = JSON.parse(raw)
+    const mode = String(parsed?.dynamicAudioCloudMode || '').trim().toLowerCase()
+    if (mode === 'local-only' || mode === 'local-first' || mode === 'cloud-first' || mode === 'cloud-only') return mode
+  } catch (e) {}
+  return 'local-first'
 }
 
 export function useStationAudio(state) {
@@ -635,12 +674,18 @@ export function useStationAudio(state) {
       const st = stations[targetIdx]
       const stationNameCandidates = getStationNameCandidatesByTargetDialect(st)
       if (!stationNameCandidates || !stationNameCandidates.length) return null
-      if (typeof window === 'undefined') return null
-      const ipc = window?.electronAPI?.lines?.findAudioByStationName
-      if (typeof ipc !== 'function') return null
-
       const lineFilePath = getLineDirOrFilePath()
-      if (!lineFilePath) return null
+      const hasLocalResolver = typeof window !== 'undefined' && typeof window?.electronAPI?.lines?.findAudioByStationName === 'function' && !!lineFilePath
+      const runtimeLineName = cleanLineName(state?.appData?.meta?.lineName || '')
+      const cloudAudioAvailable = !!(state?.appData?.meta?.cloudAudioAvailable || Number(state?.appData?.meta?.cloudAudioCount || 0) > 0)
+      const hasCloudResolver = !!runtimeLineName && cloudAudioAvailable
+      const cloudMode = __getDynamicAudioCloudMode()
+      const allowLocalResolver = hasLocalResolver && cloudMode !== 'cloud-only'
+      const allowCloudResolver = hasCloudResolver && cloudMode !== 'local-only'
+      if (!allowLocalResolver && !allowCloudResolver) return null
+
+      const localIpc = allowLocalResolver ? window?.electronAPI?.lines?.findAudioByStationName : null
+      const peerStationNames = collectPeerStationNamesForAudioMatch(stations)
 
       const dynDebug = isDynamicAudioDebugEnabled()
       if (dynDebug) {
@@ -653,8 +698,10 @@ export function useStationAudio(state) {
         })
       }
 
+      const peerCacheSig = peerStationNames.join('\x1e')
       for (const stationNameForLang of stationNameCandidates) {
-        const cacheKey = `${lineFilePath}::${roleKey}::${langKey}::${dialectKey}::${normalizeName(stationNameForLang)}`
+        const resolverScope = allowLocalResolver ? `local:${lineFilePath}` : `cloud:${runtimeLineName}`
+        const cacheKey = `${resolverScope}::${roleKey}::${langKey}::${dialectKey}::${normalizeName(stationNameForLang)}::${peerCacheSig}`
         if (resolveCache.has(cacheKey)) {
           const cached = resolveCache.get(cacheKey)
           if (dynDebug) {
@@ -672,32 +719,63 @@ export function useStationAudio(state) {
         }
 
         try {
-          if (dynDebug) {
-            console.warn('[useStationAudio][dynamic-placeholder][ipc-call]', {
-              roleKey,
-              dialectKey,
-              languageKey: langKey,
-              stationNameForLang
-            })
-          }
-          const res = await ipc(lineFilePath, stationNameForLang, { role: roleKey, languageKey: langKey, dialectKey })
-          const ok = !!res?.ok && typeof res?.relativePath === 'string' && res.relativePath
-          const resolved = ok ? { ...item, path: res.relativePath, name: item.name || stationNameForLang, role: roleKey } : null
-          if (resolved) {
-            // 只缓存“正结果”：避免 mpl 解包/目录扫描的时序竞争把“暂时没找到”缓存成 null，
-            // 后续动态解析就会永远跳过，导致只剩少数站点正常。
-            resolveCache.set(cacheKey, resolved)
+          let resolvedPath = ''
+          const cloudFirst = cloudMode === 'cloud-first' || cloudMode === 'cloud-only'
+          const tryCloudResolve = async () => {
+            if (!allowCloudResolver) return ''
             if (dynDebug) {
-              console.warn('[useStationAudio][dynamic-placeholder][resolved]', {
+              console.warn('[useStationAudio][dynamic-placeholder][cloud-call]', {
                 roleKey,
                 dialectKey,
                 languageKey: langKey,
                 stationNameForLang,
-                relativePath: res.relativePath
+                runtimeLineName
               })
             }
-            return resolved
+            const rel = await __findCloudAudioByStationName(runtimeLineName, stationNameForLang, {
+              role: roleKey,
+              languageKey: langKey,
+              dialectKey,
+              peerStationNames
+            })
+            return (typeof rel === 'string' && rel) ? rel : ''
           }
+          const tryLocalResolve = async () => {
+            if (!allowLocalResolver || typeof localIpc !== 'function') return ''
+            if (dynDebug) {
+              console.warn('[useStationAudio][dynamic-placeholder][ipc-call]', {
+                roleKey,
+                dialectKey,
+                languageKey: langKey,
+                stationNameForLang
+              })
+            }
+            const res = await localIpc(lineFilePath, stationNameForLang, { role: roleKey, languageKey: langKey, dialectKey, peerStationNames })
+            return (res?.ok && typeof res?.relativePath === 'string' && res.relativePath) ? res.relativePath : ''
+          }
+          if (cloudFirst) {
+            resolvedPath = await tryCloudResolve()
+            if (!resolvedPath) resolvedPath = await tryLocalResolve()
+          } else {
+            resolvedPath = await tryLocalResolve()
+            if (!resolvedPath) resolvedPath = await tryCloudResolve()
+          }
+          const resolved = resolvedPath ? { ...item, path: resolvedPath, name: item.name || stationNameForLang, role: roleKey } : null
+            if (resolved) {
+              // 只缓存“正结果”：避免 mpl 解包/目录扫描的时序竞争把“暂时没找到”缓存成 null，
+              // 后续动态解析就会永远跳过，导致只剩少数站点正常。
+              resolveCache.set(cacheKey, resolved)
+              if (dynDebug) {
+                console.warn('[useStationAudio][dynamic-placeholder][resolved]', {
+                  roleKey,
+                  dialectKey,
+                  languageKey: langKey,
+                  stationNameForLang,
+                  relativePath: resolvedPath
+                })
+              }
+              return resolved
+            }
           // 当前候选没命中，继续尝试下一个候选
         } catch (e) {
           // 不缓存失败：让后续站点/后续调用有机会在资源就绪后重新尝试
@@ -1456,4 +1534,3 @@ export function useStationAudio(state) {
 
   return { playArrive, playDepart }
 }
-

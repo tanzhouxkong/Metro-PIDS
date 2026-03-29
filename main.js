@@ -116,7 +116,12 @@ try {
   console.warn('[main] zip.js not available, fallback to archiver/extract-zip', e && e.message);
 }
 const crypto = require('crypto');
-const { distance: levenshteinDistance } = require('fastest-levenshtein');
+const {
+  invalidateAudioStationIndexCache,
+  getAudioStationIndexForAudioDir,
+  buildPeerNormalizedSetForFindAudio,
+  findAudioByStationNameFromIndex
+} = require(path.join(__dirname, 'main', 'stationAudioMatch.js'));
 const { spawn } = require('child_process');
 const os = require('os');
 let WebSocketServer = null;
@@ -6026,6 +6031,7 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
     return segs.join('/');
   };
   const rawProvidedSubDir = options && typeof options === 'object' ? options.subDir : '';
+  const preserveFileName = !!(options && typeof options === 'object' && options.preserveFileName === true);
   let audioSubDir = normalizeAudioSubDir(rawProvidedSubDir);
 
   // 兜底：前端可能未传/传空 subDir 时，主进程也从源文件路径推断语种目录
@@ -6150,22 +6156,24 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
     const raw = await fsPromises.readFile(hashCachePath, 'utf8');
     cache = JSON.parse(raw);
   } catch (e) { /* no cache or invalid */ }
-  for (const [rel, stored] of Object.entries(cache)) {
-    const relNorm = String(rel || '').replace(/\\/g, '/');
-    if (audioSubDir) {
-      const prefix = `audio/${audioSubDir}/`;
-      if (!relNorm.startsWith(prefix)) continue;
-    }
-    const storedMd5 = (typeof stored === 'string')
-      ? stored
-      : (stored && typeof stored === 'object' && typeof stored.md5 === 'string' ? stored.md5 : '');
-    if (storedMd5 === sourceMd5) {
-      const full = path.join(lineDir, rel.replace(/\//g, path.sep));
-      try {
-        await fsPromises.access(full);
-        invalidateAudioStationIndexCache(lineDir);
-        return { ok: true, relativePath: rel };
-      } catch (e) { /* file removed, continue */ }
+  if (!preserveFileName) {
+    for (const [rel, stored] of Object.entries(cache)) {
+      const relNorm = String(rel || '').replace(/\\/g, '/');
+      if (audioSubDir) {
+        const prefix = `audio/${audioSubDir}/`;
+        if (!relNorm.startsWith(prefix)) continue;
+      }
+      const storedMd5 = (typeof stored === 'string')
+        ? stored
+        : (stored && typeof stored === 'object' && typeof stored.md5 === 'string' ? stored.md5 : '');
+      if (storedMd5 === sourceMd5) {
+        const full = path.join(lineDir, rel.replace(/\//g, path.sep));
+        try {
+          await fsPromises.access(full);
+          invalidateAudioStationIndexCache(lineDir);
+          return { ok: true, relativePath: rel };
+        } catch (e) { /* file removed, continue */ }
+      }
     }
   }
   const baseName = path.basename(sourceFilePath);
@@ -6296,303 +6304,7 @@ ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePat
   }
 });
 
-// ==================== 站点音频：基于 audio 文件名的动态匹配 ====================
-// 用于占位符动态音频：当播放/扫描到某个角色（start/current/next/terminal）的占位项，
-// 需要根据“目标站名”在用户线路目录的 audio/ 下找到最匹配的音频文件。
-//
-// 安全约束：
-// - 只允许在 resolveAudioPath 已校验过的“线路目录”audio/ 下扫描
-// - 返回相对路径（例如 audio/xxx.wav），交由 resolveAudioPath 生成可播放 URL
-
-const AUDIO_STATION_INDEX_TTL_MS = 10 * 60 * 1000;
-const audioStationIndexCache = new Map(); // audioDirAbs -> { expiresAt, entries }
-
-function invalidateAudioStationIndexCache(lineDirAbs) {
-  if (!lineDirAbs) return;
-  const audioDirAbs = path.join(lineDirAbs, 'audio');
-  audioStationIndexCache.delete(audioDirAbs);
-}
-
-function normalizeForStationMatch(input) {
-  if (!input && input !== 0) return '';
-  let s = String(input);
-  const chineseDigitMap = {
-    '零': '0',
-    '〇': '0',
-    '○': '0',
-    '一': '1',
-    '二': '2',
-    '两': '2',
-    '三': '3',
-    '四': '4',
-    '五': '5',
-    '六': '6',
-    '七': '7',
-    '八': '8',
-    '九': '9'
-  };
-  // 先做 Unicode 兼容归一化，兼容全角英文/数字（例如：ＡＡＡ、００１）
-  try { s = s.normalize('NFKC'); } catch (e) {}
-  // 兼容“中文数字命名”与“阿拉伯数字命名”的互相匹配
-  // 例如：浦东一号二号航站楼 <-> 浦东1号2号航站楼
-  s = s.replace(/[零〇○一二两三四五六七八九]/g, (m) => chineseDigitMap[m] || m);
-  // 移除 Windows 不可见/富文本标记（尽量保持与前端 normalize 逻辑接近）
-  s = s.replace(/<[^>]+>([^<]*)<\/>/g, '$1');
-  // 去掉末尾站名后缀
-  s = s.replace(/(站|駅|역)$/u, '');
-  // 去掉英文常见站名后缀
-  s = s.replace(/(station|st|st\.)$/iu, '');
-  // 去掉常见分隔符/括号
-  s = s.replace(/[\s\-_]/g, '');
-  s = s.replace(/[()（）\[\]【】]/g, '');
-  // 去掉常见中英文标点/符号
-  s = s.replace(/[,:;.!?，。；：!“”"'‘’、\/\\|]/g, '');
-  // 连接词归一化：把 "1 and 2" / "一与二" / "一和二" 等写法统一到同一匹配面
-  s = s.replace(/\b(and|amp)\b/giu, '');
-  s = s.replace(/[与和及]/gu, '');
-  // 再做一次统一清洗：仅保留字母/数字/中日韩文字，过滤其余符号（如 ·、&、# 等）
-  // 说明：这里保留数字，确保 001/K101/A12 这类站名可参与匹配
-  s = s.replace(/[^\p{L}\p{N}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu, '');
-  s = s.trim();
-  return s.toLowerCase();
-}
-
-function buildStationMatchTokens(input) {
-  if (!input && input !== 0) return [];
-  let raw = String(input);
-  try { raw = raw.normalize('NFKC'); } catch (e) {}
-  // 以“同类字符连续片段”提取 token：
-  // - 汉字
-  // - 日文假名
-  // - 韩文
-  // - 拉丁字母（可带数字）
-  // - 纯数字
-  const segs = raw.match(/[\p{Script=Han}]+|[\p{Script=Hiragana}\p{Script=Katakana}]+|[\p{Script=Hangul}]+|[A-Za-z]+[A-Za-z0-9]*|\d+/gu) || [];
-  const uniq = new Set();
-  for (const seg of segs) {
-    const t = normalizeForStationMatch(seg);
-    if (!t) continue;
-    // 过滤过短 token，避免噪声误匹配（例如单字母）
-    // 数字允许长度 >= 2（支持 01/001/K101 中的数字段）
-    const isNumeric = /^\d+$/.test(t);
-    if (isNumeric) {
-      if (t.length < 2) continue;
-    } else if (t.length < 2) {
-      continue;
-    }
-    uniq.add(t);
-  }
-  return Array.from(uniq);
-}
-
-function detectLangFlags(baseRaw, baseLower) {
-  // baseRaw：无扩展名的原始文件名（保留大小写）
-  // baseLower：baseRaw 转为 lower-case
-  // 这里仅用于“评分”，不用于硬匹配，尽量宽松但避免严重误判。
-  const hasToken = (re) => re.test(baseLower);
-  const hasPrefix = (re) => re.test(String(baseRaw || ''));
-  const hasPrefixLower = (re) => re.test(baseLower);
-
-  const zhCN =
-    hasToken(/(^|[^a-z0-9])zh[-_]?cn([^a-z0-9]|$)/) ||
-    hasToken(/(^|[^a-z0-9])cn([^a-z0-9]|$)/) ||
-    hasToken(/简体|simplified/) ||
-    // 支持无分隔前缀：zhCN人民广场 / zhcn人民广场
-    hasPrefixLower(/^(zhcn|cn)/);
-  const zhTW =
-    hasToken(/(^|[^a-z0-9])zh[-_]?tw([^a-z0-9]|$)/) ||
-    hasToken(/(^|[^a-z0-9])tw([^a-z0-9]|$)/) ||
-    hasToken(/hk|繁體|traditional|taiwan/) ||
-    // 支持无分隔前缀：zhTW台北 / zhtw台北
-    hasPrefixLower(/^(zhtw|tw|hk)/);
-  const en =
-    hasToken(/(^|[^a-z0-9])en([^a-z0-9]|$)/) ||
-    hasToken(/english/) ||
-    // 支持无分隔前缀：enPeopleSquare（建议后接大写，降低误判）
-    hasPrefix(/^en[A-Z]/);
-  const ja =
-    hasToken(/(^|[^a-z0-9])ja([^a-z0-9]|$)/) ||
-    hasToken(/jp|japanese/) ||
-    // 支持无分隔前缀：jaShinjuku
-    hasPrefix(/^ja[A-Z]/);
-  const ko =
-    hasToken(/(^|[^a-z0-9])ko([^a-z0-9]|$)/) ||
-    hasToken(/kr|korean/) ||
-    // 支持无分隔前缀：koSeoul
-    hasPrefix(/^ko[A-Z]/);
-
-  // 方言/语音版本标记：用于中文多套语音（普通话/粤语等）评分加权
-  const cmn =
-    hasToken(/(^|[^a-z0-9])(cmn|mandarin)([^a-z0-9]|$)/) ||
-    hasToken(/putonghua|p(?:u)?t(?:o)?nghua/) ||
-    hasToken(/普通话|國語|国语/) ||
-    hasPrefixLower(/^(cmn|mandarin|putonghua)/);
-  const yue =
-    hasToken(/(^|[^a-z0-9])(yue|cantonese)([^a-z0-9]|$)/) ||
-    hasToken(/粤语|廣東話|广东话/) ||
-    hasPrefixLower(/^(yue|cantonese)/);
-  const wuu =
-    hasToken(/(^|[^a-z0-9])(wuu|shanghainese)([^a-z0-9]|$)/) ||
-    hasToken(/吴语|吳語|沪语|上海话|上海話/) ||
-    hasPrefixLower(/^(wuu|shanghainese)/);
-
-  return {
-    zhCN: !!zhCN,
-    zhTW: !!zhTW,
-    en: !!en,
-    ja: !!ja,
-    ko: !!ko,
-    cmn: !!cmn,
-    yue: !!yue,
-    wuu: !!wuu
-  };
-}
-
-function getTargetLangCategory(languageKey) {
-  const lang = String(languageKey || '').toLowerCase();
-  if (lang.startsWith('zh')) {
-    if (lang.includes('tw') || lang.includes('hk') || lang.includes('mo') || lang.includes('hk')) return 'zhTW';
-    return 'zhCN';
-  }
-  if (lang === 'en' || lang.startsWith('en')) return 'en';
-  if (lang === 'ja' || lang.startsWith('ja')) return 'ja';
-  if (lang === 'ko' || lang.startsWith('ko')) return 'ko';
-  return 'zhCN';
-}
-
-// 动态占位符音频选择时，UI 的语言（i18n）不应影响“语种/方言”优先级。
-// 例如：普通话 Tab（cmn）在 UI 语言是英文时，不应反而优先挑到英文音频。
-function getTargetLangCategoryFromDialect(dialectKey, languageKey) {
-  const d = String(dialectKey || '').toLowerCase();
-  if (!d || d === 'auto') return getTargetLangCategory(languageKey);
-  // 中文系列：默认都按 zhCN 处理（无更细分信息时），台湾目录按 zhtw 单独识别
-  if (d === 'zhcn') return 'zhCN';
-  if (d === 'zhtw' || d === 'zhtw-') return 'zhTW';
-  if (d.includes('tw') && (d.includes('zh') || d.includes('cn') === false)) return 'zhTW';
-  if (d.startsWith('cmn') || d.includes('mandarin') || d === 'cn' || d === 'zh' || d.includes('putonghua')) return 'zhCN';
-  if (d.startsWith('yue') || d.startsWith('wuu') || d.startsWith('nan') || d.startsWith('wzh')) return 'zhCN';
-  if (d === 'en' || d.startsWith('en')) return 'en';
-  if (d === 'ja' || d.startsWith('ja') || d.startsWith('jp')) return 'ja';
-  if (d === 'ko' || d.startsWith('ko') || d.startsWith('kr')) return 'ko';
-  return getTargetLangCategory(languageKey);
-}
-
-function getTargetDialectCategory(dialectKey, languageKey) {
-  const d = String(dialectKey || '').toLowerCase();
-  if (d) {
-    if (d === 'auto') return '';
-    if (d === 'zhcn' || d === 'zhtw') return 'cmn';
-    if (d.startsWith('cmn') || d.includes('mandarin') || d.includes('putonghua')) return 'cmn';
-    if (d.startsWith('yue') || d.includes('cantonese')) return 'yue';
-    if (d.startsWith('wuu') || d.includes('shanghainese')) return 'wuu';
-  }
-  // 默认：中文界面倾向普通话版本；非中文不做方言偏好
-  const lang = String(languageKey || '').toLowerCase();
-  if (lang.startsWith('zh')) return 'cmn';
-  return '';
-}
-
-async function buildAudioStationIndex(lineDirAbs, audioDirAbs) {
-  const entries = [];
-  const audioExtRe = /\.(mp3|wav|ogg|flac)$/i;
-
-  const detectLangFlagsFromPath = (relFromLine) => {
-    // relFromLine 类似 audio/xxx.wav 或 audio/zhcn/xxx.wav
-    const segs = String(relFromLine || '').replace(/\\/g, '/').split('/').filter(Boolean);
-    const lowerSegs = segs.map((s) => String(s || '').toLowerCase());
-    const has = (needle) => lowerSegs.includes(needle.toLowerCase());
-
-    const flags = {};
-    // 目录级语言标记：即使文件名没有 zh/en/jp/ko/cmn 等标记，也能稳定选择目录对应语种。
-    if (has('zhcn') || has('cmn') || has('zh-cn')) {
-      flags.zhCN = true;
-      flags.cmn = true; // 普通话 Tab 对应 zhcn 目录
-    }
-    if (has('zhtw')) {
-      flags.zhTW = true;
-      flags.cmn = true;
-    }
-    if (has('en')) flags.en = true;
-    if (has('ja')) flags.ja = true;
-    if (has('ko')) flags.ko = true;
-
-    // 可选方言目录标记（如果你未来把 yue/wuu/nan 放进目录）
-    if (has('yue')) flags.yue = true;
-    if (has('wuu')) flags.wuu = true;
-    if (has('nan')) flags.nan = true;
-    if (has('wzh')) flags.wzh = true;
-    return flags;
-  };
-
-  const walk = async (dir) => {
-    let childEntries = [];
-    try {
-      childEntries = await fsPromises.readdir(dir, { withFileTypes: true });
-    } catch (e) {
-      return;
-    }
-    for (const ent of childEntries) {
-      const full = path.join(dir, ent.name);
-      if (ent.isDirectory()) {
-        await walk(full);
-        continue;
-      }
-      if (!ent.isFile()) continue;
-      if (!audioExtRe.test(ent.name)) continue;
-
-      const relFromLine = path.relative(lineDirAbs, full).split(path.sep).join('/');
-      // relFromLine：通常是 audio/xxx.wav
-      const relBaseNoExt = path.basename(ent.name, path.extname(ent.name));
-      const baseLower = String(relBaseNoExt || '').toLowerCase();
-      const baseNormalized = normalizeForStationMatch(relBaseNoExt);
-      const langFlags = detectLangFlags(relBaseNoExt, baseLower);
-      const langFlagsFromPath = detectLangFlagsFromPath(relFromLine);
-      // 合并：目录标记优先级略高
-      for (const [k, v] of Object.entries(langFlagsFromPath)) {
-        if (v) langFlags[k] = true;
-      }
-
-      // 只在“可能包含站名”的情况下保留，以降低匹配时遍历开销
-      if (baseNormalized) {
-        entries.push({
-          relativePath: relFromLine,
-          baseNormalized,
-          baseLower,
-          langFlags
-        });
-      }
-    }
-  };
-
-  await walk(audioDirAbs);
-  return entries;
-}
-
-async function getAudioStationIndexForAudioDir(audioDirAbs, lineDirAbs) {
-  if (!audioDirAbs || !lineDirAbs) return [];
-  const cached = audioStationIndexCache.get(audioDirAbs);
-  const audioDirStat = await fsPromises.stat(audioDirAbs).catch(() => null);
-  const currentMtimeMs = audioDirStat && typeof audioDirStat.mtimeMs === 'number' ? audioDirStat.mtimeMs : null;
-  if (
-    cached &&
-    cached.expiresAt > Date.now() &&
-    typeof cached.mtimeMs === 'number' &&
-    currentMtimeMs !== null &&
-    cached.mtimeMs === currentMtimeMs &&
-    Array.isArray(cached.entries)
-  ) {
-    return cached.entries;
-  }
-
-  const entries = await buildAudioStationIndex(lineDirAbs, audioDirAbs);
-  audioStationIndexCache.set(audioDirAbs, {
-    expiresAt: Date.now() + AUDIO_STATION_INDEX_TTL_MS,
-    mtimeMs: typeof currentMtimeMs === 'number' ? currentMtimeMs : Date.now(),
-    entries
-  });
-  return entries;
-}
-
+// ==================== 站点音频：动态匹配（main/stationAudioMatch.js）====================
 ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stationName, opts) => {
   try {
     if (!lineFilePath || typeof lineFilePath !== 'string') return { ok: false, error: 'invalid-line-path' };
@@ -6611,202 +6323,64 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
     const audioDirStat = await fsPromises.stat(audioDirAbs).catch(() => null);
     if (!audioDirStat || !audioDirStat.isDirectory()) return { ok: false, error: 'no-audio-dir' };
 
-    const targetNameNormalized = normalizeForStationMatch(stationName);
-    const targetTokens = buildStationMatchTokens(stationName);
-    if (!targetNameNormalized) return { ok: false, error: 'empty-stationName' };
-
-    const languageKey = opts && typeof opts === 'object' ? opts.languageKey : undefined;
-    const role = opts && typeof opts === 'object' ? opts.role : undefined;
-    // 关键修复：动态音频选择优先使用 dialectKey 推导语种类别，而不是 UI i18n 语言。
-    const targetLangCategory = getTargetLangCategoryFromDialect(opts && typeof opts === 'object' ? (opts.dialectKey || opts.dialect) : undefined, languageKey);
-    const dialectKey = opts && typeof opts === 'object' ? (opts.dialectKey || opts.dialect) : undefined;
-    const targetDialectCategory = getTargetDialectCategory(dialectKey, languageKey);
+    const importedRelativePaths = opts && Array.isArray(opts.importedRelativePaths)
+      ? opts.importedRelativePaths
+      : [];
+    if (importedRelativePaths.length > 0) {
+      // 导入后立即校验时，强制刷新索引，避免命中旧缓存。
+      invalidateAudioStationIndexCache(lineDirAbs);
+    }
 
     const entries = await getAudioStationIndexForAudioDir(audioDirAbs, lineDirAbs);
     if (!entries.length) return { ok: false, error: 'no-audio-entries' };
 
-    // 遍历筛选：优先“包含关系”，再用语言标记评分做区分。
-    // 若前端传入本次已导入的 relativePath，则先在该子集中匹配，避免“目录语种偏好”导致导入校验误判。
-    let best = null;
-    let bestScore = -Infinity;
-
-    const targetRaw = String(stationName || '').trim().toLowerCase();
-    const targetRawCompact = targetRaw.replace(/[\s\-_.,/\\()[\]{}]+/g, '');
-    const targetNumericCompact = /^\d+$/.test(targetRawCompact) ? String(Number(targetRawCompact)) : '';
-
-    const importedRelativePaths = (opts && typeof opts === 'object' && Array.isArray(opts.importedRelativePaths))
-      ? opts.importedRelativePaths
-      : [];
-    const importedPathSet = new Set(
-      importedRelativePaths
-        .map((p) => String(p || '').replace(/\\/g, '/').trim().toLowerCase())
-        .filter(Boolean)
-    );
-    const importedEntries = importedPathSet.size
-      ? entries.filter((e) => importedPathSet.has(String(e?.relativePath || '').toLowerCase()))
-      : [];
-    const passPools = importedEntries.length
-      ? [{ items: importedEntries, boost: 40, tag: 'imported' }, { items: entries, boost: 0, tag: 'all' }]
-      : [{ items: entries, boost: 0, tag: 'all' }];
-
-    for (const pass of passPools) {
-      for (const e of pass.items) {
-        if (!e || !e.baseNormalized) continue;
-      // 兼容“站名比文件名更短/更长”的场景：
-      // - 文件名包含站名：wangfuzhuang_current 包含 wangfuzhuang
-      // - 站名包含文件名：wangfuzhuangstation 包含 wangfuzhuang
-      const baseNorm = String(e.baseNormalized || '');
-      const targetNorm = String(targetNameNormalized || '');
-      if (!baseNorm || !targetNorm) continue;
-      let tokenHitLen = 0;
-      for (const tk of targetTokens) {
-        if (tk && baseNorm.includes(tk)) tokenHitLen = Math.max(tokenHitLen, tk.length);
-      }
-      const matched =
-        baseNorm.includes(targetNorm) ||
-        targetNorm.includes(baseNorm) ||
-        tokenHitLen > 0;
-      // 兜底：短英文/纯数字站名（如 AAA / 001）放宽到 raw 文件名匹配
-      const baseLowerRaw = String(e.baseLower || '').trim().toLowerCase();
-      const baseLowerCompact = baseLowerRaw.replace(/[\s\-_.,/\\()[\]{}]+/g, '');
-      const baseNumericCompact = /^\d+$/.test(baseLowerCompact) ? String(Number(baseLowerCompact)) : '';
-      const relaxedMatched = (
-        (!!targetRaw && !!baseLowerRaw && (
-          baseLowerRaw.includes(targetRaw) || targetRaw.includes(baseLowerRaw)
-        )) ||
-        (!!targetRawCompact && !!baseLowerCompact && (
-          baseLowerCompact.includes(targetRawCompact) || targetRawCompact.includes(baseLowerCompact)
-        )) ||
-        (!!targetNumericCompact && !!baseNumericCompact && targetNumericCompact === baseNumericCompact)
-      );
-        if (!matched && !relaxedMatched) continue;
-
-        let score = 0;
-        if (baseNorm === targetNorm) score += 50;
-        else score += 20;
-        // 命中更长 token（如 wangfuzhuang / 왕부좡 / 王府庄 / 001）时提高分数
-        if (tokenHitLen > 0) score += Math.min(20, tokenHitLen * 1.2);
-        if (relaxedMatched) score += 8;
-        score += pass.boost;
-
-        const flags = e.langFlags || {};
-        if (flags[targetLangCategory]) score += 30;
-
-        if (targetDialectCategory && flags[targetDialectCategory]) score += 25;
-
-        // 如果文件名带了其它语言标记，适当扣分，避免误选
-        if (flags.en && targetLangCategory !== 'en') score -= 5;
-        if (flags.ja && targetLangCategory !== 'ja') score -= 5;
-        if (flags.ko && targetLangCategory !== 'ko') score -= 5;
-        if (flags.zhCN && targetLangCategory !== 'zhCN') score -= 5;
-        if (flags.zhTW && targetLangCategory !== 'zhTW') score -= 5;
-
-        // 如果目标有方言偏好，而文件名带了其它方言标记，也适当扣分
-        if (targetDialectCategory) {
-          if (flags.cmn && targetDialectCategory !== 'cmn') score -= 3;
-          if (flags.yue && targetDialectCategory !== 'yue') score -= 3;
-          if (flags.wuu && targetDialectCategory !== 'wuu') score -= 3;
-        }
-
-        // 轻微偏好：字符串越短越可能是纯站名音频
-        score += Math.max(0, 8 - (String(e.baseLower || '').length % 20) * 0.2);
-
-        if (score > bestScore) {
-          best = e;
-          bestScore = score;
+    let matchEntries = entries;
+    if (importedRelativePaths.length > 0) {
+      const normPath = (p) => String(p || '').replace(/\\/g, '/').replace(/^\/+/, '').trim();
+      const importedSet = new Set();
+      const importedBaseSet = new Set();
+      for (const p of importedRelativePaths) {
+        const n = normPath(p);
+        if (!n) continue;
+        importedSet.add(n);
+        importedSet.add(n.toLowerCase());
+        const noAudioPrefix = n.startsWith('audio/') ? n.slice('audio/'.length) : n;
+        importedSet.add(noAudioPrefix);
+        importedSet.add(noAudioPrefix.toLowerCase());
+        const base = path.posix.basename(n);
+        if (base) {
+          importedBaseSet.add(base);
+          importedBaseSet.add(base.toLowerCase());
         }
       }
+      const filtered = entries.filter((e) => {
+        const rel = normPath(e && e.relativePath);
+        if (!rel) return false;
+        const relLower = rel.toLowerCase();
+        if (importedSet.has(rel) || importedSet.has(relLower)) return true;
+        const noAudioPrefix = rel.startsWith('audio/') ? rel.slice('audio/'.length) : rel;
+        const noAudioPrefixLower = noAudioPrefix.toLowerCase();
+        if (importedSet.has(noAudioPrefix) || importedSet.has(noAudioPrefixLower)) return true;
+        const base = path.posix.basename(rel);
+        if (base && (importedBaseSet.has(base) || importedBaseSet.has(base.toLowerCase()))) return true;
+        return false;
+      });
+      if (filtered.length > 0) matchEntries = filtered;
     }
 
-    if (!best || !best.relativePath) {
-      // 二次兜底：当严格规则全部未命中时，使用编辑距离做近似匹配。
-      // 这能覆盖“看起来同名但存在细微字符差异”的情况（例如中点符号差异、轻微错字）。
-      const fallbackPool = importedEntries.length ? importedEntries : entries;
-      let fuzzyBest = null;
-      let fuzzyBestRatio = Infinity;
-      for (const e of fallbackPool) {
-        const baseNorm = String(e?.baseNormalized || '');
-        if (!baseNorm || !targetNameNormalized) continue;
-        const dist = levenshteinDistance(targetNameNormalized, baseNorm);
-        const denom = Math.max(targetNameNormalized.length, baseNorm.length, 1);
-        const ratio = dist / denom;
-        if (ratio < fuzzyBestRatio) {
-          fuzzyBestRatio = ratio;
-          fuzzyBest = e;
-        }
-      }
-      // 阈值说明：
-      // - <= 0.22：允许少量字符差异（约 8~10 字内最多 1~2 处差异）
-      // - 同时要求长度接近，避免短文件名误命中长站名
-      if (fuzzyBest && fuzzyBest.relativePath && fuzzyBestRatio <= 0.22) {
-        const lenGap = Math.abs(String(fuzzyBest.baseNormalized || '').length - String(targetNameNormalized || '').length);
-        if (lenGap <= 3) {
-          return {
-            ok: true,
-            relativePath: fuzzyBest.relativePath,
-            role,
-            score: bestScore,
-            matchMode: 'fuzzy-levenshtein',
-            fuzzyDistanceRatio: Number(fuzzyBestRatio.toFixed(4))
-          };
-        }
-      }
+    const peerNormsForMatch = await buildPeerNormalizedSetForFindAudio(normalized, opts, ensureMplExtracted);
 
-      const sampleEntries = entries.slice(0, 80).map((e) => ({
-        relativePath: e?.relativePath || '',
-        baseNormalized: e?.baseNormalized || '',
-        baseLower: e?.baseLower || ''
-      }));
-      try {
-        const isAsciiOrNumericStation = /^[a-z0-9_\-\s.]+$/i.test(String(stationName || '').trim());
-        // 重点输出“英文/数字站名”诊断，便于定位 AAA/001 这类不命中的原因。
-        if (isAsciiOrNumericStation) {
-          console.warn('[findAudioByStationName][no-match][ascii-or-numeric]', {
-            stationName,
-            targetNameNormalized,
-            targetTokens,
-            role: role || '',
-            languageKey: languageKey || '',
-            dialectKey: dialectKey || '',
-            targetLangCategory: targetLangCategory || '',
-            targetDialectCategory: targetDialectCategory || '',
-            entriesCount: entries.length,
-            sampleEntries
-          });
-        } else {
-          console.warn('[findAudioByStationName][no-match]', {
-            stationName,
-            targetNameNormalized,
-            targetTokens,
-            role: role || '',
-            languageKey: languageKey || '',
-            dialectKey: dialectKey || '',
-            entriesCount: entries.length
-          });
-        }
-      } catch (e) {}
-      return {
-        ok: false,
-        error: 'no-match',
-        role,
-        debug: {
-          stationName,
-          targetNameNormalized,
-          targetTokens,
-          languageKey: languageKey || '',
-          dialectKey: dialectKey || '',
-          targetLangCategory: targetLangCategory || '',
-          targetDialectCategory: targetDialectCategory || '',
-          entriesCount: entries.length,
-          sampleEntries
-        }
-      };
-    }
-    return { ok: true, relativePath: best.relativePath, role, score: bestScore };
+    return findAudioByStationNameFromIndex({
+      entries: matchEntries,
+      stationName,
+      opts: opts || {},
+      peerNormsSet: peerNormsForMatch
+    });
   } catch (e) {
     return { ok: false, error: String(e && e.message ? e.message : e) };
   }
 });
+
 
 // 收集线路数据中引用的音频相对路径（含通用音频）
 function collectAudioRelPaths(lineData) {

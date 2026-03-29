@@ -184,6 +184,16 @@
             color: white;
         }
         
+        .status-success {
+            background: #52c41a;
+            color: white;
+        }
+        
+        .status-error {
+            background: #ff4d4f;
+            color: white;
+        }
+        
         .test-group {
             margin-bottom: 20px;
             padding: 16px;
@@ -756,6 +766,110 @@
                 </button>
                 <span id="runtime-lines-status" class="status-badge status-inactive status-inline">未加载</span>
                 <div id="runtime-lines-result" class="code-block" style="margin-top: 12px; max-height: 300px; overflow-y: auto;">点击按钮获取运控线路列表...</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><i class="fas fa-music"></i> 动态音频云控调试</h2>
+            <div class="test-group">
+                <h3>云控配置</h3>
+                <div class="test-grid">
+                    <div class="input-group">
+                        <label for="dyn-cloud-api-base">云控 API</label>
+                        <input id="dyn-cloud-api-base" type="text" value="https://metro.tanzhouxiang.dpdns.org" />
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-cloud-version">动态音频配置版本</label>
+                        <input id="dyn-cloud-version" type="text" value="1.0" />
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-cloud-mode">解析模式</label>
+                        <select id="dyn-cloud-mode" title="动态音频解析模式">
+                            <option value="local-first">本地优先（云端兜底）</option>
+                            <option value="cloud-first">云端优先（本地兜底）</option>
+                            <option value="local-only">仅本地动态音频</option>
+                            <option value="cloud-only">仅云端动态音频</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-cloud-line-version">云控线路版本号</label>
+                        <input id="dyn-cloud-line-version" type="text" placeholder="点击“查询云控线路版本”后填充" readonly />
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="saveDynamicAudioCloudSettings()">
+                    <i class="fas fa-save"></i> 保存云控配置
+                </button>
+                <button class="btn btn-success" onclick="fetchDynamicAudioCloudLineVersion()">
+                    <i class="fas fa-cloud-download-alt"></i> 查询云控线路版本
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>识别输入</h3>
+                <div class="test-grid">
+                    <div class="input-group">
+                        <label for="dyn-local-line-file">本地线路文件（.mpl/.json）</label>
+                        <input id="dyn-local-line-file" type="text" placeholder="请选择本地线路文件" />
+                        <button class="btn btn-secondary" style="margin-top:8px;" onclick="pickDynamicLocalLineFile()">
+                            <i class="fas fa-folder-open"></i> 打开线路文件
+                        </button>
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-selected-audio-file">待比对音频文件（可选）</label>
+                        <input id="dyn-selected-audio-file" type="text" placeholder="可选：选择音频文件用于比对" />
+                        <button class="btn btn-secondary" style="margin-top:8px;" onclick="pickDynamicAudioFile()">
+                            <i class="fas fa-file-audio"></i> 选择音频文件
+                        </button>
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-runtime-line-name">云控线路名（lineName）</label>
+                        <input id="dyn-runtime-line-name" type="text" placeholder="例如：济南地铁2号线" />
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-station-name">站名</label>
+                        <input id="dyn-station-name" type="text" placeholder="例如：腊山南" />
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-role">role</label>
+                        <select id="dyn-role" title="动态音频角色">
+                            <option value="next">next</option>
+                            <option value="current">current</option>
+                            <option value="start">start</option>
+                            <option value="terminal">terminal</option>
+                            <option value="arrive">arrive</option>
+                            <option value="depart">depart</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-language">languageKey</label>
+                        <select id="dyn-language" title="动态音频语言">
+                            <option value="zh-CN">zh-CN</option>
+                            <option value="zh-TW">zh-TW</option>
+                            <option value="en-US">en-US</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-dialect">dialectKey</label>
+                        <select id="dyn-dialect" title="动态音频方言">
+                            <option value="cmn">cmn</option>
+                            <option value="eng">eng</option>
+                            <option value="yue">yue</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="dyn-peer-stations">同线站名（可选，英文逗号分隔）</label>
+                        <input id="dyn-peer-stations" type="text" placeholder="例如：腊山,腊山南,王府庄" />
+                    </div>
+                </div>
+                <button class="btn btn-success" onclick="runDynamicAudioLocalMatch()">
+                    <i class="fas fa-search"></i> 本地识别
+                </button>
+                <button class="btn btn-success" onclick="runDynamicAudioCloudMatch()">
+                    <i class="fas fa-cloud"></i> 云端识别
+                </button>
+            </div>
+            <div class="test-group">
+                <h3>识别结果</h3>
+                <div id="dyn-audio-result" class="code-block" style="min-height: 160px;">等待识别...</div>
             </div>
         </div>
 
@@ -1936,7 +2050,76 @@
         
         // 运控线路相关函数
         const CLOUD_API_BASE = 'https://metro.tanzhouxiang.dpdns.org';
-        
+        const DYNAMIC_AUDIO_CLOUD_VERSION_KEY = 'metro_pids_dynamic_audio_cloud_version';
+
+        function getDynamicCloudApiBase() {
+            const input = document.getElementById('dyn-cloud-api-base');
+            const fromInput = input && typeof input.value === 'string' ? input.value.trim() : '';
+            return fromInput || CLOUD_API_BASE;
+        }
+
+        function getDynamicAudioCloudSettings() {
+            try {
+                const raw = localStorage.getItem('pids_settings_v1');
+                const parsed = raw ? JSON.parse(raw) : {};
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function getDynamicAudioCloudMode() {
+            const input = document.getElementById('dyn-cloud-mode');
+            if (input && typeof input.value === 'string' && input.value) {
+                return String(input.value).trim();
+            }
+            const settings = getDynamicAudioCloudSettings();
+            const mode = String(settings.dynamicAudioCloudMode || '').trim();
+            return mode || 'local-first';
+        }
+
+        function parsePeerStationNames(raw) {
+            return String(raw || '')
+                .split(/[，,]/)
+                .map(s => s.trim())
+                .filter(Boolean);
+        }
+
+        function getDynamicMatcherPayload() {
+            const role = String(document.getElementById('dyn-role')?.value || 'next').trim();
+            const languageKey = String(document.getElementById('dyn-language')?.value || 'zh-CN').trim();
+            const dialectKey = String(document.getElementById('dyn-dialect')?.value || 'cmn').trim();
+            const peerStationNames = parsePeerStationNames(document.getElementById('dyn-peer-stations')?.value || '');
+            return { role, languageKey, dialectKey, peerStationNames };
+        }
+
+        function setDynamicAudioResult(title, payload) {
+            const resultEl = document.getElementById('dyn-audio-result');
+            if (!resultEl) return;
+            const content = {
+                title,
+                cloudApiBase: getDynamicCloudApiBase(),
+                mode: getDynamicAudioCloudMode(),
+                configVersion: String(localStorage.getItem(DYNAMIC_AUDIO_CLOUD_VERSION_KEY) || '1.0'),
+                at: new Date().toISOString(),
+                ...payload
+            };
+            resultEl.textContent = JSON.stringify(content, null, 2);
+        }
+
+        function compareSelectedAudioFile(relativePath) {
+            const selected = String(document.getElementById('dyn-selected-audio-file')?.value || '').trim();
+            if (!selected || !relativePath) return null;
+            const normBase = (p) => String(p || '').replace(/\\/g, '/').split('/').pop() || '';
+            const selectedBase = normBase(selected).toLowerCase();
+            const matchedBase = normBase(relativePath).toLowerCase();
+            return {
+                selected: selectedBase,
+                matched: matchedBase,
+                sameFile: !!selectedBase && !!matchedBase && selectedBase === matchedBase
+            };
+        }
+         
         async function callCloudflareAPI(method, path, data = null) {
             try {
                 // 优先使用 Electron IPC 代理
@@ -1946,7 +2129,7 @@
                 }
                 
                 // 降级到直接 fetch
-                const url = `${CLOUD_API_BASE.replace(/\/+$/, '')}${path}`;
+                const url = `${getDynamicCloudApiBase().replace(/\/+$/, '')}${path}`;
                 const options = {
                     method,
                     headers: {
@@ -2040,7 +2223,158 @@
                 addLog('获取运控线路失败: ' + e.message, 'error');
             }
         }
-        
+
+        function saveDynamicAudioCloudSettings() {
+            try {
+                const settingsRaw = localStorage.getItem('pids_settings_v1');
+                const settings = settingsRaw ? JSON.parse(settingsRaw) : {};
+                const mode = getDynamicAudioCloudMode();
+                settings.dynamicAudioCloudMode = mode;
+                localStorage.setItem('pids_settings_v1', JSON.stringify(settings));
+
+                const versionInput = document.getElementById('dyn-cloud-version');
+                const version = String(versionInput?.value || '').trim() || '1.0';
+                localStorage.setItem(DYNAMIC_AUDIO_CLOUD_VERSION_KEY, version);
+
+                setDynamicAudioResult('云控配置已保存', {
+                    saved: true,
+                    dynamicAudioCloudMode: mode,
+                    dynamicAudioCloudVersion: version
+                });
+                addLog(`动态音频云控配置已保存: mode=${mode}, version=${version}`, 'success');
+            } catch (e) {
+                setDynamicAudioResult('云控配置保存失败', { saved: false, error: e.message });
+                addLog('动态音频云控配置保存失败: ' + e.message, 'error');
+            }
+        }
+
+        async function pickDynamicLocalLineFile() {
+            try {
+                if (!window?.electronAPI?.showOpenDialog) throw new Error('showOpenDialog 不可用');
+                const res = await window.electronAPI.showOpenDialog({
+                    title: '选择线路文件',
+                    properties: ['openFile'],
+                    filters: [
+                        { name: 'Line Files', extensions: ['mpl', 'json'] },
+                        { name: 'All Files', extensions: ['*'] }
+                    ]
+                });
+                if (res && !res.canceled && Array.isArray(res.filePaths) && res.filePaths[0]) {
+                    document.getElementById('dyn-local-line-file').value = res.filePaths[0];
+                    addLog('已选择本地线路文件', 'success', { file: res.filePaths[0] });
+                }
+            } catch (e) {
+                addLog('选择本地线路文件失败: ' + e.message, 'error');
+            }
+        }
+
+        async function pickDynamicAudioFile() {
+            try {
+                if (!window?.electronAPI?.showOpenDialog) throw new Error('showOpenDialog 不可用');
+                const res = await window.electronAPI.showOpenDialog({
+                    title: '选择音频文件',
+                    properties: ['openFile'],
+                    filters: [
+                        { name: 'Audio Files', extensions: ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac'] },
+                        { name: 'All Files', extensions: ['*'] }
+                    ]
+                });
+                if (res && !res.canceled && Array.isArray(res.filePaths) && res.filePaths[0]) {
+                    document.getElementById('dyn-selected-audio-file').value = res.filePaths[0];
+                    addLog('已选择音频文件', 'success', { file: res.filePaths[0] });
+                }
+            } catch (e) {
+                addLog('选择音频文件失败: ' + e.message, 'error');
+            }
+        }
+
+        async function runDynamicAudioLocalMatch() {
+            const lineFilePath = String(document.getElementById('dyn-local-line-file')?.value || '').trim();
+            const stationName = String(document.getElementById('dyn-station-name')?.value || '').trim();
+            const opts = getDynamicMatcherPayload();
+            if (!lineFilePath) {
+                setDynamicAudioResult('本地识别失败', { error: '请先选择本地线路文件' });
+                return;
+            }
+            if (!stationName) {
+                setDynamicAudioResult('本地识别失败', { error: '请先输入站名' });
+                return;
+            }
+            try {
+                if (!window?.electronAPI?.lines?.findAudioByStationName) throw new Error('findAudioByStationName 不可用');
+                const res = await window.electronAPI.lines.findAudioByStationName(lineFilePath, stationName, opts);
+                const compare = compareSelectedAudioFile(res?.relativePath || '');
+                setDynamicAudioResult('本地识别完成', {
+                    source: 'local',
+                    lineFilePath,
+                    stationName,
+                    opts,
+                    response: res,
+                    selectedAudioCompare: compare
+                });
+                addLog('本地动态音频识别完成', res?.ok ? 'success' : 'warn', { stationName, lineFilePath, response: res });
+            } catch (e) {
+                setDynamicAudioResult('本地识别异常', { source: 'local', stationName, lineFilePath, error: e.message });
+                addLog('本地动态音频识别异常: ' + e.message, 'error');
+            }
+        }
+
+        async function runDynamicAudioCloudMatch() {
+            const lineName = String(document.getElementById('dyn-runtime-line-name')?.value || '').trim();
+            const stationName = String(document.getElementById('dyn-station-name')?.value || '').trim();
+            const opts = getDynamicMatcherPayload();
+            if (!lineName) {
+                setDynamicAudioResult('云端识别失败', { error: '请先输入云控线路名' });
+                return;
+            }
+            if (!stationName) {
+                setDynamicAudioResult('云端识别失败', { error: '请先输入站名' });
+                return;
+            }
+            try {
+                const path = `/runtime/lines/${encodeURIComponent(lineName)}/find-audio`;
+                const res = await callCloudflareAPI('POST', path, { stationName, opts });
+                const relativePath = res?.relativePath || res?.data?.relativePath || '';
+                const compare = compareSelectedAudioFile(relativePath);
+                setDynamicAudioResult('云端识别完成', {
+                    source: 'cloud',
+                    lineName,
+                    stationName,
+                    opts,
+                    response: res,
+                    selectedAudioCompare: compare
+                });
+                addLog('云端动态音频识别完成', (res && (res.ok !== false)) ? 'success' : 'warn', { lineName, stationName, response: res });
+            } catch (e) {
+                setDynamicAudioResult('云端识别异常', { source: 'cloud', lineName, stationName, error: e.message });
+                addLog('云端动态音频识别异常: ' + e.message, 'error');
+            }
+        }
+
+        async function fetchDynamicAudioCloudLineVersion() {
+            const lineName = String(document.getElementById('dyn-runtime-line-name')?.value || '').trim();
+            if (!lineName) {
+                setDynamicAudioResult('查询云控线路版本失败', { error: '请先输入云控线路名' });
+                return;
+            }
+            try {
+                const res = await callCloudflareAPI('GET', `/runtime/lines/${encodeURIComponent(lineName)}`);
+                const lineData = res?.line || res?.data?.line || res?.data?.data?.line || res?.data || null;
+                const cloudVersion = lineData?.meta?.version ?? lineData?.version ?? '';
+                document.getElementById('dyn-cloud-line-version').value = String(cloudVersion ?? '');
+                setDynamicAudioResult('云控线路版本查询完成', {
+                    lineName,
+                    cloudLineVersion: cloudVersion,
+                    response: res
+                });
+                addLog(`云控线路版本查询完成: ${lineName} -> ${cloudVersion}`, 'success');
+            } catch (e) {
+                document.getElementById('dyn-cloud-line-version').value = '';
+                setDynamicAudioResult('云控线路版本查询失败', { lineName, error: e.message });
+                addLog('云控线路版本查询失败: ' + e.message, 'error');
+            }
+        }
+         
         async function loadHolidays() {
             try {
                 document.getElementById('holidays-status').textContent = '加载中...';
@@ -2434,6 +2768,29 @@
         }
         
         // ===== 结束：短交路分享码解析功能 =====
+
+        function initDynamicAudioDebugPanel() {
+            try {
+                const settings = getDynamicAudioCloudSettings();
+                const savedMode = String(settings.dynamicAudioCloudMode || '').trim() || 'local-first';
+                const modeEl = document.getElementById('dyn-cloud-mode');
+                if (modeEl) modeEl.value = savedMode;
+
+                const ver = String(localStorage.getItem(DYNAMIC_AUDIO_CLOUD_VERSION_KEY) || '').trim() || '1.0';
+                const verEl = document.getElementById('dyn-cloud-version');
+                if (verEl) verEl.value = ver;
+
+                const apiEl = document.getElementById('dyn-cloud-api-base');
+                if (apiEl) apiEl.value = CLOUD_API_BASE;
+
+                setDynamicAudioResult('动态音频调试面板已初始化', {
+                    dynamicAudioCloudMode: savedMode,
+                    dynamicAudioCloudVersion: ver
+                });
+            } catch (e) {
+                addLog('初始化动态音频调试面板失败: ' + e.message, 'error');
+            }
+        }
         
         // 初始化
         window.addEventListener('DOMContentLoaded', () => {
@@ -2444,6 +2801,7 @@
             refreshSettings();
             initBroadcastChannel();
             loadGithubCloudConfig();
+            initDynamicAudioDebugPanel();
             loadF12DevToolsSetting(); // 加载F12开发者工具设置
             addLog('开发者模式初始化完成', 'success');
             

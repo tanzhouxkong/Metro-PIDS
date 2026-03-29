@@ -9,6 +9,7 @@ import { useFileIO } from '../composables/useFileIO.js'
 import StationEditor from './StationEditor.vue'
 import dialogService from '../utils/dialogService.js'
 import { calculateNextStationIndex } from '../utils/displayStationCalculator'
+import { collectPeerStationNamesForAudioMatch } from '../utils/stationAudioPeers.js'
 
 export default {
   name: 'AdminApp',
@@ -126,6 +127,8 @@ export default {
                 const canCheckResolve = typeof resolveAudioPath === 'function' && !!lineFileOrDir
                 const canCheckDynamic = typeof findAudioByStationName === 'function' && !!lineFileOrDir
                 if (!canCheckResolve && !canCheckDynamic) return
+
+                const peerStationNames = collectPeerStationNamesForAudioMatch(stations)
 
                 const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
                 const normalizeDynamicRoleKey = (roleKey) => {
@@ -304,7 +307,7 @@ export default {
 
                               let foundOk = false
                               for (const stationNameForRole of candidates) {
-                                const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}`
+                                const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}::${peerStationNames.join('\x1e')}`
                                 if (dynamicOkCache.has(dynCacheKey)) {
                                   if (dynamicOkCache.get(dynCacheKey)) {
                                     foundOk = true
@@ -313,7 +316,7 @@ export default {
                                   continue
                                 }
                                 try {
-                                  const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey })
+                                  const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey, peerStationNames })
                                   const ok = !!res?.ok && !!res?.relativePath
                                   dynamicOkCache.set(dynCacheKey, ok)
                                   if (ok) {

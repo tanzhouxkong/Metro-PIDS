@@ -289,6 +289,8 @@
     .stat-card { color: white; padding: 24px; border-radius: var(--radius); position: relative; overflow: hidden; }
     .stat-card-primary { background: var(--primary-gradient); }
     .stat-card-secondary { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .stat-card-success { background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%); }
+    .stat-card-warning { background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); }
     .stat-value { font-size: 32px; font-weight: 700; position: relative; z-index: 2; }
     
     .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -414,6 +416,7 @@
         <h2>配置导航</h2>
         <nav class="sidebar-nav">
           <button class="sidebar-item active" data-section="runtime"><i class="fas fa-train"></i> <span>云控线路</span></button>
+          <button class="sidebar-item" data-section="dynamic-audio"><i class="fas fa-music"></i> <span>动态音频云控</span></button>
           <button class="sidebar-item" data-section="easter-eggs"><i class="fas fa-egg"></i> <span>彩蛋配置</span></button>
           <button class="sidebar-item" data-section="startup"><i class="fas fa-bullhorn"></i> <span>启动公告</span></button>
           <button class="sidebar-item" data-section="display-flags"><i class="fas fa-desktop"></i> <span>显示端功能</span></button>
@@ -468,6 +471,96 @@
               </div>
             </div>
             <div id="runtime-status"></div>
+          </div>
+        </div>
+
+        <div class="section-content" id="section-dynamic-audio">
+          <div class="card">
+            <h2><i class="fas fa-sliders-h"></i> 动态音频云控配置</h2>
+            <div class="grid">
+              <div class="field">
+                <label>解析模式</label>
+                <select id="dynamic-audio-cloud-mode">
+                  <option value="local-first">本地优先（云端兜底）</option>
+                  <option value="cloud-first">云端优先（本地兜底）</option>
+                  <option value="local-only">仅本地动态音频</option>
+                  <option value="cloud-only">仅云端动态音频</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>云控版本号</label>
+                <input type="text" id="dynamic-audio-cloud-version" placeholder="默认 1.0" />
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-primary" id="btn-dynamic-audio-save-config"><i class="fas fa-save"></i> 保存配置</button>
+            </div>
+            <div id="dynamic-audio-config-status"></div>
+          </div>
+
+          <div class="card">
+            <h2><i class="fas fa-search"></i> 动态占位音频识别测试</h2>
+            <div class="grid">
+              <div class="field">
+                <label>线路名称</label>
+                <select id="dynamic-audio-line-name">
+                  <option value="">-- 请选择线路 --</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>站名</label>
+                <input type="text" id="dynamic-audio-station-name" placeholder="例如：腊山南" />
+              </div>
+              <div class="field">
+                <label>角色 role</label>
+                <select id="dynamic-audio-role">
+                  <option value="current">current</option>
+                  <option value="next" selected>next</option>
+                  <option value="start">start</option>
+                  <option value="terminal">terminal</option>
+                  <option value="arrive">arrive</option>
+                  <option value="depart">depart</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>语言 languageKey</label>
+                <select id="dynamic-audio-language">
+                  <option value="zh-CN" selected>zh-CN</option>
+                  <option value="zh-TW">zh-TW</option>
+                  <option value="en-US">en-US</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>方言 dialectKey</label>
+                <select id="dynamic-audio-dialect">
+                  <option value="cmn" selected>cmn</option>
+                  <option value="eng">eng</option>
+                  <option value="yue">yue</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>同线站名（可选，逗号分隔）</label>
+                <input type="text" id="dynamic-audio-peers" placeholder="例如：腊山,腊山南,王府庄" />
+              </div>
+              <div class="field">
+                <label>线路版本（自动识别）</label>
+                <input type="text" id="dynamic-audio-line-version" placeholder="点击“识别线路版本”后显示" readonly />
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary" id="btn-dynamic-audio-refresh-lines"><i class="fas fa-sync"></i> 刷新线路列表</button>
+              <button class="btn btn-info" id="btn-dynamic-audio-load-version"><i class="fas fa-tag"></i> 识别线路版本</button>
+              <button class="btn btn-primary" id="btn-dynamic-audio-find"><i class="fas fa-magic"></i> 识别动态音频</button>
+            </div>
+            <div class="field">
+              <label>识别结果</label>
+              <textarea id="dynamic-audio-find-result" style="height:220px; font-family:monospace; font-size:12px;" readonly></textarea>
+            </div>
+            <div class="field">
+              <label>音频预览</label>
+              <audio id="dynamic-audio-preview" controls style="width:100%;"></audio>
+            </div>
+            <div id="dynamic-audio-status"></div>
           </div>
         </div>
 
@@ -738,6 +831,8 @@
           <div class="grid">
             <div class="card stat-card stat-card-secondary"><div class="stat-value" id="stat-runtime-count">-</div><div class="stat-label">云控线路</div></div>
             <div class="card stat-card stat-card-primary"><div class="stat-value" id="stat-users">-</div><div class="stat-label">独立设备</div></div>
+            <div class="card stat-card stat-card-success"><div class="stat-value" id="stat-online-devices">-</div><div class="stat-label">当前在线（5分钟）</div></div>
+            <div class="card stat-card stat-card-warning"><div class="stat-value" id="stat-24h-devices">-</div><div class="stat-label">24小时设备总数</div></div>
           </div>
           <div class="card">
             <h2><i class="fas fa-globe"></i> 详细统计</h2>
@@ -1056,6 +1151,8 @@
 
     // 配置管理
     const STORAGE_KEY = 'metro_pids_admin_config';
+    const DYNAMIC_AUDIO_STORAGE_KEY = 'metro_pids_admin_dynamic_audio';
+    let dynamicAudioPreviewUrl = '';
     
     function loadConfig() {
       try {
@@ -1068,6 +1165,23 @@
     
     function saveConfig(config) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    }
+
+    function loadDynamicAudioConfig() {
+      try {
+        const raw = localStorage.getItem(DYNAMIC_AUDIO_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return {
+          mode: String(parsed?.mode || '').trim() || 'cloud-first',
+          version: String(parsed?.version || '').trim() || '1.0'
+        };
+      } catch (e) {
+        return { mode: 'cloud-first', version: '1.0' };
+      }
+    }
+
+    function saveDynamicAudioConfig(config) {
+      localStorage.setItem(DYNAMIC_AUDIO_STORAGE_KEY, JSON.stringify(config || {}));
     }
 
     // 启动自动加载进度弹窗
@@ -2300,7 +2414,153 @@
         showStatus('runtime-status', `删除失败：${e.message}`, 'error');
       }
     });
-    
+
+    // 动态音频云控
+    function normalizeDynamicAudioLine(line) {
+      if (!line || typeof line !== 'object') return '';
+      return normalizeRuntimeLineName(line?.meta?.lineName || line?.lineName || '');
+    }
+
+    async function loadDynamicAudioLineOptions() {
+      const selectEl = document.getElementById('dynamic-audio-line-name');
+      if (!selectEl) return;
+      const keep = String(selectEl.value || '').trim();
+      showStatus('dynamic-audio-status', '正在加载线路列表...', 'info');
+      try {
+        const data = await callApi('GET', '/runtime/lines');
+        const lines = Array.isArray(data?.lines) ? data.lines : [];
+        const names = [];
+        for (const line of lines) {
+          const name = normalizeDynamicAudioLine(line);
+          if (name) names.push(name);
+        }
+        const uniqNames = Array.from(new Set(names));
+        selectEl.innerHTML = '<option value="">-- 请选择线路 --</option>' + uniqNames
+          .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+          .join('');
+        if (keep && uniqNames.includes(keep)) selectEl.value = keep;
+        showStatus('dynamic-audio-status', `已加载 ${uniqNames.length} 条线路`, 'success');
+      } catch (e) {
+        showStatus('dynamic-audio-status', `加载线路失败：${e.message}`, 'error');
+      }
+    }
+
+    async function loadDynamicAudioLineVersion() {
+      const lineName = String(document.getElementById('dynamic-audio-line-name')?.value || '').trim();
+      if (!lineName) {
+        showStatus('dynamic-audio-status', '请先选择线路名称', 'error');
+        return;
+      }
+      try {
+        const data = await callApi('GET', `/runtime/lines/${encodeURIComponent(lineName)}`);
+        const line = data?.line || data || {};
+        const version = line?.meta?.version;
+        const versionText = (version === undefined || version === null || version === '') ? '' : String(version);
+        document.getElementById('dynamic-audio-line-version').value = versionText;
+        showStatus('dynamic-audio-status', `已识别线路版本：${versionText || '未设置'}`, 'success');
+      } catch (e) {
+        document.getElementById('dynamic-audio-line-version').value = '';
+        showStatus('dynamic-audio-status', `识别线路版本失败：${e.message}`, 'error');
+      }
+    }
+
+    async function previewDynamicAudio(lineName, relativePath) {
+      const audioEl = document.getElementById('dynamic-audio-preview');
+      if (!audioEl) return;
+      const rel = String(relativePath || '').trim();
+      if (!lineName || !rel) {
+        audioEl.removeAttribute('src');
+        return;
+      }
+      try {
+        if (dynamicAudioPreviewUrl) {
+          URL.revokeObjectURL(dynamicAudioPreviewUrl);
+          dynamicAudioPreviewUrl = '';
+        }
+      } catch (e) {}
+
+      const cfg = getConfig();
+      const url = cfg.apiBase.replace(/\/+$/, '') + `/runtime/lines/${encodeURIComponent(lineName)}/audio?path=${encodeURIComponent(rel)}`;
+      const headers = {};
+      if (cfg.token) headers['Authorization'] = `Bearer ${cfg.token}`;
+      try {
+        const res = await fetch(url, { method: 'GET', headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        if (!blob || !blob.size) throw new Error('空音频数据');
+        dynamicAudioPreviewUrl = URL.createObjectURL(blob);
+        audioEl.src = dynamicAudioPreviewUrl;
+        audioEl.load();
+      } catch (e) {
+        audioEl.removeAttribute('src');
+        audioEl.load();
+        showStatus('dynamic-audio-status', `音频预览失败：${e.message}`, 'warn');
+      }
+    }
+
+    function collectDynamicAudioFindPayload() {
+      const stationName = String(document.getElementById('dynamic-audio-station-name')?.value || '').trim();
+      const role = String(document.getElementById('dynamic-audio-role')?.value || '').trim();
+      const languageKey = String(document.getElementById('dynamic-audio-language')?.value || '').trim();
+      const dialectKey = String(document.getElementById('dynamic-audio-dialect')?.value || '').trim();
+      const peersRaw = String(document.getElementById('dynamic-audio-peers')?.value || '');
+      const peerStationNames = peersRaw.split(/[，,]/).map((s) => s.trim()).filter(Boolean);
+      return { stationName, opts: { role, languageKey, dialectKey, peerStationNames } };
+    }
+
+    async function findDynamicAudioByStation() {
+      const lineName = String(document.getElementById('dynamic-audio-line-name')?.value || '').trim();
+      const resultEl = document.getElementById('dynamic-audio-find-result');
+      if (!lineName) {
+        showStatus('dynamic-audio-status', '请先选择线路名称', 'error');
+        return;
+      }
+      const payload = collectDynamicAudioFindPayload();
+      if (!payload.stationName) {
+        showStatus('dynamic-audio-status', '请先填写站名', 'error');
+        return;
+      }
+      showStatus('dynamic-audio-status', '正在识别动态音频...', 'info');
+      try {
+        const data = await callApi('POST', `/runtime/lines/${encodeURIComponent(lineName)}/find-audio`, payload);
+        const rel = String(data?.relativePath || '').trim();
+        const responseObj = {
+          lineName,
+          stationName: payload.stationName,
+          mode: String(document.getElementById('dynamic-audio-cloud-mode')?.value || 'cloud-first'),
+          cloudVersion: String(document.getElementById('dynamic-audio-cloud-version')?.value || '1.0'),
+          lineVersion: String(document.getElementById('dynamic-audio-line-version')?.value || ''),
+          request: payload,
+          response: data
+        };
+        if (resultEl) resultEl.value = JSON.stringify(responseObj, null, 2);
+        if (data?.ok && rel) {
+          await previewDynamicAudio(lineName, rel);
+          showStatus('dynamic-audio-status', `识别成功：${rel}`, 'success');
+        } else {
+          await previewDynamicAudio('', '');
+          showStatus('dynamic-audio-status', '未匹配到音频', 'warn');
+        }
+      } catch (e) {
+        if (resultEl) resultEl.value = '';
+        await previewDynamicAudio('', '');
+        showStatus('dynamic-audio-status', `识别失败：${e.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btn-dynamic-audio-refresh-lines').addEventListener('click', loadDynamicAudioLineOptions);
+    document.getElementById('btn-dynamic-audio-load-version').addEventListener('click', loadDynamicAudioLineVersion);
+    document.getElementById('btn-dynamic-audio-find').addEventListener('click', findDynamicAudioByStation);
+    document.getElementById('btn-dynamic-audio-save-config').addEventListener('click', () => {
+      const mode = String(document.getElementById('dynamic-audio-cloud-mode')?.value || '').trim() || 'cloud-first';
+      const version = String(document.getElementById('dynamic-audio-cloud-version')?.value || '').trim() || '1.0';
+      saveDynamicAudioConfig({ mode, version });
+      showStatus('dynamic-audio-config-status', `已保存：模式=${mode}，版本=${version}`, 'success');
+    });
+    document.getElementById('dynamic-audio-line-name').addEventListener('change', () => {
+      document.getElementById('dynamic-audio-line-version').value = '';
+    });
+
     // 彩蛋配置 - items 列表：每项 id、name、stations[]、messages[]
     let easterItems = [];
 
@@ -3803,6 +4063,8 @@
     document.getElementById('btn-refresh-usage').addEventListener('click', async () => {
       const cfg = getConfig();
       const statUsersEl = document.getElementById('stat-users');
+      const statOnlineDevicesEl = document.getElementById('stat-online-devices');
+      const stat24hDevicesEl = document.getElementById('stat-24h-devices');
       const statUniqueEl = document.getElementById('stat-unique-devices');
       const statByCountryEl = document.getElementById('stat-by-country');
       const statByVersionEl = document.getElementById('stat-by-version');
@@ -3813,6 +4075,8 @@
       if (!cfg.apiBase) {
         showStatus('changelog-status', '请先在设置中配置 API 地址', 'error');
         if (statUsersEl) statUsersEl.textContent = '-';
+        if (statOnlineDevicesEl) statOnlineDevicesEl.textContent = '-';
+        if (stat24hDevicesEl) stat24hDevicesEl.textContent = '-';
         if (statUniqueEl) statUniqueEl.textContent = '-';
         if (statByCountryEl) statByCountryEl.textContent = '请配置 API 地址';
         if (statByVersionEl) statByVersionEl.textContent = '-';
@@ -3868,11 +4132,23 @@
           : rawAllRecordsForStats;
         const deviceMap = new Map(); // deviceId -> { country, version, os, deviceId }
         const deviceOnlineSeconds = {}; // 设备累计在线总时长（秒），用于设备统计饼图
+        const nowMs = Date.now();
+        const onlineWindowMs = 5 * 60 * 1000;
+        const dayWindowMs = 24 * 60 * 60 * 1000;
+        const onlineDeviceSet = new Set();
+        const dayDeviceSet = new Set();
         
         // 遍历所有记录，为每个设备保留最新的记录信息
         allRecordsForStats.forEach(record => {
           const deviceId = record.deviceId;
           if (!deviceId) return;
+
+          const ts = Number(record.ts || 0);
+          if (Number.isFinite(ts) && ts > 0) {
+            const age = nowMs - ts;
+            if (age >= 0 && age <= onlineWindowMs) onlineDeviceSet.add(deviceId);
+            if (age >= 0 && age <= dayWindowMs) dayDeviceSet.add(deviceId);
+          }
           
           if (!deviceMap.has(deviceId)) {
             deviceMap.set(deviceId, {
@@ -3887,6 +4163,12 @@
         // 独立设备卡片：显示过滤后的独立设备数量
         if (statUsersEl) {
           statUsersEl.textContent = deviceMap.size.toString();
+        }
+        if (statOnlineDevicesEl) {
+          statOnlineDevicesEl.textContent = String(onlineDeviceSet.size);
+        }
+        if (stat24hDevicesEl) {
+          stat24hDevicesEl.textContent = String(dayDeviceSet.size);
         }
         
         // 按分类统计设备数量
@@ -4217,6 +4499,8 @@
         console.error('加载使用统计失败:', e);
         showStatus('changelog-status', `加载使用统计失败：${e.message}`, 'error');
         if (statUsersEl) statUsersEl.textContent = '-';
+        if (statOnlineDevicesEl) statOnlineDevicesEl.textContent = '-';
+        if (stat24hDevicesEl) stat24hDevicesEl.textContent = '-';
         if (statUniqueEl) statUniqueEl.textContent = '-';
         if (statByCountryEl) statByCountryEl.textContent = '加载失败';
         if (statByVersionEl) statByVersionEl.textContent = '-';
@@ -4286,6 +4570,11 @@
       if (!os) return os;
       const osLower = os.toLowerCase();
       if (!osLower.includes('windows')) return os;
+
+      // 已经是标准版本写法（如 Windows 11 22H2 / Windows 10 2004）时直接保留
+      if (/windows\s+\d+(?:\.\d+)?\s+(\d{2}h\d|20\d{2}|19\d{2}|1[5-9]\d{2}|2[0-9]h\d)/i.test(os)) {
+        return String(os).replace(/\s+/g, ' ').trim();
+      }
       
       // 提取构建号（Build number）
       const buildMatch = os.match(/build\s*(\d+)|(\d+\.\d+\.(\d+))/i);
@@ -4902,9 +5191,12 @@
     window.addEventListener('DOMContentLoaded', () => {
       initSidebarNavigation();
       const savedConfig = loadConfig();
+      const dynamicAudioCfg = loadDynamicAudioConfig();
       document.getElementById('api-base').value = savedConfig.apiBase || '';
       document.getElementById('api-token').value = savedConfig.token || '';
       document.getElementById('api-base-display').textContent = savedConfig.apiBase || '未设置';
+      document.getElementById('dynamic-audio-cloud-mode').value = dynamicAudioCfg.mode || 'cloud-first';
+      document.getElementById('dynamic-audio-cloud-version').value = dynamicAudioCfg.version || '1.0';
       if (savedConfig.excludedDevices && document.getElementById('stat-excluded-devices')) {
         document.getElementById('stat-excluded-devices').value = savedConfig.excludedDevices;
       }
@@ -4912,6 +5204,7 @@
       document.getElementById('holiday-query-date').value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
       
       if (savedConfig.apiBase) {
+        loadDynamicAudioLineOptions();
         // 延迟加载，确保所有事件监听器已注册
         setTimeout(() => {
           console.log('[Admin] 🚀 开始自动加载服务器数据...');

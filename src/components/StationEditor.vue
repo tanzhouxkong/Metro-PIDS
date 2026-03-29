@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 import { getEffectiveViewportRect } from '../utils/effectiveViewportRect.js'
 import { calculateNextStationIndex } from '../utils/displayStationCalculator'
+import { collectPeerStationNamesForAudioMatch } from '../utils/stationAudioPeers.js'
 
 export default {
   name: 'StationEditor',
@@ -858,6 +859,7 @@ export default {
           const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
           const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
           const appDataForNext = { stations: lineStations, meta: lineMeta }
+          const peerStationNamesForMatch = collectPeerStationNamesForAudioMatch(lineStations)
 
           // 动态占位符“按站名找音频”：不能只用 UI i18n 的 languageKey 取单一字段；
           // 否则 dialect tab（如 en/ja/ko）对应的数据目录里即使存在正确音频，也可能因为站名字段选错而被误判 broken。
@@ -959,7 +961,7 @@ export default {
 
                 let foundOk = false
                 for (const stationNameForRole of stationNameCandidates) {
-                  const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}`
+                  const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}::${peerStationNamesForMatch.join('\x1e')}`
                   if (dynamicOkCache.has(dynCacheKey)) {
                     if (dynamicOkCache.get(dynCacheKey)) {
                       foundOk = true
@@ -969,7 +971,7 @@ export default {
                   }
 
                   try {
-                    const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey })
+                    const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey, peerStationNames: peerStationNamesForMatch })
                     const ok = !!res?.ok && !!res?.relativePath
                     dynamicOkCache.set(dynCacheKey, ok)
                     if (ok) {
@@ -1099,6 +1101,7 @@ export default {
           const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
           const lineMeta = props.lineMeta || {}
           const appDataForNext = { stations: lineStations, meta: lineMeta }
+          const peerStationNamesForMatch = collectPeerStationNamesForAudioMatch(lineStations)
 
           const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
           const normalizeDynamicRoleKey = (roleKey) => {
@@ -1165,13 +1168,13 @@ export default {
 
                     let foundOk = false
                     for (const stationNameForRole of candidates) {
-                      const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}`
+                      const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}::${peerStationNamesForMatch.join('\x1e')}`
                       if (dynamicOkCache.has(dynCacheKey)) {
                         if (dynamicOkCache.get(dynCacheKey)) { foundOk = true; break }
                         continue
                       }
                       try {
-                        const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey })
+                        const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey, peerStationNames: peerStationNamesForMatch })
                         const ok = !!res?.ok && !!res?.relativePath
                         dynamicOkCache.set(dynCacheKey, ok)
                         if (ok) { foundOk = true; break }
@@ -1302,7 +1305,7 @@ export default {
         window.electronAPI.showNotification(title || msg, msg, {}).catch(() => {})
       }
     }
-    const AUDIO_FILE_FILTER = { name: 'Audio', extensions: ['mp3', 'flac', 'ogg', 'wav'] }
+    const AUDIO_FILE_FILTER = { name: 'Audio', extensions: ['mp3', 'flac', 'ogg', 'wav', 'm4a', 'aac'] }
     const getCurrentDialectAudioSubDir = () => {
       const raw = String(form?.stationAudio?.dynamicDialect || 'cmn').trim().toLowerCase()
       const safe = raw.replace(/[^a-z0-9_-]/g, '')
@@ -1592,7 +1595,9 @@ export default {
           continue
         }
         const resCopy = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
-          subDir
+          subDir,
+          // 动态音频按“站名文件名”匹配，必须保留本次导入文件名，避免 MD5 复用导致站名丢失。
+          preserveFileName: true
         })
         if (resCopy && resCopy.ok) {
           audioImportCopyOk.value++
@@ -1616,11 +1621,12 @@ export default {
 
       audioImportStage.value = 'match'
 
+      const peerStationNames = collectPeerStationNamesForAudioMatch(lineStations)
       const targets = Array.from(requiredTargets.values())
       for (const target of targets) {
         const opts = target.roleKey
-          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths }
-          : { languageKey, dialectKey, importedRelativePaths }
+          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths, peerStationNames }
+          : { languageKey, dialectKey, importedRelativePaths, peerStationNames }
         const candidates = Array.isArray(target.stationNameCandidates) && target.stationNameCandidates.length
           ? target.stationNameCandidates
           : [target.stationName]
@@ -1710,11 +1716,31 @@ export default {
         return
       }
 
+      const isWindows = (() => {
+        try { return /win/i.test(String(navigator?.platform || '')) } catch (e) { return false }
+      })()
+      if (isWindows) {
+        notify('可直接选择文件夹；也可选择该文件夹内任意一个音频文件，系统会自动按其所在目录批量导入。', t('stationEditor.audioImportDynamicFolder'))
+      }
       const openRes = await api.showOpenDialog({
-        properties: ['openDirectory']
+        // Windows 下同时允许“选文件夹/选文件”：
+        // - 选文件夹：直接按该目录导入
+        // - 选文件：自动回退到父目录做文件夹导入
+        // 这样既保留文件夹导入入口，也兼容看文件名后再定位目录的需求。
+        properties: isWindows ? ['openDirectory', 'openFile'] : ['openDirectory'],
+        filters: [AUDIO_FILE_FILTER]
       })
       if (openRes?.canceled || !openRes.filePaths || !openRes.filePaths.length) return
-      const folderPath = openRes.filePaths[0]
+      const pickedPath = String(openRes.filePaths[0] || '').trim()
+      if (!pickedPath) return
+      const toParentDir = (p) => {
+        const s = String(p || '')
+        const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
+        return idx > 0 ? s.slice(0, idx) : ''
+      }
+      const isLikelyAudioFilePath = (p) => /\.(mp3|wav|ogg|flac|m4a|aac)$/i.test(String(p || ''))
+      const folderPath = isLikelyAudioFilePath(pickedPath) ? toParentDir(pickedPath) : pickedPath
+      if (!folderPath) return
 
       const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
       const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
@@ -1821,7 +1847,7 @@ export default {
       const copyFailures = []
       const matchFailures = []
 
-      const listRes = await api.lines.listAudioFilesInDir(folderPath, { extensions: ['mp3', 'wav', 'ogg', 'flac'], maxFiles: 20000 })
+      const listRes = await api.lines.listAudioFilesInDir(folderPath, { extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'], maxFiles: 20000 })
       if (!listRes?.ok || !Array.isArray(listRes.files) || !listRes.files.length) {
         notify(listRes?.error || t('stationEditor.audioImportNoFiles'), t('stationEditor.audioImportDynamicTitle'))
         closeAudioImportModal()
@@ -1844,7 +1870,9 @@ export default {
           continue
         }
         const resCopy = await api.lines.copyAudioToLineDir(lineDirOrFilePath, sourcePath, {
-          subDir
+          subDir,
+          // 动态音频按“站名文件名”匹配，必须保留本次导入文件名，避免 MD5 复用导致站名丢失。
+          preserveFileName: true
         })
         if (resCopy && resCopy.ok) {
           audioImportCopyOk.value++
@@ -1868,11 +1896,12 @@ export default {
 
       audioImportStage.value = 'match'
 
+      const peerStationNames = collectPeerStationNamesForAudioMatch(lineStations)
       const targets = Array.from(requiredTargets.values())
       for (const target of targets) {
         const opts = target.roleKey
-          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths }
-          : { languageKey, dialectKey, importedRelativePaths }
+          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths, peerStationNames }
+          : { languageKey, dialectKey, importedRelativePaths, peerStationNames }
         const candidates = Array.isArray(target.stationNameCandidates) && target.stationNameCandidates.length
           ? target.stationNameCandidates
           : [target.stationName]
@@ -2661,7 +2690,7 @@ export default {
           lineFileOrDir: lineFilePath
         })
 
-        api.lines.findAudioByStationName(lineFilePath, stationNameForRole, { role: item?.role, languageKey, dialectKey })
+        api.lines.findAudioByStationName(lineFilePath, stationNameForRole, { role: item?.role, languageKey, dialectKey, peerStationNames: collectPeerStationNamesForAudioMatch(stations) })
           .then((res) => {
             if (!res || !res.ok || !res.relativePath) return
             console.warn('[StationEditor][dynamic-rightplay][resolved]', {
