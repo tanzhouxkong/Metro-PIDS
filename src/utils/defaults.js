@@ -182,35 +182,41 @@ const FALLBACK_SYSTEM_DISPLAYS = {
   'display-1': {
     id: 'display-1',
     name: '主显示器',
+    nameKey: 'displayBuiltin.display1.name',
     source: 'builtin',
     url: '',
     width: 1900,
     height: 600,
     enabled: true,
     isSystem: true,
-    description: '主要显示端，用于主要信息展示'
+    description: '主要显示端，用于主要信息展示',
+    descriptionKey: 'displayBuiltin.display1.description'
   },
   'display-2': {
     id: 'display-2',
     name: '副显示器',
+    nameKey: 'displayBuiltin.display2.name',
     source: 'builtin',
     url: '',
-    width: 1500,
-    height: 400,
+    width: 1600,
+    height: 620,
     enabled: true,
     isSystem: true,
-    description: '辅助显示端，用于补充信息展示'
+    description: '辅助显示端，用于补充信息展示',
+    descriptionKey: 'displayBuiltin.display2.description'
   },
   'display-3': {
     id: 'display-3',
     name: 'LCD弧形布局',
+    nameKey: 'displayBuiltin.display3.name',
     source: 'builtin',
     url: '',
     width: 1900,
     height: 600,
     enabled: true,
     isSystem: true,
-    description: '通用 LCD 弧形线路图显示端'
+    description: '通用 LCD 弧形线路图显示端',
+    descriptionKey: 'displayBuiltin.display3.description'
   }
 };
 

@@ -71,7 +71,70 @@
     "display3Formation7": "7节编组",
     "display3Formation8": "8节编组",
     "display3Formation4x4": "4+4编组",
-    "display3ActiveCarOption": "第 {n} 节"
+    "display3ActiveCarOption": "第 {n} 节",
+    "configUpdatedTitle": "显示端已更新",
+    "configUpdatedBody": "显示端 \"{name}\" 已更新",
+    "notifyDisabledTitle": "显示端已禁用",
+    "notifyDisabledDesc": "显示端 \"{name}\" 当前已禁用，无法切换",
+    "notifySwitchedTitle": "显示端已切换",
+    "notifySwitchedDesc": "当前活动显示端：{name}",
+    "notifyReorderTitle": "显示端排序已更新",
+    "notifyReorderDesc": "已将 \"{name}\" 移动到新位置",
+    "notifyStatusTitle": "显示端状态已更新",
+    "notifyStatusDesc": "{name} {status}",
+    "statusEnabled": "已启用",
+    "statusDisabled": "已禁用",
+    "unnamedDisplay": "未命名显示端"
+  },
+  "displayBuiltin": {
+    "display1": {
+      "name": "主显示器",
+      "description": "主要显示端，用于主要信息展示"
+    },
+    "display2": {
+      "name": "副显示器",
+      "description": "辅助显示端，用于补充信息展示"
+    },
+    "display3": {
+      "name": "LCD弧形布局",
+      "description": "通用 LCD 弧形线路图显示端"
+    }
+  },
+  "displayConfigMeta": {
+    "fileDescription": "Metro PIDS 多显示端配置文件。应用仅读取 displays 与 displayDefaults 段，其余供维护与工具参考。",
+    "features": {
+      "systemProtection": "系统显示器保护功能，防止误删除或修改关键显示器",
+      "broadcastChannel": "使用 BroadcastChannel API 进行跨窗口通信",
+      "autoSync": "自动同步数据到所有显示端",
+      "displayIdentification": "在显示端显示标识和系统保护标记"
+    },
+    "messageTypes": {
+      "SYNC": "同步线路数据和实时状态",
+      "DISPLAY_READY": "显示端就绪通知",
+      "CMD_UI": "UI控制命令（关闭窗口等）",
+      "CMD_KEY": "远端按键指令",
+      "REQ": "请求显示端返回当前状态",
+      "REC_START": "开始录制",
+      "REC_STOP": "停止录制"
+    },
+    "troubleshooting": {
+      "popupBlocked": {
+        "problem": "浏览器弹窗被拦截",
+        "solution": "在浏览器设置中允许此网站的弹窗"
+      },
+      "broadcastChannelNotSupported": {
+        "problem": "BroadcastChannel API 不支持",
+        "solution": "使用现代浏览器或 Electron 环境"
+      },
+      "displayNotSync": {
+        "problem": "显示端数据不同步",
+        "solution": "检查 BroadcastChannel 连接和消息格式"
+      },
+      "systemDisplayProtection": {
+        "problem": "无法编辑或删除系统显示器",
+        "solution": "这是正常的保护机制，系统显示器不允许修改以确保基本功能"
+      }
+    }
   },
   "api": {
     "title": "API 服务器",
@@ -526,6 +589,8 @@
     "audioApplyToggleOff": "停用应用",
     "audioModeArrive": "进站使用",
     "audioModeDepart": "出站使用",
+    "audioModeOriginStation": "始发站使用",
+    "audioModeTerminalStation": "终到站使用",
     "audioModeShortTurn": "短交路使用",
     "audioModeExpress": "大站车使用",
     "audioModeDirect": "直达车使用",

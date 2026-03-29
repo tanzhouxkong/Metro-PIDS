@@ -35,10 +35,34 @@
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
 }
 
+/* 主题色 + 环线/单线 + 方向：强制单行；上下行区域占满剩余宽度，站名用省略号 */
+.pids-console-ant .pids-console-line-toolbar.ant-space {
+  flex-wrap: nowrap !important;
+  max-width: 100%;
+}
+
+.pids-console-ant .pids-console-line-color-swatch {
+  flex-shrink: 0;
+}
+
+/* Space 包裹层才是真正的 flex 子项：方向按钮区域占满剩余宽度，ellipsis 才能生效 */
+.pids-console-ant .pids-console-line-toolbar.ant-space .ant-space-item:has(.pids-console-updown-btns),
+.pids-console-ant .pids-console-line-toolbar.ant-space .ant-space-item:has(.pids-console-loop-dir-btns) {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.pids-console-ant .pids-console-line-toolbar.ant-space .ant-space-item:has(.pids-console-updown-btns) .pids-console-updown-btns,
+.pids-console-ant .pids-console-line-toolbar.ant-space .ant-space-item:has(.pids-console-loop-dir-btns) .pids-console-loop-dir-btns {
+  width: 100%;
+  max-width: 100%;
+}
+
 /* 环线 / 单线：两个独立按钮（与原 radio 体量一致） */
 .pids-console-ant .pids-console-line-mode-btns {
   display: flex;
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   gap: 10px;
 }
@@ -55,6 +79,23 @@
   border-radius: 8px !important;
 }
 
+/* 单线 / 环线方向区：在 Space 子项内拉满宽度 */
+.pids-console-ant .pids-console-line-mode-btns.pids-console-updown-btns,
+.pids-console-ant .pids-console-line-mode-btns.pids-console-loop-dir-btns {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pids-console-ant .pids-console-updown-btns .pids-console-line-mode-btn.ant-btn {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 46px !important;
+  padding: 0 12px !important;
+  line-height: 1.25 !important;
+  text-align: center;
+}
+
 /* 环线 / 单线 / 内圈外圈：与加大后的字号一致 */
 .pids-console-ant .pids-console-radio-wrap.ant-radio-group {
   display: flex;
@@ -62,7 +103,7 @@
   gap: 10px;
 }
 
-.pids-console-ant .pids-console-radio-wrap:not(.pids-console-radio-wrap--stack):not(.pids-console-radio-wrap--updown-row):not(.pids-console-radio-wrap--service-row) .ant-radio-button-wrapper {
+.pids-console-ant .pids-console-radio-wrap:not(.pids-console-radio-wrap--stack):not(.pids-console-radio-wrap--service-row) .ant-radio-button-wrapper {
   font-size: 15px;
   font-weight: 600;
   min-height: 46px;
@@ -136,34 +177,6 @@
 .pids-console-ant .pids-console-radio-wrap--stack .ant-radio-button-wrapper + .ant-radio-button-wrapper {
   border-top: 1px solid var(--divider, rgba(0, 0, 0, 0.12)) !important;
   border-inline-start: 0 !important;
-}
-
-/* 单线：上行 / 下行 — 固定同一行两列，文字可换行 */
-.pids-console-ant .pids-console-radio-wrap--updown-row.ant-radio-group {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  width: 100%;
-  gap: 10px;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.pids-console-ant .pids-console-radio-wrap--updown-row .ant-radio-button-wrapper {
-  white-space: normal;
-  height: auto;
-  min-height: 56px;
-  line-height: 1.35;
-  padding: 12px 10px;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pids-console-ant .pids-console-radio-wrap--updown-row .ant-radio-button-wrapper::before {
-  display: none !important;
 }
 
 /* 贯通线路等：紧凑主按钮（约 32px 高） */

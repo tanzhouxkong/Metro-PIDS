@@ -71,7 +71,70 @@
     "display3Formation7": "7 両編成",
     "display3Formation8": "8 両編成",
     "display3Formation4x4": "4+4 両編成",
-    "display3ActiveCarOption": "{n} 号車"
+    "display3ActiveCarOption": "{n} 号車",
+    "configUpdatedTitle": "表示端末を更新しました",
+    "configUpdatedBody": "表示端末 \"{name}\" を更新しました",
+    "notifyDisabledTitle": "表示端末は無効です",
+    "notifyDisabledDesc": "表示端末 \"{name}\" は無効のため切り替えできません",
+    "notifySwitchedTitle": "表示端末を切り替えました",
+    "notifySwitchedDesc": "現在の表示端末：{name}",
+    "notifyReorderTitle": "表示端末の並び順を更新しました",
+    "notifyReorderDesc": "「{name}」を新しい位置に移動しました",
+    "notifyStatusTitle": "表示端末の状態を更新しました",
+    "notifyStatusDesc": "{name} {status}",
+    "statusEnabled": "有効",
+    "statusDisabled": "無効",
+    "unnamedDisplay": "名称未設定の表示端末"
+  },
+  "displayBuiltin": {
+    "display1": {
+      "name": "メイン表示",
+      "description": "主な案内情報を表示する主要な表示端末です。"
+    },
+    "display2": {
+      "name": "サブ表示",
+      "description": "補助的な情報を表示する表示端末です。"
+    },
+    "display3": {
+      "name": "LCD 曲面レイアウト",
+      "description": "一般的な曲面 LCD 路線図表示用の表示端末です。"
+    }
+  },
+  "displayConfigMeta": {
+    "fileDescription": "Metro PIDS 複数表示端末用設定ファイル。アプリが読み取るのは displays と displayDefaults のみで、それ以外は保守・ツール向けです。",
+    "features": {
+      "systemProtection": "システム表示端末の誤削除・重要設定変更を防ぎます。",
+      "broadcastChannel": "BroadcastChannel API でウィンドウ間通信を行います。",
+      "autoSync": "全表示端末へデータを自動同期します。",
+      "displayIdentification": "表示ウィンドウに識別情報とシステムバッジを表示します。"
+    },
+    "messageTypes": {
+      "SYNC": "路線データとリアルタイム状態の同期",
+      "DISPLAY_READY": "表示端末の準備完了通知",
+      "CMD_UI": "UI 制御コマンド（ウィンドウを閉じるなど）",
+      "CMD_KEY": "リモートキー命令",
+      "REQ": "表示端末に現在状態の返送を要求",
+      "REC_START": "録画開始",
+      "REC_STOP": "録画停止"
+    },
+    "troubleshooting": {
+      "popupBlocked": {
+        "problem": "ブラウザがポップアップをブロックしています",
+        "solution": "ブラウザ設定でこのサイトのポップアップを許可してください。"
+      },
+      "broadcastChannelNotSupported": {
+        "problem": "BroadcastChannel API がサポートされていません",
+        "solution": "モダンブラウザまたは Electron 環境を使用してください。"
+      },
+      "displayNotSync": {
+        "problem": "表示端末間でデータが同期しません",
+        "solution": "BroadcastChannel の接続とメッセージ形式を確認してください。"
+      },
+      "systemDisplayProtection": {
+        "problem": "システム表示端末を編集・削除できません",
+        "solution": "基本機能を守るための保護であり、正常な動作です。"
+      }
+    }
   },
   "api": {
     "title": "API サーバー",
@@ -513,6 +576,8 @@
     "audioApplyToggleOff": "適用無効",
     "audioModeArrive": "到着時使用",
     "audioModeDepart": "出発時使用",
+    "audioModeOriginStation": "始発駅のみ使用",
+    "audioModeTerminalStation": "終着駅のみ使用",
     "audioModeShortTurn": "区間運転時使用",
     "audioModeExpress": "快速時使用",
     "audioModeDirect": "直通時使用",

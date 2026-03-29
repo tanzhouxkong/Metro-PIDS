@@ -3,6 +3,7 @@ import { usePidsState } from '../composables/usePidsState.js'
 import { useSettings } from '../composables/useSettings.js'
 import { cloneDisplayState } from '../utils/displayStateSerializer.js'
 import { showNotification } from '../utils/notificationService.js'
+import { resolveDisplayName } from '../utils/displayLabels.js'
 import { calculateDisplayStationInfo } from '../utils/displayStationCalculator.js'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
@@ -41,10 +42,10 @@ export default {
         }
 
         const getDisplayName = (display, fallbackId = '') => {
-            if (display && display.name) return display.name;
-            if (display && display.id) return display.id;
+            const resolved = resolveDisplayName(display);
+            if (resolved) return resolved;
             if (fallbackId) return fallbackId;
-            return '未命名显示端';
+            return display?.id || '';
         }
         
         // 使用 computed 让显示端信息响应式更新
@@ -68,7 +69,7 @@ export default {
                 w: Math.max(100, w), 
                 h: Math.max(100, h),
                 displayId: currentDisplayId,
-                displayName: displayConfig?.name || '显示器'
+                displayName: getDisplayName(displayConfig, currentDisplayId) || '显示器'
             };
         });
         

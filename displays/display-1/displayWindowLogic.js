@@ -767,6 +767,25 @@ const displayStyleSheet = `
     padding-right: 30px;
     padding-left: 50px;
     color: var(--contrast-color);
+    min-width: 0;
+    gap: 0;
+}
+/* 首末站两列等宽，各行 marquee 独立裁剪（避免长文案把 flex 撑成一整条“合并滚动”） */
+#display-app .h-term-station {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    overflow: hidden;
+    text-align: center;
+    box-sizing: border-box;
+}
+#display-app .h-term-station .marquee-box {
+    min-width: 0;
 }
 #display-app .h-term .lbl {
     font-size: 24px;
@@ -800,6 +819,7 @@ const displayStyleSheet = `
     display: flex;
     gap: 20px;
     margin: 0 40px;
+    flex-shrink: 0;
 }
 #display-app .route-arrows i {
     font-size: 28px;
@@ -818,13 +838,43 @@ const displayStyleSheet = `
 #display-app .track-arrow-current i { color: inherit; }
 #display-app .segment-arrow { color: #fff; }
 #display-app .segment-arrow-default { color: #fff; }
+/* 当前站→下一站段：纯白；双箭头沿站间整段平移（近当前站 → 近下一站，间距不变） */
 #display-app .segment-arrow-current { 
-    animation: arrow-white-yellow-blink 2s infinite;
+    color: #fff;
+    animation: none;
 }
+/* 包装器 left 动画：整段站间平移；时长由 --arrow-slide-duration 随站间距略调 */
+#display-app .segment-arrow-pair-slide {
+    /* 首帧前即有位移，避免部分内核在 var 未参与布局时整段 left 无效 */
+    left: var(--arrow-slide-start);
+    animation: segment-arrow-slide-x var(--arrow-slide-duration, 3.2s) linear infinite;
+}
+@keyframes segment-arrow-slide-x {
+    from { left: var(--arrow-slide-start); }
+    to { left: var(--arrow-slide-end); }
+}
+/* 直线站间箭头：与 .track-double / .track-segment 一致 — top:50% + translateY(-50%)，中心对准线路条几何中心 */
+#display-app .segment-arrow-wrap {
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    line-height: 1;
+}
+#display-app .segment-arrow-wrap.segment-arrow-dir-rev {
+    transform: translate(-50%, -50%) rotate(180deg);
+}
+/* C 型：与直线/环线一致使用白色箭头 */
+#display-app .c-type-map-arrow .segment-arrow,
+#display-app .c-type-map-arrow .segment-arrow-default,
+#display-app .c-type-map-arrow .segment-arrow-current {
+    color: #fff !important;
+}
+/* 环线箭头与直线 segment-arrow 一致：纯白、当前段不红闪（类名在 drawRing 中已改用 segment-arrow*） */
 #display-app .ring-arrow { color: #fff; }
 #display-app .ring-arrow-default { color: #fff; }
-#display-app .ring-arrow-current { 
-    animation: arrow-white-yellow-blink 2s infinite;
+#display-app .ring-arrow-current {
+    color: #fff;
+    animation: none;
 }
 @keyframes arrow-white-yellow-blink {
     0%, 100% { color: #fff; }
@@ -981,7 +1031,14 @@ const displayStyleSheet = `
 #display-app .map-l {
     padding-left: 0;
     overflow-x: auto;
+    /* .btm-map 默认 overflow:hidden 会裁掉垂直方向；箭头在站间略偏下时整段被剪没 */
+    overflow-y: visible;
     align-items: center;
+}
+/* 双类提高优先级，覆盖 .btm-map 的 overflow:hidden 垂直分量 */
+#display-app .btm-map.map-l {
+    overflow-x: auto;
+    overflow-y: visible;
 }
 #display-app .l-box {
     position: relative;
@@ -995,6 +1052,7 @@ const displayStyleSheet = `
     height: 100%;
     flex-shrink: 0;
     position: relative;
+    /* 高于线路条(z0)与箭头(z3)，圆点随节点整体压在箭头之上 */
     z-index: 5;
     display: flex;
     justify-content: center;
@@ -3875,9 +3933,9 @@ export function initDisplayWindow(rootElement) {
               // 复制内容并添加间距，实现无缝滚动
               span.innerHTML = `${parsedContent}${gapHtml}${parsedContent}`;
               span.classList.add('scrolling');
-              // 用“复制后的一半宽度”作为位移距离，避免 -50% 造成边界抖动
+              // 无缝循环：位移须为「单段 + 间距」= totalW - segmentW；用 totalW/2 会差半段间距，每圈回到起点会跳闪
               const totalW = span.offsetWidth;
-              const shift = totalW / 2;
+              const shift = totalW - w;
               span.style.setProperty('--marquee-distance', `${shift}px`);
               // 根据位移距离计算滚动时间，速度约为50px/s
               let dur = (shift + 50) / 50;
@@ -3942,16 +4000,16 @@ export function initDisplayWindow(rootElement) {
     
     const createScrollBlock = (st) => {
       const wrapper = document.createElement('div');
-      wrapper.style.textAlign = 'center';
-      // 首/末站两侧文字容器稍微加长，避免站名较长时可用空间过窄
-      wrapper.style.minWidth = '160px';
-      wrapper.style.maxWidth = '320px';
+      wrapper.className = 'h-term-station';
       const nameBox = document.createElement('div');
       nameBox.className = 'marquee-box';
       nameBox.style.fontSize = '32px';
       nameBox.style.fontWeight = '900';
       nameBox.style.color = 'var(--contrast-color)';
       nameBox.style.lineHeight = '1';
+      nameBox.style.width = '100%';
+      nameBox.style.maxWidth = '100%';
+      nameBox.style.minWidth = '0';
       const nameContent = document.createElement('span');
       nameContent.className = 'marquee-content';
       const parsedName = parseColorMarkup(st.name);
@@ -3964,6 +4022,9 @@ export function initDisplayWindow(rootElement) {
       enBox.style.color = 'var(--contrast-color)';
       enBox.style.opacity = '0.8';
       enBox.style.fontWeight = 'bold';
+      enBox.style.width = '100%';
+      enBox.style.maxWidth = '100%';
+      enBox.style.minWidth = '0';
       const enContent = document.createElement('span');
       enContent.className = 'marquee-content';
       enContent.innerHTML = parsedEn;
@@ -3972,24 +4033,24 @@ export function initDisplayWindow(rootElement) {
       wrapper.appendChild(enBox);
       setTimeout(() => {
         if (nameContent.offsetWidth > nameBox.offsetWidth) {
-          const w = nameContent.offsetWidth; // 复制前宽度（用于估算速度）
+          const segmentW = nameContent.offsetWidth;
           const gapHtml = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
           nameContent.innerHTML = `${parsedName}${gapHtml}${parsedName}`;
           nameContent.classList.add('scrolling');
           const totalW = nameContent.offsetWidth;
-          const shift = totalW / 2;
+          const shift = totalW - segmentW;
           nameContent.style.setProperty('--marquee-distance', `${shift}px`);
           let dur = (shift + 50) / 50;
           if (dur < 3) dur = 3;
           nameContent.style.animationDuration = `${dur}s`;
         }
         if (enContent.offsetWidth > enBox.offsetWidth) {
-          const w = enContent.offsetWidth; // 复制前宽度（用于估算速度）
+          const segmentW = enContent.offsetWidth;
           const gapHtml = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
           enContent.innerHTML = `${parsedEn}${gapHtml}${parsedEn}`;
           enContent.classList.add('scrolling');
           const totalW = enContent.offsetWidth;
-          const shift = totalW / 2;
+          const shift = totalW - segmentW;
           enContent.style.setProperty('--marquee-distance', `${shift}px`);
           let dur = (shift + 50) / 40;
           if (dur < 3) dur = 3;
@@ -4206,12 +4267,12 @@ export function initDisplayWindow(rootElement) {
         // 中英文分开处理：仅超出的那一行滚动
         if (nNameContent.offsetWidth > nNameBox.offsetWidth) {
           nNameBox.style.overflow = 'hidden';
-          const w = nNameContent.offsetWidth; // 复制前宽度（用于估算速度）
+          const segmentW = nNameContent.offsetWidth;
           const gapHtml = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
           nNameContent.innerHTML = `${parsedTargetName}${gapHtml}${parsedTargetName}`;
           nNameContent.classList.add('scrolling');
           const totalW = nNameContent.offsetWidth;
-          const shift = totalW / 2;
+          const shift = totalW - segmentW;
           nNameContent.style.setProperty('--marquee-distance', `${shift}px`);
           let dur = (shift + 50) / 50;
           if (dur < 3) dur = 3;
@@ -4219,12 +4280,12 @@ export function initDisplayWindow(rootElement) {
         }
         if (nEnContent.offsetWidth > nEnBox.offsetWidth) {
           nEnBox.style.overflow = 'hidden';
-          const w = nEnContent.offsetWidth; // 复制前宽度（用于估算速度）
+          const segmentW = nEnContent.offsetWidth;
           const gapHtml = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
           nEnContent.innerHTML = `${parsedTargetEn}${gapHtml}${parsedTargetEn}`;
           nEnContent.classList.add('scrolling');
           const totalW = nEnContent.offsetWidth;
-          const shift = totalW / 2;
+          const shift = totalW - segmentW;
           nEnContent.style.setProperty('--marquee-distance', `${shift}px`);
           let dur = (shift + 50) / 40;
           if (dur < 3) dur = 3;
@@ -4377,12 +4438,12 @@ export function initDisplayWindow(rootElement) {
       setTimeout(() => {
         if (nNameContent.offsetWidth > nNameBox.offsetWidth) {
           nNameBox.style.overflow = 'hidden';
-          const w = nNameContent.offsetWidth; // 复制前宽度（用于估算速度）
+          const segmentW = nNameContent.offsetWidth;
           const gapHtml = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
           nNameContent.innerHTML = `${parsedName}${gapHtml}${parsedName}`;
           nNameContent.classList.add('scrolling');
           const totalW = nNameContent.offsetWidth;
-          const shift = totalW / 2;
+          const shift = totalW - segmentW;
           nNameContent.style.setProperty('--marquee-distance', `${shift}px`);
           let dur = (shift + 50) / 50;
           if (dur < 3) dur = 3;
@@ -4390,12 +4451,12 @@ export function initDisplayWindow(rootElement) {
         }
         if (nEnContent.offsetWidth > nEnBox.offsetWidth) {
           nEnBox.style.overflow = 'hidden';
-          const w = nEnContent.offsetWidth; // 复制前宽度（用于估算速度）
+          const segmentW = nEnContent.offsetWidth;
           const gapHtml = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
           nEnContent.innerHTML = `${parsedEn}${gapHtml}${parsedEn}`;
           nEnContent.classList.add('scrolling');
           const totalW = nEnContent.offsetWidth;
-          const shift = totalW / 2;
+          const shift = totalW - segmentW;
           nEnContent.style.setProperty('--marquee-distance', `${shift}px`);
           let dur = (shift + 50) / 40;
           if (dur < 3) dur = 3;
@@ -5136,14 +5197,12 @@ export function initDisplayWindow(rootElement) {
       const appendSegmentArrowPair = (centerX) => {
         for (let k = 0; k <= 1; k++) {
           const wrapper = document.createElement('div');
+          wrapper.className = 'segment-arrow-wrap';
+          if (isReversed) wrapper.classList.add('segment-arrow-dir-rev');
           wrapper.style.position = 'absolute';
           const offset = (k === 0) ? -segmentArrowPairGap / 2 : segmentArrowPairGap / 2;
           wrapper.style.left = (centerX + offset) + 'px';
-          wrapper.style.top = '50%';
-          wrapper.style.zIndex = '10';
-          let baseTransform = 'translate(-50%, -50%)';
-          if (isReversed) baseTransform += ' rotate(180deg)';
-          wrapper.style.transform = baseTransform;
+          wrapper.style.zIndex = '3';
           const arrow = document.createElement('div');
           arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
           const arrowI = arrow.firstElementChild;
@@ -5446,11 +5505,9 @@ export function initDisplayWindow(rootElement) {
         // 计算箭头位置：第一个向左偏移 spacing/2，第二个向右偏移 spacing/2
         const offset = (k === 0) ? -20 / 2 : 20 / 2;
         wrapper.style.left = (arrowCenter + offset) + 'px';
-        wrapper.style.top = '50%';
-        wrapper.style.zIndex = '10';
-        let baseTransform = 'translate(-50%, -50%)';
-        if (isReversed) baseTransform += ' rotate(180deg)';
-        wrapper.style.transform = baseTransform;
+        wrapper.style.zIndex = '3';
+        wrapper.className = 'segment-arrow-wrap';
+        if (isReversed) wrapper.classList.add('segment-arrow-dir-rev');
         const arrow = document.createElement('div');
         arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
         const arrowI = arrow.firstElementChild;
@@ -5729,7 +5786,8 @@ export function initDisplayWindow(rootElement) {
         dotSizeSkip: 24,                // 暂缓站圆点直径（px）
         dotSizeTarget: 20,              // 下一站圆点直径（px），可与 dotSizeNormal 不同做突出
         arrowFontSize: 20,              // 箭头图标字号（px）
-        arrowOffsetY: -110,             // 箭头相对轨道的垂直偏移（px），负值上移
+        /* 相对 SVG 路径中心线微调；箭头挂在 trackContainer 内与 path 同源坐标 */
+        arrowOffsetY: 0,
         arrowRatios: [0.45, 0.55],     // 箭头在线段上的位置比例（两个箭头）
         bridgeReserveCorner: 10,        // 桥接段：距 R 角留白（px，会乘 scale）
         bridgeArrowWindow: 120,         // 桥接段：放箭头的窗口长度（px，会乘 scale）
@@ -5741,7 +5799,8 @@ export function initDisplayWindow(rootElement) {
       trackContainer.innerHTML = '';
       trackContainer.style.position = 'absolute';
       trackContainer.style.left = '0';
-      trackContainer.style.top = '370px'; // 与站点层对齐（站点位置为 pt.y + 150）
+      /* 轨道 SVG 层；箭头作为其子元素时用与 path 相同的局部坐标即可贴线路条中心 */
+      trackContainer.style.top = '370px';
       trackContainer.style.width = '100%';
       trackContainer.style.height = cTypeBoxHeight + 'px';
       trackContainer.style.border = 'none';
@@ -6251,72 +6310,143 @@ export function initDisplayWindow(rootElement) {
         });
       });
 
-      // 在高亮线段上放置两个运营方向箭头（类似显示器1，参数用 C3_TUNING 微调）
-      const trackContainerTop = parseInt(trackContainer.style.top, 10) || 370; // 轨道层相对 box 的 top
-
-      // 小工具：在给定路径区间内按固定间距放置两个箭头（与直线布局一致）
+      // 箭头挂在 trackContainer 内，与 path 同源坐标；当前站→下一站段沿弧线采样关键帧做线性周期移动（同直线 left 动画语义）
       const placeArrowsInRange = (segStart, segEnd, ratios, segIndex) => {
         const segLenLocal = segEnd - segStart;
         if (segLenLocal <= 0) return;
-        
-        // 统一使用固定像素间距（20px），与直线布局保持一致
-        const arrowSpacing = 20; // 两个箭头之间的间距（像素）
-        const spacingInPath = arrowSpacing / scale; // 转换为路径上的距离
-        
-        // 计算线段中点
+
+        const arrowSpacing = 20;
+        const spacingInPath = arrowSpacing / scale;
+        const halfGap = spacingInPath / 2;
         const midDist = segStart + segLenLocal / 2;
-        
-        // 两个箭头：中点左右各偏移 spacingInPath/2
         const arrowDists = [
           midDist - spacingInPath / 2,
           midDist + spacingInPath / 2
         ];
-        
-        arrowDists.forEach((aDist) => {
-          // 确保箭头在区间内
-          if (aDist < segStart || aDist > segEnd) return;
-          const ptArr = measurePath.getPointAtLength(aDist);
-          const distBefore = Math.max(0, aDist - 2);
-          const distAfter = Math.min(actualPerimeter, aDist + 2);
+
+        const isCurrSeg = (() => {
+          if (rt.state !== 1) return false;
+          if (m.dirType === 'up' || m.dirType === 'outer') return segIndex === rt.idx;
+          return segIndex === Math.max(rt.idx - 1, 0);
+        })();
+        const upDir = (m.dirType === 'up' || m.dirType === 'outer');
+        const padPath = Math.min(segLenLocal * 0.12, Math.max(3 * scale, halfGap * 0.5));
+        let centerStart;
+        let centerEnd;
+        if (upDir) {
+          centerStart = segStart + halfGap + padPath;
+          centerEnd = segEnd - halfGap - padPath;
+        } else {
+          centerStart = segEnd - halfGap - padPath;
+          centerEnd = segStart + halfGap + padPath;
+        }
+        const canSlideFull = isCurrSeg && Math.abs(centerEnd - centerStart) > 4;
+
+        const tangentAngleAt = (dist) => {
+          const t = Math.min(actualPerimeter, Math.max(0, dist));
+          const distBefore = Math.max(0, t - 2);
+          const distAfter = Math.min(actualPerimeter, t + 2);
           const pA = measurePath.getPointAtLength(distBefore);
           const pB = measurePath.getPointAtLength(distAfter);
-          let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
-          if (m.dirType === 'down' || m.dirType === 'inner') angle += 180;
+          let ang = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
+          if (m.dirType === 'down' || m.dirType === 'inner') ang += 180;
+          return ang;
+        };
+        const unwrapAngleDeg = (prevDeg, rawDeg) => {
+          let a = rawDeg;
+          while (a - prevDeg > 180) a -= 360;
+          while (a - prevDeg < -180) a += 360;
+          return a;
+        };
+
+        const appendArrowAtDist = (aDist, pathDistFrom, pathDistTo) => {
+          const t0 = Math.min(actualPerimeter, Math.max(0, aDist));
+          const ptArr = measurePath.getPointAtLength(t0);
+          const angle0 = tangentAngleAt(t0);
 
           const wrapper = document.createElement('div');
+          wrapper.classList.add('c-type-map-arrow');
           wrapper.style.position = 'absolute';
           wrapper.style.left = ptArr.x + 'px';
-          wrapper.style.top = (trackContainerTop + ptArr.y + C3_TUNING.arrowOffsetY) + 'px'; // 箭头垂直位置微调
+          wrapper.style.top = (ptArr.y + C3_TUNING.arrowOffsetY) + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
-          wrapper.style.zIndex = '10';
+          wrapper.style.zIndex = '4';
           wrapper.style.pointerEvents = 'none';
 
           const arrow = document.createElement('div');
           arrow.innerHTML = '<i class="fas fa-chevron-right"></i>';
+          arrow.style.lineHeight = '1';
           const arrowI = arrow.firstElementChild;
           if (arrowI) {
-            // 仅“当前站 → 下一站”那一段闪烁，其它段常亮（与显示器1一致）
-            const isCurrSeg = (() => {
-              if (rt.state !== 1) return false; // 仅出站（去往下一站）时闪烁
-              if (m.dirType === 'up' || m.dirType === 'outer') {
-                return segIndex === rt.idx;
-              }
-              // down/inner：当前段通常是 rt.idx-1（防止 idx=0 时为 -1）
-              return segIndex === Math.max(rt.idx - 1, 0);
-            })();
             arrowI.classList.add('segment-arrow');
             if (isCurrSeg) arrowI.classList.add('segment-arrow-current');
             else arrowI.classList.add('segment-arrow-default');
           }
-          arrow.style.transform = `rotate(${angle}deg)`;
+          arrow.style.transform = `rotate(${angle0}deg)`;
           arrow.style.fontSize = C3_TUNING.arrowFontSize + 'px';
-          arrow.style.color = '#fff';
           wrapper.appendChild(arrow);
-          box.appendChild(wrapper);
+          trackContainer.appendChild(wrapper);
+
+          const doAnim = canSlideFull
+            && pathDistFrom != null && pathDistTo != null
+            && Number.isFinite(pathDistFrom) && Number.isFinite(pathDistTo)
+            && Math.abs(pathDistTo - pathDistFrom) > 1;
+
+          if (doAnim && typeof wrapper.animate === 'function') {
+            const steps = 20;
+            const offY = C3_TUNING.arrowOffsetY;
+            const kfLeftTop = [];
+            const kfRot = [];
+            const tc0 = Math.min(actualPerimeter, Math.max(0, pathDistFrom));
+            let prevRot = tangentAngleAt(tc0);
+            for (let s = 0; s <= steps; s++) {
+              const u = s / steps;
+              const d = pathDistFrom + (pathDistTo - pathDistFrom) * u;
+              const tc = Math.min(actualPerimeter, Math.max(0, d));
+              const p = measurePath.getPointAtLength(tc);
+              kfLeftTop.push({
+                left: `${p.x}px`,
+                top: `${p.y + offY}px`,
+                offset: u
+              });
+              const raw = tangentAngleAt(tc);
+              const rot = s === 0 ? prevRot : unwrapAngleDeg(prevRot, raw);
+              prevRot = rot;
+              kfRot.push({ transform: `rotate(${rot}deg)`, offset: u });
+            }
+            const travel = Math.abs(pathDistTo - pathDistFrom);
+            const durationMs = 1000 * Math.min(6, Math.max(2.4, travel / 85));
+            const opts = { duration: durationMs, iterations: Infinity, easing: 'linear' };
+            try {
+              wrapper.animate(kfLeftTop, opts);
+              arrow.animate(kfRot, opts);
+            } catch (e) {
+              // ignore
+            }
+          }
+        };
+
+        const validDists = arrowDists.filter((d) => d >= segStart && d <= segEnd);
+        if (validDists.length === 0) {
+          appendArrowAtDist(Math.min(segEnd, Math.max(segStart, midDist)), null, null);
+          return;
+        }
+        validDists.forEach((aDist, k) => {
+          let dFrom = null;
+          let dTo = null;
+          if (canSlideFull) {
+            if (validDists.length >= 2) {
+              dFrom = centerStart + (k === 0 ? -halfGap : halfGap);
+              dTo = centerEnd + (k === 0 ? -halfGap : halfGap);
+            } else {
+              dFrom = centerStart;
+              dTo = centerEnd;
+            }
+          }
+          appendArrowAtDist(aDist, dFrom, dTo);
         });
       };
-      // 箭头：整条“在服务范围内”的线路都显示白色箭头（含已过站/未到站）；
-      // 仅“当前站→下一站”那一段做闪烁强调（与显示器1一致）
+      // 箭头：在服务范围内均显示；当前站→下一站段纯白强调（与直线模式一致，不红闪）
       for (let i = 0; i < sts.length - 1; i++) {
         const isInServiceRange = (i >= rangeStart && i < rangeEnd);
         if (!isInServiceRange) continue;
@@ -6881,7 +7011,39 @@ export function initDisplayWindow(rootElement) {
         return (i + 1) * spacing;
       }
     };
-    
+
+    /** 相邻两站中心距（与 getArrowPosition 同一套坐标），用于站间平移幅度 */
+    const getSegmentSlideWidth = (segIdx) => {
+      if (total <= MAX_POSITIONS) {
+        const boxWidth = 1900;
+        let currentNodeWidth = 70;
+        if (showAllStations && total > MAX_POSITIONS) {
+          const baseStationCount = 21;
+          const scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / total));
+          currentNodeWidth = Math.max(36, Math.round(70 * scaleRatio));
+        }
+        const stationStep = currentNodeWidth;
+        const effectiveStationCount = total < BASE_STATION_COUNT ? BASE_STATION_COUNT : total;
+        const groupWidth = effectiveStationCount * stationStep;
+        const groupLeft = Math.max(0, (boxWidth - groupWidth) / 2);
+        if (positionMap) {
+          const realIdx1 = rangeStart + segIdx;
+          const realIdx2 = rangeStart + segIdx + 1;
+          const offset1 = positionMap.get(realIdx1);
+          const offset2 = positionMap.get(realIdx2);
+          if (offset1 !== undefined && offset2 !== undefined) {
+            const center1 = groupLeft + offset1;
+            const center2 = groupLeft + offset2;
+            return Math.abs(center2 - center1);
+          }
+        }
+        const center1 = groupLeft + (segIdx * stationStep) + stationStep / 2;
+        const center2 = groupLeft + ((segIdx + 1) * stationStep) + stationStep / 2;
+        return Math.abs(center2 - center1);
+      }
+      return Math.abs(spacing);
+    };
+
     // 计算当前站点位置（用于滚动）：使用简单的比例计算（与之前版本保持一致）
     const getCurrentPosition = (idx) => {
       if (total <= MAX_POSITIONS) {
@@ -6906,30 +7068,56 @@ export function initDisplayWindow(rootElement) {
     for (let i = 0; i < sts.length - 1; i++) {
       if (i < rangeStart || i >= rangeEnd) continue;
       const arrowCenter = getArrowPosition(i);
+      const segW = getSegmentSlideWidth(i);
+      const mid = arrowCenter;
+      const cLo = mid - segW / 2;
+      const cHi = mid + segW / 2;
+      /* 距两端圆点留白，避免箭头压到站点中心 */
+      const segEndPad = 12;
+      const forwardAlongLine = (m.dirType === 'up' || m.dirType === 'outer');
+      let pairStart;
+      let pairEnd;
+      if (forwardAlongLine) {
+        pairStart = cLo + currentArrowSpacing / 2 + segEndPad;
+        pairEnd = cHi - currentArrowSpacing / 2 - segEndPad;
+      } else {
+        pairStart = cHi - currentArrowSpacing / 2 - segEndPad;
+        pairEnd = cLo + currentArrowSpacing / 2 + segEndPad;
+      }
+      const fullTravel = pairEnd - pairStart;
+      const canSlideFullSegment = fullTravel > 4;
+      const slideDurationSec = Math.min(6, Math.max(2.4, segW / 85));
+      const isCurrSeg = (() => {
+        if (rt.state === 1) {
+          if (m.dirType === 'up' || m.dirType === 'outer') {
+            return i === rt.idx;
+          }
+          return i === rt.idx - 1;
+        }
+        return false;
+      })();
       // 改为两个箭头，以节点中间为中心对称分布
       // k = 0: 左箭头 (arrowCenter - spacing/2)
       // k = 1: 右箭头 (arrowCenter + spacing/2)
       for (let k = 0; k <= 1; k++) {
         const wrapper = document.createElement('div');
+        wrapper.classList.add('segment-arrow-wrap');
+        if (m.dirType === 'down' || m.dirType === 'inner') wrapper.classList.add('segment-arrow-dir-rev');
         wrapper.style.position = 'absolute';
         // 计算箭头位置：第一个向左偏移 spacing/2，第二个向右偏移 spacing/2
         const offset = (k === 0) ? -currentArrowSpacing / 2 : currentArrowSpacing / 2;
-        wrapper.style.left = (arrowCenter + offset) + 'px';
-        wrapper.style.top = '50%';
-        wrapper.style.zIndex = '10';
-        let rot = '';
-        if (m.dirType === 'down' || m.dirType === 'inner') rot = 'rotate(180deg)';
-        wrapper.style.transform = `translate(-50%, -50%) ${rot}`;
+        const baseLeft = arrowCenter + offset;
+        if (isCurrSeg && canSlideFullSegment) {
+          wrapper.style.setProperty('--arrow-slide-start', (pairStart + offset) + 'px');
+          wrapper.style.setProperty('--arrow-slide-end', (pairEnd + offset) + 'px');
+          wrapper.style.setProperty('--arrow-slide-duration', slideDurationSec.toFixed(2) + 's');
+          wrapper.classList.add('segment-arrow-pair-slide');
+        } else {
+          wrapper.style.left = baseLeft + 'px';
+        }
+        /* 线路条 z-index:0；箭头低于站点节点(z-index:5)，圆点压在箭头之上；垂直锚在圆点底缘见 .segment-arrow-wrap */
+        wrapper.style.zIndex = '3';
         const arrow = document.createElement('div');
-        const isCurrSeg = (() => {
-          if (rt.state === 1) {
-            if (m.dirType === 'up' || m.dirType === 'outer') {
-              return i === rt.idx;
-            }
-            return i === rt.idx - 1;
-          }
-          return false;
-        })();
         arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
         const ai = arrow.firstElementChild;
         if (ai) {
@@ -7475,36 +7663,111 @@ export function initDisplayWindow(rootElement) {
         (minIdx > maxIdx && (i >= minIdx || i < maxIdx))
       );
       if (isInServiceRange) {
-        // 环线箭头：以线段中点为中心，两个箭头之间的间距与线性图 currentArrowSpacing 使用同一套缩放公式
+        // 环线箭头：间距与线性图同款缩放；当前站→下一站沿 path 采样关键帧周期滑动（与 C 型、直线语义一致）
         const baseStationCount = 21;
         const baseSpacingPx = 20;
         const scaleRatio = Math.max(0.4, Math.min(1.0, baseStationCount / sts.length));
         const desiredGapPx = Math.max(8, Math.round(baseSpacingPx * scaleRatio));
         const maxGapPx = segLen * 0.6;
         const gapPx = Math.min(desiredGapPx, maxGapPx);
-        const centerDist = d1 + segLen / 2;
-        const offsets = [-gapPx / 2, gapPx / 2];
-        offsets.forEach((off) => {
-          let aDist = (centerDist + off + perimeter) % perimeter;
-          const ptArr = measurePath.getPointAtLength(aDist);
-          const pA = measurePath.getPointAtLength((aDist - 2 + perimeter) % perimeter);
-          const pB = measurePath.getPointAtLength((aDist + 2) % perimeter);
-          let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
-          if (m.dirType === 'inner') angle += 180;
+        const halfGap = gapPx / 2;
+        const centerU = d1 + segLen / 2;
+        const forwardAlongSeg = (prevIdx === i && targetIdx === nextI);
+        const padPath = Math.min(segLen * 0.12, Math.max(2, halfGap * 0.5));
+        let centerStart;
+        let centerEnd;
+        if (forwardAlongSeg) {
+          centerStart = d1 + halfGap + padPath;
+          centerEnd = d2 - halfGap - padPath;
+        } else {
+          centerStart = d2 - halfGap - padPath;
+          centerEnd = d1 + halfGap + padPath;
+        }
+        const canSlide = isCurrentSeg && Math.abs(centerEnd - centerStart) > 4;
+        const normDist = (x) => ((x % perimeter) + perimeter) % perimeter;
+
+        const tangentAngleAtRing = (distU) => {
+          const t = normDist(distU);
+          const pA = measurePath.getPointAtLength((t - 2 + perimeter) % perimeter);
+          const pB = measurePath.getPointAtLength((t + 2) % perimeter);
+          let ang = Math.atan2(pB.y - pA.y, pB.x - pA.x) * 180 / Math.PI;
+          if (m.dirType === 'inner') ang += 180;
+          return ang;
+        };
+        /** 相邻关键帧与 atan2 的 ±180° 不连续点对齐，避免 rotate 插值扫一整圈（左半环更易触发） */
+        const unwrapAngleDeg = (prevDeg, rawDeg) => {
+          let a = rawDeg;
+          while (a - prevDeg > 180) a -= 360;
+          while (a - prevDeg < -180) a += 360;
+          return a;
+        };
+
+        const appendRingArrow = (aDistMod, pathDistFrom, pathDistTo) => {
+          const useAnim = canSlide && pathDistFrom != null && pathDistTo != null
+            && Number.isFinite(pathDistFrom) && Number.isFinite(pathDistTo)
+            && Math.abs(pathDistTo - pathDistFrom) > 1;
+          const t0 = useAnim ? normDist(pathDistFrom) : normDist(aDistMod);
+          const ptArr = measurePath.getPointAtLength(t0);
+          const angle0 = tangentAngleAtRing(t0);
+
+          const wrap = document.createElement('div');
+          wrap.style.position = 'absolute';
+          wrap.style.left = `${ptArr.x}px`;
+          wrap.style.top = `${ptArr.y}px`;
+          wrap.style.transform = 'translate(-50%, -50%)';
+          wrap.style.zIndex = '3';
+          wrap.style.pointerEvents = 'none';
+
           const arrow = document.createElement('div');
-          arrow.innerHTML = `<i class="fas fa-chevron-right"></i>`;
+          arrow.innerHTML = '<i class="fas fa-chevron-right"></i>';
+          arrow.style.lineHeight = '1';
           const arrowI = arrow.firstElementChild;
           if (arrowI) {
-            arrowI.classList.add('ring-arrow');
-            if (isCurrentSeg) arrowI.classList.add('ring-arrow-current'); else arrowI.classList.add('ring-arrow-default');
+            arrowI.classList.add('segment-arrow');
+            if (isCurrentSeg) arrowI.classList.add('segment-arrow-current');
+            else arrowI.classList.add('segment-arrow-default');
           }
-          arrow.style.position = 'absolute';
-          arrow.style.left = `${ptArr.x}px`;
-          arrow.style.top = `${ptArr.y}px`;
-          arrow.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+          arrow.style.transform = `rotate(${angle0}deg)`;
           arrow.style.fontSize = '20px';
-          arrow.style.zIndex = '6';
-          wrapper.appendChild(arrow);
+          wrap.appendChild(arrow);
+          wrapper.appendChild(wrap);
+
+          if (useAnim && typeof wrap.animate === 'function') {
+            const steps = 20;
+            const kfPos = [];
+            const kfRot = [];
+            let prevRot = angle0;
+            for (let s = 0; s <= steps; s++) {
+              const u = s / steps;
+              const d = pathDistFrom + (pathDistTo - pathDistFrom) * u;
+              const tc = normDist(d);
+              const p = measurePath.getPointAtLength(tc);
+              kfPos.push({ left: `${p.x}px`, top: `${p.y}px`, offset: u });
+              const raw = tangentAngleAtRing(d);
+              const rot = s === 0 ? angle0 : unwrapAngleDeg(prevRot, raw);
+              prevRot = rot;
+              kfRot.push({ transform: `rotate(${rot}deg)`, offset: u });
+            }
+            const travel = Math.abs(pathDistTo - pathDistFrom);
+            const durationMs = 1000 * Math.min(6, Math.max(2.4, travel / 85));
+            const opts = { duration: durationMs, iterations: Infinity, easing: 'linear' };
+            try {
+              wrap.animate(kfPos, opts);
+              arrow.animate(kfRot, opts);
+            } catch (e) {}
+          }
+        };
+
+        const offsets = [-halfGap, halfGap];
+        offsets.forEach((off, k) => {
+          const aDistMod = (centerU + off + perimeter) % perimeter;
+          let dFrom = null;
+          let dTo = null;
+          if (canSlide) {
+            dFrom = centerStart + (k === 0 ? -halfGap : halfGap);
+            dTo = centerEnd + (k === 0 ? -halfGap : halfGap);
+          }
+          appendRingArrow(aDistMod, dFrom, dTo);
         });
       }
     });

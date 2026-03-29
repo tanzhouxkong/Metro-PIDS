@@ -58,6 +58,8 @@ export function useSettings() {
             const cur = settings.display.displays[id];
             if (!def || !cur) return;
             cur.id = id;
+            if (def.nameKey) cur.nameKey = def.nameKey;
+            if (def.descriptionKey) cur.descriptionKey = def.descriptionKey;
             cur.name = def.name;
             cur.source = def.source;
             if (!cur.url) cur.url = def.url;
@@ -107,24 +109,28 @@ export function useSettings() {
                             'display-1': {
                                 id: 'display-1',
                                 name: '主显示器',
+                                nameKey: 'displayBuiltin.display1.name',
                                 source: oldDisplay.source || 'builtin',
                                 url: oldDisplay.url || '',
                                 width: oldDisplay.width || 1900,
                                 height: oldDisplay.height || 600,
                                 enabled: true,
                                 isSystem: true,
-                                description: '主要显示端，用于主要信息展示'
+                                description: '主要显示端，用于主要信息展示',
+                                descriptionKey: 'displayBuiltin.display1.description'
                             },
                             'display-2': {
                                 id: 'display-2',
                                 name: '副显示器',
+                                nameKey: 'displayBuiltin.display2.name',
                                 source: 'builtin',
                                 url: '',
-                                width: 1500,
-                                height: 400,
+                                width: 1600,
+                                height: 620,
                                 enabled: true,
                                 isSystem: true,
-                                description: '辅助显示端，用于补充信息展示'
+                                description: '辅助显示端，用于补充信息展示',
+                                descriptionKey: 'displayBuiltin.display2.description'
                             }
                         }
                     };

@@ -390,6 +390,18 @@ export function useStationAudio(state) {
       if (forArrive === true && hasDepartFlag && !hasArriveFlag) return false
       if (forArrive === false && hasArriveFlag && !hasDepartFlag) return false
 
+      const lineStartIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
+      const lineTermIdx =
+        typeof meta?.termIdx === 'number' && meta.termIdx >= 0
+          ? meta.termIdx
+          : (Array.isArray(stations) && stations.length ? stations.length - 1 : -1)
+      if (item.modes && item.modes.originStation === true) {
+        if (typeof currentIdx !== 'number' || currentIdx !== lineStartIdx) return false
+      }
+      if (item.modes && item.modes.terminalStation === true) {
+        if (typeof currentIdx !== 'number' || lineTermIdx < 0 || currentIdx !== lineTermIdx) return false
+      }
+
       if (serviceMode === 'normal' && !isShortTurn) {
         if (item.disabledInNormal) return false
         const hasSpecial = item.modes && (item.modes.shortTurn || item.modes.express || item.modes.direct)

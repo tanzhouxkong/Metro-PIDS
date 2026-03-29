@@ -71,7 +71,70 @@
     "display3Formation7": "7량 편성",
     "display3Formation8": "8량 편성",
     "display3Formation4x4": "4+4량 편성",
-    "display3ActiveCarOption": "{n}번 차량"
+    "display3ActiveCarOption": "{n}번 차량",
+    "configUpdatedTitle": "디스플레이 단말 업데이트됨",
+    "configUpdatedBody": "디스플레이 단말 \"{name}\"이(가) 업데이트되었습니다",
+    "notifyDisabledTitle": "디스플레이 단말 비활성화됨",
+    "notifyDisabledDesc": "디스플레이 단말 \"{name}\"이(가) 비활성화되어 전환할 수 없습니다",
+    "notifySwitchedTitle": "디스플레이 단말 전환됨",
+    "notifySwitchedDesc": "현재 활성 디스플레이 단말: {name}",
+    "notifyReorderTitle": "디스플레이 단말 순서 업데이트됨",
+    "notifyReorderDesc": "\"{name}\"이(가) 새 위치로 이동했습니다",
+    "notifyStatusTitle": "디스플레이 단말 상태 업데이트됨",
+    "notifyStatusDesc": "{name} {status}",
+    "statusEnabled": "활성화됨",
+    "statusDisabled": "비활성화됨",
+    "unnamedDisplay": "이름 없는 디스플레이 단말"
+  },
+  "displayBuiltin": {
+    "display1": {
+      "name": "주 디스플레이",
+      "description": "주요 승객 정보를 표시하는 기본 디스플레이 단말입니다."
+    },
+    "display2": {
+      "name": "보조 디스플레이",
+      "description": "보조 정보를 표시하는 디스플레이 단말입니다."
+    },
+    "display3": {
+      "name": "곡면 LCD 레이아웃",
+      "description": "일반적인 곡면 LCD 노선도 표시용 디스플레이 단말입니다."
+    }
+  },
+  "displayConfigMeta": {
+    "fileDescription": "Metro PIDS 다중 디스플레이 설정 파일입니다. 앱은 displays 및 displayDefaults 섹션만 읽으며, 나머지는 유지보수·도구용입니다.",
+    "features": {
+      "systemProtection": "시스템 디스플레이 단말이 실수로 삭제·변경되지 않도록 보호합니다.",
+      "broadcastChannel": "BroadcastChannel API로 창 간 메시지를 주고받습니다.",
+      "autoSync": "모든 디스플레이 단말로 데이터를 자동 동기화합니다.",
+      "displayIdentification": "디스플레이 창에 식별 정보 및 시스템 배지를 표시합니다."
+    },
+    "messageTypes": {
+      "SYNC": "노선 데이터 및 실시간 상태 동기화",
+      "DISPLAY_READY": "디스플레이 단말 준비 완료 알림",
+      "CMD_UI": "UI 제어 명령(창 닫기 등)",
+      "CMD_KEY": "원격 키 명령",
+      "REQ": "디스플레이 단말에 현재 상태 요청",
+      "REC_START": "녹화 시작",
+      "REC_STOP": "녹화 중지"
+    },
+    "troubleshooting": {
+      "popupBlocked": {
+        "problem": "브라우저가 팝업을 차단했습니다",
+        "solution": "브라우저 설정에서 이 사이트의 팝업을 허용하세요."
+      },
+      "broadcastChannelNotSupported": {
+        "problem": "BroadcastChannel API를 지원하지 않습니다",
+        "solution": "최신 브라우저 또는 Electron 환경을 사용하세요."
+      },
+      "displayNotSync": {
+        "problem": "디스플레이 단말 데이터가 동기화되지 않습니다",
+        "solution": "BroadcastChannel 연결과 메시지 형식을 확인하세요."
+      },
+      "systemDisplayProtection": {
+        "problem": "시스템 디스플레이 단말을 편집하거나 삭제할 수 없습니다",
+        "solution": "핵심 기능 보호를 위한 정상 동작입니다."
+      }
+    }
   },
   "api": {
     "title": "API 서버",
@@ -513,6 +576,8 @@
     "audioApplyToggleOff": "적용 비활성화",
     "audioModeArrive": "도착 시 사용",
     "audioModeDepart": "출발 시 사용",
+    "audioModeOriginStation": "기점역에서만 사용",
+    "audioModeTerminalStation": "종점역에서만 사용",
     "audioModeShortTurn": "단구간 운행 시 사용",
     "audioModeExpress": "급행 시 사용",
     "audioModeDirect": "직통 시 사용",

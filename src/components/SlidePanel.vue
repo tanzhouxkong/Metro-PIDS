@@ -267,7 +267,7 @@
                     <!-- 显示端信息 -->
                     <div style="flex:1; min-width:0;">
                         <div class="display-card-title" style="font-size:14px; font-weight:bold; color:var(--text); margin-bottom:4px;">
-                            {{ display.name }}
+                            {{ display.nameKey && $te(display.nameKey) ? $t(display.nameKey) : (display.name || id) }}
                             <span v-if="id === displayState.currentDisplayId" class="display-card-badge" style="color:#FF9F43; font-size:12px; margin-left:8px;">
                                 <i class="fas fa-star"></i> 当前
                             </span>
@@ -278,8 +278,8 @@
                                 <i class="fas fa-pause"></i> 已禁用
                             </span>
                         </div>
-                        <div v-if="display.description" class="display-card-muted" style="font-size:11px; color:var(--muted); margin-top:2px;">
-                            {{ display.description }}
+                        <div v-if="(display.descriptionKey && $te(display.descriptionKey)) || display.description" class="display-card-muted" style="font-size:11px; color:var(--muted); margin-top:2px;">
+                            {{ display.descriptionKey && $te(display.descriptionKey) ? $t(display.descriptionKey) : display.description }}
                         </div>
                     </div>
 

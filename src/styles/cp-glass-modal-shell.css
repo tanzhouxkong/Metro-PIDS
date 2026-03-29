@@ -1,6 +1,6 @@
 /**
  * 毛玻璃弹窗外壳：取色器（cp-dialog--compact）与站点编辑（cp-dialog--editor）共用。
- * 与 v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }" 及 backdrop-filter 配合使用。
+ * 与 v-glassmorphism（src/directives/glassmorphism.js，beforeMount 同步样式）及 backdrop-filter 配合。
  */
 
 .cp-fade-enter-active,

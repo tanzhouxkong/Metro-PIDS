@@ -140,7 +140,7 @@ export default {
     const isGlassBlurEnabled = () => settings.blurEnabled !== false
     const shortTurnTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(18px) saturate(170%)' : 'none')
 
-    /** 下拉菜单面板：vue3-glassmorphism（与 SlidePanel / 弹窗一致） */
+    /** 下拉菜单面板：v-glassmorphism（与 SlidePanel / 弹窗一致） */
     const glassDropdownDirective = computed(() => {
         const dark = isDarkThemeActive()
         if (!isGlassBlurEnabled()) {
@@ -625,6 +625,14 @@ export default {
         const meta = pidsState.appData.meta || {};
         if (meta.mode === mode) return;
         meta.mode = mode;
+        saveCfg();
+    }
+
+    /** 环线：外圈 / 内圈；单线：上行 / 下行 — 独立按钮 */
+    function setDirType(dir) {
+        const meta = pidsState.appData.meta || {};
+        if (meta.dirType === dir) return;
+        meta.dirType = dir;
         saveCfg();
     }
 
@@ -2745,6 +2753,7 @@ export default {
         saveCfgAndPersistSilent,
         changeServiceMode,
         setLineMode,
+        setDirType,
         hasElectronAPI,
         pickColor,
         showColorPicker,

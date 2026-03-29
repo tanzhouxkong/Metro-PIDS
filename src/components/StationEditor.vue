@@ -73,13 +73,19 @@ export default {
       const e = Array.isArray(d.end) ? d.end : []
       return [...w, ...dep, ...arr, ...e].map((i) => ({ ...i }))
     }
+    const normalizeTurnbackForForm = (raw) => {
+      if (raw === 'pre') return 'pre'
+      if (raw === 'post') return 'post'
+      if (raw === true) return 'pre'
+      return 'post'
+    }
     const form = reactive({
       name: '',
       en: '',
       skip: false,
       door: 'left',
       dock: 'both',
-      turnback: 'none',
+      turnback: 'post',
       xfer: [],
       expressStop: false,
       stationAudio: defaultStationAudio()
@@ -95,7 +101,7 @@ export default {
         form.skip = newVal.skip || false
         form.door = newVal.door || 'left'
         form.dock = newVal.dock || 'both'
-        form.turnback = newVal.turnback || 'none'
+        form.turnback = normalizeTurnbackForForm(newVal.turnback)
         form.expressStop = newVal.expressStop !== undefined ? !!newVal.expressStop : false
         form.xfer = newVal.xfer
           ? JSON.parse(JSON.stringify(newVal.xfer.map((x) => ({ ...x, exitTransfer: x.exitTransfer || false }))))
@@ -183,6 +189,21 @@ export default {
       } catch (e) {
         return false
       }
+    })
+
+    /** 与主右键菜单一致：v-glassmorphism（含高斯开关、暗色底） */
+    const menuGlassDirective = computed(() => {
+      let blurOn = true
+      try {
+        const raw = localStorage.getItem('pids_settings_v1')
+        if (raw) {
+          const s = JSON.parse(raw)
+          if (s && s.blurEnabled === false) blurOn = false
+        }
+      } catch (e) {}
+      const dark = isDarkTheme.value
+      if (!blurOn) return { blur: 0, opacity: 1, color: dark ? '#1c1c20' : '#ffffff' }
+      return { blur: 12, opacity: 0.2, color: dark ? '#1c1c20' : '#ffffff' }
     })
 
     const sectionMode = ref('xfer') // 'xfer' | 'audio' | 'commonAudio'
@@ -2530,6 +2551,12 @@ export default {
       } else if (key === 'depart') {
         item.modes.depart = !item.modes.depart
         if (item.modes.depart) item.modes.arrive = false
+      } else if (key === 'originStation') {
+        item.modes.originStation = !item.modes.originStation
+        if (item.modes.originStation) item.modes.terminalStation = false
+      } else if (key === 'terminalStation') {
+        item.modes.terminalStation = !item.modes.terminalStation
+        if (item.modes.terminalStation) item.modes.originStation = false
       } else {
         item.modes[key] = !item.modes[key]
       }
@@ -2887,6 +2914,7 @@ export default {
     return {
       form,
       isDarkTheme,
+      menuGlassDirective,
       close,
       armSaveClick,
       onOverlayMouseDown,
@@ -3104,22 +3132,22 @@ export default {
                 </div>
               </div>
 
-              <div class="se-grid2 se-mt">
+              <div class="se-grid3 se-mt">
                 <div class="se-field">
                   <div class="se-label">{{ t('stationEditor.turnbackLabel') }}</div>
                   <div class="se-seg">
-                    <button class="se-seg-btn" :class="{ on: form.turnback === 'none' }" @click="form.turnback = 'none'">{{ t('stationEditor.turnbackNone') }}</button>
                     <button class="se-seg-btn" :class="{ on: form.turnback === 'pre' }" @click="form.turnback = 'pre'">{{ t('stationEditor.turnbackPre') }}</button>
                     <button class="se-seg-btn" :class="{ on: form.turnback === 'post' }" @click="form.turnback = 'post'">{{ t('stationEditor.turnbackPost') }}</button>
                   </div>
                 </div>
-                <div class="se-field se-field-narrow">
+                <div class="se-field">
                   <div class="se-label">{{ t('stationEditor.expressLabel') }}</div>
                   <div class="se-seg">
                     <button class="se-seg-btn" :class="{ on: form.expressStop }" @click="form.expressStop = true">{{ t('stationEditor.expressStop') }}</button>
                     <button class="se-seg-btn" :class="{ on: !form.expressStop }" @click="form.expressStop = false">{{ t('stationEditor.expressSkip') }}</button>
                   </div>
                 </div>
+                <div class="se-field" aria-hidden="true"></div>
               </div>
 
             <div class="se-section" @contextmenu.prevent="openSmartSectionMenu($event)">
@@ -3232,7 +3260,7 @@ export default {
                           v-for="(item, idx) in getAudioList(dir)"
                           :key="idx"
                           class="se-xfer-row se-audio-row"
-                          :class="{ 'mode-disabled': item.disabledInNormal, 'mode-shortTurn': item.modes?.shortTurn, 'mode-express': item.modes?.express, 'mode-direct': item.modes?.direct, 'se-audio-row-selected': isAudioRowSelected(dir, idx) }"
+                          :class="{ 'mode-disabled': item.disabledInNormal, 'mode-shortTurn': item.modes?.shortTurn, 'mode-express': item.modes?.express, 'mode-direct': item.modes?.direct, 'mode-origin': item.modes?.originStation, 'mode-terminal': item.modes?.terminalStation, 'se-audio-row-selected': isAudioRowSelected(dir, idx) }"
                           draggable="true"
                           @click="onAudioRowClick($event, dir, idx)"
                           @dragstart="(ev) => { ev.dataTransfer.setData('audio/dir', dir); ev.dataTransfer.setData('audio/idx', String(idx)) }"
@@ -3252,7 +3280,9 @@ export default {
                           </span>
                           <div class="se-xfer-name-wrap">
                             <span class="se-xfer-name">{{ getAudioItemDisplayName(item) }}</span>
-                            <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.disabledInNormal || item.role === 'terminal' || item.role === 'end'" class="se-xfer-badges">
+                            <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.modes?.originStation || item.modes?.terminalStation || item.disabledInNormal || item.role === 'terminal' || item.role === 'end'" class="se-xfer-badges">
+                              <span v-if="item.modes?.originStation" class="se-xfer-badge se-audio-badge-origin">{{ t('stationEditor.audioModeOriginStation') }}</span>
+                              <span v-if="item.modes?.terminalStation" class="se-xfer-badge se-audio-badge-terminalStation">{{ t('stationEditor.audioModeTerminalStation') }}</span>
                               <span v-if="item.modes?.shortTurn" class="se-xfer-badge se-audio-badge-shortTurn">{{ t('stationEditor.audioModeShortTurn') }}</span>
                               <span v-if="item.modes?.express" class="se-xfer-badge se-audio-badge-express">{{ t('stationEditor.audioModeExpress') }}</span>
                               <span v-if="item.modes?.direct" class="se-xfer-badge se-audio-badge-direct">{{ t('stationEditor.audioModeDirect') }}</span>
@@ -3316,7 +3346,9 @@ export default {
                             <span class="se-audio-num">{{ getCommonApplyLabel(dir, idx) || '—' }}</span>
                             <div class="se-xfer-name-wrap">
                               <span class="se-xfer-name">{{ getAudioItemDisplayName(item) }}</span>
-                              <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.disabledInNormal || item.role === 'terminal' || item.role === 'end'" class="se-xfer-badges">
+                              <div v-if="item.modes?.shortTurn || item.modes?.express || item.modes?.direct || item.modes?.originStation || item.modes?.terminalStation || item.disabledInNormal || item.role === 'terminal' || item.role === 'end'" class="se-xfer-badges">
+                                <span v-if="item.modes?.originStation" class="se-xfer-badge se-audio-badge-origin">{{ t('stationEditor.audioModeOriginStation') }}</span>
+                                <span v-if="item.modes?.terminalStation" class="se-xfer-badge se-audio-badge-terminalStation">{{ t('stationEditor.audioModeTerminalStation') }}</span>
                                 <span v-if="item.modes?.shortTurn" class="se-xfer-badge se-audio-badge-shortTurn">{{ t('stationEditor.audioModeShortTurn') }}</span>
                                 <span v-if="item.modes?.express" class="se-xfer-badge se-audio-badge-express">{{ t('stationEditor.audioModeExpress') }}</span>
                                 <span v-if="item.modes?.direct" class="se-xfer-badge se-audio-badge-direct">{{ t('stationEditor.audioModeDirect') }}</span>
@@ -3347,7 +3379,7 @@ export default {
               v-if="menuVisible"
               class="station-context-menu station-context-menu--glass-shell"
               data-xfer-context-menu
-              v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+              v-glassmorphism="menuGlassDirective"
               :style="{ left: menuX + 'px', top: menuY + 'px', position: 'fixed', zIndex: 1000001, pointerEvents: 'auto' }"
               @click.stop
               @contextmenu.prevent
@@ -3453,6 +3485,7 @@ export default {
                   <div
                     v-if="menuContext.audioScope === 'station' && importAudioHover"
                     class="apply-all-submenu glass-submenu"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: importAudioSubmenuPos.x + 'px', top: importAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setImportAudioHover()"
                     @mouseleave="clearImportAudioHover"
@@ -3480,6 +3513,7 @@ export default {
                   <div
                     v-if="menuContext.audioScope === 'station' && dynamicAudioHover"
                     class="apply-all-submenu glass-submenu"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: dynamicAudioSubmenuPos.x + 'px', top: dynamicAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setDynamicAudioHover()"
                     @mouseleave="clearDynamicAudioHover"
@@ -3553,6 +3587,7 @@ export default {
                   <div
                     v-if="menuContext?.type === 'audioRow' && importAudioHover"
                     class="apply-all-submenu glass-submenu"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: importAudioSubmenuPos.x + 'px', top: importAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setImportAudioHover()"
                     @mouseleave="clearImportAudioHover"
@@ -3577,6 +3612,7 @@ export default {
                   <div
                     v-if="dynamicAudioHover"
                     class="apply-all-submenu glass-submenu"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: dynamicAudioSubmenuPos.x + 'px', top: dynamicAudioSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setDynamicAudioHover()"
                     @mouseleave="clearDynamicAudioHover"
@@ -3610,6 +3646,7 @@ export default {
                   <div
                     class="apply-all-submenu glass-submenu"
                     v-if="applyAllHoverDir === menuContext.dir"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: applyAllSubmenuPos.x + 'px', top: applyAllSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setApplyAllHover(menuContext.dir)"
                     @mouseleave="clearApplyAllHover"
@@ -3647,10 +3684,17 @@ export default {
                   <div
                     class="apply-all-submenu glass-submenu"
                     v-if="modeHoverKey === 'mode-sub-station'"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: modeStationSubmenuPos.x + 'px', top: modeStationSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setModeHover('mode-sub-station')"
                     @mouseleave="clearModeHover"
                   >
+                    <div class="station-context-menu-item" :class="{ 'xfer-on': anySelectedHasMode(menuContext.dir, 'originStation') }" @click.stop="runAndClose(() => toggleAudioItemModeForSelected(menuContext.dir, 'originStation'))">
+                      <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioModeOriginStation') }}
+                    </div>
+                    <div class="station-context-menu-item" :class="{ 'xfer-on': anySelectedHasMode(menuContext.dir, 'terminalStation') }" @click.stop="runAndClose(() => toggleAudioItemModeForSelected(menuContext.dir, 'terminalStation'))">
+                      <i class="fas fa-map-marker-alt"></i> {{ t('stationEditor.audioModeTerminalStation') }}
+                    </div>
                     <div class="station-context-menu-item" :class="{ 'xfer-on': anySelectedHasMode(menuContext.dir, 'shortTurn') }" @click.stop="runAndClose(() => toggleAudioItemModeForSelected(menuContext.dir, 'shortTurn'))">
                       <i class="fas fa-route"></i> {{ t('stationEditor.audioModeShortTurn') }}
                     </div>
@@ -3714,10 +3758,17 @@ export default {
                   <div
                     class="apply-all-submenu glass-submenu"
                     v-if="modeHoverKey === 'mode-sub-common'"
+                    v-glassmorphism="menuGlassDirective"
                     :style="{ position: 'fixed', left: modeCommonSubmenuPos.x + 'px', top: modeCommonSubmenuPos.y + 'px', zIndex: 1000001 }"
                     @mouseenter="setModeHover('mode-sub-common')"
                     @mouseleave="clearModeHover"
                   >
+                    <div class="station-context-menu-item" :class="{ 'xfer-on': getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.modes?.originStation }" @click.stop="runAndClose(() => toggleAudioItemMode(menuContext.dir, menuContext.idx, 'originStation', 'common'))">
+                      <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioModeOriginStation') }}
+                    </div>
+                    <div class="station-context-menu-item" :class="{ 'xfer-on': getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.modes?.terminalStation }" @click.stop="runAndClose(() => toggleAudioItemMode(menuContext.dir, menuContext.idx, 'terminalStation', 'common'))">
+                      <i class="fas fa-map-marker-alt"></i> {{ t('stationEditor.audioModeTerminalStation') }}
+                    </div>
                     <div class="station-context-menu-item" :class="{ 'xfer-on': getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.modes?.shortTurn }" @click.stop="runAndClose(() => toggleAudioItemMode(menuContext.dir, menuContext.idx, 'shortTurn', 'common'))">
                       <i class="fas fa-route"></i> {{ t('stationEditor.audioModeShortTurn') }}
                     </div>
@@ -3892,9 +3943,6 @@ export default {
 }
 .se-field {
   min-width: 0;
-}
-.se-field-narrow {
-  max-width: 260px;
 }
 .se-image-field {
   display: grid;
@@ -4266,6 +4314,8 @@ export default {
 }
 .se-audio-badge-arrive { background: var(--se-ant-primary-bg); color: var(--se-ant-primary); }
 .se-audio-badge-depart { background: var(--se-ant-success-bg); color: var(--se-ant-success-text); }
+.se-audio-badge-origin { background: var(--se-ant-purple-bg); color: var(--se-ant-purple); }
+.se-audio-badge-terminalStation { background: rgba(24, 144, 255, 0.12); color: #096dd9; }
 .se-audio-badge-shortTurn { background: var(--se-ant-primary-bg); color: var(--se-ant-primary); }
 .se-audio-badge-express { background: var(--se-ant-warning-bg); color: var(--se-ant-warning-text); }
 .se-audio-badge-direct { background: var(--se-ant-success-bg); color: var(--se-ant-success-text); }
@@ -4403,25 +4453,20 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: rgba(255, 255, 255, 0.68) !important;
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.45) !important;
-  border-radius: 12px !important;
-  padding: 8px 0 !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+  /* 背景与 backdrop-filter 由 v-glassmorphism 与主右键菜单统一 */
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 12px;
+  padding: 8px 0;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
   z-index: 1;
   min-width: 160px;
 }
 :global(.apply-all-submenu),
 :global(.glass-submenu) {
-  background: rgba(255, 255, 255, 0.68) !important;
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.45) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
-  padding: 8px 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  padding: 8px 0;
 }
 .apply-all-submenu .station-context-menu-item {
   border: none;
@@ -4542,9 +4587,8 @@ export default {
   justify-content: flex-end;
 }
 
-:global(html.blur-disabled) .station-context-menu,
-:global(html.blur-disabled) .apply-all-submenu,
-:global(html.blur-disabled) .glass-submenu {
+/* 二级子菜单仅用 v-glassmorphism，不包含在此以免 !important 盖住与主菜单一致的模糊 */
+:global(html.blur-disabled) .station-context-menu {
   background: #ffffff !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -4557,11 +4601,7 @@ export default {
 }
 
 :global(html.blur-disabled.dark) .station-context-menu,
-:global(html.blur-disabled[data-theme='dark']) .station-context-menu,
-:global(html.blur-disabled.dark) .apply-all-submenu,
-:global(html.blur-disabled[data-theme='dark']) .apply-all-submenu,
-:global(html.blur-disabled.dark) .glass-submenu,
-:global(html.blur-disabled[data-theme='dark']) .glass-submenu {
+:global(html.blur-disabled[data-theme='dark']) .station-context-menu {
   background: #1c1c20 !important;
   border: 1px solid rgba(255,255,255,0.16) !important;
   box-shadow: 0 8px 30px rgba(0,0,0,0.42) !important;
@@ -4659,19 +4699,13 @@ export default {
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
-:global(html.blur-disabled) .station-context-menu,
-:global(html.blur-disabled) .apply-all-submenu,
-:global(html.blur-disabled) .glass-submenu {
+:global(html.blur-disabled) .station-context-menu {
   background: rgba(255, 255, 255, 0.68) !important;
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
 }
 :global(html.blur-disabled.dark) .station-context-menu,
-:global(html.blur-disabled[data-theme="dark"]) .station-context-menu,
-:global(html.blur-disabled.dark) .apply-all-submenu,
-:global(html.blur-disabled[data-theme="dark"]) .apply-all-submenu,
-:global(html.blur-disabled.dark) .glass-submenu,
-:global(html.blur-disabled[data-theme="dark"]) .glass-submenu {
+:global(html.blur-disabled[data-theme="dark"]) .station-context-menu {
   background: rgba(28, 28, 32, 0.68) !important;
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;

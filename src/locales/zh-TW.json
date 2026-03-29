@@ -71,7 +71,70 @@
     "display3Formation7": "7 節編組",
     "display3Formation8": "8 節編組",
     "display3Formation4x4": "4+4 編組",
-    "display3ActiveCarOption": "第 {n} 節"
+    "display3ActiveCarOption": "第 {n} 節",
+    "configUpdatedTitle": "顯示端已更新",
+    "configUpdatedBody": "顯示端 \"{name}\" 已更新",
+    "notifyDisabledTitle": "顯示端已停用",
+    "notifyDisabledDesc": "顯示端 \"{name}\" 目前已停用，無法切換",
+    "notifySwitchedTitle": "顯示端已切換",
+    "notifySwitchedDesc": "目前作用中顯示端：{name}",
+    "notifyReorderTitle": "顯示端排序已更新",
+    "notifyReorderDesc": "已將 \"{name}\" 移到新位置",
+    "notifyStatusTitle": "顯示端狀態已更新",
+    "notifyStatusDesc": "{name} {status}",
+    "statusEnabled": "已啟用",
+    "statusDisabled": "已停用",
+    "unnamedDisplay": "未命名顯示端"
+  },
+  "displayBuiltin": {
+    "display1": {
+      "name": "主顯示器",
+      "description": "主要顯示端，用於主要資訊展示"
+    },
+    "display2": {
+      "name": "副顯示器",
+      "description": "輔助顯示端，用於補充資訊展示"
+    },
+    "display3": {
+      "name": "LCD 弧形佈局",
+      "description": "通用 LCD 弧形路線圖顯示端"
+    }
+  },
+  "displayConfigMeta": {
+    "fileDescription": "Metro PIDS 多顯示端設定檔。應用程式僅讀取 displays 與 displayDefaults 區段，其餘供維護與工具參考。",
+    "features": {
+      "systemProtection": "系統顯示器保護功能，防止誤刪除或修改關鍵顯示器",
+      "broadcastChannel": "使用 BroadcastChannel API 進行跨視窗通訊",
+      "autoSync": "自動同步資料到所有顯示端",
+      "displayIdentification": "在顯示端顯示識別與系統保護標記"
+    },
+    "messageTypes": {
+      "SYNC": "同步路線資料與即時狀態",
+      "DISPLAY_READY": "顯示端就緒通知",
+      "CMD_UI": "UI 控制命令（關閉視窗等）",
+      "CMD_KEY": "遠端按鍵指令",
+      "REQ": "請求顯示端回傳目前狀態",
+      "REC_START": "開始錄製",
+      "REC_STOP": "停止錄製"
+    },
+    "troubleshooting": {
+      "popupBlocked": {
+        "problem": "瀏覽器彈出視窗被阻擋",
+        "solution": "在瀏覽器設定中允許此網站的彈出視窗"
+      },
+      "broadcastChannelNotSupported": {
+        "problem": "不支援 BroadcastChannel API",
+        "solution": "請使用現代瀏覽器或 Electron 環境"
+      },
+      "displayNotSync": {
+        "problem": "顯示端資料不同步",
+        "solution": "請檢查 BroadcastChannel 連線與訊息格式"
+      },
+      "systemDisplayProtection": {
+        "problem": "無法編輯或刪除系統顯示器",
+        "solution": "此為正常保護機制，系統顯示器不可修改以確保基本功能"
+      }
+    }
   },
   "api": {
     "title": "API 伺服器",
@@ -513,6 +576,8 @@
     "audioApplyToggleOff": "停用套用",
     "audioModeArrive": "進站使用",
     "audioModeDepart": "出站使用",
+    "audioModeOriginStation": "始發站使用",
+    "audioModeTerminalStation": "終點站使用",
     "audioModeShortTurn": "短交路使用",
     "audioModeExpress": "大站車使用",
     "audioModeDirect": "直達車使用",

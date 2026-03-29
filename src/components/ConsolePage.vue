@@ -50,9 +50,8 @@
             
             <a-input v-model:value="pidsState.appData.meta.lineName" placeholder="线路名称" style="width:100%; margin-bottom:12px;" @change="saveCfg()" />
             
-            <a-space direction="vertical" :size="12" style="width:100%; margin-bottom:12px;">
-              <a-space wrap :size="[10,10]" align="center" style="width:100%;">
-                <div style="position:relative; width:60px; height:42px; flex-shrink:0;">
+            <a-space :wrap="false" :size="[10,10]" align="center" class="pids-console-line-toolbar" style="width:100%; margin-bottom:12px;">
+                <div class="pids-console-line-color-swatch" style="position:relative; width:60px; height:42px;">
                     <input 
                         v-if="!hasElectronAPI"
                         type="color" 
@@ -83,30 +82,44 @@
                     {{ t('console.singleLine') }}
                   </a-button>
                 </div>
-              </a-space>
-
-              <a-radio-group
-                v-if="pidsState.appData.meta.mode === 'loop'"
-                v-model:value="pidsState.appData.meta.dirType"
-                option-type="button"
-                button-style="solid"
-                class="pids-console-radio-wrap"
-                @change="saveCfg()"
-              >
-                <a-radio-button value="outer">{{ t('console.outerLoop') }}</a-radio-button>
-                <a-radio-button value="inner">{{ t('console.innerLoop') }}</a-radio-button>
-              </a-radio-group>
-              <a-radio-group
-                v-else
-                v-model:value="pidsState.appData.meta.dirType"
-                option-type="button"
-                button-style="solid"
-                class="pids-console-radio-wrap pids-console-radio-wrap--updown-row"
-                @change="saveCfg()"
-              >
-                <a-radio-button value="up">{{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} → {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})</a-radio-button>
-                <a-radio-button value="down">{{ t('console.dirLabelDown') || t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} → {{ pidsState.appData.stations[0]?.name }})</a-radio-button>
-              </a-radio-group>
+                <div
+                  v-if="pidsState.appData.meta.mode === 'linear'"
+                  class="pids-console-line-mode-btns pids-console-updown-btns"
+                >
+                  <a-button
+                    class="pids-console-line-mode-btn"
+                    :type="pidsState.appData.meta.dirType === 'up' ? 'primary' : 'default'"
+                    @click="setDirType('up')"
+                  >
+                    {{ t('console.dirLabel') }} ({{ pidsState.appData.stations[0]?.name }} → {{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }})
+                  </a-button>
+                  <a-button
+                    class="pids-console-line-mode-btn"
+                    :type="pidsState.appData.meta.dirType === 'down' ? 'primary' : 'default'"
+                    @click="setDirType('down')"
+                  >
+                    {{ t('console.dirLabelDown') || t('console.dirLabel') }} ({{ pidsState.appData.stations[pidsState.appData.stations.length-1]?.name }} → {{ pidsState.appData.stations[0]?.name }})
+                  </a-button>
+                </div>
+                <div
+                  v-else-if="pidsState.appData.meta.mode === 'loop'"
+                  class="pids-console-line-mode-btns pids-console-loop-dir-btns"
+                >
+                  <a-button
+                    class="pids-console-line-mode-btn"
+                    :type="pidsState.appData.meta.dirType === 'outer' ? 'primary' : 'default'"
+                    @click="setDirType('outer')"
+                  >
+                    {{ t('console.outerLoop') }}
+                  </a-button>
+                  <a-button
+                    class="pids-console-line-mode-btn"
+                    :type="pidsState.appData.meta.dirType === 'inner' ? 'primary' : 'default'"
+                    @click="setDirType('inner')"
+                  >
+                    {{ t('console.innerLoop') }}
+                  </a-button>
+                </div>
             </a-space>
 
             <a-divider style="margin:12px 0;" />

@@ -5,7 +5,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import { i18n } from './locales/index.js'
-import glassmorphism from 'vue3-glassmorphism'
+import glassmorphism from './directives/glassmorphism.js'
 import { installAntd } from './installAntd.js'
 // 在 Ant Design 样式之后加载，确保 PIDS 控制台覆盖生效
 import './styles/console-page-ant.css'

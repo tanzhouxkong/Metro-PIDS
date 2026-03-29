@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import glassmorphism from 'vue3-glassmorphism'
+import glassmorphism from './directives/glassmorphism.js'
 import LineManagerWindow from './components/line-manager/LineManagerWindow.vue'
 import LineManagerTopbar from './components/LineManagerTopbar.vue'
 import LineManagerDialog from './components/LineManagerDialog.vue'

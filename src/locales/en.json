@@ -71,7 +71,70 @@
     "display3Formation7": "7‑car consist",
     "display3Formation8": "8‑car consist",
     "display3Formation4x4": "4+4‑car consist",
-    "display3ActiveCarOption": "Car {n}"
+    "display3ActiveCarOption": "Car {n}",
+    "configUpdatedTitle": "Display updated",
+    "configUpdatedBody": "Display \"{name}\" has been updated",
+    "notifyDisabledTitle": "Display disabled",
+    "notifyDisabledDesc": "Display \"{name}\" is disabled and cannot be selected",
+    "notifySwitchedTitle": "Display switched",
+    "notifySwitchedDesc": "Active display: {name}",
+    "notifyReorderTitle": "Display order updated",
+    "notifyReorderDesc": "\"{name}\" has been moved to a new position",
+    "notifyStatusTitle": "Display status updated",
+    "notifyStatusDesc": "{name} {status}",
+    "statusEnabled": "enabled",
+    "statusDisabled": "disabled",
+    "unnamedDisplay": "Unnamed display"
+  },
+  "displayBuiltin": {
+    "display1": {
+      "name": "Main display",
+      "description": "Primary display for main passenger information."
+    },
+    "display2": {
+      "name": "Secondary display",
+      "description": "Secondary display for supplementary information."
+    },
+    "display3": {
+      "name": "Curved LCD layout",
+      "description": "General curved LCD line‑map display."
+    }
+  },
+  "displayConfigMeta": {
+    "fileDescription": "Metro PIDS multi‑display configuration file. The app only reads the displays and displayDefaults sections; other fields are for maintenance and tooling.",
+    "features": {
+      "systemProtection": "Protects system displays from accidental deletion or critical edits.",
+      "broadcastChannel": "Uses the BroadcastChannel API for cross‑window messaging.",
+      "autoSync": "Automatically syncs data to all displays.",
+      "displayIdentification": "Shows identification and system badges on display windows."
+    },
+    "messageTypes": {
+      "SYNC": "Synchronise line data and live status",
+      "DISPLAY_READY": "Display ready notification",
+      "CMD_UI": "UI control commands (e.g. close window)",
+      "CMD_KEY": "Remote key commands",
+      "REQ": "Request current state from display",
+      "REC_START": "Start recording",
+      "REC_STOP": "Stop recording"
+    },
+    "troubleshooting": {
+      "popupBlocked": {
+        "problem": "Browser blocked pop‑ups",
+        "solution": "Allow pop‑ups for this site in browser settings."
+      },
+      "broadcastChannelNotSupported": {
+        "problem": "BroadcastChannel API not supported",
+        "solution": "Use a modern browser or the Electron build."
+      },
+      "displayNotSync": {
+        "problem": "Displays out of sync",
+        "solution": "Check BroadcastChannel connectivity and message format."
+      },
+      "systemDisplayProtection": {
+        "problem": "Cannot edit or delete a system display",
+        "solution": "This is intentional; system displays cannot be removed so core features keep working."
+      }
+    }
   },
   "api": {
     "title": "API Server",
@@ -513,6 +576,8 @@
     "audioApplyToggleOff": "Disable apply",
     "audioModeArrive": "Use on arrival",
     "audioModeDepart": "Use on departure",
+    "audioModeOriginStation": "Origin terminal only",
+    "audioModeTerminalStation": "Terminus only",
     "audioModeShortTurn": "Use for short turn",
     "audioModeExpress": "Use for express",
     "audioModeDirect": "Use for direct service",

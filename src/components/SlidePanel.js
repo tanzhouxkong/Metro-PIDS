@@ -15,6 +15,7 @@ import { applyThroughOperation as mergeThroughLines } from '../utils/throughOper
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount, nextTick, reactive, toRefs, Teleport, Transition } from 'vue'
 import ColorPicker from './ColorPicker.vue'
 import { langs, setLocale, i18n } from '../locales/index.js'
+import { resolveDisplayName as resolveDisplayNameI18n } from '../utils/displayLabels.js'
 import '../styles/cp-glass-modal-shell.css'
 
 const ENABLE_SLIDE_LOG = false;
@@ -311,7 +312,7 @@ export default {
         const glassTriggerBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none')
         const contextMenuBackdropFilter = () => (isGlassBlurEnabled() ? 'blur(24px) saturate(190%)' : 'none')
 
-        /** 下拉菜单面板：与弹窗一致使用 vue3-glassmorphism（blur/opacity/color） */
+        /** 下拉菜单面板：与弹窗一致使用 v-glassmorphism（blur/opacity/color） */
         const glassDropdownDirective = computed(() => {
             const dark = isDarkThemeActive()
             if (!isGlassBlurEnabled()) {
@@ -3456,10 +3457,10 @@ export default {
         }
 
         function getDisplayName(display, fallbackId = '') {
-            if (display && display.name) return display.name;
-            if (display && display.id) return display.id;
+            const resolved = resolveDisplayNameI18n(display);
+            if (resolved) return resolved;
             if (fallbackId) return fallbackId;
-            return '未命名显示端';
+            return i18n.global.t('display.unnamedDisplay');
         }
 
         // 监听设置变化，同步到本地状态
@@ -3847,7 +3848,13 @@ export default {
                         }
                     }
                     closeDisplayEditDialog();
-                    await showMsg(`显示端 "${displayEdit.name}" 已更新`);
+                    notification.success({
+                        key: 'display-config-updated',
+                        message: i18n.global.t('display.configUpdatedTitle'),
+                        description: i18n.global.t('display.configUpdatedBody', { name: displayEdit.name }),
+                        placement: 'topRight',
+                        duration: 4.5
+                    });
                 }
                 return;
             }
@@ -3942,7 +3949,13 @@ export default {
                 }
 
                 closeDisplayEditDialog();
-                await showMsg(`显示端 "${name}" 已更新`);
+                notification.success({
+                    key: 'display-config-updated',
+                    message: i18n.global.t('display.configUpdatedTitle'),
+                    description: i18n.global.t('display.configUpdatedBody', { name }),
+                    placement: 'topRight',
+                    duration: 4.5
+                });
             }
         }
 
@@ -3959,9 +3972,12 @@ export default {
             
             if (!isDisplayEnabled(targetDisplay)) {
                 const displayName = getDisplayName(targetDisplay, displayId);
-                showNotification('显示端已禁用', `显示端 "${displayName}" 当前已禁用，无法切换`, {
-                    tag: 'display-disabled',
-                    urgency: 'normal'
+                notification.warning({
+                    key: 'display-disabled',
+                    message: i18n.global.t('display.notifyDisabledTitle'),
+                    description: i18n.global.t('display.notifyDisabledDesc', { name: displayName }),
+                    placement: 'topRight',
+                    duration: 4.5
                 });
                 return;
             }
@@ -4008,9 +4024,12 @@ export default {
                 const displayName = targetDisplay.name || displayId;
                 if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端切换完成:', oldDisplayId, '->', displayId);
                 
-                showNotification('显示端已切换', `当前活动显示端：${displayName}`, {
-                    tag: 'display-switched',
-                    urgency: 'normal'
+                notification.success({
+                    key: 'display-switched',
+                    message: i18n.global.t('display.notifySwitchedTitle'),
+                    description: i18n.global.t('display.notifySwitchedDesc', { name: displayName }),
+                    placement: 'topRight',
+                    duration: 4.5
                 });
             });
         }
@@ -4165,9 +4184,14 @@ export default {
             
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端排序已更新:', sourceId, '->', targetId);
             
-            showNotification('显示端排序已更新', `已将 "${displays[sourceId].name}" 移动到新位置`, {
-                tag: 'display-reordered',
-                urgency: 'normal'
+            notification.success({
+                key: 'display-reordered',
+                message: i18n.global.t('display.notifyReorderTitle'),
+                description: i18n.global.t('display.notifyReorderDesc', {
+                    name: getDisplayName(displays[sourceId], sourceId)
+                }),
+                placement: 'topRight',
+                duration: 4.5
             });
         }
 
@@ -4415,11 +4439,16 @@ export default {
                 
                 if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 显示端启用状态已切换:', displayId, display.enabled);
                 
-                const statusText = isDisplayEnabled(display) ? '已启用' : '已禁用';
+                const statusText = isDisplayEnabled(display)
+                    ? i18n.global.t('display.statusEnabled')
+                    : i18n.global.t('display.statusDisabled');
                 const displayName = getDisplayName(display, displayId);
-                showNotification('显示端状态已更新', `${displayName} ${statusText}`, {
-                    tag: 'display-status-changed',
-                    urgency: 'normal'
+                notification.success({
+                    key: 'display-status-changed',
+                    message: i18n.global.t('display.notifyStatusTitle'),
+                    description: i18n.global.t('display.notifyStatusDesc', { name: displayName, status: statusText }),
+                    placement: 'topRight',
+                    duration: 4.5
                 });
             }
         }

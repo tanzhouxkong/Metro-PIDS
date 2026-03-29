@@ -128,7 +128,14 @@
             margin: 0 auto;
             line-height: 1 !important;
             overflow: hidden;
+            border: none !important;
             transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+        }
+        #leftRail .left-rail-icon-btn.ant-btn:hover,
+        #leftRail .left-rail-icon-btn.ant-btn:focus,
+        #leftRail .left-rail-icon-btn.ant-btn:focus-visible,
+        #leftRail .left-rail-icon-btn.ant-btn:active {
+            border: none !important;
         }
         #leftRail .left-rail-icon-btn.ant-btn > span {
             display: inline-flex !important;
@@ -141,55 +148,61 @@
             line-height: 1 !important;
             margin-inline-end: 0 !important;
         }
-        /* Antdv Next 默认白底（ant-btn-default / outlined）→ 半透明，与 Mica 侧栏融合 */
+        /* 侧栏图标按钮：背景全透明（Mica 透出） */
+        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary,
+        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-solid.ant-btn-color-primary {
+            background: transparent !important;
+            box-shadow: none !important;
+            color: var(--ant-color-primary, #1677ff) !important;
+        }
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default {
-            background: rgba(255, 255, 255, 0.22) !important;
-            border-color: rgba(120, 130, 140, 0.32) !important;
+            background: transparent !important;
             color: var(--text) !important;
             box-shadow: none !important;
         }
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default,
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined,
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default {
-            background: rgba(255, 255, 255, 0.09) !important;
-            border-color: rgba(255, 255, 255, 0.2) !important;
+            background: transparent !important;
         }
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:hover,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:hover,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:hover {
             filter: none !important;
-            background: rgba(255, 255, 255, 0.34) !important;
-            border-color: rgba(120, 130, 140, 0.42) !important;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            background: transparent !important;
+            box-shadow: none;
         }
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:hover,
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:hover,
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:hover {
-            background: rgba(255, 255, 255, 0.14) !important;
-            border-color: rgba(255, 255, 255, 0.3) !important;
+            background: transparent !important;
         }
-        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary:hover {
-            filter: brightness(0.95);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary:hover,
+        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-solid.ant-btn-color-primary:hover {
+            filter: brightness(0.92);
+            background: transparent !important;
+            box-shadow: none;
         }
         #leftRail .left-rail-icon-btn.ant-btn:active {
             transform: translateY(1px);
         }
-        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary:active {
+        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary:active,
+        #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-solid.ant-btn-color-primary:active {
             filter: brightness(0.9);
+            background: transparent !important;
         }
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:active,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:active,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:active {
             filter: none !important;
-            background: rgba(255, 255, 255, 0.42) !important;
+            background: transparent !important;
         }
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:active,
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:active,
         html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:active {
-            background: rgba(255, 255, 255, 0.12) !important;
+            background: transparent !important;
         }
     </style>
     <script type="importmap">
