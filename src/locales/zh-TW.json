@@ -219,7 +219,7 @@
       "downloadReady": "更新已準備就緒，重新啟動即可完成",
       "downloading": "下載中 {progress}%",
       "downloadingRetrying": "自動重試中...",
-      "downloadProgress": "下載進度: {progress}%{version, select, '' {} other { (版本 {version})}}",
+      "downloadProgress": "下載進度: {progress}%",
       "restartNow": "重新啟動應用完成更新",
       "downloadButton": "下載更新",
       "clearCacheAndRedownload": "清除快取並重新下載",

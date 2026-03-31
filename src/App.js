@@ -565,6 +565,22 @@ export default {
     const showUpdatePrompt = ref(false);
     const updatePromptInfo = ref(null);
     const updatePromptForce = ref(false);
+    const UPDATE_PROMPT_COOLDOWN_MS = 10 * 60 * 1000;
+    const updatePromptLastAt = ref(0);
+    const shouldShowUpdatePrompt = (version) => {
+      const now = Date.now();
+      if (now - Number(updatePromptLastAt.value || 0) < UPDATE_PROMPT_COOLDOWN_MS) return false;
+      updatePromptLastAt.value = now;
+      try {
+        const day = new Date().toISOString().slice(0, 10);
+        const key = `metro_pids_update_prompt_shown_${String(version)}_${day}`;
+        if (window.localStorage.getItem(key) === '1') return false;
+        window.localStorage.setItem(key, '1');
+      } catch (e) {
+        // localStorage 不可用时，至少依赖会话内冷却窗口避免频繁弹窗
+      }
+      return true;
+    };
 
     const htmlDark = ref(false)
     function syncHtmlDark() {
@@ -595,14 +611,7 @@ export default {
           if (!data || !data.version) return;
           const version = String(data.version);
           const force = !!data.forceUpdate;
-          const key = `metro_pids_update_prompt_shown_${version}`;
-          try {
-            const already = window.localStorage.getItem(key);
-            if (already === '1') return;
-            window.localStorage.setItem(key, '1');
-          } catch (e) {
-            // 本地存储失败时，不阻止弹窗，只是不去重
-          }
+          if (!shouldShowUpdatePrompt(version)) return;
           updatePromptInfo.value = { version };
           updatePromptForce.value = force;
           showUpdatePrompt.value = true;

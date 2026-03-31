@@ -5,11 +5,12 @@
 
 .cp-fade-enter-active,
 .cp-fade-leave-active {
-  transition: opacity 0.25s ease;
+  transition: opacity 0.08s linear;
 }
 .cp-fade-enter-from,
 .cp-fade-leave-to {
-  opacity: 0;
+  opacity: 1;
+  transform: none;
 }
 
 .cp-overlay {

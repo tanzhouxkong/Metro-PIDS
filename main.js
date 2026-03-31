@@ -8729,6 +8729,11 @@ async function initAutoUpdater() {
   
   try {
     autoUpdater.disableWebInstaller = false;
+    if (!app.isPackaged) {
+      // 允许开发环境执行 checkForUpdates（electron-updater 默认会拒绝）
+      autoUpdater.forceDevUpdateConfig = true;
+      console.log('[main] 开发模式：已启用 autoUpdater.forceDevUpdateConfig');
+    }
     
     // 更新源：优先本地调试，否则走 Cloudflare Worker（自动更新经服务器，不直连 GitHub）
     const localFeed = process.env.LOCAL_UPDATE_URL;
@@ -8771,11 +8776,11 @@ async function initAutoUpdater() {
     };
     
     // 开发环境下也允许检查更新
-    // electron-updater 在开发模式下会使用 package.json 中的配置
+    // electron-updater 在开发模式下可使用 dev-app-update.yml / setFeedURL 配置
     if (!app.isPackaged) {
       // 开发模式下，可以设置 channel 为 latest 或使用默认配置
       // autoUpdater.channel = 'latest';
-      console.log('[main] 开发模式下初始化更新检查，将使用 package.json 中的 GitHub 配置');
+      console.log('[main] 开发模式下初始化更新检查，将使用开发更新配置');
     }
     
     // 错误处理
@@ -9806,6 +9811,10 @@ async function checkGithubUpdate() {
       if (autoUpdater) {
         // 重新初始化配置
         autoUpdater.disableWebInstaller = false;
+        if (!app.isPackaged) {
+          autoUpdater.forceDevUpdateConfig = true;
+          console.log('[main] checkGithubUpdate: 开发模式已启用 forceDevUpdateConfig');
+        }
         const silentUpdateEnabled = getSilentUpdateEnabled();
         autoUpdater.autoDownload = silentUpdateEnabled;
         if (logger) {

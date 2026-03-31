@@ -123,9 +123,5 @@
       </Transition>
     </Teleport>
 
-    <component :is="'style'">
-      @import '../styles/cp-glass-modal-shell.css';
-    </component>
-  
 </template>
 <script src="./UnifiedDialogs.js"></script>

@@ -43,7 +43,13 @@ function apply(el, binding) {
 }
 
 export const glassmorphismDirective = {
+  created(el, binding) {
+    apply(el, binding)
+  },
   beforeMount(el, binding) {
+    apply(el, binding)
+  },
+  mounted(el, binding) {
     apply(el, binding)
   },
   updated(el, binding) {

@@ -219,7 +219,7 @@
       "downloadReady": "업데이트 준비가 완료되었습니다. 재시작하면 완료됩니다",
       "downloading": "다운로드 중 {progress}%",
       "downloadingRetrying": "자동 재시도 중...",
-      "downloadProgress": "다운로드 진행률: {progress}%{version, select, '' {} other { (버전 {version})}}",
+      "downloadProgress": "다운로드 진행률: {progress}%",
       "restartNow": "앱을 다시 시작하여 업데이트 완료",
       "downloadButton": "업데이트 다운로드",
       "clearCacheAndRedownload": "캐시 지우고 다시 다운로드",

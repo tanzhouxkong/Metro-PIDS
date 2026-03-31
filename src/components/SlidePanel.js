@@ -57,6 +57,32 @@ export default {
         const cloudConfig = useCloudConfig(CLOUD_API_BASE)
         const { playArrive, playDepart } = useStationAudio(pidsState)
 
+        // 更新后旧配置可能缺字段，先做一次结构修复，避免设置页因访问深层字段而白屏。
+        const ensureSlidePanelSettingsShape = () => {
+            if (!settings || typeof settings !== 'object') return
+            if (!settings.keys || typeof settings.keys !== 'object') settings.keys = { ...DEFAULT_SETTINGS.keys }
+            if (!settings.autoplay || typeof settings.autoplay !== 'object') settings.autoplay = { ...DEFAULT_SETTINGS.autoplay }
+            if (!settings.display || typeof settings.display !== 'object') settings.display = { ...DEFAULT_SETTINGS.display }
+            const baseDisplay = settings.display
+            if (!baseDisplay.displays || typeof baseDisplay.displays !== 'object' || Array.isArray(baseDisplay.displays)) {
+                baseDisplay.displays = { ...DEFAULT_SETTINGS.display.displays }
+            }
+            const defaultDisplays = (DEFAULT_SETTINGS?.display?.displays && typeof DEFAULT_SETTINGS.display.displays === 'object')
+                ? DEFAULT_SETTINGS.display.displays
+                : {}
+            for (const id of ['display-1', 'display-2', 'display-3']) {
+                if (!baseDisplay.displays[id] || typeof baseDisplay.displays[id] !== 'object') {
+                    baseDisplay.displays[id] = defaultDisplays[id] ? { ...defaultDisplays[id] } : { id, enabled: true, isSystem: true }
+                }
+                baseDisplay.displays[id].isSystem = true
+            }
+            const ids = Object.keys(baseDisplay.displays)
+            if (!baseDisplay.currentDisplayId || !baseDisplay.displays[baseDisplay.currentDisplayId]) {
+                baseDisplay.currentDisplayId = ids[0] || 'display-1'
+            }
+        }
+        ensureSlidePanelSettingsShape()
+
         const playAfterToggle = (prevIdx) => {
             if (settings.vehicleAudioEnabled === false) return;
             const idx = Number.isInteger(pidsState.rt?.idx) ? pidsState.rt.idx : prevIdx;
@@ -2777,6 +2803,20 @@ export default {
     // 检查更新点击计数（用于连续点击五次触发特殊功能）
     const updateCheckClickCount = ref(0);
     const updateCheckClickTimer = ref(null);
+    const updateNoticeSessionCache = new Set();
+    const shouldNotifyUpdateEvent = (type, ver) => {
+        const version = String(ver || 'unknown');
+        const sessionKey = `${type}:${version}`;
+        if (updateNoticeSessionCache.has(sessionKey)) return false;
+        updateNoticeSessionCache.add(sessionKey);
+        try {
+            const day = new Date().toISOString().slice(0, 10);
+            const storageKey = `metro_pids_update_notice_${type}_${version}_${day}`;
+            if (localStorage.getItem(storageKey) === '1') return false;
+            localStorage.setItem(storageKey, '1');
+        } catch (e) {}
+        return true;
+    };
 
         const version = ref('未知');
         (async () => {
@@ -2810,41 +2850,34 @@ export default {
                     updateState.value.available = true;
                     updateState.value.downloaded = false;
                     updateState.value.info = info || null;
-                    // 不再自动弹出对话框，由用户手动点击下载
-                    // 发送通知
-                    const version = info?.version || '新版本';
-                    showNotification('更新可用', `发现新版本 ${version}，请点击检查更新按钮下载`, {
-                        tag: 'update-available',
-                        urgency: 'normal'
-                    });
+                    const nextVer = info?.version || 'new';
+                    if (shouldNotifyUpdateEvent('available', nextVer)) {
+                        showNotification('更新可用', `发现新版本 ${nextVer}，可在设置页下载更新`, {
+                            tag: 'update-available',
+                            urgency: 'normal'
+                        });
+                    }
                 });
 
                 window.electronAPI.onUpdateNotAvailable((info) => {
                     updateState.value.checking = false;
-                    updateState.value.isLatest = true; // 标记为最新版本
-                    const currentVersion = version.value || '未知';
+                    updateState.value.isLatest = true;
                     if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 收到 update-not-available 事件', info);
-                    // 不显示弹窗，只在界面上显示状态（避免频繁弹窗干扰用户）
                 });
 
                 window.electronAPI.onUpdateError((err) => {
                     try {
-                        // 确保设置页面保持打开状态
-                        if (uiState.activePanel !== 'panel-4') {
-                            uiState.activePanel = 'panel-4';
-                        }
+                        // 不再强制切到设置页，避免打断用户当前操作
                         updateState.value.checking = false;
                         updateState.value.downloading = false;
-                        const errorMsg = String(err);
+                        const errorMsg = String(err || '');
                         updateState.value.error = errorMsg;
                         console.error('[SlidePanel] 收到更新错误事件:', err);
-                        
-                        // 对于校验和错误，提供更友好的提示
+
                         let userFriendlyMsg = errorMsg;
                         if (errorMsg.includes('checksum') || errorMsg.includes('sha512')) {
-                            userFriendlyMsg = '文件校验失败，可能是下载的文件损坏。\n\n建议：\n1. 检查网络连接\n2. 重新尝试下载\n3. 如果问题持续，请从GitHub手动下载';
+                            userFriendlyMsg = '下载文件校验失败，可能与网络代理/分流缓存有关。请稍后重试或手动下载。';
                         }
-                        
                         showMsg('更新错误：' + userFriendlyMsg);
                     } catch (e) {
                         console.error('[SlidePanel] 处理更新错误事件失败:', e);
@@ -2858,14 +2891,8 @@ export default {
                         } else if (p && p.transferred && p.total) {
                             updateState.value.progress = Math.round((p.transferred / p.total) * 100);
                         }
-                        // 确保下载状态正确，避免白屏
-                        if (!updateState.value.downloading) {
-                            updateState.value.downloading = true;
-                        }
-                        // 确保 available 状态正确，避免按钮区域被隐藏
-                        if (!updateState.value.available && updateState.value.info) {
-                            updateState.value.available = true;
-                        }
+                        if (!updateState.value.downloading) updateState.value.downloading = true;
+                        if (!updateState.value.available && updateState.value.info) updateState.value.available = true;
                         updateState.value.downloaded = false;
                     } catch (e) {
                         console.error('[SlidePanel] 更新进度处理失败:', e);
@@ -2874,27 +2901,24 @@ export default {
 
                 window.electronAPI.onUpdateDownloaded((info) => {
                     try {
-                        // 确保设置页面保持打开状态
-                        if (uiState.activePanel !== 'panel-4') {
-                            uiState.activePanel = 'panel-4';
-                        }
+                        // 不再强制切到设置页，保持当前页面
                         updateState.value.downloading = false;
                         updateState.value.progress = 100;
                         updateState.value.downloaded = true;
                         updateState.value.info = info || updateState.value.info;
-                        // 不再自动弹出对话框，由用户手动点击安装
-                        // 发送通知
-                        const version = info?.version || '新版本';
-                        showNotification('更新下载完成', `版本 ${version} 已下载完成，点击"重启应用"即可完成更新，无需走安装流程`, {
-                            tag: 'update-downloaded',
-                            urgency: 'normal'
-                        });
+                        const nextVer = info?.version || 'new';
+                        if (shouldNotifyUpdateEvent('downloaded', nextVer)) {
+                            showNotification('更新下载完成', `版本 ${nextVer} 已下载完成，可在设置页重启应用安装`, {
+                                tag: 'update-downloaded',
+                                urgency: 'normal'
+                            });
+                        }
                     } catch (e) {
                         console.error('[SlidePanel] 处理下载完成事件失败:', e);
                     }
                 });
             } catch (e) {
-                // 可忽略监听安装异常
+                // ignore
             }
         }
 
@@ -3389,11 +3413,12 @@ export default {
         // 格式化更新日志内容（将Markdown转换为简单的HTML）
         const formatReleaseBody = (body, release) => {
             if (!body) return `<div style="color:var(--muted, #999); font-style:italic;">${i18n.global.t('about.releaseNotes.noBody')}</div>`;
-            const githubRepo = 'tanzhouxkong/Metro-PIDS-';
-            const githubBaseUrl = 'https://github.com';
-            const githubRawBaseUrl = 'https://raw.githubusercontent.com';
-            
-            let formatted = body;
+            try {
+                const githubRepo = 'tanzhouxkong/Metro-PIDS-';
+                const githubBaseUrl = 'https://github.com';
+                const githubRawBaseUrl = 'https://raw.githubusercontent.com';
+                
+                let formatted = String(body || '');
             
             // 处理代码块：```language\ncode\n```
             formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
@@ -3447,14 +3472,25 @@ export default {
             
             // 处理换行
             formatted = formatted.replace(/\n\n/g, '</p><p style="margin:12px 0;">');
-            formatted = '<p style="margin:0;">' + formatted.replace(/\n/g, '<br>') + '</p>';
-            
-            return formatted;
+                formatted = '<p style="margin:0;">' + formatted.replace(/\n/g, '<br>') + '</p>';
+                
+                return formatted;
+            } catch (err) {
+                console.error('[SlidePanel][formatReleaseBody] failed:', err);
+                const fallback = String(body || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                return `<p style="margin:0; white-space:pre-wrap;">${fallback}</p>`;
+            }
         }
 
         // 显示端管理相关方法
         const currentDisplay = computed(() => {
-            return settings.display.displays[settings.display.currentDisplayId] || settings.display.displays[Object.keys(settings.display.displays)[0]];
+            const displays = (settings?.display?.displays && typeof settings.display.displays === 'object') ? settings.display.displays : {};
+            const curId = settings?.display?.currentDisplayId;
+            const firstId = Object.keys(displays)[0];
+            return displays[curId] || displays[firstId] || null;
         });
 
         // 创建本地响应式状态来确保UI更新（新安装/升级时 displays 可能为空，用默认列表避免卡片不显示）
@@ -3506,12 +3542,12 @@ export default {
         }
 
         // 监听设置变化，同步到本地状态
-        watch(() => settings.display.currentDisplayId, (newId) => {
+        watch(() => settings?.display?.currentDisplayId, (newId) => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 currentDisplayId 变化:', displayState.currentDisplayId, '->', newId);
-            displayState.currentDisplayId = newId;
+            displayState.currentDisplayId = newId || 'display-1';
         }, { immediate: true });
 
-        watch(() => settings.display.displays, (newDisplays) => {
+        watch(() => settings?.display?.displays, (newDisplays) => {
             if (ENABLE_SLIDE_LOG) console.log('[SlidePanel] 监听到 displays 变化');
             displayState.displays = normalizeDisplaysMap(newDisplays);
         }, { deep: true, immediate: true });

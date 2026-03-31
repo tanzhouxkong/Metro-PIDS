@@ -219,7 +219,7 @@
       "downloadReady": "更新の準備が整いました。再起動すると完了します",
       "downloading": "ダウンロード中 {progress}%",
       "downloadingRetrying": "自動再試行中...",
-      "downloadProgress": "ダウンロード進捗: {progress}%{version, select, '' {} other { (バージョン {version})}}",
+      "downloadProgress": "ダウンロード進捗: {progress}%",
       "restartNow": "アプリを再起動して更新を完了",
       "downloadButton": "更新をダウンロード",
       "clearCacheAndRedownload": "キャッシュをクリアして再ダウンロード",

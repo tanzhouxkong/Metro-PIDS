@@ -7,11 +7,15 @@ import App from './App.vue'
 import { i18n } from './locales/index.js'
 import glassmorphism from './directives/glassmorphism.js'
 import { installAntd } from './installAntd.js'
+import { installRendererDiagnostics } from './utils/rendererDiagnostics.js'
 // 在 Ant Design 样式之后加载，确保 PIDS 控制台覆盖生效
 import './styles/console-page-ant.css'
 import './styles/settings-page-ant.css'
 import './styles/preset-context-menu.css'
 import './styles/station-context-menu.css'
+import './styles/cp-glass-modal-shell.css'
+
+installRendererDiagnostics()
 
 // 全局错误处理
 window.addEventListener('error', (event) => {

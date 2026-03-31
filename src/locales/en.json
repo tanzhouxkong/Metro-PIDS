@@ -219,7 +219,7 @@
       "downloadReady": "Update ready. Restart to complete.",
       "downloading": "Downloading {progress}%",
       "downloadingRetrying": "Auto‑retrying...",
-      "downloadProgress": "Download progress: {progress}%{version, select, '' {} other { (version {version})}}",
+      "downloadProgress": "Download progress: {progress}%",
       "restartNow": "Restart App to Update",
       "downloadButton": "Download Update",
       "clearCacheAndRedownload": "Clear Cache & Redownload",
