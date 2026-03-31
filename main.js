@@ -117,6 +117,7 @@ try {
 }
 const crypto = require('crypto');
 const {
+  DEFAULT_MATCHER_RULES,
   invalidateAudioStationIndexCache,
   getAudioStationIndexForAudioDir,
   buildPeerNormalizedSetForFindAudio,
@@ -163,6 +164,143 @@ try {
 }
 
 let apiServerInstance = null; // 存储当前运行的 API 服务器实例
+const DYNAMIC_AUDIO_MATCHER_CLOUD_API_BASE = process.env.CLOUD_UPDATE_URL || 'https://metro.tanzhouxiang.dpdns.org';
+const DYNAMIC_AUDIO_MATCHER_STORE_KEY = 'dynamicAudioMatcherConfig';
+const DYNAMIC_AUDIO_MATCHER_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+let dynamicAudioMatcherConfigCache = null;
+let dynamicAudioMatcherSyncTimer = null;
+let dynamicAudioMatcherSyncInFlight = null;
+
+function getDefaultDynamicAudioMatcherConfig() {
+  return {
+    version: '1.0',
+    updatedAt: 0,
+    updatedBy: 'system',
+    rules: { ...DEFAULT_MATCHER_RULES }
+  };
+}
+
+function normalizeDynamicAudioMatcherConfig(raw) {
+  const base = getDefaultDynamicAudioMatcherConfig();
+  const obj = (raw && typeof raw === 'object') ? raw : {};
+  const rulesRaw = (obj.rules && typeof obj.rules === 'object') ? obj.rules : obj;
+  const rules = { ...base.rules };
+  const assignNum = (key) => {
+    if (rulesRaw[key] === undefined) return;
+    const n = Number(rulesRaw[key]);
+    if (Number.isFinite(n)) rules[key] = n;
+  };
+  assignNum('scoreThreshold');
+  assignNum('tokenMinLength');
+  assignNum('lengthPenaltyFactor');
+  assignNum('maxLengthPenalty');
+  assignNum('importKeywordPenalty');
+  if (Array.isArray(rulesRaw.importPenaltyKeywords)) {
+    rules.importPenaltyKeywords = rulesRaw.importPenaltyKeywords.map((x) => String(x || '').trim()).filter(Boolean);
+  }
+  return {
+    version: String(obj.version || base.version).trim() || base.version,
+    updatedAt: Number.isFinite(Number(obj.updatedAt)) ? Number(obj.updatedAt) : 0,
+    updatedBy: String(obj.updatedBy || base.updatedBy).trim() || base.updatedBy,
+    rules
+  };
+}
+
+function loadDynamicAudioMatcherConfigFromStore() {
+  try {
+    if (!store) return getDefaultDynamicAudioMatcherConfig();
+    const raw = store.get(DYNAMIC_AUDIO_MATCHER_STORE_KEY);
+    return normalizeDynamicAudioMatcherConfig(raw);
+  } catch (e) {
+    return getDefaultDynamicAudioMatcherConfig();
+  }
+}
+
+function saveDynamicAudioMatcherConfigToStore(cfg) {
+  try {
+    if (store) store.set(DYNAMIC_AUDIO_MATCHER_STORE_KEY, cfg);
+  } catch (e) {}
+}
+
+function getActiveDynamicAudioMatcherConfig() {
+  if (dynamicAudioMatcherConfigCache && typeof dynamicAudioMatcherConfigCache === 'object') {
+    return dynamicAudioMatcherConfigCache;
+  }
+  dynamicAudioMatcherConfigCache = loadDynamicAudioMatcherConfigFromStore();
+  return dynamicAudioMatcherConfigCache;
+}
+
+function fetchDynamicAudioMatcherConfigFromCloud(timeoutMs = 8000) {
+  const https = require('https');
+  const tlsOpt = { rejectUnauthorized: false };
+  const endpoint = `${String(DYNAMIC_AUDIO_MATCHER_CLOUD_API_BASE || '').replace(/\/+$/, '')}/dynamic-audio/matcher-config`;
+  return new Promise((resolve, reject) => {
+    const req = https.get(endpoint, {
+      ...tlsOpt,
+      headers: { Accept: 'application/json', 'User-Agent': `Metro-PIDS-App/${app.getVersion()} (${process.platform})` },
+      timeout: timeoutMs
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          if (res.statusCode !== 200) {
+            return reject(new Error(`HTTP ${res.statusCode}`));
+          }
+          const parsed = JSON.parse(data || '{}');
+          if (!parsed || parsed.ok !== true || !parsed.config || typeof parsed.config !== 'object') {
+            return reject(new Error('invalid-config-payload'));
+          }
+          resolve(normalizeDynamicAudioMatcherConfig(parsed.config));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('request-timeout'));
+    });
+  });
+}
+
+async function syncDynamicAudioMatcherConfigOnce(reason = 'manual') {
+  if (dynamicAudioMatcherSyncInFlight) return dynamicAudioMatcherSyncInFlight;
+  dynamicAudioMatcherSyncInFlight = (async () => {
+    try {
+      const remote = await fetchDynamicAudioMatcherConfigFromCloud(8000);
+      const local = getActiveDynamicAudioMatcherConfig();
+      const remoteVer = String(remote.version || '').trim();
+      const localVer = String(local?.version || '').trim();
+      const remoteTs = Number(remote.updatedAt || 0);
+      const localTs = Number(local?.updatedAt || 0);
+      const shouldApply = !!remoteVer && ((remoteTs >= localTs) || (remoteVer !== localVer));
+      if (shouldApply) {
+        dynamicAudioMatcherConfigCache = remote;
+        saveDynamicAudioMatcherConfigToStore(remote);
+      }
+      return { ok: true, reason, applied: shouldApply, config: getActiveDynamicAudioMatcherConfig() };
+    } catch (e) {
+      return { ok: false, reason, error: String(e && e.message ? e.message : e), config: getActiveDynamicAudioMatcherConfig() };
+    } finally {
+      dynamicAudioMatcherSyncInFlight = null;
+    }
+  })();
+  return dynamicAudioMatcherSyncInFlight;
+}
+
+function startDynamicAudioMatcherAutoSync() {
+  dynamicAudioMatcherConfigCache = loadDynamicAudioMatcherConfigFromStore();
+  void syncDynamicAudioMatcherConfigOnce('startup');
+  if (dynamicAudioMatcherSyncTimer) {
+    clearInterval(dynamicAudioMatcherSyncTimer);
+    dynamicAudioMatcherSyncTimer = null;
+  }
+  dynamicAudioMatcherSyncTimer = setInterval(() => {
+    void syncDynamicAudioMatcherConfigOnce('interval');
+  }, DYNAMIC_AUDIO_MATCHER_SYNC_INTERVAL_MS);
+}
 
 // ================= GPU 加速优化（优先作用于显示端） =================
 // 这些开关需要在 app.ready 之前配置，主要影响 Chromium 渲染管线。
@@ -5334,6 +5472,10 @@ async function ensureMplExtracted(mplPath) {
 }
 
 app.on('will-quit', () => {
+  if (dynamicAudioMatcherSyncTimer) {
+    clearInterval(dynamicAudioMatcherSyncTimer);
+    dynamicAudioMatcherSyncTimer = null;
+  }
   for (const v of mplExtractCache.values()) {
     if (v && v.dir) {
       fsPromises.rm(v.dir, { recursive: true, force: true }).catch(() => {});
@@ -6323,8 +6465,13 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
     const audioDirStat = await fsPromises.stat(audioDirAbs).catch(() => null);
     if (!audioDirStat || !audioDirStat.isDirectory()) return { ok: false, error: 'no-audio-dir' };
 
-    const importedRelativePaths = opts && Array.isArray(opts.importedRelativePaths)
-      ? opts.importedRelativePaths
+    const effectiveOpts = (opts && typeof opts === 'object') ? { ...opts } : {};
+    if (!effectiveOpts.matcherRules) {
+      effectiveOpts.matcherRules = getActiveDynamicAudioMatcherConfig();
+    }
+
+    const importedRelativePaths = Array.isArray(effectiveOpts.importedRelativePaths)
+      ? effectiveOpts.importedRelativePaths
       : [];
     if (importedRelativePaths.length > 0) {
       // 导入后立即校验时，强制刷新索引，避免命中旧缓存。
@@ -6368,14 +6515,27 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
       if (filtered.length > 0) matchEntries = filtered;
     }
 
-    const peerNormsForMatch = await buildPeerNormalizedSetForFindAudio(normalized, opts, ensureMplExtracted);
+    const peerNormsForMatch = await buildPeerNormalizedSetForFindAudio(normalized, effectiveOpts, ensureMplExtracted);
 
-    return findAudioByStationNameFromIndex({
+    const result = findAudioByStationNameFromIndex({
       entries: matchEntries,
       stationName,
-      opts: opts || {},
+      opts: effectiveOpts,
       peerNormsSet: peerNormsForMatch
     });
+    if (result && result.ok) return result;
+    return {
+      ...(result && typeof result === 'object' ? result : { ok: false, error: 'no-match' }),
+      debug: {
+        stationName: String(stationName || ''),
+        role: String(effectiveOpts.role || ''),
+        doorSide: String(effectiveOpts.doorSide || effectiveOpts.door || effectiveOpts.doorOpenSide || ''),
+        entriesTotal: Array.isArray(entries) ? entries.length : 0,
+        entriesForMatch: Array.isArray(matchEntries) ? matchEntries.length : 0,
+        importedRelativePathsCount: importedRelativePaths.length,
+        peerNormsCount: peerNormsForMatch instanceof Set ? peerNormsForMatch.size : 0
+      }
+    };
   } catch (e) {
     return { ok: false, error: String(e && e.message ? e.message : e) };
   }
@@ -6435,7 +6595,7 @@ function collectAudioRelPaths(lineData) {
 ipcMain.handle('lines/cleanupAudioDir', async (event, lineData, lineFilePath, options) => {
   try {
     const hasDynamicAudioPlaceholders = (() => {
-      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal'])
+      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'door'])
       const isPlaceholderItem = (it) => {
         if (!it || typeof it !== 'object') return false
         return DYNAMIC_ROLE_KEYS.has(it.role) && !it.path
@@ -7513,6 +7673,22 @@ ipcMain.handle('open-external', async (event, url) => {
 ipcMain.handle('app/get-version', async () => {
   try {
     return { ok: true, version: app.getVersion() };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('dynamic-audio/matcher-config/get', async () => {
+  try {
+    return { ok: true, config: getActiveDynamicAudioMatcherConfig() };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('dynamic-audio/matcher-config/sync', async () => {
+  try {
+    return await syncDynamicAudioMatcherConfigOnce('manual-ipc');
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -8910,6 +9086,7 @@ async function checkAndInstallPendingUpdate() {
 
 app.whenReady().then(async () => {
   startOrphanWindowWatchdog();
+  startDynamicAudioMatcherAutoSync();
   console.log('[main] ✅ Electron 应用已准备就绪');
   console.log('[main] 应用路径:', app.getAppPath());
   console.log('[main] 是否打包:', app.isPackaged);

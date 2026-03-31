@@ -2,6 +2,16 @@
  * Metro-PIDS Cloudflare Worker
  * 提供预设线路、运控线路、更新日志、统计信息等 API 服务
  */
+import stationAudioMatcher from '../../shared/stationAudioMatcher.js';
+
+const {
+  DEFAULT_MATCHER_RULES,
+  normalizeForStationMatch,
+  detectLangFlagsFromPath,
+  detectDoorSideFromText,
+  addStationPeersFromLineData,
+  findAudioByStationNameFromIndex
+} = stationAudioMatcher;
 
 // ==================== 工具函数 ====================
 
@@ -586,119 +596,14 @@ function decodeCloudAudioDataUrl(input) {
 
 const RUNTIME_AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac']);
 
-const RUNTIME_CN_DIGIT_MAP = {
-  〇: '0', 零: '0',
-  一: '1', 壹: '1', 二: '2', 贰: '2', 兩: '2', 两: '2',
-  三: '3', 叁: '3', 四: '4', 肆: '4', 五: '5', 伍: '5',
-  六: '6', 陆: '6', 陸: '6', 七: '7', 柒: '7', 八: '8', 捌: '8',
-  九: '9', 玖: '9', 十: '10', 拾: '10'
-};
-
-function normalizeForRuntimeStationAudioMatch(raw) {
-  if (raw === undefined || raw === null) return '';
-  let s = String(raw).normalize('NFKC').trim().toLowerCase();
-  if (!s) return '';
-  s = s.replace(/[\s._\-:/\\，。,.、·•（）()【】\[\]「」『』"'“”‘’]/g, '');
-  s = s.replace(/站$/u, '');
-  let out = '';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (Object.prototype.hasOwnProperty.call(RUNTIME_CN_DIGIT_MAP, ch)) out += RUNTIME_CN_DIGIT_MAP[ch];
-    else out += ch;
-  }
-  return out;
-}
-
-function buildRuntimeStationMatchTokens(input) {
-  const n = normalizeForRuntimeStationAudioMatch(input);
-  if (!n) return [];
-  const uniq = new Set([n]);
-  for (let L = Math.max(2, Math.floor(n.length / 2)); L < n.length; L++) uniq.add(n.slice(0, L));
-  return [...uniq];
-}
-
-function detectRuntimeLangFlagsFromPath(relPosix) {
-  const flags = {};
-  const lower = String(relPosix || '').toLowerCase().replace(/\\/g, '/');
-  const parts = lower.split('/').filter(Boolean);
-  const mark = (k) => { if (k) flags[k] = true; };
-  for (const seg of parts) {
-    if (seg === 'en' || seg === 'english') mark('en');
-    if (seg === 'ja' || seg === 'jp' || seg === 'jpn' || seg === 'japanese') mark('ja');
-    if (seg === 'ko' || seg === 'kr' || seg === 'kor' || seg === 'korean') mark('ko');
-    if (seg === 'zhcn' || seg === 'zh_cn' || seg === 'zh-cn' || seg === 'zh' || seg === 'hans') mark('zhcn');
-    if (seg === 'cmn') mark('cmn');
-    if (seg === 'zhtw' || seg === 'zh_tw' || seg === 'zh-tw' || seg === 'hant') mark('zhtw');
-  }
-  return flags;
-}
-
-function runtimePrefixStrictConflict(targetNorm, stemNorm, peerNormsSet) {
-  if (!targetNorm || !stemNorm || targetNorm === stemNorm) return false;
-  if (targetNorm.length > stemNorm.length && targetNorm.startsWith(stemNorm)) {
-    if (!peerNormsSet || peerNormsSet.size === 0) return false;
-    return peerNormsSet.has(stemNorm);
-  }
-  if (stemNorm.length > targetNorm.length && stemNorm.startsWith(targetNorm)) {
-    if (!peerNormsSet || peerNormsSet.size === 0) return false;
-    for (const pn of peerNormsSet) {
-      if (!pn || pn === targetNorm) continue;
-      if (pn.length > targetNorm.length && pn.startsWith(targetNorm) && stemNorm === pn) return true;
-    }
-    return false;
-  }
-  return false;
-}
-
-function runtimeLineContextBlocksBinding(targetNorm, stemNorm, peerNormsSet) {
-  if (!peerNormsSet || !(peerNormsSet instanceof Set) || peerNormsSet.size === 0) return false;
-  if (!targetNorm || !stemNorm) return false;
-  for (const pn of peerNormsSet) {
-    if (!pn || pn === targetNorm) continue;
-    if (stemNorm === pn) return true;
-    if (pn.length > targetNorm.length && pn.startsWith(targetNorm) && stemNorm.startsWith(pn)) return true;
-    if (targetNorm.length > pn.length && targetNorm.startsWith(pn) && stemNorm === pn) return true;
-  }
-  return false;
-}
-
-function runtimeLangPreferenceScore(langFlags, opts) {
-  if (!langFlags || typeof langFlags !== 'object') return 50;
-  const keys = Object.keys(langFlags).filter((k) => langFlags[k]);
-  if (!keys.length) return 52;
-  const dk = String((opts && opts.dialectKey) || '').toLowerCase();
-  const lk = String((opts && opts.languageKey) || '').toLowerCase();
-  if (dk && langFlags[dk]) return 100;
-  if (lk && langFlags[lk]) return 96;
-  if (dk === 'zhcn' && langFlags.zhcn) return 98;
-  if ((dk === 'zhtw' || dk === 'zh_tw') && langFlags.zhtw) return 95;
-  return 35;
-}
-
-function runtimeLengthImportPenalty(stemNorm, targetNorm) {
-  if (!stemNorm || !targetNorm) return 0;
-  const extra = Math.max(0, stemNorm.length - targetNorm.length);
-  if (extra <= 0) return 0;
-  let p = Math.min(120, extra * 2.2);
-  if (/import|下载|复制|提示|欢迎|到达|离开|arrival|depart|welcome|announce/i.test(stemNorm)) p += 28;
-  return p;
-}
-
 function buildPeerNormSetForRuntimeAudioMatch(line, opts) {
   const set = new Set();
   const peers = opts && Array.isArray(opts.peerStationNames) ? opts.peerStationNames : [];
   for (const p of peers) {
-    const n = normalizeForRuntimeStationAudioMatch(p);
+    const n = normalizeForStationMatch(p);
     if (n) set.add(n);
   }
-  const stations = line && Array.isArray(line.stations) ? line.stations : [];
-  for (const st of stations) {
-    if (!st || typeof st !== 'object') continue;
-    for (const v of [st.name, st.en, st.zh, st.cn, st.ja, st.ko]) {
-      const n = normalizeForRuntimeStationAudioMatch(v);
-      if (n) set.add(n);
-    }
-  }
+  addStationPeersFromLineData(line, set);
   return set;
 }
 
@@ -713,70 +618,18 @@ function buildRuntimeAudioEntriesFromCloudMap(cloudAudioFiles) {
     if (!RUNTIME_AUDIO_EXTS.has(ext)) continue;
     const base = rel.split('/').pop() || '';
     const stem = base.replace(/\.[^.]+$/, '');
-    const stemNorm = normalizeForRuntimeStationAudioMatch(stem);
+    const stemNorm = normalizeForStationMatch(stem);
     if (!stemNorm) continue;
+    const doorSide = detectDoorSideFromText(`${stem} ${rel}`);
     out.push({
       relativePath: rel,
+      stem,
       stemNorm,
-      langFlags: detectRuntimeLangFlagsFromPath(rel)
+      langFlags: detectLangFlagsFromPath(rel),
+      doorSide
     });
   }
   return out;
-}
-
-function findRuntimeAudioByStationName({ entries, stationName, opts, peerNormsSet }) {
-  const targetNorm = normalizeForRuntimeStationAudioMatch(stationName);
-  if (!targetNorm || !Array.isArray(entries) || !entries.length) return { ok: false, error: 'no-match' };
-
-  let bestExact = null;
-  let bestExactLang = -1;
-  for (const e of entries) {
-    const stemNorm = e.stemNorm;
-    if (stemNorm !== targetNorm) continue;
-    if (runtimePrefixStrictConflict(targetNorm, stemNorm, peerNormsSet)) continue;
-    if (runtimeLineContextBlocksBinding(targetNorm, stemNorm, peerNormsSet)) continue;
-    const ls = runtimeLangPreferenceScore(e.langFlags, opts || {});
-    if (!bestExact || ls > bestExactLang || (ls === bestExactLang && e.relativePath < bestExact.relativePath)) {
-      bestExact = e;
-      bestExactLang = ls;
-    }
-  }
-  if (bestExact) return { ok: true, relativePath: bestExact.relativePath };
-
-  let best = null;
-  let bestScore = -Infinity;
-  for (const e of entries) {
-    const stemNorm = e.stemNorm;
-    if (!stemNorm) continue;
-    if (runtimePrefixStrictConflict(targetNorm, stemNorm, peerNormsSet)) continue;
-    if (runtimeLineContextBlocksBinding(targetNorm, stemNorm, peerNormsSet)) continue;
-
-    let match = 0;
-    if (stemNorm.includes(targetNorm)) match = 320 + Math.min(80, targetNorm.length * 4);
-    else if (targetNorm.includes(stemNorm)) match = 280 + Math.min(60, stemNorm.length * 3);
-    else {
-      const tokens = buildRuntimeStationMatchTokens(stationName);
-      let hit = false;
-      for (const t of tokens) {
-        if (t.length >= 2 && stemNorm.includes(t)) {
-          hit = true;
-          match = 200 + t.length * 2;
-          break;
-        }
-      }
-      if (!hit) continue;
-    }
-
-    const ls = runtimeLangPreferenceScore(e.langFlags, opts || {});
-    const penalty = runtimeLengthImportPenalty(stemNorm, targetNorm);
-    const score = match + ls * 0.85 - penalty;
-    if (score > bestScore || (score === bestScore && best && e.relativePath < best.relativePath)) {
-      bestScore = score;
-      best = e;
-    }
-  }
-  if (!best || bestScore < 180) return { ok: false, error: 'no-match' };
-  return { ok: true, relativePath: best.relativePath };
 }
 
 /**
@@ -912,10 +765,11 @@ const RuntimeLinesHandler = {
     const entries = buildRuntimeAudioEntriesFromCloudMap(cloudAudioFiles);
     if (!entries.length) return { ok: false, error: 'no-audio-entries' };
     const peerNormsSet = buildPeerNormSetForRuntimeAudioMatch(line, opts || {});
-    return findRuntimeAudioByStationName({
+    const matcherConfig = await DynamicAudioMatcherConfigHandler.get(env);
+    return findAudioByStationNameFromIndex({
       entries,
       stationName: name,
-      opts: opts || {},
+      opts: { ...(opts || {}), matcherRules: matcherConfig },
       peerNormsSet
     });
   },
@@ -1105,6 +959,61 @@ const RuntimeLinesHandler = {
 
     await deleteShardKeys(env, Array.from(collectDeleteTargets).filter((k) => k.startsWith(this.AUDIO_PREFIX)));
     return { ok: true };
+  }
+};
+
+const DynamicAudioMatcherConfigHandler = {
+  KEY: 'dynamic:audio:matcher:config:v1',
+  defaultConfig() {
+    return {
+      version: '1.0',
+      updatedAt: 0,
+      updatedBy: 'system',
+      rules: { ...DEFAULT_MATCHER_RULES }
+    };
+  },
+  sanitizeRules(rawRules) {
+    const src = (rawRules && typeof rawRules === 'object') ? rawRules : {};
+    const out = { ...DEFAULT_MATCHER_RULES };
+    if (src.scoreThreshold !== undefined) out.scoreThreshold = Number(src.scoreThreshold);
+    if (src.tokenMinLength !== undefined) out.tokenMinLength = Number(src.tokenMinLength);
+    if (src.lengthPenaltyFactor !== undefined) out.lengthPenaltyFactor = Number(src.lengthPenaltyFactor);
+    if (src.maxLengthPenalty !== undefined) out.maxLengthPenalty = Number(src.maxLengthPenalty);
+    if (src.importKeywordPenalty !== undefined) out.importKeywordPenalty = Number(src.importKeywordPenalty);
+    if (Array.isArray(src.importPenaltyKeywords)) {
+      out.importPenaltyKeywords = src.importPenaltyKeywords.map((x) => String(x || '').trim()).filter(Boolean);
+    }
+    return out;
+  },
+  normalizeConfig(raw) {
+    const base = this.defaultConfig();
+    const obj = (raw && typeof raw === 'object') ? raw : {};
+    const version = String(obj.version || base.version).trim() || base.version;
+    const updatedBy = String(obj.updatedBy || obj.operator || base.updatedBy).trim() || base.updatedBy;
+    const updatedAt = Number.isFinite(Number(obj.updatedAt)) ? Number(obj.updatedAt) : Date.now();
+    const rules = this.sanitizeRules(obj.rules || obj);
+    return { version, updatedAt, updatedBy, rules };
+  },
+  async get(env) {
+    const raw = await env.LINES.get(this.KEY);
+    if (!raw) return this.defaultConfig();
+    try {
+      const parsed = JSON.parse(raw);
+      return this.normalizeConfig(parsed);
+    } catch {
+      return this.defaultConfig();
+    }
+  },
+  async update(env, body, operator = 'admin') {
+    const normalized = this.normalizeConfig({
+      ...(body && typeof body === 'object' ? body : {}),
+      updatedAt: Date.now(),
+      updatedBy: operator || 'admin'
+    });
+    await env.LINES.put(this.KEY, JSON.stringify(normalized), {
+      metadata: { type: 'dynamic-audio-matcher-config', version: normalized.version, updatedAt: normalized.updatedAt }
+    });
+    return { ok: true, config: normalized };
   }
 };
 
@@ -2776,6 +2685,8 @@ async function handleRequest(request, env) {
           { method: 'GET', path: '/runtime/lines/:lineName', description: '' },
           { method: 'GET', path: '/runtime/lines/:lineName/audio?path=audio/xx.mp3', description: '' },
           { method: 'POST', path: '/runtime/lines/:lineName/find-audio', description: '按站名动态匹配云端音频相对路径' },
+          { method: 'GET', path: '/dynamic-audio/matcher-config', description: '获取动态音频匹配规则配置' },
+          { method: 'PUT', path: '/dynamic-audio/matcher-config', description: '更新动态音频匹配规则配置' },
           { method: 'PUT', path: '/runtime/lines/:lineName', description: '' },
           { method: 'DELETE', path: '/runtime/lines/:lineName', description: '' },
           { method: 'GET', path: '/releases', description: '' },
@@ -2931,6 +2842,18 @@ async function handleRequest(request, env) {
         }
         return json(await RuntimeLinesHandler.delete(env, lineName), 200, corsHeaders);
       }
+    }
+
+    if (pathname === '/dynamic-audio/matcher-config' && method === 'GET') {
+      return json({ ok: true, config: await DynamicAudioMatcherConfigHandler.get(env) }, 200, { ...corsHeaders, 'Cache-Control': 'no-store' });
+    }
+    if (pathname === '/dynamic-audio/matcher-config' && method === 'PUT') {
+      if (!checkWriteAuth(request, env)) {
+        return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+      }
+      const body = await readJson(request);
+      const operator = request.headers.get('X-Admin-Operator') || 'admin';
+      return json(await DynamicAudioMatcherConfigHandler.update(env, body, operator), 200, corsHeaders);
     }
 
     // GitHub Releases API

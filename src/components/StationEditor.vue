@@ -3,8 +3,15 @@ import { reactive, ref, watch, computed, nextTick, onMounted, onBeforeUnmount, o
 import { useI18n } from 'vue-i18n'
 import ColorPicker from './ColorPicker.vue'
 import { getEffectiveViewportRect } from '../utils/effectiveViewportRect.js'
-import { calculateNextStationIndex } from '../utils/displayStationCalculator'
 import { collectPeerStationNamesForAudioMatch } from '../utils/stationAudioPeers.js'
+import {
+  DYNAMIC_AUDIO_ROLE_KEYS,
+  normalizeDynamicAudioRoleKey,
+  getDynamicTargetStationIndex as getSharedDynamicTargetStationIndex,
+  getDynamicTargetStationByRole as getSharedDynamicTargetStationByRole,
+  buildStationNameCandidatesByDialect,
+  checkDynamicPlaceholderAudioMatch
+} from '../utils/stationAudioHealth.js'
 
 export default {
   name: 'StationEditor',
@@ -757,11 +764,13 @@ export default {
     const audioHealthByKey = ref({})
     const audioHealthScanTimer = ref(null)
     const audioHealthScanVersion = ref(0)
-    const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
-    const normalizeDynamicRoleKey = (roleKey) => {
-      const rk = String(roleKey || '').trim()
-      if (!rk) return ''
-      return rk === 'end' ? 'terminal' : rk
+    const DYNAMIC_ROLE_KEYS = DYNAMIC_AUDIO_ROLE_KEYS
+    const normalizeDynamicRoleKey = normalizeDynamicAudioRoleKey
+    const getDynamicTargetStationIndex = (roleKey, runtimeIdx, stations, meta) => {
+      return getSharedDynamicTargetStationIndex(roleKey, runtimeIdx, stations, meta)
+    }
+    const getDynamicTargetStationByRole = (roleKey, runtimeIdx, stations, meta) => {
+      return getSharedDynamicTargetStationByRole(roleKey, runtimeIdx, stations, meta)
     }
     const isDynamicPlaceholderItemRole = (item) => {
       return !!(item && typeof item === 'object' && DYNAMIC_ROLE_KEYS.has(String(item.role || '').trim()))
@@ -806,7 +815,6 @@ export default {
           if (activeKeys.has(k)) nextHealthByKey[k] = v
         })
 
-        const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
         const isDynamicPlaceholderItem = (itItem) => {
           if (!itItem || typeof itItem !== 'object') return false
           if (!DYNAMIC_ROLE_KEYS.has(String(itItem.role || '').trim())) return false
@@ -858,86 +866,13 @@ export default {
           const lineMeta = props.lineMeta || {}
           const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
           const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
-          const appDataForNext = { stations: lineStations, meta: lineMeta }
           const peerStationNamesForMatch = collectPeerStationNamesForAudioMatch(lineStations)
 
           // 动态占位符“按站名找音频”：不能只用 UI i18n 的 languageKey 取单一字段；
           // 否则 dialect tab（如 en/ja/ko）对应的数据目录里即使存在正确音频，也可能因为站名字段选错而被误判 broken。
-          const getTargetStationByRole = (roleKey) => {
-            if (!lineStations.length) return null
-            if (roleKey === 'start') {
-              const idx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
-              return lineStations[idx] || null
-            }
-            if (roleKey === 'terminal' || roleKey === 'end') {
-              const idx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
-              return lineStations[idx] || null
-            }
-            if (roleKey === 'current') return lineStations[runtimeIdx] || null
-            if (roleKey === 'next') {
-              const nextIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
-              return lineStations[nextIdx] || null
-            }
-            return null
-          }
+          const getTargetStationByRole = (roleKey) => getDynamicTargetStationByRole(roleKey, runtimeIdx, lineStations, lineMeta)
 
-          const getStationNameCandidatesByTargetDialect = (st) => {
-            if (!st || typeof st !== 'object') return []
-            const d = String(dialectKey || '').toLowerCase()
-            const uniqPush = (arr, v) => {
-              const s = (v === undefined || v === null) ? '' : String(v)
-              const t = s.trim()
-              if (!t) return
-              if (!arr.includes(t)) arr.push(t)
-            }
-
-            const out = []
-            const isJa = d === 'ja' || d.startsWith('ja')
-            const isKo = d === 'ko' || d.startsWith('ko')
-            const isEnglish = d === 'en' || d.startsWith('en')
-            if (isEnglish) {
-              uniqPush(out, st.en)
-              uniqPush(out, st.name)
-              uniqPush(out, st.cn)
-              uniqPush(out, st.zh)
-              uniqPush(out, st.name || st.en)
-              return out
-            }
-
-            // 日/韩：优先使用各自字段（如果数据源里有这些字段）
-            if (isJa) {
-              uniqPush(out, st.ja)
-              uniqPush(out, st.name)
-              uniqPush(out, st.en)
-              uniqPush(out, st.zh)
-              uniqPush(out, st.cn)
-              return out
-            }
-            if (isKo) {
-              uniqPush(out, st.ko)
-              uniqPush(out, st.name)
-              uniqPush(out, st.en)
-              uniqPush(out, st.zh)
-              uniqPush(out, st.cn)
-              return out
-            }
-
-            // 中文系列：优先中文字段（用于 zhcn/zhtw 目录）
-            if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh') || d.includes('zhcn') || d.includes('zhtw')) {
-              uniqPush(out, st.name)
-              uniqPush(out, st.zh)
-              uniqPush(out, st.cn)
-              uniqPush(out, st.en)
-              return out
-            }
-
-            // 其它方言/语种：尽量兼容混合命名
-            uniqPush(out, st.name)
-            uniqPush(out, st.en)
-            uniqPush(out, st.zh)
-            uniqPush(out, st.cn)
-            return out
-          }
+          const getStationNameCandidatesByTargetDialect = (st) => buildStationNameCandidatesByDialect(st, dialectKey)
 
           // 如果当前线路路径/IPC 暂时不可用：保留当前状态，避免“损坏提示闪一下后消失”
           if (!canCheckResolve && !canCheckDynamic) {
@@ -954,34 +889,17 @@ export default {
                 const roleKey = it.item.role
                 const stationForRole = getTargetStationByRole(roleKey)
                 const stationNameCandidates = getStationNameCandidatesByTargetDialect(stationForRole)
-                if (!stationNameCandidates.length) {
-                  nextHealthByKey[key] = 'broken'
-                  continue
-                }
-
-                let foundOk = false
-                for (const stationNameForRole of stationNameCandidates) {
-                  const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}::${peerStationNamesForMatch.join('\x1e')}`
-                  if (dynamicOkCache.has(dynCacheKey)) {
-                    if (dynamicOkCache.get(dynCacheKey)) {
-                      foundOk = true
-                      break
-                    }
-                    continue
-                  }
-
-                  try {
-                    const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey, peerStationNames: peerStationNamesForMatch })
-                    const ok = !!res?.ok && !!res?.relativePath
-                    dynamicOkCache.set(dynCacheKey, ok)
-                    if (ok) {
-                      foundOk = true
-                      break
-                    }
-                  } catch (e) {
-                    dynamicOkCache.set(dynCacheKey, false)
-                  }
-                }
+                const foundOk = await checkDynamicPlaceholderAudioMatch({
+                  findAudioByStationName,
+                  lineFileOrDir,
+                  roleKey,
+                  stationForRole,
+                  stationNameCandidates,
+                  languageKey,
+                  dialectKey,
+                  peerStationNames: peerStationNamesForMatch,
+                  dynamicOkCache
+                })
                 nextHealthByKey[key] = foundOk ? 'ok' : 'broken'
               } else {
                 nextHealthByKey[key] = 'broken'
@@ -1021,61 +939,7 @@ export default {
     let stationAudioBrokenCountScanToken = 0
     const stationAudioBrokenCountScanTimer = ref(null)
 
-    const getStationNameCandidatesByTargetDialectForScan = (st, targetDialectKey) => {
-      if (!st || typeof st !== 'object') return []
-      const d = String(targetDialectKey || '').toLowerCase()
-      const uniqPush = (arr, v) => {
-        const s = (v === undefined || v === null) ? '' : String(v)
-        const t = s.trim()
-        if (!t) return
-        if (!arr.includes(t)) arr.push(t)
-      }
-
-      const out = []
-      const isEnglish = d === 'en' || d.startsWith('en')
-      if (isEnglish) {
-        uniqPush(out, st.en)
-        uniqPush(out, st.name)
-        uniqPush(out, st.cn)
-        uniqPush(out, st.zh)
-        return out
-      }
-
-      const isJa = d === 'ja' || d.startsWith('ja')
-      const isKo = d === 'ko' || d.startsWith('ko')
-      if (isJa) {
-        uniqPush(out, st.ja)
-        uniqPush(out, st.name)
-        uniqPush(out, st.en)
-        uniqPush(out, st.zh)
-        uniqPush(out, st.cn)
-        return out
-      }
-      if (isKo) {
-        uniqPush(out, st.ko)
-        uniqPush(out, st.name)
-        uniqPush(out, st.en)
-        uniqPush(out, st.zh)
-        uniqPush(out, st.cn)
-        return out
-      }
-
-      // 中文系列：优先中文字段（用于 zhcn/zhtw 目录）
-      if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh') || d.includes('zhcn') || d.includes('zhtw')) {
-        uniqPush(out, st.name)
-        uniqPush(out, st.zh)
-        uniqPush(out, st.cn)
-        uniqPush(out, st.en)
-        return out
-      }
-
-      // 其它方言/语种：兼容混合命名
-      uniqPush(out, st.name)
-      uniqPush(out, st.en)
-      uniqPush(out, st.zh)
-      uniqPush(out, st.cn)
-      return out
-    }
+    const getStationNameCandidatesByTargetDialectForScan = (st, targetDialectKey) => buildStationNameCandidatesByDialect(st, targetDialectKey)
 
     const queueStationAudioBrokenCountScan = () => {
       if (stationAudioBrokenCountScanTimer.value) {
@@ -1100,35 +964,12 @@ export default {
           const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
           const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
           const lineMeta = props.lineMeta || {}
-          const appDataForNext = { stations: lineStations, meta: lineMeta }
           const peerStationNamesForMatch = collectPeerStationNamesForAudioMatch(lineStations)
 
-          const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
-          const normalizeDynamicRoleKey = (roleKey) => {
-            const rk = String(roleKey || '').trim()
-            if (!rk) return ''
-            return rk === 'end' ? 'terminal' : rk
-          }
           const isDynamicPlaceholderItemRole = (item) => {
             return !!(item && typeof item === 'object' && DYNAMIC_ROLE_KEYS.has(String(item.role || '').trim()))
           }
-          const getTargetStationByRole = (roleKey) => {
-            if (!lineStations.length) return null
-            if (roleKey === 'current') return lineStations[runtimeIdx] || null
-            if (roleKey === 'next') {
-              const nextIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
-              return lineStations[nextIdx] || null
-            }
-            if (roleKey === 'start') {
-              const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
-              return lineStations[startIdx] || null
-            }
-            if (roleKey === 'terminal') {
-              const termIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
-              return lineStations[termIdx] || null
-            }
-            return null
-          }
+          const getTargetStationByRole = (roleKey) => getDynamicTargetStationByRole(roleKey, runtimeIdx, lineStations, lineMeta)
 
           const dialectKeysToCheck = (dynamicAudioTabs.value || []).map((x) => x.key)
           const dialectKeys = dialectKeysToCheck.length ? dialectKeysToCheck : ['cmn']
@@ -1161,27 +1002,17 @@ export default {
                     const roleKey = normalizeDynamicRoleKey(item.role)
                     const stationForRole = getTargetStationByRole(roleKey)
                     const candidates = getStationNameCandidatesByTargetDialectForScan(stationForRole, dialectKey)
-                    if (!candidates.length) {
-                      brokenCount++
-                      continue
-                    }
-
-                    let foundOk = false
-                    for (const stationNameForRole of candidates) {
-                      const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}::${peerStationNamesForMatch.join('\x1e')}`
-                      if (dynamicOkCache.has(dynCacheKey)) {
-                        if (dynamicOkCache.get(dynCacheKey)) { foundOk = true; break }
-                        continue
-                      }
-                      try {
-                        const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey, peerStationNames: peerStationNamesForMatch })
-                        const ok = !!res?.ok && !!res?.relativePath
-                        dynamicOkCache.set(dynCacheKey, ok)
-                        if (ok) { foundOk = true; break }
-                      } catch (e) {
-                        dynamicOkCache.set(dynCacheKey, false)
-                      }
-                    }
+                    const foundOk = await checkDynamicPlaceholderAudioMatch({
+                      findAudioByStationName,
+                      lineFileOrDir,
+                      roleKey,
+                      stationForRole,
+                      stationNameCandidates: candidates,
+                      languageKey,
+                      dialectKey,
+                      peerStationNames: peerStationNamesForMatch,
+                      dynamicOkCache
+                    })
                     if (!foundOk) brokenCount++
                   } else {
                     // 非动态占位符（或无法检查动态）：缺失 path 视为异常计数
@@ -1369,7 +1200,7 @@ export default {
       }
     }
 
-    const addDynamicAudioPlaceholder = (dir, roleKey) => {
+    const addDynamicAudioPlaceholder = (dir, roleKey, extra = {}) => {
       if (!dir || !form?.stationAudio) return
       const targetList = form.stationAudio[dir]?.list
       if (!Array.isArray(targetList)) return
@@ -1378,10 +1209,14 @@ export default {
         roleKey === 'start' ? t('stationEditor.audioDynamicRoleStart')
           : roleKey === 'next' ? t('stationEditor.audioDynamicRoleNext')
             : roleKey === 'current' ? t('stationEditor.audioDynamicRoleCurrent')
+              : roleKey === 'door' ? t('stationEditor.audioDynamicDoorAuto')
               : roleKey === 'terminal' ? t('stationEditor.audioDynamicRoleTerminal')
                 : (roleKey || '')
 
-      targetList.push({ role: roleKey, name: roleName, dialectKey: form.stationAudio.dynamicDialect || 'cmn' })
+      const doorSide = extra && typeof extra === 'object' ? (extra.doorSide || extra.door) : ''
+      const payload = { role: roleKey, name: roleName, dialectKey: form.stationAudio.dynamicDialect || 'cmn' }
+      if (doorSide) payload.doorSide = String(doorSide)
+      targetList.push(payload)
       queueAudioHealthScan()
       queueStationAudioBrokenCountScan()
     }
@@ -1476,7 +1311,7 @@ export default {
       })
       if (openRes?.canceled || !openRes.filePaths || !openRes.filePaths.length) return
 
-      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end', 'door'])
       const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
       const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
       const lineMeta = props.lineMeta || {}
@@ -1527,12 +1362,7 @@ export default {
         return out
       }
 
-      const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
-      const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
-
-      const appDataForNext = { stations: lineStations, meta: lineMeta }
-
-      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName, stationNameCandidates }
+      const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName, stationNameCandidates, doorSide? }
       const dirs = form.stationAudio.separateDirection ? ['up', 'down'] : ['up']
       for (const dir of dirs) {
         const list = getAudioList(dir)
@@ -1544,17 +1374,19 @@ export default {
           const hasPath = !!(item.path || item.src || item.filePath)
           if (hasPath) continue
 
-          let targetIdx = -1
-          if (roleKey === 'start') targetIdx = startIdx
-          else if (roleKey === 'terminal') targetIdx = terminalIdx
-          else if (roleKey === 'current') targetIdx = runtimeIdx
-          else if (roleKey === 'next') targetIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+          const targetIdx = getDynamicTargetStationIndex(roleKey, runtimeIdx, lineStations, lineMeta)
           if (typeof targetIdx !== 'number' || targetIdx < 0 || targetIdx >= lineStations.length) continue
 
           const stationName = getStationNameByLang(lineStations[targetIdx])
           const stationNameCandidates = getStationNameCandidates(lineStations[targetIdx])
           if (!stationName) continue
-          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName, stationNameCandidates })
+          const target = { roleKey, stationName, stationNameCandidates }
+          if (roleKey === 'door') {
+            const st = lineStations[targetIdx]
+            const doorSide = String(st?.doorSide || st?.door || '').trim()
+            if (doorSide) target.doorSide = doorSide
+          }
+          requiredTargets.set(`${roleKey}::${targetIdx}`, target)
         }
       }
       // 兼容无占位项的线路：退化为“按站名匹配”统计
@@ -1625,7 +1457,7 @@ export default {
       const targets = Array.from(requiredTargets.values())
       for (const target of targets) {
         const opts = target.roleKey
-          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths, peerStationNames }
+          ? { role: target.roleKey, doorSide: target.doorSide || '', languageKey, dialectKey, importedRelativePaths, peerStationNames }
           : { languageKey, dialectKey, importedRelativePaths, peerStationNames }
         const candidates = Array.isArray(target.stationNameCandidates) && target.stationNameCandidates.length
           ? target.stationNameCandidates
@@ -1677,7 +1509,7 @@ export default {
       }
 
       audioImportFailedStations.value = Array.from(new Set(audioImportFailedStations.value))
-      console.warn('[StationEditor][DynamicAudioImport][files][summary]', {
+      const filesSummary = {
         lineDirOrFilePath,
         languageKey,
         dialectKey,
@@ -1689,7 +1521,9 @@ export default {
         failedStations: [...audioImportFailedStations.value],
         copyFailures,
         matchFailures
-      })
+      }
+      if (audioImportCopyFail.value > 0 || audioImportFailStations.value > 0) console.warn('[StationEditor][DynamicAudioImport][files][summary]', filesSummary)
+      else console.info('[StationEditor][DynamicAudioImport][files][summary]', filesSummary)
       audioImportStage.value = 'done'
       queueAudioHealthScan()
       queueStationAudioBrokenCountScan()
@@ -1742,7 +1576,7 @@ export default {
       const folderPath = isLikelyAudioFilePath(pickedPath) ? toParentDir(pickedPath) : pickedPath
       if (!folderPath) return
 
-      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
+      const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end', 'door'])
       const runtimeIdx = typeof props.currentStationIndex === 'number' ? props.currentStationIndex : -1
       const lineStations = Array.isArray(props.lineStations) ? props.lineStations : []
       const lineMeta = props.lineMeta || {}
@@ -1793,11 +1627,6 @@ export default {
         return out
       }
 
-      const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
-      const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (lineStations.length - 1)
-
-      const appDataForNext = { stations: lineStations, meta: lineMeta }
-
       const requiredTargets = new Map() // `${role}::${idx}` -> { roleKey, stationName, stationNameCandidates }
       const dirs = form.stationAudio.separateDirection ? ['up', 'down'] : ['up']
       for (const dir of dirs) {
@@ -1810,17 +1639,19 @@ export default {
           const hasPath = !!(item.path || item.src || item.filePath)
           if (hasPath) continue
 
-          let targetIdx = -1
-          if (roleKey === 'start') targetIdx = startIdx
-          else if (roleKey === 'terminal') targetIdx = terminalIdx
-          else if (roleKey === 'current') targetIdx = runtimeIdx
-          else if (roleKey === 'next') targetIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
+          const targetIdx = getDynamicTargetStationIndex(roleKey, runtimeIdx, lineStations, lineMeta)
           if (typeof targetIdx !== 'number' || targetIdx < 0 || targetIdx >= lineStations.length) continue
 
           const stationName = getStationNameByLang(lineStations[targetIdx])
           const stationNameCandidates = getStationNameCandidates(lineStations[targetIdx])
           if (!stationName) continue
-          requiredTargets.set(`${roleKey}::${targetIdx}`, { roleKey, stationName, stationNameCandidates })
+          const target = { roleKey, stationName, stationNameCandidates }
+          if (roleKey === 'door') {
+            const st = lineStations[targetIdx]
+            const doorSide = String(st?.doorSide || st?.door || '').trim()
+            if (doorSide) target.doorSide = doorSide
+          }
+          requiredTargets.set(`${roleKey}::${targetIdx}`, target)
         }
       }
       // 兼容无占位项的线路：退化为“按站名匹配”统计
@@ -1900,7 +1731,7 @@ export default {
       const targets = Array.from(requiredTargets.values())
       for (const target of targets) {
         const opts = target.roleKey
-          ? { role: target.roleKey, languageKey, dialectKey, importedRelativePaths, peerStationNames }
+          ? { role: target.roleKey, doorSide: target.doorSide || '', languageKey, dialectKey, importedRelativePaths, peerStationNames }
           : { languageKey, dialectKey, importedRelativePaths, peerStationNames }
         const candidates = Array.isArray(target.stationNameCandidates) && target.stationNameCandidates.length
           ? target.stationNameCandidates
@@ -1953,7 +1784,7 @@ export default {
 
       // 去重 failed station 名称（按最终展示更友好）
       audioImportFailedStations.value = Array.from(new Set(audioImportFailedStations.value))
-      console.warn('[StationEditor][DynamicAudioImport][folder][summary]', {
+      const folderSummary = {
         lineDirOrFilePath,
         folderPath,
         languageKey,
@@ -1966,7 +1797,9 @@ export default {
         failedStations: [...audioImportFailedStations.value],
         copyFailures,
         matchFailures
-      })
+      }
+      if (audioImportCopyFail.value > 0 || audioImportFailStations.value > 0) console.warn('[StationEditor][DynamicAudioImport][folder][summary]', folderSummary)
+      else console.info('[StationEditor][DynamicAudioImport][folder][summary]', folderSummary)
 
       audioImportStage.value = 'done'
       queueAudioHealthScan()
@@ -2654,26 +2487,7 @@ export default {
           return st?.name || st?.en || ''
         }
 
-        const getTargetStationByRole = () => {
-          if (!stations.length) return null
-          if (roleKey === 'start') {
-            const startIdx = typeof lineMeta.startIdx === 'number' && lineMeta.startIdx >= 0 ? lineMeta.startIdx : 0
-            return stations[startIdx] || null
-          }
-          if (roleKey === 'terminal') {
-            const terminalIdx = typeof lineMeta.termIdx === 'number' && lineMeta.termIdx >= 0 ? lineMeta.termIdx : (stations.length - 1)
-            return stations[terminalIdx] || null
-          }
-          if (roleKey === 'current') {
-            return stations[runtimeIdx] || null
-          }
-          if (roleKey === 'next') {
-            const appDataForNext = { stations, meta: lineMeta }
-            const nextIdx = calculateNextStationIndex(runtimeIdx, appDataForNext)
-            return stations[nextIdx] || null
-          }
-          return null
-        }
+        const getTargetStationByRole = () => getDynamicTargetStationByRole(roleKey, runtimeIdx, stations, lineMeta)
 
         const findAudioByStationName = api?.lines?.findAudioByStationName
         if (typeof findAudioByStationName !== 'function') return
@@ -2690,7 +2504,10 @@ export default {
           lineFileOrDir: lineFilePath
         })
 
-        api.lines.findAudioByStationName(lineFilePath, stationNameForRole, { role: item?.role, languageKey, dialectKey, peerStationNames: collectPeerStationNamesForAudioMatch(stations) })
+        const doorSideForRole = roleKey === 'door'
+          ? String(targetStation?.doorSide || targetStation?.door || '').trim()
+          : ''
+        api.lines.findAudioByStationName(lineFilePath, stationNameForRole, { role: item?.role, doorSide: doorSideForRole, languageKey, dialectKey, peerStationNames: collectPeerStationNamesForAudioMatch(stations) })
           .then((res) => {
             if (!res || !res.ok || !res.relativePath) return
             console.warn('[StationEditor][dynamic-rightplay][resolved]', {
@@ -3554,10 +3371,14 @@ export default {
                       <i class="fas fa-step-forward"></i> {{ t('stationEditor.audioDynamicRoleNext') }}
                     </div>
                     <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'current'))">
-                      <i class="fas fa-station"></i> {{ t('stationEditor.audioDynamicRoleCurrent') }}
+                      <i class="fas fa-sign-in-alt"></i> {{ t('stationEditor.audioDynamicRoleCurrent') }}
                     </div>
                     <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'terminal'))">
                       <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioDynamicRoleTerminal') }}
+                    </div>
+                    <div class="station-context-menu-divider"></div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.audioDir || 'up', 'door'))">
+                      <i class="fas fa-door-open"></i> {{ t('stationEditor.audioDynamicDoorAuto') }}
                     </div>
                   </div>
                 </Teleport>
@@ -3653,10 +3474,14 @@ export default {
                       <i class="fas fa-step-forward"></i> {{ t('stationEditor.audioDynamicRoleNext') }}
                     </div>
                     <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'current'))">
-                      <i class="fas fa-station"></i> {{ t('stationEditor.audioDynamicRoleCurrent') }}
+                      <i class="fas fa-sign-in-alt"></i> {{ t('stationEditor.audioDynamicRoleCurrent') }}
                     </div>
                     <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'terminal'))">
                       <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioDynamicRoleTerminal') }}
+                    </div>
+                    <div class="station-context-menu-divider"></div>
+                    <div class="station-context-menu-item" @click.stop="runAndClose(() => addDynamicAudioPlaceholder(menuContext.dir || 'up', 'door'))">
+                      <i class="fas fa-door-open"></i> {{ t('stationEditor.audioDynamicDoorAuto') }}
                     </div>
                   </div>
                 </Teleport>
@@ -3722,7 +3547,7 @@ export default {
                       <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioModeOriginStation') }}
                     </div>
                     <div class="station-context-menu-item" :class="{ 'xfer-on': anySelectedHasMode(menuContext.dir, 'terminalStation') }" @click.stop="runAndClose(() => toggleAudioItemModeForSelected(menuContext.dir, 'terminalStation'))">
-                      <i class="fas fa-map-marker-alt"></i> {{ t('stationEditor.audioModeTerminalStation') }}
+                      <i class="fas fa-sign-in-alt"></i> {{ t('stationEditor.audioModeTerminalStation') }}
                     </div>
                     <div class="station-context-menu-item" :class="{ 'xfer-on': anySelectedHasMode(menuContext.dir, 'shortTurn') }" @click.stop="runAndClose(() => toggleAudioItemModeForSelected(menuContext.dir, 'shortTurn'))">
                       <i class="fas fa-route"></i> {{ t('stationEditor.audioModeShortTurn') }}
@@ -3796,7 +3621,7 @@ export default {
                       <i class="fas fa-flag-checkered"></i> {{ t('stationEditor.audioModeOriginStation') }}
                     </div>
                     <div class="station-context-menu-item" :class="{ 'xfer-on': getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.modes?.terminalStation }" @click.stop="runAndClose(() => toggleAudioItemMode(menuContext.dir, menuContext.idx, 'terminalStation', 'common'))">
-                      <i class="fas fa-map-marker-alt"></i> {{ t('stationEditor.audioModeTerminalStation') }}
+                      <i class="fas fa-sign-in-alt"></i> {{ t('stationEditor.audioModeTerminalStation') }}
                     </div>
                     <div class="station-context-menu-item" :class="{ 'xfer-on': getCommonAudioList(menuContext.dir)?.[menuContext.idx]?.modes?.shortTurn }" @click.stop="runAndClose(() => toggleAudioItemMode(menuContext.dir, menuContext.idx, 'shortTurn', 'common'))">
                       <i class="fas fa-route"></i> {{ t('stationEditor.audioModeShortTurn') }}

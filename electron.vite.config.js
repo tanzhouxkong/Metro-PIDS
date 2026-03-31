@@ -13,6 +13,8 @@ const source = resolve(__dirname, 'main.js')
 const mainModulesSourceDir = resolve(__dirname, 'main')
 const mainModulesTargetDir = join(outDir, 'main')
 const mainModulesExists = existsSync(mainModulesSourceDir)
+const sharedModulesSourceDir = resolve(__dirname, 'shared')
+const sharedModulesTargetDir = join(outDir, 'shared')
 
 if (!existsSync(outDir)) {
   mkdirSync(outDir, { recursive: true })
@@ -31,6 +33,10 @@ if (existsSync(source)) {
     if (existsSync(mainModulesSourceDir)) {
       cpSync(mainModulesSourceDir, mainModulesTargetDir, { recursive: true, force: true })
       console.log('[electron-vite-config] ✅ Ensured main/ exists at', mainModulesTargetDir)
+    }
+    if (existsSync(sharedModulesSourceDir)) {
+      cpSync(sharedModulesSourceDir, sharedModulesTargetDir, { recursive: true, force: true })
+      console.log('[electron-vite-config] Ensured shared/ exists at', sharedModulesTargetDir)
     }
   } catch (e) {
     console.error('[electron-vite-config] ❌ Failed to copy main.js:', e)
@@ -52,6 +58,10 @@ const ensureMainFile = () => {
         if (existsSync(mainModulesSourceDir)) {
           cpSync(mainModulesSourceDir, mainModulesTargetDir, { recursive: true, force: true })
           console.log('[vite-plugin] ✅ Ensured main/ exists at', mainModulesTargetDir)
+        }
+        if (existsSync(sharedModulesSourceDir)) {
+          cpSync(sharedModulesSourceDir, sharedModulesTargetDir, { recursive: true, force: true })
+          console.log('[vite-plugin] ✅ Ensured shared/ exists at', sharedModulesTargetDir)
         }
       } catch (e) {
         console.error('[vite-plugin] ❌ Failed to copy main.js:', e)

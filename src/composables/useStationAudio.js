@@ -85,6 +85,7 @@ const __findCloudAudioByStationName = async (lineName, stationName, opts = {}) =
       stationName: sn,
       opts: {
         role: opts?.role || '',
+        doorSide: opts?.doorSide || opts?.door || '',
         languageKey: opts?.languageKey || '',
         dialectKey: opts?.dialectKey || '',
         peerStationNames: Array.isArray(opts?.peerStationNames) ? opts.peerStationNames : []
@@ -674,6 +675,9 @@ export function useStationAudio(state) {
       const st = stations[targetIdx]
       const stationNameCandidates = getStationNameCandidatesByTargetDialect(st)
       if (!stationNameCandidates || !stationNameCandidates.length) return null
+      const doorSide = (item && typeof item === 'object' && (item.doorSide || item.door))
+        ? (item.doorSide || item.door)
+        : (st && (st.door || st.doorSide)) ? (st.door || st.doorSide) : ''
       const lineFilePath = getLineDirOrFilePath()
       const hasLocalResolver = typeof window !== 'undefined' && typeof window?.electronAPI?.lines?.findAudioByStationName === 'function' && !!lineFilePath
       const runtimeLineName = cleanLineName(state?.appData?.meta?.lineName || '')
@@ -734,6 +738,7 @@ export function useStationAudio(state) {
             }
             const rel = await __findCloudAudioByStationName(runtimeLineName, stationNameForLang, {
               role: roleKey,
+              doorSide,
               languageKey: langKey,
               dialectKey,
               peerStationNames
@@ -750,7 +755,7 @@ export function useStationAudio(state) {
                 stationNameForLang
               })
             }
-            const res = await localIpc(lineFilePath, stationNameForLang, { role: roleKey, languageKey: langKey, dialectKey, peerStationNames })
+            const res = await localIpc(lineFilePath, stationNameForLang, { role: roleKey, doorSide, languageKey: langKey, dialectKey, peerStationNames })
             return (res?.ok && typeof res?.relativePath === 'string' && res.relativePath) ? res.relativePath : ''
           }
           if (cloudFirst) {
@@ -830,6 +835,15 @@ export function useStationAudio(state) {
       const resolved = resolveWithIdx(currentIdx, { roleKey: role, allowNameMatch: true, useNameForCommon: true })
       if (resolved?.path) return resolved
       const dynResolved = await tryResolveDynamicFromDir(currentIdx, role)
+      return dynResolved || item
+    }
+
+    if (role === 'door') {
+      // 车门提示在“出站模式”按下一站开门侧播报；其余模式沿用当前站。
+      const doorTargetIdx = ctx?.forArrive === false ? getNextStationIdx(currentIdx, appData) : currentIdx
+      const resolved = resolveWithIdx(doorTargetIdx, { roleKey: role, allowNameMatch: true, useNameForCommon: true })
+      if (resolved?.path) return resolved
+      const dynResolved = await tryResolveDynamicFromDir(doorTargetIdx, role)
       return dynResolved || item
     }
 
@@ -1333,7 +1347,7 @@ export function useStationAudio(state) {
       currentIdx: idx
     })
     if (dialectOrderedList.length) {
-      ;(async () => { await playList(sessionId, dir, dialectOrderedList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'dialectOrderedList' }) })()
+      ;(async () => { await playList(sessionId, dir, dialectOrderedList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'dialectOrderedList', forArrive: true }) })()
       return
     }
 
@@ -1399,9 +1413,9 @@ export function useStationAudio(state) {
       ? getFilteredList(effectiveList, serviceMode, isShortTurn, null, stations, meta, dir, idx, 'endList')
       : []
     ;(async () => {
-      if (idx === startIdx && welcomeList.length) await playList(sessionId, dir, welcomeList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'welcomeList' })
-      await playList(sessionId, dir, arriveList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'arriveList' })
-      if (idx === termIdx && endList.length) await playList(sessionId, dir, endList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'endList' })
+      if (idx === startIdx && welcomeList.length) await playList(sessionId, dir, welcomeList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'welcomeList', forArrive: true })
+      await playList(sessionId, dir, arriveList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'arriveList', forArrive: true })
+      if (idx === termIdx && endList.length) await playList(sessionId, dir, endList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'endList', forArrive: true })
     })()
   }
 
@@ -1467,7 +1481,7 @@ export function useStationAudio(state) {
       currentIdx: idx
     })
     if (dialectOrderedList.length) {
-      ;(async () => { await playList(sessionId, dir, dialectOrderedList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'dialectOrderedList' }) })()
+      ;(async () => { await playList(sessionId, dir, dialectOrderedList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'dialectOrderedList', forArrive: false }) })()
       return
     }
 
@@ -1528,7 +1542,7 @@ export function useStationAudio(state) {
       : []
 
     if (departList.length) {
-      ;(async () => { await playList(sessionId, dir, departList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'departList' }) })()
+      ;(async () => { await playList(sessionId, dir, departList, { currentIdx: idx, stations, meta, appData: state.appData, listKind: 'departList', forArrive: false }) })()
     }
   }
 

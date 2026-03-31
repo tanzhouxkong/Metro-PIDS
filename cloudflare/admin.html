@@ -499,6 +499,30 @@
           </div>
 
           <div class="card">
+            <h2><i class="fas fa-file-upload"></i> 匹配规则上传（客户端自动同步）</h2>
+            <div class="grid">
+              <div class="field">
+                <label>服务器规则版本</label>
+                <input type="text" id="dynamic-audio-matcher-version" placeholder="未加载" readonly />
+              </div>
+              <div class="field">
+                <label>本地规则文件（JSON）</label>
+                <input type="file" id="dynamic-audio-matcher-file" accept=".json,application/json" />
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary" id="btn-dynamic-audio-matcher-load"><i class="fas fa-download"></i> 从服务器读取</button>
+              <button class="btn btn-info" id="btn-dynamic-audio-matcher-import"><i class="fas fa-file-import"></i> 从文件导入</button>
+              <button class="btn btn-primary" id="btn-dynamic-audio-matcher-save"><i class="fas fa-upload"></i> 上传到服务器</button>
+            </div>
+            <div class="field">
+              <label>匹配规则 JSON</label>
+              <textarea id="dynamic-audio-matcher-json" style="height:220px; font-family:monospace; font-size:12px;" placeholder='{"version":"1.0","rules":{"scoreThreshold":180}}'></textarea>
+            </div>
+            <div id="dynamic-audio-matcher-status"></div>
+          </div>
+
+          <div class="card">
             <h2><i class="fas fa-search"></i> 动态占位音频识别测试</h2>
             <div class="grid">
               <div class="field">
@@ -2551,11 +2575,102 @@
     document.getElementById('btn-dynamic-audio-refresh-lines').addEventListener('click', loadDynamicAudioLineOptions);
     document.getElementById('btn-dynamic-audio-load-version').addEventListener('click', loadDynamicAudioLineVersion);
     document.getElementById('btn-dynamic-audio-find').addEventListener('click', findDynamicAudioByStation);
+
+    function getDefaultDynamicAudioMatcherConfigForAdmin() {
+      return {
+        version: '1.0',
+        rules: {
+          scoreThreshold: 180,
+          tokenMinLength: 2,
+          lengthPenaltyFactor: 2.2,
+          maxLengthPenalty: 120,
+          importKeywordPenalty: 28,
+          importPenaltyKeywords: ['import', '下载', '复制', '提示', '欢迎', '到达', '离开', 'arrival', 'depart', 'welcome', 'announce']
+        }
+      };
+    }
+
+    function setDynamicAudioMatcherEditor(configObj) {
+      const cfg = (configObj && typeof configObj === 'object') ? configObj : getDefaultDynamicAudioMatcherConfigForAdmin();
+      const ta = document.getElementById('dynamic-audio-matcher-json');
+      const verEl = document.getElementById('dynamic-audio-matcher-version');
+      if (ta) ta.value = JSON.stringify(cfg, null, 2);
+      if (verEl) verEl.value = String(cfg.version || '');
+    }
+
+    function parseDynamicAudioMatcherEditor() {
+      const ta = document.getElementById('dynamic-audio-matcher-json');
+      const txt = String(ta?.value || '').trim();
+      if (!txt) throw new Error('匹配规则 JSON 为空');
+      const parsed = JSON.parse(txt);
+      if (!parsed || typeof parsed !== 'object') throw new Error('匹配规则 JSON 必须是对象');
+      return parsed;
+    }
+
+    async function loadDynamicAudioMatcherConfigFromServer() {
+      showStatus('dynamic-audio-matcher-status', '正在从服务器读取匹配规则...', 'info');
+      const data = await callApi('GET', '/dynamic-audio/matcher-config');
+      const cfg = (data && data.config && typeof data.config === 'object')
+        ? data.config
+        : getDefaultDynamicAudioMatcherConfigForAdmin();
+      setDynamicAudioMatcherEditor(cfg);
+      showStatus('dynamic-audio-matcher-status', `已读取服务器规则，版本：${cfg.version || '未知'}`, 'success');
+    }
+
+    async function saveDynamicAudioMatcherConfigToServer() {
+      const cfg = parseDynamicAudioMatcherEditor();
+      showStatus('dynamic-audio-matcher-status', '正在上传匹配规则到服务器...', 'info');
+      const data = await callApi('PUT', '/dynamic-audio/matcher-config', cfg);
+      const saved = (data && data.config && typeof data.config === 'object') ? data.config : cfg;
+      setDynamicAudioMatcherEditor(saved);
+      const ver = String(saved.version || cfg.version || '').trim() || '未设置';
+      document.getElementById('dynamic-audio-cloud-version').value = ver;
+      saveDynamicAudioConfig({
+        mode: String(document.getElementById('dynamic-audio-cloud-mode')?.value || '').trim() || 'cloud-first',
+        version: ver
+      });
+      showStatus('dynamic-audio-matcher-status', `上传成功，版本：${ver}。客户端会自动同步。`, 'success');
+    }
+
+    async function importDynamicAudioMatcherConfigFromFile() {
+      const input = document.getElementById('dynamic-audio-matcher-file');
+      const file = input && input.files && input.files[0] ? input.files[0] : null;
+      if (!file) {
+        showStatus('dynamic-audio-matcher-status', '请先选择 JSON 文件', 'error');
+        return;
+      }
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      setDynamicAudioMatcherEditor(parsed);
+      showStatus('dynamic-audio-matcher-status', `已导入文件：${file.name}`, 'success');
+    }
+
     document.getElementById('btn-dynamic-audio-save-config').addEventListener('click', () => {
       const mode = String(document.getElementById('dynamic-audio-cloud-mode')?.value || '').trim() || 'cloud-first';
       const version = String(document.getElementById('dynamic-audio-cloud-version')?.value || '').trim() || '1.0';
       saveDynamicAudioConfig({ mode, version });
       showStatus('dynamic-audio-config-status', `已保存：模式=${mode}，版本=${version}`, 'success');
+    });
+    document.getElementById('btn-dynamic-audio-matcher-load').addEventListener('click', async () => {
+      try {
+        await loadDynamicAudioMatcherConfigFromServer();
+      } catch (e) {
+        showStatus('dynamic-audio-matcher-status', `读取失败：${e.message}`, 'error');
+      }
+    });
+    document.getElementById('btn-dynamic-audio-matcher-import').addEventListener('click', async () => {
+      try {
+        await importDynamicAudioMatcherConfigFromFile();
+      } catch (e) {
+        showStatus('dynamic-audio-matcher-status', `导入失败：${e.message}`, 'error');
+      }
+    });
+    document.getElementById('btn-dynamic-audio-matcher-save').addEventListener('click', async () => {
+      try {
+        await saveDynamicAudioMatcherConfigToServer();
+      } catch (e) {
+        showStatus('dynamic-audio-matcher-status', `上传失败：${e.message}`, 'error');
+      }
     });
     document.getElementById('dynamic-audio-line-name').addEventListener('change', () => {
       document.getElementById('dynamic-audio-line-version').value = '';
@@ -5197,6 +5312,7 @@
       document.getElementById('api-base-display').textContent = savedConfig.apiBase || '未设置';
       document.getElementById('dynamic-audio-cloud-mode').value = dynamicAudioCfg.mode || 'cloud-first';
       document.getElementById('dynamic-audio-cloud-version').value = dynamicAudioCfg.version || '1.0';
+      setDynamicAudioMatcherEditor({ version: dynamicAudioCfg.version || '1.0', rules: getDefaultDynamicAudioMatcherConfigForAdmin().rules });
       if (savedConfig.excludedDevices && document.getElementById('stat-excluded-devices')) {
         document.getElementById('stat-excluded-devices').value = savedConfig.excludedDevices;
       }
@@ -5205,6 +5321,9 @@
       
       if (savedConfig.apiBase) {
         loadDynamicAudioLineOptions();
+        loadDynamicAudioMatcherConfigFromServer().catch((e) => {
+          showStatus('dynamic-audio-matcher-status', `读取服务器匹配规则失败：${e.message}`, 'warn');
+        });
         // 延迟加载，确保所有事件监听器已注册
         setTimeout(() => {
           console.log('[Admin] 🚀 开始自动加载服务器数据...');

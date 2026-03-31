@@ -8,8 +8,14 @@ import { useStationAudio } from '../composables/useStationAudio.js'
 import { useFileIO } from '../composables/useFileIO.js'
 import StationEditor from './StationEditor.vue'
 import dialogService from '../utils/dialogService.js'
-import { calculateNextStationIndex } from '../utils/displayStationCalculator'
 import { collectPeerStationNamesForAudioMatch } from '../utils/stationAudioPeers.js'
+import {
+  DYNAMIC_AUDIO_ROLE_KEYS,
+  normalizeDynamicAudioRoleKey,
+  getDynamicTargetStationByRole,
+  buildStationNameCandidatesByDialect,
+  checkDynamicPlaceholderAudioMatch
+} from '../utils/stationAudioHealth.js'
 
 export default {
   name: 'AdminApp',
@@ -130,12 +136,8 @@ export default {
 
                 const peerStationNames = collectPeerStationNamesForAudioMatch(stations)
 
-                const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end'])
-                const normalizeDynamicRoleKey = (roleKey) => {
-                  const rk = String(roleKey || '').trim()
-                  if (!rk) return ''
-                  return rk === 'end' ? 'terminal' : rk
-                }
+                const DYNAMIC_ROLE_KEYS = DYNAMIC_AUDIO_ROLE_KEYS
+                const normalizeDynamicRoleKey = normalizeDynamicAudioRoleKey
                 const isDynamicPlaceholderObject = (x) => {
                   return !!(x && typeof x === 'object' && DYNAMIC_ROLE_KEYS.has(String(x.role || '').trim()) && !x.path)
                 }
@@ -147,95 +149,12 @@ export default {
                   return st.name || st.en || ''
                 }
 
-                const appDataForCalc = { stations, meta }
                 const getTargetStationByRoleAndIdx = (roleKey, currentIdxForRole) => {
-                  if (!Array.isArray(stations) || !stations.length) return null
-                  if (roleKey === 'current') return stations[currentIdxForRole] || null
-                  if (roleKey === 'next') {
-                    const nextIdx = calculateNextStationIndex(currentIdxForRole, appDataForCalc)
-                    return stations[nextIdx] || null
-                  }
-                  if (roleKey === 'start') {
-                    const startIdx = typeof meta.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
-                    return stations[startIdx] || null
-                  }
-                  if (roleKey === 'terminal') {
-                    const termIdx = typeof meta.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : (stations.length - 1)
-                    return stations[termIdx] || null
-                  }
-                  return null
+                  return getDynamicTargetStationByRole(roleKey, currentIdxForRole, stations, meta)
                 }
 
                 const getStationNameCandidatesByTargetDialect = (st, targetDialectKey) => {
-                  if (!st || typeof st !== 'object') return []
-                  const d = String(targetDialectKey || '').toLowerCase()
-                  const uniqPush = (arr, v) => {
-                    const s = (v === undefined || v === null) ? '' : String(v)
-                    const t = s.trim()
-                    if (!t) return
-                    if (!arr.includes(t)) arr.push(t)
-                  }
-
-                  const out = []
-                  const isEnglish = d === 'en' || d.startsWith('en')
-                  if (isEnglish) {
-                    uniqPush(out, st.en)
-                    uniqPush(out, st.name)
-                    uniqPush(out, st.cn)
-                    uniqPush(out, st.zh)
-                    return out
-                  }
-
-                  const isJa = d === 'ja' || d.startsWith('ja')
-                  const isKo = d === 'ko' || d.startsWith('ko')
-                  if (isJa) {
-                    uniqPush(out, st.ja)
-                    uniqPush(out, st.name)
-                    uniqPush(out, st.en)
-                    uniqPush(out, st.zh)
-                    uniqPush(out, st.cn)
-                    return out
-                  }
-                  if (isKo) {
-                    uniqPush(out, st.ko)
-                    uniqPush(out, st.name)
-                    uniqPush(out, st.en)
-                    uniqPush(out, st.zh)
-                    uniqPush(out, st.cn)
-                    return out
-                  }
-
-                  if (d.startsWith('cmn') || d === 'cmn' || d.includes('zh')) {
-                    uniqPush(out, st.name)
-                    uniqPush(out, st.zh)
-                    uniqPush(out, st.cn)
-                    uniqPush(out, st.en)
-                    return out
-                  }
-
-                  // 其它方言/语种：兼容混合命名
-                  uniqPush(out, st.name)
-                  uniqPush(out, st.en)
-                  uniqPush(out, st.zh)
-                  uniqPush(out, st.cn)
-                  return out
-                }
-
-                const getTargetStationNameByRoleAndIdx = (roleKey, currentIdxForRole) => {
-                  if (roleKey === 'current') return getStationNameByLang(stations[currentIdxForRole])
-                  if (roleKey === 'next') {
-                    const nextIdx = calculateNextStationIndex(currentIdxForRole, appDataForCalc)
-                    return getStationNameByLang(stations[nextIdx])
-                  }
-                  if (roleKey === 'start') {
-                    const startIdx = typeof meta.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
-                    return getStationNameByLang(stations[startIdx])
-                  }
-                  if (roleKey === 'terminal') {
-                    const termIdx = typeof meta.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : (stations.length - 1)
-                    return getStationNameByLang(stations[termIdx])
-                  }
-                  return ''
+                  return buildStationNameCandidatesByDialect(st, targetDialectKey)
                 }
 
                 const okCache = new Map() // itemPath -> ok:boolean
@@ -303,30 +222,17 @@ export default {
                               const roleKey = normalizeDynamicRoleKey(item.role)
                               const stationForRole = getTargetStationByRoleAndIdx(roleKey, i)
                               const candidates = getStationNameCandidatesByTargetDialect(stationForRole, dialectKey)
-                              if (!candidates || !candidates.length) { hasBroken = true; break }
-
-                              let foundOk = false
-                              for (const stationNameForRole of candidates) {
-                                const dynCacheKey = `${lineFileOrDir}::${roleKey}::${stationNameForRole}::${languageKey}::${dialectKey}::${peerStationNames.join('\x1e')}`
-                                if (dynamicOkCache.has(dynCacheKey)) {
-                                  if (dynamicOkCache.get(dynCacheKey)) {
-                                    foundOk = true
-                                    break
-                                  }
-                                  continue
-                                }
-                                try {
-                                  const res = await findAudioByStationName(lineFileOrDir, stationNameForRole, { role: roleKey, languageKey, dialectKey, peerStationNames })
-                                  const ok = !!res?.ok && !!res?.relativePath
-                                  dynamicOkCache.set(dynCacheKey, ok)
-                                  if (ok) {
-                                    foundOk = true
-                                    break
-                                  }
-                                } catch (e) {
-                                  dynamicOkCache.set(dynCacheKey, false)
-                                }
-                              }
+                              const foundOk = await checkDynamicPlaceholderAudioMatch({
+                                findAudioByStationName,
+                                lineFileOrDir,
+                                roleKey,
+                                stationForRole,
+                                stationNameCandidates: candidates,
+                                languageKey,
+                                dialectKey,
+                                peerStationNames,
+                                dynamicOkCache
+                              })
                               if (!foundOk) { hasBroken = true; break }
                               continue
                             }
