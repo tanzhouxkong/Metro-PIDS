@@ -491,9 +491,9 @@ import {
 
 const BASE_WIDTH = 1900
 const BASE_HEIGHT = 600
-// 左侧面板逻辑宽度与布局列宽保持一致（420px）
-// 实际视觉缩小 40px 已通过 CSS 的 grid-template-columns 从 460px 调整为 420px 实现
-const LEFT_PANEL_WIDTH = 420
+// 左侧面板逻辑宽度与布局列宽保持一致（355px）
+// 当前版本在原基础上继续向左收窄 10px
+const LEFT_PANEL_WIDTH = 380
 const ROUTE_AREA_WIDTH = BASE_WIDTH - LEFT_PANEL_WIDTH
 const ROUTE_VIEWBOX_WIDTH = 1200
 const ROUTE_SCALE = ROUTE_AREA_WIDTH / ROUTE_VIEWBOX_WIDTH
@@ -771,7 +771,17 @@ function readVirtualPositionFromSettingsPayload(settings = {}) {
 }
 
 function readTrainFormationFromSettingsPayload(settings = {}) {
-  return settings?.display?.display3TrainFormation || settings?.display?.trainFormation || settings?.display3TrainFormation || '6'
+  const fromDisplay = settings?.display && Object.prototype.hasOwnProperty.call(settings.display, 'display3TrainFormation')
+    ? settings.display.display3TrainFormation
+    : undefined
+  const fromLegacyDisplay = settings?.display && Object.prototype.hasOwnProperty.call(settings.display, 'trainFormation')
+    ? settings.display.trainFormation
+    : undefined
+  const fromRoot = settings && Object.prototype.hasOwnProperty.call(settings, 'display3TrainFormation')
+    ? settings.display3TrainFormation
+    : undefined
+  const raw = fromDisplay ?? fromLegacyDisplay ?? fromRoot
+  return raw == null ? null : normalizeTrainFormation(raw)
 }
 
 function readActiveCarNoFromSettingsPayload(settings = {}) {
@@ -1817,7 +1827,10 @@ function handleIncomingMessage(message) {
   }
 
   if (settings?.display) {
-    applyTrainFormation(readTrainFormationFromSettingsPayload(settings))
+    const syncedTrainFormation = readTrainFormationFromSettingsPayload(settings)
+    if (syncedTrainFormation !== null) {
+      applyTrainFormation(syncedTrainFormation)
+    }
     const activeCarNo = readActiveCarNoFromSettingsPayload(settings)
     if (activeCarNo !== null) {
       applyActiveCarNo(activeCarNo)
@@ -3190,8 +3203,8 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   width: 1900px;
   height: 600px;
   display: grid;
-  /* 左侧面板从 460px 收窄为 420px（视觉上减少 40px） */
-  grid-template-columns: 400px 1fr;
+  /* 左侧面板继续向左收窄 10px */
+  grid-template-columns: 355px 1fr;
   gap: 0;
   color: #ffffff;
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -3692,8 +3705,10 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 
 .dest-labels {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
 }
 
 .dest-label-cn {
@@ -3859,9 +3874,9 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 }
 
 .next-cn-text {
-  /* 左侧面板“下一站站名”字号略微缩小，避免过于抢眼 */
-  font-size: 46px;
-  font-weight: 900;
+  /* 与终点站站名字号保持一致 */
+  font-size: 38px;
+  font-weight: 800;
   color: #ffffff;
   white-space: nowrap;
 }
@@ -4068,8 +4083,8 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 .route-backdrop {
   position: absolute;
   inset: 0;
-  padding: 24px 18px 22px 18px;
-  transform: translateX(40px);
+  padding: 24px 23px 22px 18px;
+  transform: translateX(35px);
 }
 
 .route-svg {
