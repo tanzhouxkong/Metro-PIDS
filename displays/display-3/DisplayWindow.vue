@@ -493,7 +493,7 @@ const BASE_WIDTH = 1900
 const BASE_HEIGHT = 600
 // 左侧面板逻辑宽度与布局列宽保持一致（355px）
 // 当前版本在原基础上继续向左收窄 10px
-const LEFT_PANEL_WIDTH = 380
+const LEFT_PANEL_WIDTH = 390
 const ROUTE_AREA_WIDTH = BASE_WIDTH - LEFT_PANEL_WIDTH
 const ROUTE_VIEWBOX_WIDTH = 1200
 const ROUTE_SCALE = ROUTE_AREA_WIDTH / ROUTE_VIEWBOX_WIDTH
@@ -3204,7 +3204,7 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   height: 600px;
   display: grid;
   /* 左侧面板继续向左收窄 10px */
-  grid-template-columns: 355px 1fr;
+  grid-template-columns: 390px 1fr;
   gap: 0;
   color: #ffffff;
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -4083,8 +4083,8 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 .route-backdrop {
   position: absolute;
   inset: 0;
-  padding: 24px 23px 22px 18px;
-  transform: translateX(35px);
+  padding: 24px 18px 22px 18px;
+  transform: translateX(40px);
 }
 
 .route-svg {
