@@ -817,19 +817,17 @@ const displayStyleSheet = `
 }
 #display-app .route-arrows {
     display: flex;
-    gap: 20px;
-    margin: 0 40px;
+    gap: 5px;
+    margin: 0 20px;
     flex-shrink: 0;
 }
 #display-app .route-arrows i {
-    font-size: 28px;
+    font-size: 30px;
     color: var(--contrast-color);
-    opacity: 0.3;
-    animation: r-arrow-anim 1.5s infinite;
+    opacity: 0;
+    transform-origin: center center;
+    will-change: opacity, transform, filter;
 }
-#display-app .route-arrows .a1 { animation-delay: 0s; }
-#display-app .route-arrows .a2 { animation-delay: 0.25s; }
-#display-app .route-arrows .a3 { animation-delay: 0.5s; }
 #display-app .map-arrow { color: #fff; }
 #display-app .map-arrow-current { color: #c00; }
 #display-app .track-arrow { color: #ccc !important; }
@@ -882,15 +880,102 @@ const displayStyleSheet = `
 }
 #display-app .a1,
 #display-app .a2,
-#display-app .a3 {
-    animation: r-arrow-anim 1.5s infinite;
+#display-app .a3,
+#display-app .a4,
+#display-app .a5 {
+    animation-duration: 3s;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
 }
-#display-app .a1 { animation-delay: 0s; }
-#display-app .a2 { animation-delay: 0.25s; }
-#display-app .a3 { animation-delay: 0.5s; }
-@keyframes r-arrow-anim {
-    0%, 100% { opacity: 0.3; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.3); }
+#display-app .a1 { animation-name: route-arrow-step-1; }
+#display-app .a2 { animation-name: route-arrow-step-2; }
+#display-app .a3 { animation-name: route-arrow-step-3; }
+#display-app .a4 { animation-name: route-arrow-step-4; }
+#display-app .a5 { animation-name: route-arrow-step-5; }
+@keyframes route-arrow-step-1 {
+    0%, 10% {
+        opacity: 0;
+        transform: scale(0.95);
+        filter: none;
+    }
+    14%, 82% {
+        opacity: 0.26;
+        transform: scale(1);
+        filter: none;
+    }
+    83%, 100% {
+        opacity: 0;
+        transform: scale(0.96);
+        filter: none;
+    }
+}
+@keyframes route-arrow-step-2 {
+    0%, 24% {
+        opacity: 0;
+        transform: scale(0.95);
+        filter: none;
+    }
+    28%, 82% {
+        opacity: 0.42;
+        transform: scale(1.02);
+        filter: none;
+    }
+    83%, 100% {
+        opacity: 0;
+        transform: scale(0.96);
+        filter: none;
+    }
+}
+@keyframes route-arrow-step-3 {
+    0%, 38% {
+        opacity: 0;
+        transform: scale(0.95);
+        filter: none;
+    }
+    42%, 82% {
+        opacity: 0.58;
+        transform: scale(1.03);
+        filter: none;
+    }
+    83%, 100% {
+        opacity: 0;
+        transform: scale(0.96);
+        filter: none;
+    }
+}
+@keyframes route-arrow-step-4 {
+    0%, 52% {
+        opacity: 0;
+        transform: scale(0.95);
+        filter: none;
+    }
+    56%, 82% {
+        opacity: 0.78;
+        transform: scale(1.04);
+        filter: none;
+    }
+    83%, 100% {
+        opacity: 0;
+        transform: scale(0.96);
+        filter: none;
+    }
+}
+@keyframes route-arrow-step-5 {
+    0%, 66% {
+        opacity: 0;
+        transform: scale(0.95);
+        filter: none;
+    }
+    70%, 82% {
+        opacity: 1;
+        transform: scale(1.05);
+        filter: none;
+    }
+    83%, 100% {
+        opacity: 0;
+        transform: scale(0.96);
+        filter: none;
+    }
 }
 
 @keyframes pulse-yellow {
@@ -4101,16 +4186,20 @@ export function initDisplayWindow(rootElement) {
         //右侧顶部三角
         if (meta.dirType === 'up' || meta.dirType === 'outer') {
           arrowHTML = `
-            <i class="fas fa-chevron-right a1" style="animation-delay:0s;"></i>
-            <i class="fas fa-chevron-right a2" style="animation-delay:0.25s;"></i>
-            <i class="fas fa-chevron-right a3" style="animation-delay:0.5s;"></i>
+            <i class="fas fa-chevron-right a1"></i>
+            <i class="fas fa-chevron-right a2"></i>
+            <i class="fas fa-chevron-right a3"></i>
+            <i class="fas fa-chevron-right a4"></i>
+            <i class="fas fa-chevron-right a5"></i>
           `;
         } else {
-          // 左向箭头需动画从右到左，故将延时反转（a3 最先）
+          // 左向箭头沿显示方向推进：右侧先亮，最后整体一起熄灭
           arrowHTML = `
-            <i class="fas fa-chevron-left a1" style="animation-delay:0.5s;"></i>
-            <i class="fas fa-chevron-left a2" style="animation-delay:0.25s;"></i>
-            <i class="fas fa-chevron-left a3" style="animation-delay:0s;"></i>
+            <i class="fas fa-chevron-left a5"></i>
+            <i class="fas fa-chevron-left a4"></i>
+            <i class="fas fa-chevron-left a3"></i>
+            <i class="fas fa-chevron-left a2"></i>
+            <i class="fas fa-chevron-left a1"></i>
           `;
         }
         termBox.appendChild(createScrollBlock(startSt));
@@ -8060,4 +8149,3 @@ export function initDisplayWindow(rootElement) {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 }
-

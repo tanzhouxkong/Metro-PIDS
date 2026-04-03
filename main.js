@@ -812,6 +812,37 @@ function registerDevtoolsGlobalShortcuts() {
   }
 }
 
+function sendMediaControlActionToWindow(action, targetWindow) {
+  try {
+    const win = targetWindow || BrowserWindow.getFocusedWindow() || mainWin;
+    if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) return false;
+    win.webContents.send('media/control-action', action);
+    return true;
+  } catch (e) {
+    console.warn('[main] media control forward failed:', action, e);
+    return false;
+  }
+}
+
+function registerMediaControlGlobalShortcuts() {
+  const mediaShortcuts = [
+    { accelerator: 'MediaPlayPause', action: 'playPause' },
+    { accelerator: 'MediaStop', action: 'stop' }
+  ];
+  for (const item of mediaShortcuts) {
+    try {
+      const ok = globalShortcut.register(item.accelerator, () => {
+        sendMediaControlActionToWindow(item.action);
+      });
+      if (!ok) {
+        console.warn('[main] media shortcut register returned false:', item.accelerator);
+      }
+    } catch (e) {
+      console.warn('[main] media shortcut register failed:', item.accelerator, e);
+    }
+  }
+}
+
 function isDarkThemeByMode(themeMode) {
   if (themeMode === 'dark') return true;
   if (themeMode === 'light') return false;
@@ -5472,6 +5503,7 @@ async function ensureMplExtracted(mplPath) {
 }
 
 app.on('will-quit', () => {
+  try { globalShortcut.unregisterAll(); } catch (e) {}
   if (dynamicAudioMatcherSyncTimer) {
     clearInterval(dynamicAudioMatcherSyncTimer);
     dynamicAudioMatcherSyncTimer = null;
@@ -9092,6 +9124,7 @@ async function checkAndInstallPendingUpdate() {
 app.whenReady().then(async () => {
   startOrphanWindowWatchdog();
   startDynamicAudioMatcherAutoSync();
+  registerMediaControlGlobalShortcuts();
   console.log('[main] ✅ Electron 应用已准备就绪');
   console.log('[main] 应用路径:', app.getAppPath());
   console.log('[main] 是否打包:', app.isPackaged);

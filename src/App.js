@@ -52,7 +52,12 @@ export default {
 
     // 系统媒体控制面板（Windows/锁屏/全局媒体控制）
     const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
+    const setExternalMediaControlState = (playbackState) => {
+      if (typeof window === 'undefined') return;
+      window.__globalMediaPlaybackState = playbackState || 'none';
+    };
     const setPlaybackState = (playbackState) => {
+      setExternalMediaControlState(playbackState);
       if (!canUseMediaSession) return
       try { navigator.mediaSession.playbackState = playbackState } catch (e) {}
     }
@@ -108,6 +113,57 @@ export default {
       commonStopIntent = false;
       try { commonPreview.pause(); } catch (e) {}
       setPlaybackState('paused');
+    };
+
+    const resumeCommonPreview = async () => {
+      if (commonPreview) {
+        try {
+          await commonPreview.play();
+          setPlaybackState('playing');
+          return true;
+        } catch (e) {}
+      }
+      if (lastCommonPlayback?.url) {
+        return await (async () => {
+          if (typeof window !== 'undefined') {
+            window.__blockStationAudioUntil = Date.now() + 2000;
+          }
+          stopAnyAudioElements();
+          if (typeof window !== 'undefined' && typeof window.__stopStationAudio === 'function') {
+            try { await window.__stopStationAudio(); } catch (e) {}
+          }
+          stopCommonPreview();
+          const a = new Audio(lastCommonPlayback.url);
+          commonPreview = a;
+          const onEndedOrError = () => { if (commonPreview === a) commonPreview = null; setPlaybackState('none'); };
+          const onPause = () => {
+            if (commonPreview !== a) return;
+            if (commonStopIntent) {
+              commonPreview = null;
+              setPlaybackState('none');
+            } else {
+              setPlaybackState('paused');
+            }
+          };
+          a.onended = onEndedOrError;
+          a.onpause = onPause;
+          a.onerror = onEndedOrError;
+          setMediaMetadata({ title: lastCommonPlayback.title, artist: 'Metro-PIDS', album: 'Common Audio' });
+          setPlaybackState('none');
+          try { await a.play(); } catch (e) { return false; }
+          setPlaybackState('playing');
+          return true;
+        })();
+      }
+      return false;
+    };
+
+    const toggleCommonPreview = async () => {
+      if (commonPreview && !commonPreview.paused) {
+        pauseCommonPreview();
+        return true;
+      }
+      return await resumeCommonPreview();
     };
 
     if (typeof window !== 'undefined') {
@@ -183,6 +239,8 @@ export default {
                 return true;
               })();
             },
+            resumeFromMedia: resumeCommonPreview,
+            toggleFromMedia: toggleCommonPreview,
             pauseFromMedia: pauseCommonPreview,
             stopFromMedia: stopCommonPreview
           };
@@ -230,9 +288,42 @@ export default {
     }
 
     // 在组件卸载时清理监听器
+    let mediaControlCleanup = null;
+    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onMediaControlAction) {
+      mediaControlCleanup = window.electronAPI.onMediaControlAction(async (action) => {
+        const ctrl = window.__activeStationAudioController;
+        if (!ctrl) return;
+        try {
+          if (action === 'stop') {
+            if (typeof ctrl.stopFromMedia === 'function') await ctrl.stopFromMedia();
+            return;
+          }
+          if (action === 'playPause') {
+            if (typeof ctrl.toggleFromMedia === 'function') {
+              await ctrl.toggleFromMedia();
+              return;
+            }
+            const playbackState = String(window.__stationAudioMediaState || window.__globalMediaPlaybackState || '').toLowerCase();
+            if (playbackState === 'playing') {
+              if (typeof ctrl.pauseFromMedia === 'function') await ctrl.pauseFromMedia();
+            } else if (typeof ctrl.resumeFromMedia === 'function') {
+              await ctrl.resumeFromMedia();
+            } else if (typeof ctrl.playFromLast === 'function') {
+              await ctrl.playFromLast();
+            }
+          }
+        } catch (e) {
+          console.warn('[App] media control action failed', action, e);
+        }
+      });
+    }
+
     onUnmounted(() => {
       if (panelStateCleanup) {
         panelStateCleanup();
+      }
+      if (mediaControlCleanup) {
+        mediaControlCleanup();
       }
     });
 

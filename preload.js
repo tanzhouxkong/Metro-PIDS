@@ -506,6 +506,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('ui/panel-state-changed', handler);
   },
   // 设置框架层级（用于控制 BrowserView 的层级）
+  onMediaControlAction: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (event, action) => callback(action);
+    ipcRenderer.on('media/control-action', handler);
+    return () => ipcRenderer.removeListener('media/control-action', handler);
+  },
   setFrameLevel: async (top) => {
     try {
       return await ipcRenderer.invoke('browserview/set-frame-level', { top });

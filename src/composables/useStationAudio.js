@@ -121,7 +121,12 @@ export function useStationAudio(state) {
 
   let lastStationPlayback = null // { type: 'arrive'|'depart', idx: number }
   const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
+  const setExternalMediaControlState = (playbackState) => {
+    if (typeof window === 'undefined') return
+    window.__stationAudioMediaState = playbackState || 'none'
+  }
   const setPlaybackState = (playbackState) => {
+    setExternalMediaControlState(playbackState)
     if (!canUseMediaSession) return
     try { navigator.mediaSession.playbackState = playbackState } catch (e) {}
   }
@@ -143,7 +148,9 @@ export function useStationAudio(state) {
     try {
       navigator.mediaSession.setActionHandler('play', async () => {
         const ctrl = window.__activeStationAudioController
-        if (ctrl?.playFromLast) {
+        if (ctrl?.resumeFromMedia) {
+          try { await ctrl.resumeFromMedia() } catch (e) {}
+        } else if (ctrl?.playFromLast) {
           try { await ctrl.playFromLast() } catch (e) {}
         }
       })
@@ -280,6 +287,40 @@ export function useStationAudio(state) {
     hasMediaStartedForSession = false
     setPlaybackState('none')
     await Promise.resolve()
+  }
+
+  const resumeForMediaPanel = async () => {
+    if (!pausedByMedia) {
+      if (currentAudio && !currentAudio.paused) {
+        setPlaybackState('playing')
+        return true
+      }
+      if (lastStationPlayback) {
+        const cmd = lastStationPlayback
+        if (cmd.type === 'arrive') playArrive(cmd.idx)
+        else playDepart(cmd.idx)
+        return true
+      }
+      return false
+    }
+    pausedByMedia = false
+    setPlaybackState('playing')
+    await Promise.resolve()
+    return true
+  }
+
+  const toggleForMediaPanel = async () => {
+    if (pausedByMedia || (currentAudio && currentAudio.paused)) {
+      return await resumeForMediaPanel()
+    }
+    if (currentAudio) {
+      await pauseForMediaPanel()
+      return true
+    }
+    if (lastStationPlayback) {
+      return await resumeForMediaPanel()
+    }
+    return false
   }
 
   if (typeof window !== 'undefined') {
@@ -1316,6 +1357,8 @@ export function useStationAudio(state) {
         if (cmd.type === 'arrive') return playArrive(cmd.idx)
         return playDepart(cmd.idx)
       },
+      resumeFromMedia: resumeForMediaPanel,
+      toggleFromMedia: toggleForMediaPanel,
       pauseFromMedia: pauseForMediaPanel,
       stopFromMedia: stopForMediaPanel
     })
@@ -1452,6 +1495,8 @@ export function useStationAudio(state) {
         if (cmd.type === 'arrive') return playArrive(cmd.idx)
         return playDepart(cmd.idx)
       },
+      resumeFromMedia: resumeForMediaPanel,
+      toggleFromMedia: toggleForMediaPanel,
       pauseFromMedia: pauseForMediaPanel,
       stopFromMedia: stopForMediaPanel
     })

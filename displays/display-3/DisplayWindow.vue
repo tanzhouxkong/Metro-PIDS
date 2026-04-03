@@ -11,6 +11,14 @@
     <div class="display3-viewport">
       <div class="display3-stage" :style="stageStyle">
         <div class="display3-app" :style="themeVars">
+        <div class="display3-cloud-layer" aria-hidden="true">
+          <span class="display3-cloud cloud-1"></span>
+          <span class="display3-cloud cloud-2"></span>
+          <span class="display3-cloud cloud-3"></span>
+          <span class="display3-cloud cloud-4"></span>
+          <span class="display3-cloud cloud-5"></span>
+          <span class="display3-cloud cloud-6"></span>
+        </div>
         <section class="left-panel-theme">
           <div class="pattern-bg"></div>
           
@@ -259,9 +267,10 @@
               <div
                 v-for="arr in cTypeArrows"
                 :key="arr.key"
+                :ref="(el) => setCTypeArrowRef(arr.key, el)"
                 class="c-type-arrow"
                 :class="{ 'c-type-arrow-current': arr.isCurrent }"
-                :style="{ left: arr.x + 'px', top: (arr.y + 1) + 'px', transform: `translate(-50%, -50%) rotate(${arr.angle}deg)` }"
+                :style="{ left: arr.x + 'px', top: arr.y + 'px', transform: `translate(-50%, -50%) rotate(${arr.angle}deg)` }"
               >
                 <i class="fas fa-chevron-right"></i>
               </div>
@@ -270,14 +279,45 @@
                   v-for="station in plottedStations"
                   :key="station.key"
                   class="station-node"
-                  :class="[station.status, { skip: station.skip }]"
-                  :style="{ left: station.x + 'px', top: station.y + 'px' }"
+                  :class="[station.status, {
+                    skip: station.skip,
+                    'next-target': station.isNextTarget,
+                    'current-stop': station.isCurrentStop
+                  }]"
+                  :style="{
+                    left: station.x + 'px',
+                    top: station.y + 'px',
+                    '--station-theme-color': station.dotColor || ui.themeColor || '#169cff'
+                  }"
                 >
                   <div
                     class="station-node-dot"
                     :class="{ 'dot-skip': station.skip }"
-                    :style="getStationDotStyle(station)"
-                  ></div>
+                    :style="resolveStationDotStyle(station)"
+                  >
+                    <div
+                      v-if="station.transferDotSegments && station.transferDotSegments.length"
+                      class="station-dot-transfer-ring"
+                      aria-hidden="true"
+                    >
+                      <svg viewBox="0 0 100 100" class="station-dot-transfer-ring-svg">
+                        <g
+                          v-for="segment in station.transferDotSegments"
+                          :key="segment.key"
+                          class="station-dot-transfer-segment"
+                        >
+                          <path
+                            :d="segment.arcPath"
+                            :stroke="segment.color"
+                            stroke-width="9"
+                            stroke-linecap="butt"
+                            fill="none"
+                          />
+                          <path :d="segment.headPath" :fill="segment.color" />
+                        </g>
+                      </svg>
+                    </div>
+                  </div>
                   <div
                     class="station-node-text"
                     :class="{ current: station.status === 'current' }"
@@ -430,7 +470,7 @@
               v-for="station in nearbyStations"
               :key="`mini-${station.originalIndex}-${station.name}`"
               class="mini-route-item"
-              :class="station.state"
+              :class="[station.state, { 'next-target': station.isNextTarget }]"
               :style="getMiniRouteItemStyle(station)"
             >
               <div class="mini-route-transfers">
@@ -452,7 +492,32 @@
                 </span>
               </div>
               <div class="mini-route-rail">
-                <div class="mini-route-dot"></div>
+                <div class="mini-route-dot">
+                  <div class="mini-route-dot-core">
+                  <div
+                    v-if="station.transferDotSegments && station.transferDotSegments.length"
+                    class="mini-route-dot-transfer-ring"
+                    aria-hidden="true"
+                  >
+                    <svg viewBox="0 0 100 100" class="mini-route-dot-transfer-ring-svg">
+                      <g
+                        v-for="segment in station.transferDotSegments"
+                        :key="segment.key"
+                        class="mini-route-dot-transfer-segment"
+                      >
+                        <path
+                          :d="segment.arcPath"
+                          :stroke="segment.color"
+                          stroke-width="9"
+                          stroke-linecap="butt"
+                          fill="none"
+                        />
+                        <path :d="segment.headPath" :fill="segment.color" />
+                      </g>
+                    </svg>
+                  </div>
+                  </div>
+                </div>
               </div>
               <div class="mini-route-text">
                 <div class="mini-route-cn">{{ station.name }}</div>
@@ -483,18 +548,21 @@ import ArrivalFormationPanel from './components/ArrivalFormationPanel.vue'
 import { createDisplaySdk } from '../../src/utils/displaySdk.js'
 import {
   computeCTypeArrowPlacements,
+  computeCTypeArrowRangesForSegment,
   getStationNameFontStyle,
   splitEnglishNameIntoLines,
   calculateNextStationIndex,
-  computeRingLayoutGeometry
+  computeRingLayoutGeometry,
+  getStationTransferInfo
 } from '../../src/utils/displayStationCalculator.js'
 
 const BASE_WIDTH = 1900
 const BASE_HEIGHT = 600
+const ROUTE_PANEL_WIDTH = 1510
 // 左侧面板逻辑宽度与布局列宽保持一致（355px）
 // 当前版本在原基础上继续向左收窄 10px
-const LEFT_PANEL_WIDTH = 390
-const ROUTE_AREA_WIDTH = BASE_WIDTH - LEFT_PANEL_WIDTH
+const LEFT_PANEL_WIDTH = 350
+const ROUTE_AREA_WIDTH = ROUTE_PANEL_WIDTH
 const ROUTE_VIEWBOX_WIDTH = 1200
 const ROUTE_SCALE = ROUTE_AREA_WIDTH / ROUTE_VIEWBOX_WIDTH
 // C 型线路图参数（与显示器1完全一致：左侧开口、右侧小 R 角 + 竖线 + 小 R 角）
@@ -573,6 +641,8 @@ const trackPathRef = ref(null)
 const cTypeArrows = ref([])
 const routeBackdropRef = ref(null)
 const routeBackdropSize = reactive({ width: ROUTE_AREA_WIDTH, height: BASE_HEIGHT })
+const cTypeArrowRefs = new Map()
+const cTypeArrowAnimations = new Map()
 const nowTime = ref('--:--')
 const runtimeEnvironment = ref('browser')
 const displayLocale = ref(detectDisplayLocale())
@@ -624,6 +694,68 @@ function clamp(value, min, max) {
 function safeText(value, fallback = '--') {
   const text = String(value ?? '').trim()
   return text || fallback
+}
+
+function polarToCartesian(cx, cy, r, deg) {
+  const rad = (deg * Math.PI) / 180
+  return {
+    x: cx + (r * Math.cos(rad)),
+    y: cy + (r * Math.sin(rad))
+  }
+}
+
+function buildTransferDotSegments(station, themeColor) {
+  const baseColor = String(themeColor || '').trim() || '#169cff'
+  const transfers = normalizeTransfers(station?.transfers || station?.xfer || [])
+  const colors = Array.from(new Set([
+    baseColor,
+    ...transfers.map((item) => String(item?.color || '').trim()).filter(Boolean)
+  ])).slice(0, 6)
+
+  if (colors.length <= 1) return []
+
+  const count = colors.length
+  const step = 360 / count
+  const gapDeg = Math.max(12, step * 0.24)
+  const headReserveDeg = Math.min(14, step * 0.22)
+  const sweep = Math.max(14, step - gapDeg - headReserveDeg)
+  const cx = 50
+  const cy = 50
+  const r = 36
+  const headLen = 9.5
+  const headWidth = 6
+
+  return colors.map((color, index) => {
+    const startDeg = -90 + (index * step) + (gapDeg / 2)
+    const bodyEndDeg = startDeg + sweep
+    const endDeg = bodyEndDeg + headReserveDeg
+    const start = polarToCartesian(cx, cy, r, startDeg)
+    const bodyEnd = polarToCartesian(cx, cy, r, bodyEndDeg)
+    const end = polarToCartesian(cx, cy, r, endDeg)
+    const largeArcFlag = sweep > 180 ? 1 : 0
+
+    const tangentDeg = endDeg + 90
+    const tangentRad = (tangentDeg * Math.PI) / 180
+    const nx = Math.cos(tangentRad)
+    const ny = Math.sin(tangentRad)
+    const ux = -ny
+    const uy = nx
+    const tipX = end.x
+    const tipY = end.y
+    const baseX = tipX - (nx * headLen)
+    const baseY = tipY - (ny * headLen)
+    const leftX = baseX + (ux * headWidth)
+    const leftY = baseY + (uy * headWidth)
+    const rightX = baseX - (ux * headWidth)
+    const rightY = baseY - (uy * headWidth)
+
+    return {
+      key: `transfer-dot-${index}-${color}`,
+      color,
+      arcPath: `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${r} ${r} 0 ${largeArcFlag} 1 ${bodyEnd.x.toFixed(2)} ${bodyEnd.y.toFixed(2)}`,
+      headPath: `M ${tipX.toFixed(2)} ${tipY.toFixed(2)} L ${leftX.toFixed(2)} ${leftY.toFixed(2)} L ${rightX.toFixed(2)} ${rightY.toFixed(2)} Z`
+    }
+  })
 }
 
 function detectDisplayLocale() {
@@ -1206,9 +1338,10 @@ function normalizeSyncData(appData = {}, rtState = null) {
   const nextStationRaw = rtStateNum === 1 ? (stations[nextIndex] || focusStation) : focusStation
   const terminalStation = stations[resolveTerminalIndex(meta, stations)] || null
   const derivedStations = deriveWindowStations(stations, focusIndex)
+  const exitGuideStation = rtStateNum === 1 ? nextStationRaw : focusStation
   const exitGuide = buildExitGuide(
-    focusStation?._effectiveDoor || focusStation?.door || focusStation?.dock,
-    focusStation?.door || focusStation?.dock
+    exitGuideStation?._effectiveDoor || exitGuideStation?.door || exitGuideStation?.dock,
+    exitGuideStation?.door || exitGuideStation?.dock
   )
 
   return {
@@ -2374,14 +2507,18 @@ const miniRouteModel = computed(() => {
   )
   const displayIndices = resolveMiniRouteDisplayIndices(total, currentIndex, reversed)
   const { targetIndex } = resolveMiniRouteHighlight(total, currentIndex, reversed)
+  const highlightedIndex = Number(ui.state) === 0 ? currentIndex : targetIndex
 
   const stations = displayIndices.map((realIndex, viewIndex) => ({
     ...normalizeStation(routeStations[realIndex]),
     originalIndex: realIndex,
     state: resolveMiniRouteNodeState(realIndex, currentIndex, reversed, ui.state),
+    isNextTarget: realIndex === highlightedIndex,
     first: viewIndex === 0,
     last: viewIndex === displayIndices.length - 1,
-    badgeText: routeStations[realIndex]?.badgeText || (realIndex >= 0 ? String(realIndex + 1) : '')
+    badgeText: routeStations[realIndex]?.badgeText || (realIndex >= 0 ? String(realIndex + 1) : ''),
+    themeColor: resolveMiniRouteSegmentColor(realIndex),
+    transferDotSegments: buildTransferDotSegments(routeStations[realIndex], resolveMiniRouteSegmentColor(realIndex))
   }))
 
   const activeSegments = []
@@ -2511,7 +2648,8 @@ function getMiniRouteItemStyle(station) {
   if (!Number.isFinite(realIdx)) return {}
   const color = resolveMiniRouteSegmentColor(realIdx)
   return {
-    '--mini-route-dot-accent': color
+    '--mini-route-dot-accent': color,
+    '--mini-route-theme-color': color
   }
 }
 
@@ -2731,7 +2869,10 @@ const plottedStations = computed(() => {
       labelDy: 0,
       nameEnLines,
       nameFontStyle,
-      isTopRow
+      isTopRow,
+      isCurrentStop: state === 0 && index === currIdx,
+      isNextTarget: state === 1 && nextIdx >= 0 && index === nextIdx,
+      transferDotSegments: buildTransferDotSegments(station, dotColor)
     }
   })
 })
@@ -2887,6 +3028,12 @@ function getStationDotStyle(station) {
   return { borderColor: station.dotColor }
 }
 
+function resolveStationDotStyle(station) {
+  const baseStyle = station?.dotColor ? { '--station-dot-accent': station.dotColor } : {}
+  const fallback = getStationDotStyle(station)
+  return fallback ? { ...baseStyle, ...fallback } : baseStyle
+}
+
 function getStationTextStyle(station) {
   const dx = Number.isFinite(Number(station?.labelDx)) ? Number(station.labelDx) : 0
   const dy = Number.isFinite(Number(station?.labelDy)) ? Number(station.labelDy) : 0
@@ -2894,6 +3041,64 @@ function getStationTextStyle(station) {
     left: `calc(50% + ${dx}px)`,
     top: `${20 + dy}px`
   }
+}
+
+function setCTypeArrowRef(key, element) {
+  if (!key) return
+  if (element) cTypeArrowRefs.set(key, element)
+  else cTypeArrowRefs.delete(key)
+}
+
+function cancelCTypeArrowAnimations() {
+  cTypeArrowAnimations.forEach((animations) => {
+    ;(Array.isArray(animations) ? animations : [animations]).forEach((animation) => {
+      try {
+        animation?.cancel?.()
+      } catch (_) {
+        // ignore
+      }
+    })
+  })
+  cTypeArrowAnimations.clear()
+}
+
+function syncCTypeArrowAnimations(pathEl) {
+  cancelCTypeArrowAnimations()
+  if (!pathEl || typeof pathEl.getPointAtLength !== 'function') return
+
+  cTypeArrows.value.forEach((arrow) => {
+    if (!arrow?.animate || !Number.isFinite(arrow.fromDist) || !Number.isFinite(arrow.toDist)) return
+    const element = cTypeArrowRefs.get(arrow.key)
+    if (!element || typeof element.animate !== 'function') return
+
+    const steps = 20
+    const frames = []
+    for (let stepIndex = 0; stepIndex <= steps; stepIndex += 1) {
+      const progress = stepIndex / steps
+      const dist = arrow.fromDist + ((arrow.toDist - arrow.fromDist) * progress)
+      const point = pathEl.getPointAtLength(dist)
+      const before = pathEl.getPointAtLength(Math.max(0, dist - 2))
+      const after = pathEl.getPointAtLength(Math.min(arrow.pathLength, dist + 2))
+      let angle = Math.atan2(after.y - before.y, after.x - before.x) * 180 / Math.PI
+      if (arrow.reverse) angle += 180
+      frames.push({
+        left: `${point.x}px`,
+        top: `${point.y}px`,
+        transform: `translate(-50%, -50%) rotate(${angle}deg)`
+      })
+    }
+
+    try {
+      const animation = element.animate(frames, {
+        duration: arrow.durationMs,
+        iterations: Infinity,
+        easing: 'linear'
+      })
+      cTypeArrowAnimations.set(arrow.key, [animation])
+    } catch (_) {
+      // ignore animation failures and keep static fallback
+    }
+  })
 }
 
 function updateCTypeArrows() {
@@ -2920,12 +3125,6 @@ function updateCTypeArrows() {
   const currIdx = ui.routeCurrentStationIndex ?? ui.currentStationIndex ?? 0
   const dirType = ui.direction || null
   const dirDown = /down|inner/.test(String(dirType || '').toLowerCase())
-  // 整体箭头略微上移，让箭头更靠近轨道中心
-  const arrowOffsetY = 0
-  // 仅下排（底部水平段）箭头微调：相对上排再略微下移 1px，保持视觉对称
-  const C_TYPE_BOTTOM_ROW_ARROW_SHIFT_Y = -1
-  const isBottomRowArrowPoint = (y) => Math.abs(Number(y) - C_TYPE_BOTTOM_Y) <= 1
-
   // 计算各站点在理论路径上的距离，供 C 型箭头布局算法使用
   const theoreticalDists = []
   for (let i = 0; i < total; i += 1) {
@@ -2962,7 +3161,7 @@ function updateCTypeArrows() {
     arrows.push({
       key: `arr-${item.segIndex}-${idx}`,
       x: pt.x,
-      y: pt.y + arrowOffsetY + (isBottomRowArrowPoint(pt.y) ? C_TYPE_BOTTOM_ROW_ARROW_SHIFT_Y : 0),
+      y: pt.y,
       angle,
       isCurrent: !!item.isCurrent
     })
@@ -3204,7 +3403,7 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   height: 600px;
   display: grid;
   /* 左侧面板继续向左收窄 10px */
-  grid-template-columns: 390px 1fr;
+  grid-template-columns: 350px 1510px;
   gap: 0;
   color: #ffffff;
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -3230,9 +3429,81 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   pointer-events: none;
 }
 
-.display3-app > * {
+.display3-app > :not(.display3-cloud-layer) {
   position: relative;
   z-index: 1;
+}
+
+.display3-cloud-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.display3-cloud {
+  position: absolute;
+  display: block;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  opacity: 0.18;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.08));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 180'%3E%3Cg fill='none' stroke='%23d9ecf7' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 124c24-34 52-47 92-38 5-30 24-47 56-50 25-2 47 9 64 30 16-6 31-4 44 7 12 9 19 23 19 39 0 19-10 33-28 43'/%3E%3Cpath d='M63 114c8-12 21-18 38-18 20 0 34 8 43 25 10 20 26 31 48 32 17 1 29-3 40-13'/%3E%3Cpath d='M93 113c-11-5-18-13-18-25 0-13 10-23 22-23 15 0 25 12 25 28 0 13-8 24-19 30'/%3E%3Cpath d='M158 109c-12-6-20-16-20-30 0-15 11-27 26-27 17 0 30 14 30 31 0 14-8 25-20 31'/%3E%3Cpath d='M231 115c-9-4-16-12-16-23 0-13 10-23 22-23 15 0 25 11 25 26 0 11-6 19-15 24'/%3E%3Cpath d='M96 101c-7 0-12-6-12-13 0-7 5-12 12-12 8 0 14 6 14 14 0 5-2 9-5 12'/%3E%3Cpath d='M160 89c-7 0-12-5-12-12 0-8 5-14 13-14 9 0 15 7 15 16 0 5-2 8-5 10'/%3E%3Cpath d='M233 100c-6 0-11-5-11-11 0-8 6-13 13-13 8 0 14 7 14 15 0 5-2 8-5 9'/%3E%3Cpath d='M118 150c18-7 35-9 52-7 20 2 40 10 61 25'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.display3-cloud.cloud-1 {
+  width: 330px;
+  height: 190px;
+  left: -24px;
+  top: 20px;
+  transform: rotate(-6deg);
+}
+
+.display3-cloud.cloud-2 {
+  width: 400px;
+  height: 220px;
+  right: 86px;
+  top: 6px;
+  opacity: 0.16;
+  transform: scaleX(-1) rotate(7deg);
+}
+
+.display3-cloud.cloud-3 {
+  width: 280px;
+  height: 160px;
+  right: -18px;
+  top: 122px;
+  opacity: 0.14;
+  transform: scaleX(-1) rotate(-10deg);
+}
+
+.display3-cloud.cloud-4 {
+  width: 310px;
+  height: 175px;
+  left: -30px;
+  bottom: -10px;
+  opacity: 0.13;
+  transform: rotate(5deg);
+}
+
+.display3-cloud.cloud-5 {
+  width: 250px;
+  height: 145px;
+  right: 110px;
+  bottom: -4px;
+  opacity: 0.12;
+  transform: scaleX(-1) rotate(3deg);
+}
+
+.display3-cloud.cloud-6 {
+  width: 220px;
+  height: 130px;
+  left: 980px;
+  top: 54px;
+  opacity: 0.1;
+  transform: rotate(12deg);
 }
 
 .right-area {
@@ -3240,6 +3511,7 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   overflow: hidden;
   min-width: 0;
   display: flex;
+  padding-left: 10px;
 }
 
 .right-area .middle-stations-panel {
@@ -3352,6 +3624,16 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   background: #ffffff;
   border: 5px solid #ccc;
   box-sizing: border-box;
+  overflow: hidden;
+  transform-origin: center center;
+}
+
+.mini-route-dot-core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  transform-origin: center center;
 }
 
 .mini-route-item.past .mini-route-dot {
@@ -3361,16 +3643,52 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 }
 
 .mini-route-item.current .mini-route-dot {
-  background: #d94747;
-  border-color: #ffffff;
+  background: #ffffff;
+  border-color: var(--mini-route-dot-accent, var(--accent));
   width: 30px;
   height: 30px;
-  box-shadow: 0 0 14px rgba(217, 71, 71, 0.45);
+  box-shadow: none;
+  animation: mini-route-dot-scale-pulse 1.1s ease-in-out infinite;
+}
+
+.mini-route-item.current .mini-route-dot::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 3px solid var(--mini-route-dot-accent, var(--accent));
+  animation: mini-route-dot-pulse-ring 1.1s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .mini-route-item.future .mini-route-dot {
   border-color: var(--mini-route-dot-accent, var(--accent));
   background: #ffffff;
+}
+
+.mini-route-dot-transfer-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.mini-route-dot-transfer-ring-svg {
+  width: 100%;
+  height: 100%;
+  animation: transfer-dot-rotate 2.8s linear infinite;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+}
+
+.mini-route-dot-transfer-segment {
+  position: absolute;
+  opacity: 0.95;
 }
 
 .mini-route-text {
@@ -3488,6 +3806,11 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 .mini-route-item.current .mini-route-cn,
 .mini-route-item.current .mini-route-en {
   color: #ffffff;
+}
+
+.mini-route-item.next-target .mini-route-cn,
+.mini-route-item.next-target .mini-route-en {
+  color: var(--mini-route-theme-color, var(--accent, #169cff));
 }
 
 .left-panel-theme {
@@ -4092,6 +4415,8 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   inset: 0;
   width: 100%;
   height: 100%;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .ring-layer {
@@ -4102,10 +4427,21 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 
 .c-type-arrow {
   position: absolute;
-  z-index: 10;
+  z-index: 4;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 20px;
+  line-height: 1;
   color: #fff;
   pointer-events: none;
+}
+
+.c-type-arrow i {
+  display: block;
+  line-height: 1;
 }
 
 .ring-arr {
@@ -4207,24 +4543,68 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   50% { color: var(--arrow-blink-accent-color, #c00); }
 }
 
+@keyframes transfer-dot-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dot-target-scale-pulse {
+  0% { scale: 1; }
+  50% { scale: 1.18; }
+  100% { scale: 1; }
+}
+
+@keyframes mini-route-dot-pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.16);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+}
+
+@keyframes mini-route-dot-scale-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.18);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
 .stations-layer {
   position: absolute;
   inset: 0;
+  z-index: 5;
+  pointer-events: none;
 }
 
 .station-node {
   position: absolute;
   transform: translate(-50%, -50%);
+  z-index: 5;
 }
 
 /* 与显示器1 C 型一致：圆点尺寸 dotSizeNormal 30、border 5、当前站 dotSizeTarget 20 */
 .station-node-dot {
+  position: relative;
   width: 30px;
   height: 30px;
   border-radius: 50%;
   border: 5px solid rgba(255, 255, 255, 0.96);
   background: #ffffff;
   box-shadow: none;
+  overflow: hidden;
+  z-index: 10;
 }
 
 .station-node.past .station-node-dot {
@@ -4254,6 +4634,44 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   border-color: #ccc;
 }
 
+.station-node.current-stop .station-node-dot {
+  background: var(--arrow-blink-accent-color, #c00);
+  border-color: #fff;
+  box-shadow: 0 0 14px var(--arrow-blink-accent-color, #c00);
+}
+
+.station-node.next-target .station-node-dot {
+  background: #ffffff;
+  border-color: var(--station-dot-accent, var(--accent, #169cff));
+  box-shadow: none;
+  animation: dot-target-scale-pulse 1.1s ease-in-out infinite;
+}
+
+.station-dot-transfer-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.station-dot-transfer-ring-svg {
+  width: 100%;
+  height: 100%;
+  animation: transfer-dot-rotate 2.8s linear infinite;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+}
+
+.station-dot-transfer-segment {
+  position: absolute;
+  opacity: 0.95;
+}
+
 .station-node-text {
   position: absolute;
   left: 50%;
@@ -4278,6 +4696,11 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
 .station-node-text.current .station-node-cn,
 .station-node-text.current .station-node-en {
   color: #c00;
+}
+
+.station-node.next-target .station-node-cn,
+.station-node.next-target .station-node-en {
+  color: var(--station-theme-color, var(--accent, #169cff));
 }
 
 .station-node-cn {
