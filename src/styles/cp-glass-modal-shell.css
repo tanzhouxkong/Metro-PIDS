@@ -348,15 +348,17 @@ html[data-theme='dark'] .ud-share-code {
 }
 
 html.blur-disabled .cp-dialog {
-  background: rgba(255, 255, 255, 0.68) !important;
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16) !important;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22) !important;
 }
 html.blur-disabled.dark .cp-dialog,
 html.blur-disabled[data-theme='dark'] .cp-dialog {
-  background: rgba(28, 28, 32, 0.68) !important;
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: #1c1c20 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.42) !important;
 }

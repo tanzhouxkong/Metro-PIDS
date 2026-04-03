@@ -213,6 +213,28 @@ export default {
       if (!blurOn) return { blur: 0, opacity: 1, color: dark ? '#1c1c20' : '#ffffff' }
       return { blur: 12, opacity: 0.2, color: dark ? '#1c1c20' : '#ffffff' }
     })
+    const nameEditGlassStyle = computed(() => {
+      const glass = menuGlassDirective.value || {}
+      const blur = Number(glass.blur ?? 0)
+      const opacity = Number(glass.opacity ?? 1)
+      const color = String(glass.color || '#ffffff')
+      let background = `rgba(255, 255, 255, ${opacity})`
+      if (color === '#1c1c20') {
+        background = `rgba(28, 28, 32, ${opacity})`
+      }
+      if (blur <= 0) {
+        return {
+          background,
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none'
+        }
+      }
+      return {
+        background,
+        backdropFilter: `blur(${blur}px)`,
+        WebkitBackdropFilter: `blur(${blur}px)`
+      }
+    })
 
     const sectionMode = ref('xfer') // 'xfer' | 'audio' | 'commonAudio'
     const audioSectionCrashed = ref(false)
@@ -2017,10 +2039,6 @@ export default {
     onMounted(() => window.addEventListener('keydown', handleCommonAudioHotkey))
     onBeforeUnmount(() => window.removeEventListener('keydown', handleCommonAudioHotkey))
 
-    // StationEditor 弹窗需要毛玻璃效果时：若全局启用了 html.blur-disabled，会通过 CSS 禁用 backdrop-filter。
-    // 这里在弹窗打开期间临时移除，并用 MutationObserver 防止其它逻辑把它重新加回去；关闭后恢复，避免影响全局设置。
-    let __prevBlurDisabledClass = null
-    let __blurDisabledMutationObserver = null
     watch(
       [
         () => props.modelValue,
@@ -2050,48 +2068,6 @@ export default {
       () => props.modelValue,
       (visible) => {
         seDebugLog('watch-modelValue', { visible })
-
-        try {
-          if (typeof document !== 'undefined') {
-            const html = document.documentElement
-            const hasBlurDisabled = html.classList.contains('blur-disabled')
-
-            const enableBlurForDialog = () => {
-              if (html.classList.contains('blur-disabled')) {
-                html.classList.remove('blur-disabled')
-              }
-            }
-
-            const restoreBlurForDialog = () => {
-              if (__blurDisabledMutationObserver) {
-                __blurDisabledMutationObserver.disconnect()
-                __blurDisabledMutationObserver = null
-              }
-              if (__prevBlurDisabledClass) html.classList.add('blur-disabled')
-              __prevBlurDisabledClass = null
-            }
-
-            if (visible) {
-              __prevBlurDisabledClass = hasBlurDisabled
-              enableBlurForDialog()
-
-              // 如果外部逻辑在弹窗打开期间再次切回 blur-disabled，这里会立刻拉回，保证 blur 一直生效
-              if (!__blurDisabledMutationObserver) {
-                __blurDisabledMutationObserver = new MutationObserver(() => {
-                  enableBlurForDialog()
-                })
-                __blurDisabledMutationObserver.observe(html, {
-                  attributes: true,
-                  attributeFilter: ['class'],
-                })
-              }
-            } else {
-              restoreBlurForDialog()
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
 
         if (visible) {
           audioSectionCrashed.value = false
@@ -2142,18 +2118,6 @@ export default {
       seDebugLog('mounted')
     })
     onBeforeUnmount(() => {
-      // 防止组件销毁时遗留观察器或恢复逻辑没执行
-      try {
-        if (__blurDisabledMutationObserver) {
-          __blurDisabledMutationObserver.disconnect()
-          __blurDisabledMutationObserver = null
-        }
-        if (__prevBlurDisabledClass && typeof document !== 'undefined') {
-          document.documentElement.classList.add('blur-disabled')
-        }
-        __prevBlurDisabledClass = null
-      } catch (e) {}
-
       if (audioHealthScanTimer.value) {
         clearTimeout(audioHealthScanTimer.value)
         audioHealthScanTimer.value = null
@@ -2761,6 +2725,7 @@ export default {
       form,
       isDarkTheme,
       menuGlassDirective,
+      nameEditGlassStyle,
       close,
       armSaveClick,
       onOverlayMouseDown,
@@ -3648,19 +3613,42 @@ export default {
 
           <!-- 换乘线路名称编辑弹窗 -->
           <Teleport to="body">
-            <Transition name="fade">
-              <div v-if="showXferNameEdit" class="se-name-edit-overlay" @click.self="closeXferNameEdit">
-                <div class="se-name-edit-dialog" role="dialog" aria-modal="true">
-                  <div class="se-name-edit-title">{{ t('stationEditor.xferNameDialogTitle') }}</div>
+            <Transition name="cp-fade">
+              <div v-if="showXferNameEdit" class="cp-overlay cp-overlay--unified se-name-edit-overlay" @click.self="closeXferNameEdit">
+                <div
+                  class="cp-dialog cp-dialog--compact se-name-edit-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+                  :style="nameEditGlassStyle"
+                >
+                  <div class="cp-header">
+                    <div class="cp-header-left">
+                      <div class="cp-icon">
+                        <i class="fas fa-edit" style="color: white; font-size: 18px;"></i>
+                      </div>
+                      <div class="cp-titles">
+                        <div class="cp-title se-name-edit-title">{{ t('stationEditor.xferNameDialogTitle') }}</div>
+                      </div>
+                    </div>
+                    <button type="button" class="cp-close" :aria-label="t('colorPicker.closeLabel')" @click="closeXferNameEdit">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <div class="cp-content">
+                  <p class="ud-msg">{{ t('stationEditor.xferNamePlaceholder') }}</p>
                   <input
                     v-model="xferNameEditValue"
-                    class="se-input se-name-edit-input"
+                    class="cp-input cp-input--dialog se-name-edit-input"
                     :placeholder="t('stationEditor.xferNamePlaceholder')"
                     @keydown.enter="confirmXferNameEdit"
                   />
-                  <div class="se-name-edit-actions">
-                    <button type="button" class="cp-btn cp-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
-                    <button type="button" class="cp-btn cp-btn-primary" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                  </div>
+                  <div class="cp-footer cp-footer--end se-name-edit-actions">
+                    <div class="cp-footer-right">
+                      <button type="button" class="cp-btn cp-btn-gray" @click="closeXferNameEdit">{{ t('stationEditor.btnCancel') }}</button>
+                      <button type="button" class="cp-btn cp-btn-primary" @click="confirmXferNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3669,19 +3657,42 @@ export default {
 
           <!-- 音频重命名弹窗 -->
           <Teleport to="body">
-            <Transition name="fade">
-              <div v-if="showAudioNameEdit" class="se-name-edit-overlay" @click.self="closeAudioNameEdit">
-                <div class="se-name-edit-dialog" role="dialog" aria-modal="true">
-                  <div class="se-name-edit-title">{{ t('stationEditor.audioRename') }}</div>
+            <Transition name="cp-fade">
+              <div v-if="showAudioNameEdit" class="cp-overlay cp-overlay--unified se-name-edit-overlay" @click.self="closeAudioNameEdit">
+                <div
+                  class="cp-dialog cp-dialog--compact se-name-edit-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+                  :style="nameEditGlassStyle"
+                >
+                  <div class="cp-header">
+                    <div class="cp-header-left">
+                      <div class="cp-icon">
+                        <i class="fas fa-file-audio" style="color: white; font-size: 18px;"></i>
+                      </div>
+                      <div class="cp-titles">
+                        <div class="cp-title se-name-edit-title">{{ t('stationEditor.audioRename') }}</div>
+                      </div>
+                    </div>
+                    <button type="button" class="cp-close" :aria-label="t('colorPicker.closeLabel')" @click="closeAudioNameEdit">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <div class="cp-content">
+                  <p class="ud-msg">{{ t('stationEditor.audioRenamePlaceholder') }}</p>
                   <input
                     v-model="audioNameEditValue"
-                    class="se-input se-name-edit-input"
+                    class="cp-input cp-input--dialog se-name-edit-input"
                     :placeholder="t('stationEditor.audioRenamePlaceholder')"
                     @keydown.enter="confirmAudioNameEdit"
                   />
-                  <div class="se-name-edit-actions">
-                    <button type="button" class="cp-btn cp-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
-                    <button type="button" class="cp-btn cp-btn-primary" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                  </div>
+                  <div class="cp-footer cp-footer--end se-name-edit-actions">
+                    <div class="cp-footer-right">
+                      <button type="button" class="cp-btn cp-btn-gray" @click="closeAudioNameEdit">{{ t('stationEditor.btnCancel') }}</button>
+                      <button type="button" class="cp-btn cp-btn-primary" @click="confirmAudioNameEdit">{{ t('stationEditor.btnConfirm') }}</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4417,28 +4428,22 @@ export default {
 }
 .se-name-edit-dialog {
   width: 320px;
-  padding: 20px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  max-width: 95%;
+  will-change: backdrop-filter, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .se-name-edit-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text, #333);
-  margin-bottom: 12px;
+  font-size: 20px;
+  font-weight: 800;
 }
 .se-name-edit-input {
   width: 100%;
-  margin-bottom: 16px;
+  margin-top: 16px;
   box-sizing: border-box;
 }
 .se-name-edit-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
+  gap: 12px;
 }
 
 /* 二级子菜单仅用 v-glassmorphism，不包含在此以免 !important 盖住与主菜单一致的模糊 */
@@ -4465,18 +4470,6 @@ export default {
 :global(html.blur-disabled.dark) .apply-all-submenu .station-context-menu-item:hover,
 :global(html.blur-disabled[data-theme='dark']) .apply-all-submenu .station-context-menu-item:hover {
   background: rgba(255,255,255,0.08) !important;
-}
-
-:global(html.blur-disabled) .se-name-edit-dialog {
-  background: #ffffff !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(15, 23, 42, 0.16) !important;
-}
-:global(html.blur-disabled.dark) .se-name-edit-dialog,
-:global(html.blur-disabled[data-theme='dark']) .se-name-edit-dialog {
-  background: #1c1c20 !important;
-  border: 1px solid rgba(255,255,255,0.16) !important;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -4514,12 +4507,8 @@ export default {
   .cp-close:hover {
     background: rgba(255, 255, 255, 0.06);
   }
-  .se-name-edit-dialog {
-    background: rgba(40, 40, 40, 0.96);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
   .se-name-edit-title {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--text, #e6eef6);
   }
   .se-audio-kind-dragover .se-xfer-list,
   .se-audio-kind-dragover .se-empty {
@@ -4541,41 +4530,35 @@ export default {
 
 /* 站点编辑主弹窗：blur-disabled 时仍保持毛玻璃（与 cp-glass-modal-shell 一致） */
 :global(html.blur-disabled) .cp-dialog.cp-dialog--editor {
-  background: rgba(255, 255, 255, 0.68) !important;
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.16) !important;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22) !important;
 }
 :global(html.blur-disabled.dark) .cp-dialog.cp-dialog--editor,
 :global(html.blur-disabled[data-theme="dark"]) .cp-dialog.cp-dialog--editor {
-  background: rgba(28, 28, 32, 0.68) !important;
-  backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: #1c1c20 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.42) !important;
 }
 :global(html.blur-disabled) .station-context-menu {
   background: rgba(255, 255, 255, 0.68) !important;
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
 }
 :global(html.blur-disabled.dark) .station-context-menu,
 :global(html.blur-disabled[data-theme="dark"]) .station-context-menu {
   background: rgba(28, 28, 32, 0.68) !important;
   backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
   -webkit-backdrop-filter: blur(18px) saturate(150%) contrast(1.05) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06) !important;
 }
-:global(html.blur-disabled) .se-name-edit-dialog {
-  background: rgba(255, 255, 255, 0.96) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-}
-:global(html.blur-disabled.dark) .se-name-edit-dialog,
-:global(html.blur-disabled[data-theme="dark"]) .se-name-edit-dialog {
-  background: rgba(28, 28, 32, 0.96) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-}
-
 :global(html.blur-disabled) .cp-header,
 :global(html.blur-disabled) .cp-content,
 :global(html.blur-disabled) .cp-footer {

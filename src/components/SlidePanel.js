@@ -3623,23 +3623,6 @@ export default {
         const display1WallpaperInput = ref(null);
         // 显示器编辑弹窗需要毛玻璃效果时，全局 html.blur-disabled 会用 !important 禁掉 backdrop-filter。
         // 这里在弹窗打开期间临时移除 blur-disabled，关闭后恢复，确保显示器编辑弹窗 blur 一定生效。
-        let __prevBlurDisabledClass = null;
-        watch(showDisplayEditDialog, (val) => {
-            try {
-                if (typeof document === 'undefined') return;
-                const html = document.documentElement;
-                const hasBlurDisabled = html.classList.contains('blur-disabled');
-                if (val) {
-                    __prevBlurDisabledClass = hasBlurDisabled;
-                    if (hasBlurDisabled) html.classList.remove('blur-disabled');
-                } else {
-                    if (__prevBlurDisabledClass) html.classList.add('blur-disabled');
-                    __prevBlurDisabledClass = null;
-                }
-            } catch (e) {
-                // ignore
-            }
-        });
         const displayEdit = reactive({
             displayId: '', name: '', source: 'builtin', url: '', description: '',
             // 仅显示器1使用的选项：线路名合并 / C 型开关

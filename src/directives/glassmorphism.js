@@ -28,9 +28,22 @@ function hexToRgbComma(hex) {
 
 function apply(el, binding) {
   const v = binding.value || {}
-  const rgb = hexToRgbComma(v.color)
-  const blur = v.blur ?? 3
-  const opacity = v.opacity ?? 0.2
+  let color = v.color
+  let blur = v.blur ?? 3
+  let opacity = v.opacity ?? 0.2
+  try {
+    const root = typeof document !== 'undefined' ? document.documentElement : null
+    const blurDisabled = !!(root && root.classList.contains('blur-disabled'))
+    if (blurDisabled) {
+      const dark = root.classList.contains('dark') || root.getAttribute('data-theme') === 'dark'
+      color = dark ? '#1c1c20' : '#ffffff'
+      blur = 0
+      opacity = 1
+    }
+  } catch (e) {
+    // Fall back to binding values if root theme detection is unavailable.
+  }
+  const rgb = hexToRgbComma(color)
   el.style.background = `rgba(${rgb}, ${opacity})`
   if (blur === 0) {
     el.style.backdropFilter = 'none'

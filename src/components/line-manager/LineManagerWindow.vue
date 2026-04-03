@@ -1572,7 +1572,41 @@ export default {
       cancelPendingLineSaveOnClose()
     }
 
+    function applyWindowAppearanceFromSettings() {
+      try {
+        if (typeof document === 'undefined') return
+        const root = document.documentElement
+        let blurEnabled = true
+        let themeMode = 'system'
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('pids_settings_v1') : null
+        if (raw) {
+          const settings = JSON.parse(raw)
+          if (settings) {
+            blurEnabled = settings.blurEnabled !== false
+            themeMode = String(settings.themeMode || 'system')
+          }
+        }
+        const systemDark = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          : false
+        const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark)
+        root.classList.toggle('blur-disabled', !blurEnabled)
+        root.classList.toggle('dark', isDark)
+        root.setAttribute('data-theme', isDark ? 'dark' : 'light')
+      } catch (e) {
+        console.warn('[LineManagerWindow] applyWindowAppearanceFromSettings failed:', e)
+      }
+    }
+
+    function handleSettingsStorageChange(event) {
+      if (!event || event.key === 'pids_settings_v1') {
+        applyWindowAppearanceFromSettings()
+      }
+    }
+
     onMounted(async () => {
+      applyWindowAppearanceFromSettings()
+      window.addEventListener('storage', handleSettingsStorageChange)
       window.addEventListener('beforeunload', handleWindowBeforeUnload)
       await loadFolders()
       await nextTick()
@@ -1581,6 +1615,7 @@ export default {
     })
 
     onBeforeUnmount(() => {
+      window.removeEventListener('storage', handleSettingsStorageChange)
       window.removeEventListener('beforeunload', handleWindowBeforeUnload)
       if (isSavingThroughLine.value) {
         try {
@@ -2790,4 +2825,3 @@ html.dark .lmw-lines::-webkit-scrollbar-thumb:hover {
   background-clip: padding-box;
 }
 </style>
-

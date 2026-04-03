@@ -852,25 +852,25 @@
 
     <!-- Multi-Screen QR Dialog -->
     <Teleport to="body">
-        <Transition name="fade">
-            <div v-if="showMultiScreenQrDialog" class="se-overlay" @click.self="closeMultiScreenQrDialog">
-                <div class="se-dialog" role="dialog" aria-modal="true" style="max-width:520px;">
-                    <div class="se-header">
-                        <div class="se-header-left">
-                            <div class="se-icon">
+        <Transition name="cp-fade">
+            <div v-if="showMultiScreenQrDialog" class="cp-overlay cp-overlay--editor" @click.self="closeMultiScreenQrDialog">
+                <div class="cp-dialog cp-dialog--compact" v-glassmorphism="glassDropdownDirective" role="dialog" aria-modal="true">
+                    <div class="cp-header">
+                        <div class="cp-header-left">
+                            <div class="cp-icon">
                                 <i class="fas fa-qrcode"></i>
                             </div>
-                            <div class="se-titles">
-                                <div class="se-title">{{ $t('multiScreen.qrDialogTitle') }}</div>
-                                <div class="se-subtitle">{{ $t('multiScreen.qrDialogSubtitle') }}</div>
+                            <div class="cp-titles">
+                                <div class="cp-title">{{ $t('multiScreen.qrDialogTitle') }}</div>
+                                <div class="cp-subtitle">{{ $t('multiScreen.qrDialogSubtitle') }}</div>
                             </div>
                         </div>
-                        <button type="button" class="se-close" @click="closeMultiScreenQrDialog" aria-label="关闭">
+                        <button type="button" class="cp-close" @click="closeMultiScreenQrDialog" aria-label="关闭">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
 
-                    <div class="se-content" style="display:flex; flex-direction:column; align-items:center; gap:12px;">
+                    <div class="cp-content" style="display:flex; flex-direction:column; align-items:center; gap:12px;">
                         <div style="padding:14px; border-radius:14px; border:1px solid var(--divider); background:var(--input-bg); box-shadow:0 4px 14px rgba(0,0,0,0.08);">
                             <img :src="multiScreenQrUrl" :alt="$t('multiScreen.qrDialogTitle')" style="display:block; width:280px; height:280px; object-fit:contain; border-radius:8px;">
                         </div>
@@ -879,9 +879,11 @@
                         </div>
                     </div>
 
-                    <div class="se-footer">
-                        <button type="button" class="se-btn se-btn-gray" @click="closeMultiScreenQrDialog">{{ $t('multiScreen.close') }}</button>
-                        <button type="button" class="se-btn se-btn-green" @click="copyMultiScreenEntryUrl">{{ $t('multiScreen.copyAddress') }}</button>
+                    <div class="cp-footer cp-footer--end">
+                        <div class="cp-footer-right">
+                            <button type="button" class="cp-btn cp-btn-gray" @click="closeMultiScreenQrDialog">{{ $t('multiScreen.close') }}</button>
+                            <button type="button" class="cp-btn cp-btn-primary" @click="copyMultiScreenEntryUrl">{{ $t('multiScreen.copyAddress') }}</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -890,25 +892,25 @@
 
     <!-- Connected WS Clients Dialog -->
     <Teleport to="body">
-        <Transition name="fade">
-            <div v-if="showWsClientsDialog" class="se-overlay" @click.self="closeWsClientsDialog">
-                <div class="se-dialog" role="dialog" aria-modal="true" style="max-width:680px;">
-                    <div class="se-header">
-                        <div class="se-header-left">
-                            <div class="se-icon">
+        <Transition name="cp-fade">
+            <div v-if="showWsClientsDialog" class="cp-overlay cp-overlay--editor" @click.self="closeWsClientsDialog">
+                <div class="cp-dialog cp-dialog--editor" v-glassmorphism="glassDropdownDirective" role="dialog" aria-modal="true" style="width:680px; max-width:95%;">
+                    <div class="cp-header">
+                        <div class="cp-header-left">
+                            <div class="cp-icon">
                                 <i class="fas fa-network-wired"></i>
                             </div>
-                            <div class="se-titles">
-                                <div class="se-title">已连接设备</div>
-                                <div class="se-subtitle">实时 WebSocket 客户端列表</div>
+                            <div class="cp-titles">
+                                <div class="cp-title">已连接设备</div>
+                                <div class="cp-subtitle">实时 WebSocket 客户端列表</div>
                             </div>
                         </div>
-                        <button type="button" class="se-close" @click="closeWsClientsDialog" aria-label="关闭">
+                        <button type="button" class="cp-close" @click="closeWsClientsDialog" aria-label="关闭">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
 
-                    <div class="se-content" style="max-height:58vh; overflow-y:auto;">
+                    <div class="cp-content cp-content--scroll" style="max-height:58vh;">
                         <div v-if="wsClientsLoading" style="padding:24px 8px; text-align:center; color:var(--muted); font-size:13px;">
                             <i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i> 正在加载设备列表...
                         </div>
@@ -933,9 +935,11 @@
                         </div>
                     </div>
 
-                    <div class="se-footer">
-                        <button type="button" class="se-btn se-btn-gray" @click="closeWsClientsDialog">关闭</button>
-                        <button type="button" class="se-btn se-btn-green" @click="loadWsClients">刷新</button>
+                    <div class="cp-footer cp-footer--end">
+                        <div class="cp-footer-right">
+                            <button type="button" class="cp-btn cp-btn-gray" @click="closeWsClientsDialog">关闭</button>
+                            <button type="button" class="cp-btn cp-btn-primary" @click="loadWsClients">刷新</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1261,17 +1265,6 @@
             border: 1px solid rgba(255, 255, 255, 0.12);
         }
 
-        :global(html.blur-disabled) .se-dialog {
-            background: #ffffff !important;
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
-            border: 1px solid rgba(15, 23, 42, 0.16) !important;
-        }
-        :global(html.blur-disabled.dark) .se-dialog,
-        :global(html.blur-disabled[data-theme="dark"]) .se-dialog {
-            background: #1c1c20 !important;
-            border: 1px solid rgba(255, 255, 255, 0.16) !important;
-        }
         /* 设置页内框/进度条 - 与 PIDS 控制台一致（浅色/深色） */
         .settings-hint-box {
             background: rgba(255, 255, 255, 0.15);

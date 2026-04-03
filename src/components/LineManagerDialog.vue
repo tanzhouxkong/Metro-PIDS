@@ -10,7 +10,7 @@
           class="cp-dialog cp-dialog--compact"
           role="dialog"
           aria-modal="true"
-          v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+          v-glassmorphism="glassDirective"
           @click.stop
         >
           <div class="cp-header">

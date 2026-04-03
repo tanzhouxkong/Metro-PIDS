@@ -16,6 +16,30 @@ export default {
   setup(props, { emit }) {
     const menuRef = ref(null)
     const pos = ref({ x: 0, y: 0 })
+    const glassDirective = computed(() => {
+      let blurEnabled = true
+      let isDark = false
+      try {
+        const root = typeof document !== 'undefined' ? document.documentElement : null
+        if (root) {
+          isDark = root.classList.contains('dark') || root.getAttribute('data-theme') === 'dark'
+          blurEnabled = !root.classList.contains('blur-disabled')
+        }
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem('pids_settings_v1')
+          if (raw) {
+            const settings = JSON.parse(raw)
+            if (settings && settings.blurEnabled === false) blurEnabled = false
+          }
+        }
+      } catch (e) {
+        // Ignore invalid persisted settings and fall back to current DOM state.
+      }
+      if (!blurEnabled) {
+        return { blur: 0, opacity: 1, color: isDark ? '#1c1c20' : '#ffffff' }
+      }
+      return { blur: 12, opacity: 0.2, color: isDark ? '#1c1c20' : '#ffffff' }
+    })
 
     const style = computed(() => ({
       left: pos.value.x + 'px',
@@ -65,7 +89,7 @@ export default {
       close()
     }
 
-    return { style, close, onSelect, menuRef }
+    return { style, close, onSelect, menuRef, glassDirective }
   }
 }
 </script>
@@ -77,7 +101,7 @@ export default {
       ref="menuRef"
       data-line-context-menu
       class="station-context-menu station-context-menu--glass-shell"
-      v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+      v-glassmorphism="glassDirective"
       :style="style"
       @click.stop
       @contextmenu.prevent
