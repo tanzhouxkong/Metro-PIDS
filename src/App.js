@@ -279,6 +279,84 @@ export default {
       else playDepart(idx);
     };
 
+    const isAtTerminal = () => {
+      if (!pidState.appData || !Array.isArray(pidState.appData.stations) || pidState.appData.stations.length === 0) return false;
+      const meta = pidState.appData.meta || {};
+      const stations = pidState.appData.stations;
+      const len = stations.length;
+      const currentIdx = pidState.rt?.idx;
+      if (typeof currentIdx !== 'number') return false;
+      if (meta.mode === 'loop') return false;
+      const sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx, 10) : 0;
+      const tIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx, 10) : (len - 1);
+      const minIdx = Math.max(0, Math.min(sIdx, tIdx));
+      const maxIdx = Math.min(len - 1, Math.max(sIdx, tIdx));
+      const step = getStep();
+      const terminalIdx = step > 0 ? maxIdx : minIdx;
+      return currentIdx === terminalIdx;
+    };
+
+    const tryAdvanceNext = async ({ silentOnTerminal = false } = {}) => {
+      if (isAtTerminal()) {
+        await dialogService.alert('已到达终点站', '提示');
+        return false;
+      }
+      const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+      const advanced = next();
+      if (advanced === false) {
+        await dialogService.alert('已到达终点站', '提示');
+        return false;
+      }
+      playAfterToggle(prevIdx);
+      return true;
+    };
+
+    const tryToggleArrDep = async () => {
+      const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+      const currentState = Number.isInteger(pidState.rt?.state) ? pidState.rt.state : 0;
+
+      if (currentState === 0) {
+        setDep();
+        playAfterToggle(prevIdx);
+        return true;
+      }
+
+      if (isAtTerminal()) {
+        await dialogService.alert('已到达终点站', '提示');
+        return false;
+      }
+
+      setArr();
+      playAfterToggle(prevIdx);
+      return true;
+    };
+
+    const tryAdvanceNextSilent = async () => {
+      if (isAtTerminal()) return false;
+      const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+      const advanced = next();
+      if (advanced === false) return false;
+      playAfterToggle(prevIdx);
+      return true;
+    };
+
+    const tryToggleArrDepSilent = async () => {
+      const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+      const currentState = Number.isInteger(pidState.rt?.state) ? pidState.rt.state : 0;
+
+      if (currentState === 0) {
+        setDep();
+        playAfterToggle(prevIdx);
+        return true;
+      }
+
+      if (isAtTerminal()) return false;
+
+      setArr();
+      playAfterToggle(prevIdx);
+      return true;
+    };
+
     // 监听来自侧边栏的面板切换消息
     let panelStateCleanup = null;
     if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onPanelStateChange) {
@@ -398,18 +476,16 @@ export default {
 
         if (match(km.arrdep)) {
           e.preventDefault();
-          const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
-          next();
-          playAfterToggle(prevIdx);
+          await tryToggleArrDepSilent();
           return;
         }
         if (match(km.prev)) { move(-getStep()); return; }
-        if (match(km.next)) { move(getStep()); return; }
+        if (match(km.next)) { await tryAdvanceNextSilent(); return; }
         
         // 硬编码兜底
-        if (code === 'Enter' || key === 'Enter') { e.preventDefault(); const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0; next(); playAfterToggle(prevIdx); }
+        if (code === 'Enter' || key === 'Enter') { e.preventDefault(); await tryToggleArrDepSilent(); }
         if (code === 'ArrowLeft' || key === 'ArrowLeft') move(-getStep());
-        if (code === 'ArrowRight' || key === 'ArrowRight') move(getStep());
+        if (code === 'ArrowRight' || key === 'ArrowRight') await tryAdvanceNextSilent();
     });
 
     // 广播处理
@@ -464,16 +540,22 @@ export default {
          // 如果发送的是命令格式，直接执行对应操作（命令是语义化的，不需要匹配快捷键）
          if (command) {
            if (command === 'next') {
-             move(getStep());
+             await tryAdvanceNextSilent();
              return;
            }
            if (command === 'prev') {
              move(-getStep());
              return;
            }
-           if (command === 'arrive' || command === 'depart') {
+           if (command === 'arrive') {
              const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
-             next();
+             setArr();
+             playAfterToggle(prevIdx);
+             return;
+           }
+           if (command === 'depart') {
+             const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
+             setDep();
              playAfterToggle(prevIdx);
              return;
            }
@@ -482,9 +564,7 @@ export default {
          
          // 如果发送的是按键格式，检查是否与用户配置的快捷键匹配
          if (match(km.arrdep)) {
-           const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
-           next();
-           playAfterToggle(prevIdx);
+           await tryToggleArrDepSilent();
            return;
          }
          if (match(km.prev)) {
@@ -492,17 +572,17 @@ export default {
              return;
          }
          if (match(km.next)) {
-             move(getStep());
+             await tryAdvanceNextSilent();
              return;
          }
          
          // 兜底：如果用户配置的快捷键不匹配，尝试使用默认值（向后兼容）
          if (code === 'Enter' || key === 'Enter') {
-             next();
+             await tryToggleArrDepSilent();
          } else if (code === 'ArrowLeft' || key === 'ArrowLeft') {
              move(-getStep());
          } else if (code === 'ArrowRight' || key === 'ArrowRight') {
-             move(getStep());
+             await tryAdvanceNextSilent();
          }
       }
       // 来自显示端的 UI 命令；若标记 src=display 则忽略

@@ -4437,6 +4437,10 @@ export default {
   font-size: 20px;
   font-weight: 800;
 }
+.se-name-edit-dialog .cp-content {
+  padding: 16px 0 0 24px;
+  border-radius: 12px 0 0 0;
+}
 .se-name-edit-input {
   width: 100%;
   margin-top: 16px;

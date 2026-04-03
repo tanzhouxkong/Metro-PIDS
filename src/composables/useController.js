@@ -259,6 +259,23 @@ export function useController() {
         sync();
     }
 
+    function isAtTerminalControl() {
+        if (!state.appData || !Array.isArray(state.appData.stations) || state.appData.stations.length === 0) return false;
+        const meta = state.appData.meta || {};
+        const stations = state.appData.stations;
+        if (meta.mode === 'loop') return false;
+        const currentIdx = state.rt && typeof state.rt.idx === 'number' ? state.rt.idx : -1;
+        if (currentIdx < 0) return false;
+        const len = stations.length;
+        const sIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx, 10) : 0;
+        const eIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx, 10) : len - 1;
+        const minIdx = Math.min(sIdx, eIdx);
+        const maxIdx = Math.max(sIdx, eIdx);
+        const step = getStep();
+        const terminalIdx = step > 0 ? maxIdx : minIdx;
+        return currentIdx === terminalIdx;
+    }
+
     function jumpTo(idx) {
         state.rt.idx = idx;
         state.rt.state = 0;
@@ -277,7 +294,9 @@ export function useController() {
     }
 
     function next() {
+        if (isAtTerminalControl()) return false;
         state.rt.state === 0 ? setDep() : setArr();
+        return true;
     }
 
     return {

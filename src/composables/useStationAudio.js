@@ -349,6 +349,29 @@ export function useStationAudio(state) {
     return merged
   }
 
+  const hasBucketAudioEntries = (bucket) => collectBucketList(bucket).length > 0
+
+  const hasStationAudioEntries = (sa) => {
+    if (!sa || typeof sa !== 'object') return false
+    if (hasBucketAudioEntries(sa.up) || hasBucketAudioEntries(sa.down)) return true
+    const dialectLists = sa.dialectLists
+    if (!dialectLists || typeof dialectLists !== 'object') return false
+    return Object.values(dialectLists).some((bucket) => {
+      if (!bucket || typeof bucket !== 'object') return false
+      return hasBucketAudioEntries(bucket.up) || hasBucketAudioEntries(bucket.down)
+    })
+  }
+
+  const hasCommonAudioEntries = (meta) => {
+    const common = meta?.commonAudio
+    if (!common || typeof common !== 'object') return false
+    return hasBucketAudioEntries(common.up) || hasBucketAudioEntries(common.down)
+  }
+
+  const hasAnyPlayableAudioConfig = (sa, meta) => {
+    return hasStationAudioEntries(sa) || hasCommonAudioEntries(meta)
+  }
+
   const isDynamicAudioDebugEnabled = () => {
     try {
       return window?.localStorage?.getItem('metro_pids_debug_dynamic_audio') === '1'
@@ -1329,6 +1352,7 @@ export function useStationAudio(state) {
     if (typeof window !== 'undefined' && window.__disableStationAudioDuringRecording) return
     const stations = state.appData?.stations
     if (!stations || idx < 0 || idx >= stations.length) return
+    const meta = state.appData?.meta || {}
     if (typeof window !== 'undefined') {
       if (typeof window.__stopCommonAudio === 'function') { try { window.__stopCommonAudio() } catch (e) {} }
       if (typeof window.__stopAnyAudioElements === 'function') { try { window.__stopAnyAudioElements() } catch (e) {} }
@@ -1342,6 +1366,11 @@ export function useStationAudio(state) {
     const station = stations[idx]
     const sa = station?.stationAudio
     if (!sa || typeof sa !== 'object') {
+      setPlaybackState('none')
+      clearActiveControllerIfSelf()
+      return
+    }
+    if (!hasAnyPlayableAudioConfig(sa, meta)) {
       setPlaybackState('none')
       clearActiveControllerIfSelf()
       return
@@ -1371,7 +1400,6 @@ export function useStationAudio(state) {
     })
     setPlaybackState('none')
 
-    const meta = state.appData?.meta || {}
     const startIdx = typeof meta.startIdx === 'number' ? meta.startIdx : 0
     const termIdx = typeof meta.termIdx === 'number' ? meta.termIdx : stations.length - 1
     const serviceMode = meta.serviceMode || 'normal'
@@ -1467,6 +1495,7 @@ export function useStationAudio(state) {
     if (typeof window !== 'undefined' && window.__disableStationAudioDuringRecording) return
     const stations = state.appData?.stations
     if (!stations || idx < 0 || idx >= stations.length) return
+    const meta = state.appData?.meta || {}
     if (typeof window !== 'undefined') {
       if (typeof window.__stopCommonAudio === 'function') { try { window.__stopCommonAudio() } catch (e) {} }
       if (typeof window.__stopAnyAudioElements === 'function') { try { window.__stopAnyAudioElements() } catch (e) {} }
@@ -1480,6 +1509,11 @@ export function useStationAudio(state) {
     const station = stations[idx]
     const sa = station?.stationAudio
     if (!sa || typeof sa !== 'object') {
+      setPlaybackState('none')
+      clearActiveControllerIfSelf()
+      return
+    }
+    if (!hasAnyPlayableAudioConfig(sa, meta)) {
       setPlaybackState('none')
       clearActiveControllerIfSelf()
       return
@@ -1509,7 +1543,6 @@ export function useStationAudio(state) {
     })
     setPlaybackState('none')
 
-    const meta = state.appData?.meta || {}
     const serviceMode = meta.serviceMode || 'normal'
     const isShortTurn = typeof meta.startIdx === 'number' && typeof meta.termIdx === 'number' && (meta.termIdx - meta.startIdx + 1) < stations.length
     const dir = getDirKey(sa, meta)
