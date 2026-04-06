@@ -372,6 +372,7 @@
     "btnPaste": "貼上",
     "btnDelete": "刪除",
     "searchPlaceholder": "搜尋路線、首站、末站 ...",
+    "back": "返回",
     "currentFolder": "目前資料夾",
     "defaultFolder": "預設",
     "newLine": "新增路線",
@@ -429,6 +430,7 @@
     "folderList": "資料夾",
     "sortUpdatedDesc": "按最新時間",
     "sortNameAsc": "按名稱",
+    "searchSortRelevance": "按綜合排序",
     "folderPasteFailed": "貼上資料夾失敗"
     ,"selectFolderForNewLine": "請選擇用於新建路線的資料夾"
   },

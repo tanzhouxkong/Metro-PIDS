@@ -372,6 +372,7 @@
     "btnPaste": "ペースト",
     "btnDelete": "削除",
     "searchPlaceholder": "路線、始発駅、終着駅を検索...",
+    "back": "戻る",
     "currentFolder": "現在のフォルダ",
     "defaultFolder": "デフォルト",
     "newLine": "新規路線",
@@ -429,6 +430,7 @@
     "folderList": "フォルダー",
     "sortUpdatedDesc": "更新順",
     "sortNameAsc": "名前順",
+    "searchSortRelevance": "関連順",
     "folderPasteFailed": "フォルダーの貼り付けに失敗しました"
     ,"selectFolderForNewLine": "新しい路線を作成するフォルダーを選択してください"
   },

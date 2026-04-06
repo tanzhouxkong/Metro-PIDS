@@ -382,6 +382,7 @@
     "btnPaste": "粘贴",
     "btnDelete": "删除",
     "searchPlaceholder": "搜索线路、首站、末站 ...",
+    "back": "返回",
     "currentFolder": "当前文件夹",
     "defaultFolder": "默认",
     "newLine": "新建线路",
@@ -439,6 +440,7 @@
     "folderList": "文件夹",
     "sortUpdatedDesc": "按最新时间",
     "sortNameAsc": "按名称",
+    "searchSortRelevance": "按综合排序",
     "folderPasteFailed": "粘贴文件夹失败"
     ,"selectFolderForNewLine": "请选择用于新建线路的文件夹"
   },

@@ -70,6 +70,9 @@ export default {
     const currentDirectoryPath = ref(null)
     const currentDirectoryFolders = ref([])
     const folderSortMode = ref('updated-desc')
+    const searchSortMode = ref('relevance')
+    const searchSortDropdownOpen = ref(false)
+    const searchSortDropdownRef = ref(null)
     const loading = ref(false)
     const selectedFolderId = ref(null)
     const selectedLine = ref(null)
@@ -971,6 +974,38 @@ export default {
       searchLoading.value = true
       try {
         const results = []
+        const rootPath = await ensureLinesRootPath()
+        if (rootPath) {
+          const rootBrowseRes = await window.electronAPI.lines.browse(rootPath)
+          if (rootBrowseRes && rootBrowseRes.ok) {
+            for (const item of rootBrowseRes.items || []) {
+              if (item.type !== 'line') continue
+              try {
+                const res = await window.electronAPI.lines.read(item.fileName || item.name, rootPath)
+                if (res && res.ok && res.content) {
+                  results.push({
+                    ...buildLineEntry(res.content, item.fileName || item.name, rootPath, null, item),
+                    folderId: null,
+                    folderName: t('lineManager.title')
+                  })
+                } else {
+                  results.push({
+                    ...buildFallbackLineEntry(item.fileName || item.name, rootPath, null, item),
+                    folderId: null,
+                    folderName: t('lineManager.title')
+                  })
+                }
+              } catch (e) {
+                console.warn('读取根目录搜索线路失败:', e)
+                results.push({
+                  ...buildFallbackLineEntry(item.fileName || item.name, rootPath, null, item),
+                  folderId: null,
+                  folderName: t('lineManager.title')
+                })
+              }
+            }
+          }
+        }
         const foldersToSearch = folders.value.filter((f) => f.id !== CLOUD_FOLDER_ID && !f.isRuntime)
         for (const folder of foldersToSearch) {
           const folderPath = folder.path ?? null
@@ -1998,6 +2033,7 @@ export default {
       applyWindowAppearanceFromSettings()
       window.addEventListener('storage', handleSettingsStorageChange)
       window.addEventListener('beforeunload', handleWindowBeforeUnload)
+      window.addEventListener('pointerdown', handleGlobalPointerDown, true)
       await loadFolders()
       await nextTick()
       await checkSaveThroughLineMode()
@@ -2007,6 +2043,7 @@ export default {
     onBeforeUnmount(() => {
       window.removeEventListener('storage', handleSettingsStorageChange)
       window.removeEventListener('beforeunload', handleWindowBeforeUnload)
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true)
       if (isSavingThroughLine.value) {
         try {
           localStorage.removeItem('pendingThroughLineData')
@@ -2032,6 +2069,55 @@ export default {
     })
 
     const isSearchActive = computed(() => (searchQuery.value || '').trim().length > 0)
+    const searchSortOptions = computed(() => [
+      { value: 'relevance', label: t('lineManager.searchSortRelevance') },
+      { value: 'updated-desc', label: t('lineManager.sortUpdatedDesc') },
+      { value: 'name-asc', label: t('lineManager.sortNameAsc') }
+    ])
+    const currentSearchSortLabel = computed(() => {
+      return searchSortOptions.value.find((item) => item.value === searchSortMode.value)?.label || ''
+    })
+
+    function closeSearchSortDropdown() {
+      searchSortDropdownOpen.value = false
+    }
+
+    function toggleSearchSortDropdown() {
+      searchSortDropdownOpen.value = !searchSortDropdownOpen.value
+    }
+
+    function selectSearchSortMode(mode) {
+      searchSortMode.value = mode
+      closeSearchSortDropdown()
+    }
+
+    function getSearchSortItemBackground(mode) {
+      return searchSortMode.value === mode ? 'rgba(64, 156, 255, 0.16)' : 'transparent'
+    }
+
+    function setSearchSortItemHover(event, mode) {
+      if (!event?.currentTarget) return
+      event.currentTarget.style.background =
+        searchSortMode.value === mode ? 'rgba(64, 156, 255, 0.16)' : 'rgba(15, 23, 42, 0.06)'
+    }
+
+    function clearSearchSortItemHover(event, mode) {
+      if (!event?.currentTarget) return
+      event.currentTarget.style.background = getSearchSortItemBackground(mode)
+    }
+
+    function handleGlobalPointerDown(event) {
+      if (!searchSortDropdownOpen.value) return
+      const root = searchSortDropdownRef.value
+      if (root && !root.contains(event.target)) {
+        closeSearchSortDropdown()
+      }
+    }
+
+    function clearSearchView() {
+      searchQuery.value = ''
+      closeSearchSortDropdown()
+    }
 
     const bottomBarActionLabel = computed(() => {
       if (isSavingThroughLine.value) return t('lineManager.throughSaveButton')
@@ -2047,18 +2133,51 @@ export default {
     const filteredLines = computed(() => {
       const q = (searchQuery.value || '').trim().toLowerCase()
       if (!q) return currentLines.value
-      return allLinesWithFolder.value.filter((line) => {
-        const name = stripColorMarkup(line.name || '').toLowerCase()
-        const first = (line.firstStation || '').toLowerCase()
-        const last = (line.lastStation || '').toLowerCase()
-        const folderName = (line.folderName || '').toLowerCase()
-        return (
-          name.includes(q) ||
-          first.includes(q) ||
-          last.includes(q) ||
-          folderName.includes(q)
-        )
-      })
+      const matched = allLinesWithFolder.value
+        .map((line) => {
+          const rawName = stripColorMarkup(line.name || '')
+          const name = rawName.toLowerCase()
+          const first = (line.firstStation || '').toLowerCase()
+          const last = (line.lastStation || '').toLowerCase()
+          const folderName = (line.folderName || '').toLowerCase()
+          const stationText = `${first} ${last}`.trim()
+          const matched =
+            name.includes(q) ||
+            first.includes(q) ||
+            last.includes(q) ||
+            folderName.includes(q)
+          if (!matched) return null
+          let score = 0
+          if (name === q) score += 200
+          else if (name.startsWith(q)) score += 120
+          else if (name.includes(q)) score += 80
+          if (stationText.includes(q)) score += 30
+          if (folderName.includes(q)) score += 10
+          return { line, score }
+        })
+        .filter(Boolean)
+      if (searchSortMode.value === 'updated-desc') {
+        return matched
+          .sort((a, b) => {
+            const diff = Number(b.line?.mtimeMs || 0) - Number(a.line?.mtimeMs || 0)
+            if (diff !== 0) return diff
+            return String(a.line?.name || '').localeCompare(String(b.line?.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true })
+          })
+          .map((item) => item.line)
+      }
+      if (searchSortMode.value === 'name-asc') {
+        return matched
+          .sort((a, b) => String(a.line?.name || '').localeCompare(String(b.line?.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true }))
+          .map((item) => item.line)
+      }
+      return matched
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score
+          const diff = Number(b.line?.mtimeMs || 0) - Number(a.line?.mtimeMs || 0)
+          if (diff !== 0) return diff
+          return String(a.line?.name || '').localeCompare(String(b.line?.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true })
+        })
+        .map((item) => item.line)
     })
 
     const rootExplorerEntries = computed(() => {
@@ -2219,6 +2338,8 @@ export default {
       explorerEntries,
       currentDirectoryLineEntries,
       currentDirectoryEntries,
+      searchSortOptions,
+      currentSearchSortLabel,
       formatExplorerDate,
       formatExplorerMonth,
       formatExplorerFileSize,
@@ -2227,6 +2348,9 @@ export default {
       getFolderEntryUpdateLabel,
       getLineEntrySourceLabel,
       searchQuery,
+      searchSortMode,
+      searchSortDropdownOpen,
+      searchSortDropdownRef,
       isSearchActive,
       searchLoading,
       loading,
@@ -2254,6 +2378,13 @@ export default {
       goToRootExplorer,
       navigateUp,
       locateToFolder,
+      clearSearchView,
+      closeSearchSortDropdown,
+      toggleSearchSortDropdown,
+      selectSearchSortMode,
+      getSearchSortItemBackground,
+      setSearchSortItemHover,
+      clearSearchSortItemHover,
       isEntrySelected,
       toggleEntrySelection,
       toggleLineSelection,
@@ -2529,7 +2660,7 @@ export default {
 <template>
   <div class="lmw-root">
     <LineManagerTopbar>
-      <div v-if="folders?.length > 0 && !isRootExplorer" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
+      <div v-if="folders?.length > 0" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
         <div class="lmw-search-inner" style="flex:1;">
           <i class="fas fa-search lmw-search-icon"></i>
           <input
@@ -2584,10 +2715,6 @@ export default {
               <div class="lmw-media-header">
                 <div class="lmw-media-header-main">
                   <div class="lmw-media-title">{{ t('lineManager.title') }}</div>
-                </div>
-                <div class="lmw-media-link">
-                  <i class="far fa-folder"></i>
-                  <span>{{ t('lineManager.onlineDocs') }}</span>
                 </div>
               </div>
               <div class="lmw-library-toolbar">
@@ -2661,10 +2788,6 @@ export default {
                   </button>
                   <div class="lmw-media-title">{{ currentFolderLabel }}</div>
                 </div>
-                <div class="lmw-media-link">
-                  <i class="far fa-folder"></i>
-                  <span>{{ t('lineManager.onlineDocs') }}</span>
-                </div>
               </div>
               <div class="lmw-media-toolbar">
                 <div class="lmw-media-group-label">{{ formatExplorerMonth(currentDirectoryEntries[0]?.mtime) || currentFolderLabel }}</div>
@@ -2731,7 +2854,7 @@ export default {
                 </button>
               </div>
             </div>
-            <div v-if="!isRootExplorer && isSearchActive && (loading || runtimeLoading || searchLoading)" class="lmw-loading">...</div>
+            <div v-if="isSearchActive && (loading || runtimeLoading || searchLoading)" class="lmw-loading">...</div>
             <div v-else-if="isRootExplorer && !isSearchActive"></div>
             <div v-else-if="!isRootExplorer && !isSearchActive"></div>
             <div v-else-if="!isSearchActive && explorerEntries.length === 0" class="lmw-empty">
@@ -2741,6 +2864,71 @@ export default {
               <i class="fas fa-search" style="font-size:32px; color:var(--muted); margin-bottom:12px;"></i>
               <span>{{ t('lineManager.noSearchResult') }}</span>
               <span class="lmw-search-hint">{{ t('lineManager.searchResultHint') }}</span>
+            </div>
+            <div v-else-if="isSearchActive" class="lmw-search-shell">
+              <header class="lmw-search-header">
+                <button type="button" class="lmw-search-back" @click="clearSearchView">
+                  <i class="fas fa-chevron-left"></i>
+                  <span>{{ t('lineManager.back') }}</span>
+                </button>
+                <div ref="searchSortDropdownRef" class="lmw-search-sort-dropdown">
+                  <button type="button" class="lmw-search-sort-trigger" @click.stop="toggleSearchSortDropdown">
+                    <span class="lmw-search-sort-label">{{ currentSearchSortLabel }}</span>
+                    <i :class="searchSortDropdownOpen ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+                  </button>
+                  <div
+                    v-if="searchSortDropdownOpen"
+                    v-glassmorphism
+                    class="lmw-search-sort-menu"
+                  >
+                    <button
+                      v-for="option in searchSortOptions"
+                      :key="option.value"
+                      type="button"
+                      class="lmw-search-sort-item"
+                      :style="{ background: getSearchSortItemBackground(option.value) }"
+                      @click.stop="selectSearchSortMode(option.value)"
+                      @mouseover="setSearchSortItemHover($event, option.value)"
+                      @mouseout="clearSearchSortItemHover($event, option.value)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </div>
+              </header>
+              <div class="lmw-search-list">
+                <button
+                  v-for="(entry, idx) in filteredLines"
+                  :key="'search-entry-' + (entry.filePath || entry.name) + '-' + idx"
+                  class="lmw-line lmw-line--inside-folder lmw-line--search-result"
+                  :class="{ selected: isEntrySelected(entry) }"
+                  @click="toggleLineSelection(entry, $event)"
+                  @dblclick="openLine(entry)"
+                  @contextmenu.prevent.stop="showLineContextMenu($event, entry)"
+                >
+                  <div class="lmw-line-main">
+                    <div class="lmw-line-title" v-html="parseColorMarkup(entry.name)"></div>
+                    <div class="lmw-line-meta">
+                      <span v-if="entry.isThroughLine" class="lmw-tag through">{{ t('folderLineManager.through') }}</span>
+                      <span v-else-if="entry.isLoopLine" class="lmw-tag loop">{{ t('folderLineManager.loop') }}</span>
+                      <span v-else class="lmw-tag single">{{ t('folderLineManager.single') }}</span>
+                      <span class="lmw-stations">
+                        {{ entry.firstStation }} -> {{ entry.lastStation }}
+                      </span>
+                      <span class="lmw-line-folder">
+                        <i class="far fa-clock"></i> {{ formatExplorerDate(entry.mtime) || '--' }}
+                      </span>
+                      <span v-if="formatExplorerFileSize(entry.size)" class="lmw-line-folder">
+                        <i class="fas fa-file"></i> {{ formatExplorerFileSize(entry.size) }}
+                      </span>
+                      <span class="lmw-line-folder lmw-line-folder--search-source">
+                        <i class="fas fa-folder"></i> {{ entry.folderName || t('lineManager.title') }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="lmw-line-color" :style="{ background: entry.themeColor || '#5F27CD' }"></div>
+                </button>
+              </div>
             </div>
             <template v-else>
               <button
@@ -3447,6 +3635,13 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   border-radius: 999px;
   cursor: pointer;
   font-size: 16px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.lmw-media-back:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+.lmw-media-back:active {
+  background: rgba(15, 23, 42, 0.10);
 }
 .lmw-media-title {
   font-size: 18px;
@@ -3586,6 +3781,120 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.lmw-search-shell {
+  min-height: 100%;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+}
+.lmw-search-header {
+  height: 66px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #eef1f5;
+}
+.lmw-search-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 4px;
+  border: none;
+  background: transparent;
+  color: #171717;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.lmw-search-back:hover {
+  background: #f3f3f4;
+}
+.lmw-search-sort-dropdown {
+  position: relative;
+  flex-shrink: 0;
+}
+.lmw-search-sort-trigger {
+  min-width: 156px;
+  max-width: 220px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  color: var(--text, #202938);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.lmw-search-sort-trigger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.56);
+}
+.lmw-search-sort-trigger i {
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+}
+.lmw-search-sort-label {
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lmw-search-sort-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  min-width: 100%;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.46);
+}
+.lmw-search-sort-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text, #202938);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.16s ease;
+}
+.lmw-search-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px 22px;
+}
+.lmw-line--search-result {
+  width: 100%;
+  margin: 0;
+}
+.lmw-line-folder--search-source {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lmw-bottom-bar {
   padding: 12px 16px;
@@ -4062,6 +4371,12 @@ html.dark .lmw-media-name,
 html.dark .lmw-media-back {
   color: #e6eef6;
 }
+html.dark .lmw-media-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+html.dark .lmw-media-back:active {
+  background: rgba(255, 255, 255, 0.14);
+}
 html.dark .lmw-media-group-label,
 html.dark .lmw-media-subtitle,
 html.dark .lmw-media-date,
@@ -4087,6 +4402,39 @@ html.dark .lmw-media-list::-webkit-scrollbar-thumb:hover {
 }
 html.dark .lmw-media-thumb {
   background: linear-gradient(180deg, #7b7b7b, #5d5d5d);
+}
+html.dark .lmw-search-shell {
+  background: rgba(12, 18, 26, 0.96);
+}
+html.dark .lmw-search-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .lmw-search-back,
+html.dark .lmw-search-name {
+  color: #e6eef6;
+}
+html.dark .lmw-search-back:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+html.dark .lmw-search-sort-trigger {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6eef6;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+html.dark .lmw-search-sort-trigger:hover {
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+html.dark .lmw-search-sort-trigger i {
+  color: rgba(230, 238, 246, 0.72);
+}
+html.dark .lmw-search-sort-menu {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(17, 24, 39, 0.74);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+html.dark .lmw-search-sort-item {
+  color: #e6eef6;
 }
 html.dark .lmw-line {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));

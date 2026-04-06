@@ -372,6 +372,7 @@
     "btnPaste": "Paste",
     "btnDelete": "Delete",
     "searchPlaceholder": "Search lines, first station, last station...",
+    "back": "Back",
     "currentFolder": "Current Folder",
     "defaultFolder": "Default",
     "newLine": "New Line",
@@ -429,6 +430,7 @@
     "folderList": "Folders",
     "sortUpdatedDesc": "Latest First",
     "sortNameAsc": "Name",
+    "searchSortRelevance": "Relevance",
     "folderPasteFailed": "Failed to paste folder"
     ,"selectFolderForNewLine": "Select a folder for the new line"
   },

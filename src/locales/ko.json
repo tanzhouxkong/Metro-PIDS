@@ -372,6 +372,7 @@
     "btnPaste": "붙여넣기",
     "btnDelete": "삭제",
     "searchPlaceholder": "노선, 시발역, 종착역 검색...",
+    "back": "뒤로",
     "currentFolder": "현재 폴더",
     "defaultFolder": "기본",
     "newLine": "새 노선",
@@ -429,6 +430,7 @@
     "folderList": "폴더",
     "sortUpdatedDesc": "최신순",
     "sortNameAsc": "이름순",
+    "searchSortRelevance": "관련도순",
     "folderPasteFailed": "폴더 붙여넣기에 실패했습니다"
     ,"selectFolderForNewLine": "새 노선을 만들 폴더를 선택하세요"
   },
