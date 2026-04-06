@@ -582,7 +582,7 @@
     "audioImportCopyOk": "Copied OK",
     "audioImportCopyFail": "Copy failed",
     "audioImportMatching": "Checking matches...",
-    "audioImportResultSummary": "Matched success: {success}, failed: {fail}",
+    "audioImportResultSummary": "{success} of {total} stations succeeded, {fail} failed",
     "audioImportFailedStations": "Failed stations",
     "audioImportNoFiles": "No audio files found in this folder",
     "audioApplyToggleOn": "Mark for apply",

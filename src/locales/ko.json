@@ -582,7 +582,7 @@
     "audioImportCopyOk": "복사 성공",
     "audioImportCopyFail": "복사 실패",
     "audioImportMatching": "매칭 결과 확인 중...",
-    "audioImportResultSummary": "성공 {success}, 실패 {fail}",
+    "audioImportResultSummary": "총 {total}개 역 중 성공 {success}, 실패 {fail}",
     "audioImportFailedStations": "실패한 역",
     "audioImportNoFiles": "이 폴더에 오디오 파일이 없습니다",
     "audioApplyToggleOn": "적용 표시",

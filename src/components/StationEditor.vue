@@ -237,6 +237,25 @@ export default {
     })
 
     const sectionMode = ref('xfer') // 'xfer' | 'audio' | 'commonAudio'
+    const editorSectionToggleRef = ref(null)
+    const editorDialogAutoWidth = ref(900)
+    let editorSectionToggleResizeObserver = null
+    const updateEditorDialogAutoWidth = () => {
+      if (typeof window === 'undefined') return
+      const viewportWidth = Math.max(320, Math.floor(window.innerWidth * 0.95))
+      const baseWidth = 900
+      const toggleEl = editorSectionToggleRef.value
+      const measuredToggleWidth = toggleEl
+        ? Math.ceil(Math.max(toggleEl.scrollWidth || 0, toggleEl.getBoundingClientRect?.().width || 0))
+        : 0
+      // 预留头部、内容区与滚动条空间，让按钮行不挤压换行。
+      const desiredWidth = measuredToggleWidth > 0 ? measuredToggleWidth + 120 : baseWidth
+      editorDialogAutoWidth.value = Math.min(viewportWidth, Math.max(baseWidth, desiredWidth))
+    }
+    const editorDialogStyle = computed(() => ({
+      width: `${editorDialogAutoWidth.value}px`,
+      maxWidth: '95vw'
+    }))
     const audioSectionCrashed = ref(false)
     const seDebugLog = (event, extra = {}) => {
       let traceEnabled = false
@@ -2114,6 +2133,11 @@ export default {
       if (typeof window !== 'undefined') {
         window.addEventListener('error', onWindowError)
         window.addEventListener('unhandledrejection', onWindowRejection)
+        window.addEventListener('resize', updateEditorDialogAutoWidth)
+        if (typeof window.ResizeObserver === 'function') {
+          editorSectionToggleResizeObserver = new window.ResizeObserver(() => updateEditorDialogAutoWidth())
+          if (editorSectionToggleRef.value) editorSectionToggleResizeObserver.observe(editorSectionToggleRef.value)
+        }
       }
       seDebugLog('mounted')
     })
@@ -2126,9 +2150,39 @@ export default {
       if (typeof window !== 'undefined') {
         window.removeEventListener('error', onWindowError)
         window.removeEventListener('unhandledrejection', onWindowRejection)
+        window.removeEventListener('resize', updateEditorDialogAutoWidth)
+      }
+      if (editorSectionToggleResizeObserver) {
+        try { editorSectionToggleResizeObserver.disconnect() } catch (e) {}
+        editorSectionToggleResizeObserver = null
       }
       seDebugLog('before-unmount')
     })
+    watch(
+      () => editorSectionToggleRef.value,
+      (el, prev) => {
+        if (editorSectionToggleResizeObserver && prev && prev !== el) {
+          try { editorSectionToggleResizeObserver.unobserve(prev) } catch (e) {}
+        }
+        if (editorSectionToggleResizeObserver && el) {
+          try { editorSectionToggleResizeObserver.observe(el) } catch (e) {}
+        }
+        nextTick(() => updateEditorDialogAutoWidth())
+      }
+    )
+    watch(
+      [
+        () => props.modelValue,
+        () => sectionMode.value,
+        () => dynamicAudioTabs.value.map((x) => `${x.key}:${t(x.labelKey)}`).join('|'),
+        () => locale?.value
+      ],
+      ([visible]) => {
+        if (!visible) return
+        nextTick(() => updateEditorDialogAutoWidth())
+      },
+      { immediate: true }
+    )
     // 进站/出站颜色条：进站=蓝色，出站=绿色，无=灰色
     // 与 Ant Design 色板一致：主色 / 成功 / 警告
     const getAudioArriveDepartColor = (item) => {
@@ -2866,6 +2920,8 @@ export default {
       hasAudioSelection,
       getSelectedAudioItemsInOrder,
       applySelectedToAllStations,
+      editorSectionToggleRef,
+      editorDialogStyle,
       t
     }
   }
@@ -2879,6 +2935,7 @@ export default {
         <div
           class="cp-dialog cp-dialog--editor"
           v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+          :style="editorDialogStyle"
           role="dialog"
           aria-modal="true"
           @mousedown.stop
@@ -2963,7 +3020,7 @@ export default {
 
             <div class="se-section" @contextmenu.prevent="openSmartSectionMenu($event)">
               <div class="se-section-head">
-                <div class="se-section-toggle" @contextmenu.prevent.stop="openSectionToggleMenu($event)">
+                <div ref="editorSectionToggleRef" class="se-section-toggle" @contextmenu.prevent.stop="openSectionToggleMenu($event)">
                   <button type="button" class="se-seg-btn se-mini" :class="{ on: sectionMode === 'xfer' }" @click="setSectionMode('xfer')">{{ t('stationEditor.xferSectionTitle') }}</button>
                   <div class="se-dyn-tabs" @contextmenu.prevent.stop="openDynamicTabRowMenu($event)">
                     <button
@@ -3701,60 +3758,124 @@ export default {
 
           <!-- 音频导入进度弹窗（导入动态音频文件夹） -->
           <Teleport to="body">
-            <Transition name="fade">
+            <Transition name="cp-fade">
               <div
                 v-if="audioImportModalVisible"
-                class="se-name-edit-overlay"
+                class="cp-overlay cp-overlay--unified se-name-edit-overlay"
                 style="z-index: 1000003"
                 @click.self="audioImportStage === 'done' && closeAudioImportModal()"
               >
                 <div
-                  class="se-name-edit-dialog"
+                  class="cp-dialog cp-dialog--compact se-name-edit-dialog"
                   role="dialog"
                   aria-modal="true"
-                  style="width: 720px; max-width: 95%;"
+                  v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
+                  :style="[nameEditGlassStyle, { width: '720px', maxWidth: '95%' }]"
                 >
-                  <div class="se-name-edit-title" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-                    <span>{{ t('stationEditor.audioImportModalTitle') }}</span>
-                    <span style="font-size:12px; color:var(--muted,#888)">{{ audioImportStage === 'copy' ? t('stationEditor.audioImportStageCopy') : audioImportStage === 'match' ? t('stationEditor.audioImportStageMatch') : t('stationEditor.audioImportStageDone') }}</span>
+                  <div class="cp-header">
+                    <div class="cp-header-left">
+                      <div class="cp-icon">
+                        <i class="fas fa-file-import" style="color: white; font-size: 18px;"></i>
+                      </div>
+                      <div class="cp-titles">
+                        <div class="cp-title se-name-edit-title">{{ t('stationEditor.audioImportModalTitle') }}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="cp-close"
+                      :aria-label="t('stationEditor.closeLabel')"
+                      :disabled="audioImportStage !== 'done'"
+                      :style="audioImportStage !== 'done' ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : undefined"
+                      @click="closeAudioImportModal"
+                    >
+                      <i class="fas fa-times"></i>
+                    </button>
                   </div>
 
-                  <div style="margin-top: 12px;">
-                    <div
-                      style="height: 10px; border-radius: 999px; background: rgba(0,0,0,0.08); overflow:hidden; border: 1px solid rgba(0,0,0,0.06);"
-                    >
-                      <div
-                        style="height: 100%; background: linear-gradient(90deg, #1677ff 0%, #4096ff 100%); width: 0%; transition: width 0.2s ease;"
-                        :style="{ width: audioImportTotal > 0 ? (audioImportProcessed / audioImportTotal * 100).toFixed(1) + '%' : '0%' }"
-                      ></div>
+                  <div class="cp-content se-audio-import-content">
+                    <div class="se-audio-import-statusbar">
+                      <div class="se-audio-import-statusbar-main">
+                        <span class="se-audio-import-status-dot" :class="`is-${audioImportStage}`"></span>
+                        <span class="se-audio-import-status-text">
+                          {{ audioImportStage === 'copy' ? t('stationEditor.audioImportStageCopy') : audioImportStage === 'match' ? t('stationEditor.audioImportStageMatch') : t('stationEditor.audioImportStageDone') }}
+                        </span>
+                      </div>
+                      <span class="se-audio-import-status-sub">
+                        {{ audioImportTotal > 0 ? `${audioImportProcessed}/${audioImportTotal}` : '0/0' }}
+                      </span>
                     </div>
 
-                    <div style="margin-top:10px; font-size:13px; color: var(--text,#333);">
+                    <div class="se-audio-import-progress-card">
+                      <div class="se-audio-import-progress-head">
+                        <span>{{ t('stationEditor.audioImportModalTitle') }}</span>
+                        <span>{{ audioImportTotal > 0 ? `${Math.max(0, Math.min(100, Math.round(audioImportProcessed / audioImportTotal * 100)))}%` : '0%' }}</span>
+                      </div>
+                      <div class="se-audio-import-progress-track">
+                        <div
+                          class="se-audio-import-progress-fill"
+                          :style="{ width: audioImportTotal > 0 ? (audioImportProcessed / audioImportTotal * 100).toFixed(1) + '%' : '0%' }"
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div class="se-audio-import-summary">
                       <template v-if="audioImportStage === 'copy'">
-                        {{ audioImportProcessed }}/{{ audioImportTotal }} ({{ t('stationEditor.audioImportCopyOk') }}: {{ audioImportCopyOk }}, {{ t('stationEditor.audioImportCopyFail') }}: {{ audioImportCopyFail }})
+                        <div v-if="false" class="se-audio-import-copy-grid">
+                          <div class="se-audio-import-stat">
+                            <div class="se-audio-import-stat-label">{{ t('stationEditor.audioImportCopyOk') }}</div>
+                            <div class="se-audio-import-stat-value">{{ audioImportCopyOk }}</div>
+                          </div>
+                          <div class="se-audio-import-stat is-danger">
+                            <div class="se-audio-import-stat-label">{{ t('stationEditor.audioImportCopyFail') }}</div>
+                            <div class="se-audio-import-stat-value">{{ audioImportCopyFail }}</div>
+                          </div>
+                        </div>
                       </template>
                       <template v-else-if="audioImportStage === 'match'">
-                        {{ t('stationEditor.audioImportMatching') }}
+                        <div class="se-audio-import-hint">{{ t('stationEditor.audioImportMatching') }}</div>
                       </template>
                       <template v-else>
-                        <div style="line-height:1.6;">
-                          {{ t('stationEditor.audioImportResultSummary', { success: audioImportSuccessStations, fail: audioImportFailStations }) }}
+                        <div class="se-audio-import-result-text">
+                          {{ t('stationEditor.audioImportResultSummary', { total: audioImportTargetStations, success: audioImportSuccessStations, fail: audioImportFailStations }) }}
                         </div>
-                        <div style="margin-top:6px; font-size:12px; color: var(--muted,#888);">
-                          目标站点总数（按占位项推导）：<span style="color: var(--text,#333)">{{ audioImportTargetStations }}</span>
+                        <div class="se-audio-import-copy-grid">
+                          <div class="se-audio-import-stat">
+                            <div class="se-audio-import-stat-label">目标站点总数</div>
+                            <div class="se-audio-import-stat-value">{{ audioImportTargetStations }}</div>
+                          </div>
+                          <div class="se-audio-import-stat is-success">
+                            <div class="se-audio-import-stat-label">成功匹配</div>
+                            <div class="se-audio-import-stat-value">{{ audioImportSuccessStations }}</div>
+                          </div>
+                          <div class="se-audio-import-stat is-danger">
+                            <div class="se-audio-import-stat-label">匹配失败</div>
+                            <div class="se-audio-import-stat-value">{{ audioImportFailStations }}</div>
+                          </div>
                         </div>
-                        <div v-if="audioImportFailStations > 0" style="margin-top:10px; font-size:13px; color: var(--muted,#888);">
-                          {{ t('stationEditor.audioImportFailedStations') }}：
-                          <span style="color: var(--text,#333)">{{ audioImportFailedStations.join('、') }}</span>
+                        <div v-if="audioImportFailStations > 0" class="se-audio-import-failed-box">
+                          <div class="se-audio-import-failed-title">{{ t('stationEditor.audioImportFailedStations') }}</div>
+                          <div class="se-audio-import-failed-list">
+                            <span
+                              v-for="stationName in audioImportFailedStations"
+                              :key="stationName"
+                              class="se-audio-import-failed-tag"
+                            >
+                              {{ stationName }}
+                            </span>
+                          </div>
                         </div>
                       </template>
                     </div>
+
                   </div>
 
-                  <div class="se-name-edit-actions" style="margin-top: 18px;">
-                    <button type="button" class="cp-btn cp-btn-gray" @click="closeAudioImportModal" :disabled="audioImportStage !== 'done'">
-                      {{ t('stationEditor.closeLabel') }}
-                    </button>
+                  <div class="cp-footer cp-footer--end se-name-edit-actions">
+                    <div class="cp-footer-right">
+                      <button type="button" class="cp-btn cp-btn-primary" @click="closeAudioImportModal" :disabled="audioImportStage !== 'done'">
+                        {{ t('stationEditor.closeLabel') }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4448,6 +4569,156 @@ export default {
 }
 .se-name-edit-actions {
   gap: 12px;
+}
+.se-audio-import-content {
+  padding: 18px 24px 4px 24px !important;
+}
+.se-audio-import-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+.se-audio-import-statusbar-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.se-audio-import-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #8c8c8c;
+  box-shadow: 0 0 0 4px rgba(140, 140, 140, 0.12);
+}
+.se-audio-import-status-dot.is-copy {
+  background: #1677ff;
+  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.12);
+}
+.se-audio-import-status-dot.is-match {
+  background: #faad14;
+  box-shadow: 0 0 0 4px rgba(250, 173, 20, 0.14);
+}
+.se-audio-import-status-dot.is-done {
+  background: #52c41a;
+  box-shadow: 0 0 0 4px rgba(82, 196, 26, 0.12);
+}
+.se-audio-import-status-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #223);
+}
+.se-audio-import-status-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted, #7c8798);
+}
+.se-audio-import-progress-card,
+.se-audio-import-summary {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.34);
+}
+.se-audio-import-progress-card {
+  padding: 16px;
+}
+.se-audio-import-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #223);
+}
+.se-audio-import-progress-track {
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+.se-audio-import-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1677ff 0%, #69b1ff 100%);
+  transition: width 0.2s ease;
+}
+.se-audio-import-summary {
+  margin-top: 14px;
+  padding: 16px;
+}
+.se-audio-import-copy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.se-audio-import-stat {
+  padding: 14px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+.se-audio-import-stat.is-success {
+  background: rgba(82, 196, 26, 0.12);
+  border-color: rgba(82, 196, 26, 0.22);
+}
+.se-audio-import-stat.is-danger {
+  background: rgba(255, 77, 79, 0.1);
+  border-color: rgba(255, 77, 79, 0.2);
+}
+.se-audio-import-stat-label {
+  font-size: 12px;
+  color: var(--muted, #708090);
+}
+.se-audio-import-stat-value {
+  margin-top: 6px;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--text, #223);
+}
+.se-audio-import-hint,
+.se-audio-import-result-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text, #223);
+}
+.se-audio-import-failed-box {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(15, 23, 42, 0.12);
+}
+.se-audio-import-failed-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #223);
+}
+.se-audio-import-failed-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.se-audio-import-failed-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 77, 79, 0.12);
+  border: 1px solid rgba(255, 77, 79, 0.2);
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 /* 二级子菜单仅用 v-glassmorphism，不包含在此以免 !important 盖住与主菜单一致的模糊 */

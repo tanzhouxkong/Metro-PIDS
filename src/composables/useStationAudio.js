@@ -488,22 +488,33 @@ export function useStationAudio(state) {
   // 根据模式/短交路/进出站筛选可播放列表，并附加首末站角色条目
   const getFilteredList = (list, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx, debugTag) => {
     if (!Array.isArray(list)) return []
+    const lineStartIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
+    const lineTermIdx =
+      typeof meta?.termIdx === 'number' && meta.termIdx >= 0
+        ? meta.termIdx
+        : (Array.isArray(stations) && stations.length ? stations.length - 1 : -1)
+    const nextIdxForDepart =
+      forArrive === false && Array.isArray(stations) && typeof currentIdx === 'number' && currentIdx >= 0
+        ? calculateNextStationIndex(currentIdx, { stations, meta: meta || {} })
+        : -1
+    const isDepartTowardTerminal =
+      forArrive === false &&
+      typeof nextIdxForDepart === 'number' &&
+      nextIdxForDepart >= 0 &&
+      lineTermIdx >= 0 &&
+      nextIdxForDepart === lineTermIdx
     const filtered = list.filter((item) => {
       const hasArriveFlag = item.modes && item.modes.arrive === true
       const hasDepartFlag = item.modes && item.modes.depart === true
       if (forArrive === true && hasDepartFlag && !hasArriveFlag) return false
       if (forArrive === false && hasArriveFlag && !hasDepartFlag) return false
 
-      const lineStartIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
-      const lineTermIdx =
-        typeof meta?.termIdx === 'number' && meta.termIdx >= 0
-          ? meta.termIdx
-          : (Array.isArray(stations) && stations.length ? stations.length - 1 : -1)
       if (item.modes && item.modes.originStation === true) {
         if (typeof currentIdx !== 'number' || currentIdx !== lineStartIdx) return false
       }
       if (item.modes && item.modes.terminalStation === true) {
-        if (typeof currentIdx !== 'number' || lineTermIdx < 0 || currentIdx !== lineTermIdx) return false
+        const isAtTerminal = typeof currentIdx === 'number' && lineTermIdx >= 0 && currentIdx === lineTermIdx
+        if (!isAtTerminal && !isDepartTowardTerminal) return false
       }
 
       if (serviceMode === 'normal' && !isShortTurn) {
@@ -520,8 +531,8 @@ export function useStationAudio(state) {
 
     const extras = []
     if (stations && Array.isArray(stations) && typeof currentIdx === 'number') {
-      const startIdx = typeof meta.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
-      const termIdx = typeof meta.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : stations.length - 1
+      const startIdx = lineStartIdx
+      const termIdx = lineTermIdx
       // extras 以前会绕过 modes.arrive/modes.depart 的筛选，导致“出站( depart )”时也把“仅进站(arrive)/欢迎”的条目拼进去。
       // 这里补上与 filtered 相同的 arrive/depart 兼容规则，避免首站出站播放进站音频。
       const filterExtrasByArriveDepart = (items) => {
@@ -539,7 +550,7 @@ export function useStationAudio(state) {
         const startItems = pickStationItems(list, stations, startIdx, 'start')
         extras.push(...filterExtrasByArriveDepart(startItems))
       }
-      if (currentIdx === termIdx) {
+      if (currentIdx === termIdx || isDepartTowardTerminal) {
         const terminalItems = pickStationItems(list, stations, termIdx, 'terminal')
         extras.push(...filterExtrasByArriveDepart(terminalItems))
       }

@@ -582,7 +582,7 @@
     "audioImportCopyOk": "コピー成功",
     "audioImportCopyFail": "コピー失敗",
     "audioImportMatching": "マッチ結果を確認中...",
-    "audioImportResultSummary": "成功 {success}、失敗 {fail}",
+    "audioImportResultSummary": "全 {total} 駅中、成功 {success}、失敗 {fail}",
     "audioImportFailedStations": "失敗した駅",
     "audioImportNoFiles": "このフォルダにオーディオファイルが見つかりません",
     "audioApplyToggleOn": "適用マーク",

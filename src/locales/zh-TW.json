@@ -582,7 +582,7 @@
     "audioImportCopyOk": "成功複製",
     "audioImportCopyFail": "複製失敗",
     "audioImportMatching": "正在檢查匹配結果...",
-    "audioImportResultSummary": "成功 {success}，失敗 {fail}",
+    "audioImportResultSummary": "共 {total} 個站，成功 {success} 個，失敗 {fail} 個",
     "audioImportFailedStations": "失敗車站",
     "audioImportNoFiles": "此資料夾未找到音訊檔案",
     "audioApplyToggleOn": "標記套用",

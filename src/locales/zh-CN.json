@@ -594,7 +594,7 @@
     "audioImportCopyOk": "成功复制",
     "audioImportCopyFail": "复制失败",
     "audioImportMatching": "正在检查匹配结果...",
-    "audioImportResultSummary": "成功 {success}，失败 {fail}",
+    "audioImportResultSummary": "共 {total} 个站，成功 {success} 个，失败 {fail} 个",
     "audioImportFailedStations": "失败站点",
     "audioImportNoFiles": "该文件夹未找到音频文件",
     "audioApplyToggleOn": "标记应用",
