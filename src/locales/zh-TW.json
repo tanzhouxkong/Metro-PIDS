@@ -352,7 +352,13 @@
     "recordingStageSegmentsRunning": "片段錄製中",
     "recordingStageSegmentsDone": "分段錄製完成",
     "recordingStageConcatStart": "正在拼接片段",
-    "recordingOpenFolder": "開啟資料夾"
+    "recordingOpenFolder": "開啟資料夾",
+    "presetRenameTitle": "重新命名預設",
+    "presetRenamePrompt": "請輸入新的預設名稱",
+    "presetRenameElectronOnly": "僅 Electron 環境支援重新命名短交路預設",
+    "presetRenamedSuccess": "短交路預設已重新命名",
+    "presetRenamedNotifyDesc": "已將「{oldName}」重新命名為「{newName}」。",
+    "presetRenameFailed": "重新命名預設失敗"
   },
   "lineManager": {
     "title": "路線管理員",
@@ -418,7 +424,13 @@
     "savingToPrefix": "目前將儲存到：",
     "throughSaveButton": "儲存貫通路線",
     "saveLineButton": "儲存目前路線",
-    "saveZipButton": "儲存為壓縮包"
+    "saveZipButton": "儲存為壓縮包",
+    "onlineDocs": "群線上文件",
+    "folderList": "資料夾",
+    "sortUpdatedDesc": "按最新時間",
+    "sortNameAsc": "按名稱",
+    "folderPasteFailed": "貼上資料夾失敗"
+    ,"selectFolderForNewLine": "請選擇用於新建路線的資料夾"
   },
   "colorPicker": {
     "title": "取色",

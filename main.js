@@ -1,4 +1,9 @@
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut } = require('electron');
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
 
 // 提前注册关键 IPC 占位处理器，避免渲染进程启动早于主进程完整初始化时出现 "No handler registered"
 // 后续在主流程中会 removeHandler 并注册正式实现。
@@ -724,6 +729,14 @@ try {
 }
 
 let mainWin = null;
+
+app.on('second-instance', () => {
+  const targetWindow = (mainWin && !mainWin.isDestroyed()) ? mainWin : BrowserWindow.getAllWindows()[0];
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  if (targetWindow.isMinimized()) targetWindow.restore();
+  if (!targetWindow.isVisible()) targetWindow.show();
+  targetWindow.focus();
+});
 let MAIN_BLUR_ENABLED = true; // 高斯模糊开关状态，默认开启
 let displayWindows = new Map(); // 存储多个显示端窗口，key为displayId
 let isAppShuttingDown = false;
@@ -5162,10 +5175,90 @@ function getLinesDir(dir) {
   return baseLines;
 }
 
+function getLinesRootDir() {
+  const baseLines = path.join(app.getPath('userData'), 'lines');
+  try {
+    if (!fs.existsSync(baseLines)) {
+      fs.mkdirSync(baseLines, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[getLinesRootDir] 创建 lines 目录失败:', e);
+  }
+  return baseLines;
+}
+
+function sanitizeFsName(name) {
+  return String(name || '').trim().replace(/[<>:"/\\|?*]/g, '');
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fsPromises.access(targetPath);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function ensureUniqueTargetPath(targetDir, baseName) {
+  const parsed = path.parse(baseName);
+  const stem = parsed.name || baseName;
+  const ext = parsed.ext || '';
+  let candidate = path.join(targetDir, `${stem}${ext}`);
+  if (!(await pathExists(candidate))) return candidate;
+  let index = 1;
+  while (true) {
+    candidate = path.join(targetDir, `${stem} - 副本${index > 1 ? ` (${index})` : ''}${ext}`);
+    if (!(await pathExists(candidate))) return candidate;
+    index += 1;
+  }
+}
+
+async function copyDirectoryRecursive(sourceDir, targetDir) {
+  await ensureDir(targetDir);
+  const entries = await fsPromises.readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirectoryRecursive(sourcePath, targetPath);
+    } else if (entry.isFile()) {
+      await fsPromises.copyFile(sourcePath, targetPath);
+    }
+  }
+}
+
+function updateRegisteredRootFolderPath(oldPath, newPath, newName = null) {
+  const folders = getLinesFolders();
+  let changed = false;
+  for (const [id, folder] of Object.entries(folders)) {
+    if (path.normalize(folder.path) !== path.normalize(oldPath)) continue;
+    folders[id] = {
+      ...folder,
+      path: newPath,
+      name: newName || folder.name
+    };
+    changed = true;
+    break;
+  }
+  if (changed && store) {
+    store.set('linesFolders', folders);
+  }
+}
+
 // 获取所有文件夹配置（不再自动添加“默认”文件夹）
 function getLinesFolders() {
   if (!store) return {};
   return store.get('linesFolders') || {};
+}
+
+function normalizeLinesFolderPath(folderPath) {
+  if (!folderPath || typeof folderPath !== 'string') return null;
+  try {
+    return path.normalize(folderPath).replace(/[\\\/]+$/, '').toLowerCase();
+  } catch (e) {
+    return null;
+  }
 }
 
 // 获取当前活动的文件夹ID（无则返回 null）
@@ -5615,7 +5708,85 @@ ipcMain.handle('lines/list', async (event, dir) => {
   }
 });
 
+ipcMain.handle('lines/browse', async (event, dir) => {
+  let base;
+  if (dir && typeof dir === 'string') {
+    if (dir.includes(path.sep) || path.isAbsolute(dir)) {
+      base = dir;
+    } else {
+      const folders = getLinesFolders();
+      if (folders[dir]) {
+        base = folders[dir].path;
+      } else {
+        base = getLinesDir(dir);
+      }
+    }
+  } else {
+    base = getLinesDir(dir);
+  }
+  await ensureDir(base);
+  try {
+    const entries = await fsPromises.readdir(base, { withFileTypes: true });
+    const items = [];
+    for (const entry of entries) {
+      const fullPath = path.join(base, entry.name);
+      let stat = null;
+      try {
+        stat = await fsPromises.stat(fullPath);
+      } catch (e) {
+        stat = null;
+      }
+      if (entry.isDirectory()) {
+        const lowerName = String(entry.name || '').toLowerCase();
+        if (lowerName === 'audio' || entry.name.startsWith('.')) {
+          continue;
+        }
+        items.push({
+          type: 'folder',
+          name: entry.name,
+          path: fullPath,
+          mtimeMs: stat ? stat.mtimeMs : 0,
+          mtime: stat ? stat.mtime.toISOString() : null
+        });
+        continue;
+      }
+      if (!entry.isFile() || !/\.(json|mpl)$/i.test(entry.name)) continue;
+      items.push({
+        type: 'line',
+        name: entry.name.replace(/\.(json|mpl)$/i, ''),
+        fileName: entry.name,
+        ext: path.extname(entry.name).toLowerCase(),
+        path: fullPath,
+        size: stat ? stat.size : 0,
+        mtimeMs: stat ? stat.mtimeMs : 0,
+        mtime: stat ? stat.mtime.toISOString() : null
+      });
+    }
+    items.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+      return String(a.name || a.fileName || '').localeCompare(
+        String(b.name || b.fileName || ''),
+        'zh-CN',
+        { numeric: true, sensitivity: 'base' }
+      );
+    });
+    return { ok: true, path: base, items };
+  } catch (err) {
+    return { ok: false, error: String(err), path: base, items: [] };
+  }
+});
+
 // 读取单个线路文件（支持子文件夹路径）
+ipcMain.handle('lines/rootDir', async () => {
+  try {
+    const rootDir = getLinesRootDir();
+    await ensureDir(rootDir);
+    return { ok: true, path: rootDir };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
 ipcMain.handle('lines/read', async (event, filename, dir) => {
   let base;
   if (dir && typeof dir === 'string') {
@@ -7304,14 +7475,32 @@ ipcMain.handle('lines/folders/list', async () => {
     // 获取当前配置的文件夹
     let folders = getLinesFolders();
     let hasChanges = false;
+    const dedupedFolders = {};
+    const seenPaths = new Set();
+    for (const [id, folder] of Object.entries(folders)) {
+      if (!folder || !folder.path) {
+        hasChanges = true;
+        continue;
+      }
+      const normalizedPath = normalizeLinesFolderPath(folder.path);
+      if (!normalizedPath || seenPaths.has(normalizedPath)) {
+        hasChanges = true;
+        continue;
+      }
+      seenPaths.add(normalizedPath);
+      dedupedFolders[id] = folder;
+    }
+    folders = dedupedFolders;
     
     // 将已存在但未配置的文件夹添加到配置中
     for (const dir of existingDirs) {
-      const existingId = Object.keys(folders).find(id => folders[id].path === dir.path);
+      const dirKey = normalizeLinesFolderPath(dir.path);
+      const existingId = Object.keys(folders).find(id => normalizeLinesFolderPath(folders[id].path) === dirKey);
       if (!existingId) {
         // 文件夹存在但不在配置中，自动添加
         const newId = `folder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         folders[newId] = { name: dir.name, path: dir.path };
+        if (dirKey) seenPaths.add(dirKey);
         hasChanges = true;
       }
     }
@@ -7322,12 +7511,23 @@ ipcMain.handle('lines/folders/list', async () => {
     }
     
     const current = getCurrentLinesFolder();
-    const result = Object.keys(folders).map(id => ({
-      id,
-      name: folders[id].name,
-      path: folders[id].path,
-      isCurrent: id === current
-    }));
+    const result = [];
+    for (const id of Object.keys(folders)) {
+      let stat = null;
+      try {
+        stat = await fsPromises.stat(folders[id].path);
+      } catch (e) {
+        stat = null;
+      }
+      result.push({
+        id,
+        name: folders[id].name,
+        path: folders[id].path,
+        isCurrent: id === current,
+        mtimeMs: stat ? stat.mtimeMs : 0,
+        mtime: stat ? stat.mtime.toISOString() : null
+      });
+    }
     return { ok: true, folders: result, current };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -7650,6 +7850,162 @@ ipcMain.handle('shortturns/read', async (event, presetName) => {
 });
 
 // 删除短交路预设
+ipcMain.handle('shortturns/rename', async (event, oldName, newName) => {
+  const base = getShortTurnsDir();
+  await ensureDir(base);
+  const sanitizedOldName = String(oldName || '').replace(/[<>:"/\\|?*]/g, '').trim();
+  const sanitizedNewName = String(newName || '').replace(/[<>:"/\\|?*]/g, '').trim();
+  if (!sanitizedOldName || !sanitizedNewName) {
+    return { ok: false, error: 'Invalid preset name' };
+  }
+  if (sanitizedOldName === sanitizedNewName) {
+    return { ok: true, unchanged: true };
+  }
+
+  const oldPath = path.join(base, sanitizedOldName + '.json');
+  const newPath = path.join(base, sanitizedNewName + '.json');
+
+  try {
+    await fsPromises.access(oldPath, fs.constants.F_OK);
+  } catch (err) {
+    return { ok: false, error: 'Preset does not exist' };
+  }
+
+  try {
+    await fsPromises.access(newPath, fs.constants.F_OK);
+    return { ok: false, error: 'A preset with the same name already exists' };
+  } catch (err) {
+    // target does not exist
+  }
+
+  try {
+    await fsPromises.rename(oldPath, newPath);
+    return { ok: true, oldPath, newPath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('lines/fs/createFolder', async (event, parentDir, folderName) => {
+  try {
+    const baseDir = getLinesDir(parentDir);
+    await ensureDir(baseDir);
+    const sanitizedName = sanitizeFsName(folderName);
+    if (!sanitizedName) {
+      return { ok: false, error: '文件夹名称无效' };
+    }
+    const targetPath = path.join(baseDir, sanitizedName);
+    if (await pathExists(targetPath)) {
+      return { ok: false, error: '文件夹已存在' };
+    }
+    await fsPromises.mkdir(targetPath, { recursive: true });
+    return { ok: true, path: targetPath, name: sanitizedName };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('lines/fs/rename', async (event, targetPath, newName) => {
+  try {
+    if (!targetPath || typeof targetPath !== 'string') {
+      return { ok: false, error: '目标路径不能为空' };
+    }
+    const sanitizedName = sanitizeFsName(newName);
+    if (!sanitizedName) {
+      return { ok: false, error: '名称无效' };
+    }
+    const resolvedSource = path.resolve(targetPath);
+    const sourceStat = await fsPromises.stat(resolvedSource);
+    const targetDir = path.dirname(resolvedSource);
+    const ext = sourceStat.isFile() ? path.extname(resolvedSource) : '';
+    const nextPath = path.join(targetDir, sanitizedName + ext);
+    if (path.normalize(nextPath) !== path.normalize(resolvedSource) && await pathExists(nextPath)) {
+      return { ok: false, error: '目标名称已存在' };
+    }
+    await fsPromises.rename(resolvedSource, nextPath);
+    if (sourceStat.isDirectory()) {
+      updateRegisteredRootFolderPath(resolvedSource, nextPath, sanitizedName);
+    }
+    return { ok: true, oldPath: resolvedSource, path: nextPath, name: sanitizedName + ext };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('lines/fs/delete', async (event, targetPath) => {
+  try {
+    if (!targetPath || typeof targetPath !== 'string') {
+      return { ok: false, error: '目标路径不能为空' };
+    }
+    const resolvedTarget = path.resolve(targetPath);
+    let stat = null;
+    try {
+      stat = await fsPromises.stat(resolvedTarget);
+    } catch (_) {
+      return { ok: true };
+    }
+    if (stat.isDirectory()) {
+      await fsPromises.rm(resolvedTarget, { recursive: true, force: true });
+      const folders = getLinesFolders();
+      let changed = false;
+      for (const [id, folder] of Object.entries(folders)) {
+        if (path.normalize(folder.path) !== path.normalize(resolvedTarget)) continue;
+        delete folders[id];
+        changed = true;
+        if (store && getCurrentLinesFolder() === id) {
+          const remaining = Object.keys(folders);
+          store.set('linesCurrentFolder', remaining[0] || null);
+        }
+        break;
+      }
+      if (changed && store) store.set('linesFolders', folders);
+    } else {
+      await fsPromises.rm(resolvedTarget, { force: true });
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('lines/fs/copy', async (event, sourcePath, destinationDir) => {
+  try {
+    if (!sourcePath || !destinationDir) {
+      return { ok: false, error: '源路径和目标目录不能为空' };
+    }
+    const resolvedSource = path.resolve(sourcePath);
+    const resolvedDestinationDir = path.resolve(destinationDir);
+    await ensureDir(resolvedDestinationDir);
+    const sourceStat = await fsPromises.stat(resolvedSource);
+    const targetPath = await ensureUniqueTargetPath(resolvedDestinationDir, path.basename(resolvedSource));
+    if (sourceStat.isDirectory()) {
+      await copyDirectoryRecursive(resolvedSource, targetPath);
+    } else {
+      await fsPromises.copyFile(resolvedSource, targetPath);
+    }
+    return { ok: true, path: targetPath, name: path.basename(targetPath) };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('lines/fs/move', async (event, sourcePath, destinationDir) => {
+  try {
+    if (!sourcePath || !destinationDir) {
+      return { ok: false, error: '源路径和目标目录不能为空' };
+    }
+    const resolvedSource = path.resolve(sourcePath);
+    const resolvedDestinationDir = path.resolve(destinationDir);
+    await ensureDir(resolvedDestinationDir);
+    const targetPath = await ensureUniqueTargetPath(resolvedDestinationDir, path.basename(resolvedSource));
+    await fsPromises.rename(resolvedSource, targetPath);
+    updateRegisteredRootFolderPath(resolvedSource, targetPath, path.basename(targetPath));
+    return { ok: true, path: targetPath, name: path.basename(targetPath) };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
 ipcMain.handle('shortturns/delete', async (event, presetName) => {
   const base = getShortTurnsDir();
   const sanitized = presetName.replace(/[<>:"/\\|?*]/g, '').trim();

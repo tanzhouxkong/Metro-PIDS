@@ -8,6 +8,8 @@
 // 示例：sdk.installKeyboardHandler(); // 安装键盘事件处理器（支持自定义快捷键）
 
 // 规范化按键名称（与显示器1保持一致）
+import { applyEffectiveDoorToStation } from './displayStationCalculator.js'
+
 function normalizeKeyNameGlobal(name) {
   if (!name) return name;
   const s = String(name);
@@ -117,21 +119,15 @@ export function createDisplaySdk(options = {}) {
             }
           } catch (e) {}
           if (app && Array.isArray(app.stations) && meta) {
-            const upSet = new Set(['up', 'outer']);
-            const downSet = new Set(['down', 'inner']);
             const currDir = meta.dirType || null;
             const idx = typeof rt.idx === 'number' ? rt.idx : -1;
             if (idx >= 0 && idx < app.stations.length) {
-              const st = app.stations[idx];
-              if (st && st.turnback === 'pre' && prevDir && upSet.has(prevDir) && downSet.has(currDir)) {
-                const invertDoor = (door) => {
-                  if (!door) return 'left';
-                  if (door === 'left') return 'right';
-                  if (door === 'right') return 'left';
-                  return door;
-                };
-                st._effectiveDoor = invertDoor(st.door || 'left');
-              }
+              app.stations[idx] = applyEffectiveDoorToStation(app.stations[idx], {
+                meta,
+                rtState: rt,
+                stations: app.stations,
+                prevDirType: prevDir || currDir || null
+              });
             }
           }
         } catch (err) {}

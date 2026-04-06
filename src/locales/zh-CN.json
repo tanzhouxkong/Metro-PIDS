@@ -362,7 +362,13 @@
     "recordingStageSegmentsRunning": "片段录制中",
     "recordingStageSegmentsDone": "分段录制完成",
     "recordingStageConcatStart": "正在拼接片段",
-    "recordingOpenFolder": "打开文件夹"
+    "recordingOpenFolder": "打开文件夹",
+    "presetRenameTitle": "重命名预设",
+    "presetRenamePrompt": "请输入新的预设名称",
+    "presetRenameElectronOnly": "仅 Electron 环境支持重命名短交路预设",
+    "presetRenamedSuccess": "短交路预设已重命名",
+    "presetRenamedNotifyDesc": "已将“{oldName}”重命名为“{newName}”。",
+    "presetRenameFailed": "重命名预设失败"
   },
   "lineManager": {
     "title": "线路管理器",
@@ -428,7 +434,13 @@
     "savingToPrefix": "当前将保存到：",
     "throughSaveButton": "保存贯通线路",
     "saveLineButton": "保存当前线路",
-    "saveZipButton": "保存为压缩包"
+    "saveZipButton": "保存为压缩包",
+    "onlineDocs": "群在线文档",
+    "folderList": "文件夹",
+    "sortUpdatedDesc": "按最新时间",
+    "sortNameAsc": "按名称",
+    "folderPasteFailed": "粘贴文件夹失败"
+    ,"selectFolderForNewLine": "请选择用于新建线路的文件夹"
   },
   "colorPicker": {
     "title": "取色",

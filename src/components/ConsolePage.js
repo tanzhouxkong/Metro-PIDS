@@ -1468,6 +1468,37 @@ export default {
     }
     
     // 显示预设右键菜单
+    async function renameShortTurnPreset(oldName) {
+        if (!window.electronAPI || !window.electronAPI.shortturns || !window.electronAPI.shortturns.rename) {
+            await showMsg(t('console.presetRenameElectronOnly'), t('console.info'));
+            return;
+        }
+        if (!oldName) return;
+        const presetName = await promptUser(
+            t('console.presetRenamePrompt'),
+            oldName,
+            t('console.presetRenameTitle')
+        );
+        const finalName = (presetName && presetName.trim()) ? presetName.trim() : '';
+        if (!finalName || finalName === oldName) return;
+        try {
+            const res = await window.electronAPI.shortturns.rename(oldName, finalName);
+            if (res && res.ok) {
+                notification.success({
+                    message: t('console.presetRenamedSuccess'),
+                    description: t('console.presetRenamedNotifyDesc', { oldName, newName: finalName }),
+                    placement: 'topRight',
+                    duration: 4.5
+                });
+                await loadShortTurnPresets();
+            } else {
+                await showMsg(`${t('console.presetRenameFailed')}: ${res && res.error}`, t('console.error'));
+            }
+        } catch (e) {
+            await showMsg(`${t('console.presetRenameFailed')}: ${e.message}`, t('console.error'));
+        }
+    }
+
     function showPresetContextMenu(event, preset) {
         event.preventDefault();
         event.stopPropagation();
@@ -1526,6 +1557,14 @@ export default {
         closePresetContextMenu(); // 先关闭右键菜单，再弹出对话框
         if (!presetName) return;
         await loadShortTurnPreset(presetName);
+    }
+
+    async function renamePresetFromMenu() {
+        if (!presetContextMenu.value.preset) return;
+        const presetName = presetContextMenu.value.preset.name;
+        closePresetContextMenu();
+        if (!presetName) return;
+        await renameShortTurnPreset(presetName);
     }
     
     // 从菜单删除预设
@@ -2799,11 +2838,13 @@ export default {
         loadShortTurnPresets,
         saveShortTurnPreset,
         loadShortTurnPreset,
+        renameShortTurnPreset,
         deleteShortTurnPreset,
         presetContextMenu,
         showPresetContextMenu,
         closePresetContextMenu,
         applyPresetFromMenu,
+        renamePresetFromMenu,
         deletePresetFromMenu,
         sharePresetOffline,
         importPresetFromShareCode,

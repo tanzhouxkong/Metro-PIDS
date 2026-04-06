@@ -624,8 +624,9 @@
     <Teleport to="body">
         <div 
             v-if="presetContextMenu.visible"
-            class="station-context-menu"
+            class="station-context-menu station-context-menu--glass-shell"
             data-preset-context-menu
+            v-glassmorphism="{ blur: 12, opacity: 0.2, color: '#ffffff' }"
             @click.stop
             @contextmenu.prevent
             :style="{
@@ -640,6 +641,11 @@
                 <div class="station-context-menu-item" @click="applyPresetFromMenu()">
                     <i class="fas fa-download"></i>
                     {{ t('console.presetLoad') }}
+                </div>
+                <div class="station-context-menu-divider"></div>
+                <div class="station-context-menu-item" @click="renamePresetFromMenu()">
+                    <i class="fas fa-pen"></i>
+                    {{ t('lineManager.ctxRename') }}
                 </div>
                 <div class="station-context-menu-divider"></div>
                 <div class="station-context-menu-item" @click="sharePresetOffline()">

@@ -352,7 +352,13 @@
     "recordingStageSegmentsRunning": "セグメント録画中",
     "recordingStageSegmentsDone": "セグメント録画完了",
     "recordingStageConcatStart": "セグメント結合中",
-    "recordingOpenFolder": "フォルダを開く"
+    "recordingOpenFolder": "フォルダを開く",
+    "presetRenameTitle": "プリセット名の変更",
+    "presetRenamePrompt": "新しいプリセット名を入力してください",
+    "presetRenameElectronOnly": "短交路プリセットの名前変更は Electron 環境でのみ利用できます",
+    "presetRenamedSuccess": "短交路プリセット名を変更しました",
+    "presetRenamedNotifyDesc": "「{oldName}」を「{newName}」に変更しました。",
+    "presetRenameFailed": "プリセット名の変更に失敗しました"
   },
   "lineManager": {
     "title": "路線マネージャー",
@@ -418,7 +424,13 @@
     "savingToPrefix": "現在の保存先：",
     "throughSaveButton": "直通路線を保存",
     "saveLineButton": "現在の路線を保存",
-    "saveZipButton": "圧縮ファイルとして保存"
+    "saveZipButton": "圧縮ファイルとして保存",
+    "onlineDocs": "グループオンライン文書",
+    "folderList": "フォルダー",
+    "sortUpdatedDesc": "更新順",
+    "sortNameAsc": "名前順",
+    "folderPasteFailed": "フォルダーの貼り付けに失敗しました"
+    ,"selectFolderForNewLine": "新しい路線を作成するフォルダーを選択してください"
   },
   "colorPicker": {
     "title": "カラーピッカー",

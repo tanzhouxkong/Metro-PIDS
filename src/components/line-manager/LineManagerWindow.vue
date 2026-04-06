@@ -65,13 +65,19 @@ export default {
     const folders = ref([])
     const currentFolderId = ref(null)
     const currentLines = ref([])
+    const rootExplorerItems = ref([])
+    const linesRootPath = ref(null)
+    const currentDirectoryPath = ref(null)
+    const currentDirectoryFolders = ref([])
+    const folderSortMode = ref('updated-desc')
     const loading = ref(false)
     const selectedFolderId = ref(null)
     const selectedLine = ref(null)
+    const selectedEntries = ref([])
+    const selectionAnchorKey = ref(null)
     const searchQuery = ref('')
     const allLinesWithFolder = ref([])
     const searchLoading = ref(false)
-    const sidebarRef = ref(null)
     const linesRef = ref(null)
 
     const {
@@ -91,11 +97,11 @@ export default {
     })
 
     // 右键菜单状态
-    const contextMenu = ref({ visible: false, x: 0, y: 0, folderId: null, folderName: null })
+    const contextMenu = ref({ visible: false, x: 0, y: 0, entry: null })
     const lineContextMenu = ref({ visible: false, x: 0, y: 0, line: null })
     const sidebarNewMenu = ref({ visible: false, x: 0, y: 0 })
-    const linesNewMenu = ref({ visible: false, x: 0, y: 0 })
-    const clipboard = ref({ type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null })
+    const linesNewMenu = ref({ visible: false, x: 0, y: 0, targetFolderId: null, targetFolderPath: null })
+    const clipboard = ref({ type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null })
 
     const isSavingThroughLine = ref(false)
     const pendingThroughLineInfo = ref(null)
@@ -517,71 +523,392 @@ export default {
       return `linear-gradient(180deg, ${stops})`
     }
 
-    async function loadLinesFromFolder(folderId) {
+    function normalizePath(value) {
+      return String(value || '').replace(/[\\/]+$/, '').toLowerCase()
+    }
+
+    function buildLineEntry(d, fileName, folderPath, folderMeta = null, fileMeta = null) {
+      const stationInfo = getStationInfo(d)
+      const lineName = d.meta?.lineName || ''
+      const hasThroughInName = lineName.includes('(贯通)') || lineName.includes('（贯通）')
+      const hasValidSegments =
+        d.meta?.throughLineSegments &&
+        Array.isArray(d.meta.throughLineSegments) &&
+        d.meta.throughLineSegments.length >= 2
+      const isThroughLine = d.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
+      const isLoopLine = d.meta?.mode === 'loop'
+      return {
+        type: 'line',
+        name: d.meta?.lineName || t('lineManagerWindow.unnamedLine'),
+        filePath: fileName || '',
+        folderPath: folderPath || null,
+        folderId: folderMeta?.id || null,
+        folderName: folderMeta?.name || '',
+        size: fileMeta?.size ?? null,
+        mtime: fileMeta?.mtime || null,
+        mtimeMs: fileMeta?.mtimeMs || 0,
+        ext: fileMeta?.ext || '',
+        data: d,
+        themeColor: buildLineColor(d),
+        firstStation: stationInfo.first,
+        lastStation: stationInfo.last,
+        isThroughLine,
+        isLoopLine
+      }
+    }
+
+    function buildFallbackLineEntry(fileName, folderPath, folderMeta = null, fileMeta = null) {
+      const displayName = String(fileName || '').replace(/\.(json|mpl)$/i, '') || t('lineManagerWindow.unnamedLine')
+      return {
+        type: 'line',
+        name: displayName,
+        filePath: fileName || '',
+        folderPath: folderPath || null,
+        folderId: folderMeta?.id || null,
+        folderName: folderMeta?.name || '',
+        size: fileMeta?.size ?? null,
+        mtime: fileMeta?.mtime || null,
+        mtimeMs: fileMeta?.mtimeMs || 0,
+        ext: fileMeta?.ext || '',
+        data: { meta: { lineName: displayName, themeColor: '#58a4ed' }, stations: [] },
+        themeColor: '#58a4ed',
+        firstStation: '',
+        lastStation: '',
+        isThroughLine: false,
+        isLoopLine: false,
+        loadFailed: true
+      }
+    }
+
+    function buildExplorerFolderEntry(folder, extra = {}) {
+      return {
+        type: 'folder',
+        id: folder.id || null,
+        name: folder.name,
+        path: folder.path || null,
+        mtime: folder.mtime || null,
+        mtimeMs: folder.mtimeMs || 0,
+        itemCount: Number.isFinite(folder.itemCount) ? folder.itemCount : null,
+        isRuntime: !!folder.isRuntime,
+        isRootFolder: !!extra.isRootFolder,
+        icon: extra.icon || 'fas fa-folder'
+      }
+    }
+
+    function resolveFolderById(folderId) {
+      return folders.value.find((f) => f.id === folderId) || null
+    }
+
+    function resolveRootFolderByPath(folderPath) {
+      const normalizedTarget = normalizePath(folderPath)
+      return folders.value.find((folder) => {
+        const rootPath = normalizePath(folder.path)
+        return !!rootPath && (normalizedTarget === rootPath || normalizedTarget.startsWith(rootPath + '\\') || normalizedTarget.startsWith(rootPath + '/'))
+      }) || null
+    }
+
+    function getActiveDirectoryPath() {
+      if (selectedFolderId.value === CLOUD_FOLDER_ID) return null
+      if (!selectedFolderId.value) return null
+      if (currentDirectoryPath.value) return currentDirectoryPath.value
+      const folder = resolveFolderById(selectedFolderId.value || currentFolderId.value)
+      return folder?.path || null
+    }
+
+    function getSelectedRootFolderEntry() {
+      if (!isRootExplorer.value) return null
+      if (selectedEntries.value.length !== 1) return null
+      const entry = selectedEntries.value[0]
+      if (!entry || entry.type !== 'folder' || !entry.isRootFolder || !entry.path || entry.id === CLOUD_FOLDER_ID) return null
+      return entry
+    }
+
+    async function ensureLinesRootPath() {
+      if (linesRootPath.value) return linesRootPath.value
+      try {
+        const res = await window.electronAPI?.lines?.rootDir?.()
+        if (res && res.ok && res.path) {
+          linesRootPath.value = res.path
+          return linesRootPath.value
+        }
+      } catch (e) {
+        console.warn('获取线路根目录失败:', e)
+      }
+      const localFolders = folders.value.filter((folder) => folder.path && folder.id !== CLOUD_FOLDER_ID)
+      if (localFolders.length > 0) {
+        const samplePath = String(localFolders[0].path || '')
+        const normalized = samplePath.replace(/[\\/]+$/, '')
+        const rootPath = normalized.replace(/[\\/][^\\/]+$/, '')
+        if (rootPath) {
+          linesRootPath.value = rootPath
+          return linesRootPath.value
+        }
+      }
+      return null
+    }
+
+    function getCreateLineTarget() {
+      const activePath = getActiveDirectoryPath()
+      if (activePath) {
+        return {
+          folderId: selectedFolderId.value || currentFolderId.value || null,
+          folderPath: activePath
+        }
+      }
+      if (isRootExplorer.value) {
+        return {
+          folderId: null,
+          folderPath: linesRootPath.value || null
+        }
+      }
+      return { folderId: null, folderPath: null }
+    }
+
+    function getWritableExplorerPath() {
+      return getActiveDirectoryPath() || linesRootPath.value || null
+    }
+
+    async function resolveCreateLineTarget(targetFolderPath = null, targetFolderId = null) {
+      if (targetFolderPath) {
+        return { folderId: targetFolderId || null, folderPath: targetFolderPath }
+      }
+
+      const directTarget = getCreateLineTarget()
+      if (directTarget.folderPath) return directTarget
+
+      if (!isRootExplorer.value) return directTarget
+      const rootPath = await ensureLinesRootPath()
+      return { folderId: null, folderPath: rootPath || null }
+    }
+
+    function getLineDirectoryPath(line) {
+      if (line?.folderPath) return line.folderPath
+      return getActiveDirectoryPath()
+    }
+
+    function getEntryKey(entry) {
+      if (!entry) return ''
+      if (entry.type === 'folder') return `folder:${normalizePath(entry.path || entry.id || entry.name)}`
+      return `line:${normalizePath((entry.folderPath || getActiveDirectoryPath() || '') + '|' + (entry.filePath || entry.name || ''))}`
+    }
+
+    function isEntrySelected(entry) {
+      const key = getEntryKey(entry)
+      return !!key && selectedEntries.value.some((item) => getEntryKey(item) === key)
+    }
+
+    function clearEntrySelection() {
+      selectedEntries.value = []
+      selectionAnchorKey.value = null
+      selectedLine.value = null
+    }
+
+    function formatExplorerDate(value) {
+      if (!value) return ''
+      try {
+        return new Date(value).toLocaleDateString('zh-CN')
+      } catch (e) {
+        return ''
+      }
+    }
+
+    function formatExplorerMonth(value) {
+      if (!value) return ''
+      try {
+        const date = new Date(value)
+        const y = date.getFullYear()
+        const m = String(date.getMonth() + 1).padStart(2, '0')
+        return `${y}-${m}`
+      } catch (e) {
+        return ''
+      }
+    }
+
+    function formatExplorerFileSize(value) {
+      const size = Number(value)
+      if (!Number.isFinite(size) || size <= 0) return ''
+      const mb = size / (1024 * 1024)
+      if (mb >= 1) return `${mb.toFixed(1)} MB`
+      const kb = size / 1024
+      return `${Math.max(1, Math.round(kb))} KB`
+    }
+
+    function getLineEntrySourceLabel(entry) {
+      if (!entry) return ''
+      if (entry.isRuntime) return '来自 云控'
+      return entry.folderName ? `来自 ${entry.folderName}` : '来自 本地'
+    }
+
+    function getFolderEntryHint(entry) {
+      if (!entry) return ''
+      if (typeof entry.itemCount === 'number') return `${entry.itemCount} 个文件`
+      if (entry.isRuntime) return t('lineManagerWindow.cloudLinesFolder')
+      if (entry.isRootFolder && entry.path) return entry.path
+      return t('lineManager.ctxOpenFolder')
+    }
+
+    function getFolderEntryMeta(entry) {
+      if (!entry) return ''
+      if (entry.isRootFolder && entry.path) return entry.path
+      return entry.isRuntime ? t('lineManagerWindow.cloudLinesFolder') : t('lineManager.ctxOpenFolder')
+    }
+
+    function getFolderEntryUpdateLabel(entry) {
+      if (!entry) return ''
+      if (entry.isRuntime) return '更新 云控线路'
+      return '更新 本地文件夹'
+    }
+
+    async function loadDirectoryContents(dirPath, rootFolderId = null) {
       if (!(window.electronAPI && window.electronAPI.lines)) return
       loading.value = true
       try {
-        const folder = folders.value.find((f) => f.id === folderId)
-        const folderPath = folder ? folder.path : null
-        const items = await window.electronAPI.lines.list(folderPath)
-        const lines = []
-        for (const it of items || []) {
+        clearEntrySelection()
+        currentDirectoryPath.value = dirPath || null
+        if (rootFolderId) selectedFolderId.value = rootFolderId
+        const activeFolder = resolveFolderById(selectedFolderId.value || currentFolderId.value)
+        const browseRes = await window.electronAPI.lines.browse(dirPath || activeFolder?.path || null)
+        if (!(browseRes && browseRes.ok)) {
+          currentDirectoryFolders.value = []
+          currentLines.value = []
+          return
+        }
+
+        const folderMeta = resolveFolderById(selectedFolderId.value || currentFolderId.value)
+        currentDirectoryFolders.value = (browseRes.items || [])
+          .filter((item) => item.type === 'folder')
+          .map((item) => buildExplorerFolderEntry(item, { icon: 'fas fa-folder-open' }))
+
+        const lineEntries = []
+        for (const item of browseRes.items || []) {
+          if (item.type !== 'line') continue
           try {
-            const res = await window.electronAPI.lines.read(it.name, folderPath)
-            if (res && res.ok && res.content) {
-              const d = res.content
-              const stationInfo = getStationInfo(d)
-              const lineName = d.meta?.lineName || ''
-              const hasThroughInName = lineName.includes('(贯通)') || lineName.includes('（贯通）')
-              const hasValidSegments =
-                d.meta?.throughLineSegments &&
-                Array.isArray(d.meta.throughLineSegments) &&
-                d.meta.throughLineSegments.length >= 2
-              const isThroughLine = d.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
-              const isLoopLine = d.meta?.mode === 'loop'
-              lines.push({
-                name: d.meta?.lineName || t('lineManagerWindow.unnamedLine'),
-                filePath: it?.name || '',
-                data: d,
-                themeColor: buildLineColor(d),
-                firstStation: stationInfo.first,
-                lastStation: stationInfo.last,
-                isThroughLine,
-                isLoopLine
-              })
+            const readRes = await window.electronAPI.lines.read(item.fileName || item.name, dirPath)
+            if (readRes && readRes.ok && readRes.content) {
+              lineEntries.push(buildLineEntry(readRes.content, item.fileName || item.name, dirPath, folderMeta, item))
+            } else {
+              lineEntries.push(buildFallbackLineEntry(item.fileName || item.name, dirPath, folderMeta, item))
             }
           } catch (e) {
             console.warn('读取线路失败:', e)
+            lineEntries.push(buildFallbackLineEntry(item.fileName || item.name, dirPath, folderMeta, item))
           }
         }
-        currentLines.value = lines
+        currentLines.value = lineEntries
       } catch (e) {
-        console.error('加载线路失败:', e)
+        console.error('加载目录失败:', e)
+        currentDirectoryFolders.value = []
+        currentLines.value = []
       } finally {
         loading.value = false
       }
     }
 
-    async function loadFolders() {
+    async function loadLinesFromFolder(folderId) {
+      const folder = resolveFolderById(folderId)
+      if (!folder || !folder.path) {
+        currentLines.value = []
+        currentDirectoryFolders.value = []
+        return
+      }
+      await loadDirectoryContents(folder.path, folder.id)
+    }
+
+    async function loadRootExplorer(options = {}) {
+      const preserveView = !!options.preserveView
+      const silent = !!options.silent
+      clearEntrySelection()
+      selectedFolderId.value = null
+      currentDirectoryPath.value = null
+      if (!preserveView) {
+        currentDirectoryFolders.value = []
+        currentLines.value = []
+        rootExplorerItems.value = []
+      }
+      if (!silent) loading.value = true
+      try {
+        const rootPath = await ensureLinesRootPath()
+        if (!rootPath || !window.electronAPI?.lines?.browse) return
+        const browseRes = await window.electronAPI.lines.browse(rootPath)
+        if (!(browseRes && browseRes.ok)) return
+        linesRootPath.value = browseRes.path || rootPath
+        const items = []
+        for (const item of browseRes.items || []) {
+          if (item.type === 'folder') {
+            const rootFolder = resolveRootFolderByPath(item.path)
+            items.push(buildExplorerFolderEntry(
+              {
+                ...item,
+                id: rootFolder?.id || null,
+                itemCount: rootFolder?.itemCount ?? null
+              },
+              { isRootFolder: true }
+            ))
+            continue
+          }
+          if (item.type !== 'line') continue
+          try {
+            const readRes = await window.electronAPI.lines.read(item.fileName || item.name, rootPath)
+            if (readRes && readRes.ok && readRes.content) {
+              items.push(buildLineEntry(readRes.content, item.fileName || item.name, rootPath, null, item))
+            } else {
+              items.push(buildFallbackLineEntry(item.fileName || item.name, rootPath, null, item))
+            }
+          } catch (e) {
+            console.warn('读取根目录线路失败:', e)
+            items.push(buildFallbackLineEntry(item.fileName || item.name, rootPath, null, item))
+          }
+        }
+        const cloudFolder = folders.value.find((folder) => folder.id === CLOUD_FOLDER_ID)
+        if (cloudFolder) {
+          items.push(buildExplorerFolderEntry(cloudFolder, { isRootFolder: true }))
+        }
+        rootExplorerItems.value = items
+      } catch (e) {
+        console.error('加载首页目录失败:', e)
+        rootExplorerItems.value = []
+      } finally {
+        if (!silent) loading.value = false
+      }
+    }
+
+    async function refreshRootExplorer(options = {}) {
+      await loadFolders(false)
+      await loadRootExplorer({ preserveView: true, silent: true, ...options })
+    }
+
+    async function loadFolders(refreshRootAfterLoad = true) {
       if (!hasFoldersAPI.value) {
-        // 非 Electron 环境：仅云控虚拟文件夹
         folders.value = [
           { id: CLOUD_FOLDER_ID, name: t('lineManagerWindow.cloudLinesFolder'), path: null, isRuntime: true }
         ]
         currentFolderId.value = CLOUD_FOLDER_ID
-        selectedFolderId.value = CLOUD_FOLDER_ID
+        if (refreshRootAfterLoad) await loadRootExplorer()
         return
       }
       try {
         const res = await window.electronAPI.lines.folders.list()
         if (res && res.ok && res.folders) {
-          folders.value = res.folders
-          const firstId = res.folders.length > 0 ? res.folders[0].id : null
+          const foldersWithMeta = await Promise.all(
+            (res.folders || []).map(async (folder) => {
+              try {
+                const browseRes = await window.electronAPI.lines.browse(folder.path)
+                return {
+                  ...folder,
+                  itemCount: Array.isArray(browseRes?.items) ? browseRes.items.length : null
+                }
+              } catch (e) {
+                return { ...folder, itemCount: null }
+              }
+            })
+          )
+          folders.value = [
+            ...foldersWithMeta,
+            { id: CLOUD_FOLDER_ID, name: t('lineManagerWindow.cloudLinesFolder'), path: null, isRuntime: true }
+          ]
+          const firstId = foldersWithMeta.length > 0 ? foldersWithMeta[0].id : null
           currentFolderId.value = res.current || firstId
-          selectedFolderId.value = currentFolderId.value
-          // 追加云控虚拟文件夹
-          folders.value.push({ id: CLOUD_FOLDER_ID, name: '云控线路', path: null, isRuntime: true })
-          if (currentFolderId.value) await loadLinesFromFolder(currentFolderId.value)
+          if (refreshRootAfterLoad) await loadRootExplorer()
         }
       } catch (e) {
         console.error('加载文件夹列表失败:', e)
@@ -590,6 +917,9 @@ export default {
 
     async function loadRuntimeLines() {
       runtimeLoading.value = true
+      clearEntrySelection()
+      currentDirectoryPath.value = null
+      currentDirectoryFolders.value = []
       currentLines.value = []
       runtimeLines.value = []
       try {
@@ -607,7 +937,11 @@ export default {
               line.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
             const isLoopLine = line.meta?.mode === 'loop'
             return {
+              type: 'line',
               name: lineName || t('lineManagerWindow.unnamedLine'),
+              folderPath: null,
+              folderId: CLOUD_FOLDER_ID,
+              folderName: t('lineManagerWindow.cloudLinesFolder'),
               data: line,
               stationCount: line.stations?.length || 0,
               themeColor: buildLineColor(line),
@@ -656,14 +990,7 @@ export default {
                 const isThroughLine = d.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
                 const isLoopLine = d.meta?.mode === 'loop'
                 results.push({
-                  name: lineName || t('lineManagerWindow.unnamedLine'),
-                  filePath: it?.name || '',
-                  data: d,
-                  themeColor: buildLineColor(d),
-                  firstStation: stationInfo.first,
-                  lastStation: stationInfo.last,
-                  isThroughLine,
-                  isLoopLine,
+                  ...buildLineEntry(d, it?.name || '', folderPath, folder),
                   folderId: folder.id,
                   folderName: folder.name || folder.id
                 })
@@ -691,6 +1018,7 @@ export default {
                   raw.meta?.throughOperationEnabled === true || (hasValidSegments && hasThroughInName)
                 const isLoopLine = raw.meta?.mode === 'loop'
                 results.push({
+                  type: 'line',
                   name: lineName || t('lineManagerWindow.unnamedLine'),
                   data: raw,
                   stationCount: raw.stations?.length || 0,
@@ -701,7 +1029,8 @@ export default {
                   isThroughLine,
                   isLoopLine,
                   folderId: CLOUD_FOLDER_ID,
-                  folderName: t('lineManagerWindow.cloudLinesFolder')
+                  folderName: t('lineManagerWindow.cloudLinesFolder'),
+                  folderPath: null
                 })
               }
             }
@@ -721,22 +1050,26 @@ export default {
     // 手动刷新资源管理器（文件夹 + 当前列表 + 搜索数据）
     async function refreshExplorer() {
       try {
-        const activeId = selectedFolderId.value || currentFolderId.value
-        await loadFolders()
-
-        const targetFolder = activeId && folders.value.find((f) => f.id === activeId)
-        if (targetFolder) {
-          selectedFolderId.value = activeId
-          if (!currentFolderId.value) currentFolderId.value = activeId
-          if (activeId === CLOUD_FOLDER_ID) {
-            await loadRuntimeLines()
-          } else {
-            await loadLinesFromFolder(activeId)
+        const activeId = selectedFolderId.value
+        const activePath = currentDirectoryPath.value
+        const wasRootExplorer = !activeId && !activePath
+        if (wasRootExplorer) {
+          await refreshRootExplorer()
+          if (isSearchActive.value) {
+            await loadAllLinesWithFolders()
           }
-        } else if (currentFolderId.value) {
-          await loadLinesFromFolder(currentFolderId.value)
+          return
         }
-
+        await loadFolders(false)
+        if (activeId === CLOUD_FOLDER_ID) {
+          selectedFolderId.value = CLOUD_FOLDER_ID
+          await loadRuntimeLines()
+        } else if (activePath) {
+          const rootFolder = resolveRootFolderByPath(activePath)
+          await loadDirectoryContents(activePath, rootFolder?.id || activeId || null)
+        } else {
+          await loadRootExplorer()
+        }
         if (isSearchActive.value) {
           await loadAllLinesWithFolders()
         }
@@ -746,26 +1079,60 @@ export default {
     }
 
     async function selectFolder(folderId) {
-      selectedFolderId.value = folderId
-      selectedLine.value = null
+      clearEntrySelection()
       if (folderId === CLOUD_FOLDER_ID) {
+        selectedFolderId.value = CLOUD_FOLDER_ID
         await loadRuntimeLines()
       } else {
         await loadLinesFromFolder(folderId)
       }
     }
 
-    function toggleLineSelection(line) {
-      // 保存贯通线路模式下不允许选择已有线路（仅选择目标文件夹）
-      if (isSavingThroughLine.value) return
-      if (selectedLine.value === line) {
-        selectedLine.value = null
-      } else {
-        selectedLine.value = line
-        // 搜索模式下点击线路时，定位到其所在文件夹（高亮侧边栏）
-        if (line.folderId && line.folderId !== selectedFolderId.value) {
-          selectFolder(line.folderId)
-        }
+    async function enterFolderEntry(folder) {
+      if (!folder) return
+      if (folder.id === CLOUD_FOLDER_ID || folder.isRuntime) {
+        await selectFolder(CLOUD_FOLDER_ID)
+        return
+      }
+      if (folder.isRootFolder && folder.id) {
+        await selectFolder(folder.id)
+        return
+      }
+      const rootFolder = resolveRootFolderByPath(folder.path)
+      await loadDirectoryContents(folder.path, rootFolder?.id || selectedFolderId.value || null)
+    }
+
+    async function goToRootExplorer() {
+      await loadRootExplorer()
+    }
+
+    async function navigateUp() {
+      if (selectedFolderId.value === CLOUD_FOLDER_ID) {
+        await goToRootExplorer()
+        return
+      }
+      const activeFolder = resolveFolderById(selectedFolderId.value || currentFolderId.value)
+      if (!activeFolder || !currentDirectoryPath.value) {
+        await goToRootExplorer()
+        return
+      }
+      if (normalizePath(currentDirectoryPath.value) === normalizePath(activeFolder.path)) {
+        await goToRootExplorer()
+        return
+      }
+      const segments = currentDirectoryPath.value.split(/[\\/]/).filter(Boolean)
+      segments.pop()
+      const parentPath = currentDirectoryPath.value.includes('\\')
+        ? segments.join('\\')
+        : segments.join('/')
+      await loadDirectoryContents(parentPath, activeFolder.id)
+    }
+
+    function toggleLineSelection(line, event = null) {
+      if (!line) return
+      toggleEntrySelection(line, event)
+      if (!event?.ctrlKey && !event?.metaKey && !event?.shiftKey && line.folderId && line.folderId !== selectedFolderId.value && isSearchActive.value) {
+        selectFolder(line.folderId)
       }
     }
 
@@ -840,14 +1207,16 @@ export default {
       }
     }
 
-    async function addFolder() {
-      if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) return
+    async function addFolder(parentDir = null) {
+      if (!(window.electronAPI && window.electronAPI.lines)) return
       if (!window.__lineManagerDialog) return
       const name = await window.__lineManagerDialog.prompt(t('lineManagerWindow.enterFolderName'), '', t('lineManagerWindow.newFolder'))
       if (!name) return
       try {
-        const res = await window.electronAPI.lines.folders.add(name)
-        if (res && res.ok) await loadFolders()
+        const res = parentDir
+          ? await window.electronAPI.lines.fs.createFolder(parentDir, name)
+          : await window.electronAPI.lines.folders.add(name)
+        if (res && res.ok) await refreshExplorer()
       } catch (e) {
         console.error('新建文件夹失败:', e)
       }
@@ -864,19 +1233,21 @@ export default {
         t('lineManagerWindow.deleteFolder')
       )
       if (!confirmed) return
-      if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) {
+      if (!(window.electronAPI && window.electronAPI.lines)) {
         await window.__lineManagerDialog.alert(t('lineManagerWindow.electronApiNotAvailable'), t('console.error'))
         return
       }
       try {
-        const res = await window.electronAPI.lines.folders.remove(folderPath || folderId)
+        const res = folderId && !folderPath
+          ? await window.electronAPI.lines.folders.remove(folderId)
+          : await window.electronAPI.lines.fs.delete(folderPath || folderId)
         if (res && res.ok) {
-          await loadFolders()
+          await refreshExplorer()
           await window.__lineManagerDialog.alert(t('lineManagerWindow.folderDeleted'), t('lineManagerWindow.success'))
         } else {
           const errorMsg = res && res.error ? res.error : t('lineManagerWindow.unknownError')
           console.error('删除文件夹失败:', res)
-          await loadFolders()
+          await refreshExplorer()
           await window.__lineManagerDialog.alert(t('lineManagerWindow.failedToDeleteFolder', { errorMsg }), t('console.error'))
         }
       } catch (e) {
@@ -885,14 +1256,16 @@ export default {
       }
     }
 
-    async function renameFolder(folderId, currentName) {
-      if (!(window.electronAPI && window.electronAPI.lines && window.electronAPI.lines.folders)) return
+    async function renameFolder(folderId, currentName, folderPath = null) {
+      if (!(window.electronAPI && window.electronAPI.lines)) return
       if (!window.__lineManagerDialog) return
       const newName = await window.__lineManagerDialog.prompt(t('lineManager.renameFolderPrompt'), currentName, t('lineManager.renameFolderTitle'))
       if (newName && newName.trim() !== currentName) {
         try {
-          const res = await window.electronAPI.lines.folders.rename(folderId, newName)
-          if (res && res.ok) await loadFolders()
+          const res = folderId && !folderPath
+            ? await window.electronAPI.lines.folders.rename(folderId, newName)
+            : await window.electronAPI.lines.fs.rename(folderPath || folderId, newName)
+          if (res && res.ok) await refreshExplorer()
         } catch (e) {
           console.error('重命名文件夹失败:', e)
         }
@@ -902,12 +1275,12 @@ export default {
     function showContextMenu(event, folder) {
       event.preventDefault()
       event.stopPropagation()
+      toggleEntrySelection(folder, event)
       contextMenu.value = {
         visible: true,
         x: event.clientX,
         y: event.clientY,
-        folderId: folder.id,
-        folderName: folder.name
+        entry: folder
       }
     }
     function closeContextMenu() {
@@ -932,15 +1305,26 @@ export default {
       contextMenu.value.visible = false
       lineContextMenu.value.visible = false
       sidebarNewMenu.value.visible = false
-      linesNewMenu.value = { visible: true, x: event.clientX, y: event.clientY }
+      const target = getCreateLineTarget()
+      linesNewMenu.value = {
+        visible: true,
+        x: event.clientX,
+        y: event.clientY,
+        targetFolderId: target.folderId || null,
+        targetFolderPath: target.folderPath || null
+      }
     }
     function closeLinesNewMenu() {
-      linesNewMenu.value.visible = false
+      linesNewMenu.value = { visible: false, x: 0, y: 0, targetFolderId: null, targetFolderPath: null }
     }
 
-    async function openFolderInExplorer(folderId) {
+    async function openFolderInExplorer(folderPath = null) {
       closeContextMenu()
-      const folder = folders.value.find((f) => f.id === folderId)
+      const folder = folderPath
+        ? { path: folderPath }
+        : contextMenu.value.entry?.id
+          ? folders.value.find((f) => f.id === contextMenu.value.entry.id)
+          : contextMenu.value.entry
       if (!folder || !folder.path) return
       if (window.electronAPI && window.electronAPI.lines?.folders?.open) {
         try {
@@ -957,20 +1341,19 @@ export default {
       }
     }
 
-    async function handleContextMenuRename(folderId) {
+    async function handleContextMenuRename(entry) {
       closeContextMenu()
-      const folder = folders.value.find((f) => f.id === folderId)
-      if (folder) await renameFolder(folderId, folder.name)
+      if (entry) await renameFolder(entry.id || null, entry.name, entry.path || null)
     }
-    async function handleContextMenuDelete(folderId) {
+    async function handleContextMenuDelete(entry) {
       closeContextMenu()
-      const folder = folders.value.find((f) => f.id === folderId)
-      if (folder) await deleteFolder(folderId, folder.name, folder.path)
+      if (entry) await deleteFolder(entry.id || null, entry.name, entry.path || null)
     }
 
     function showLineContextMenu(event, line) {
       event.preventDefault()
       event.stopPropagation()
+      toggleEntrySelection(line, event)
       lineContextMenu.value = { visible: true, x: event.clientX, y: event.clientY, line }
       nextTick(() => {
         const menuElement = document.querySelector('[data-line-context-menu]')
@@ -1011,9 +1394,7 @@ export default {
         await applyRuntimeLine(line.data)
         return
       }
-      const folderId = selectedFolderId.value || currentFolderId.value
-      const folder = folders.value.find((f) => f.id === folderId)
-      const folderPath = folder?.path ?? null
+      const folderPath = getLineDirectoryPath(line)
       if (window.electronAPI?.switchLine) {
         try {
           const result = await window.electronAPI.switchLine(line.name, { folderPath })
@@ -1048,9 +1429,7 @@ export default {
     async function openLineFile(line) {
       closeLineContextMenu()
       if (!line || line.isRuntime) return
-      const folderId = selectedFolderId.value || currentFolderId.value
-      const folder = folders.value.find((f) => f.id === folderId)
-      const folderPath = folder?.path ?? null
+      const folderPath = getLineDirectoryPath(line)
       if (!folderPath) return
       try {
         const res = await window.electronAPI?.lines?.openFolder?.(folderPath)
@@ -1073,9 +1452,7 @@ export default {
       if (!newName || newName.trim() === currentName) return
       
       try {
-        const folderId = selectedFolderId.value || currentFolderId.value
-        const folder = folders.value.find((f) => f.id === folderId)
-        const folderPath = folder ? folder.path : null
+        const folderPath = getLineDirectoryPath(line)
         const oldFileName = line.filePath || line.name
         
         // 读取原文件内容
@@ -1114,7 +1491,7 @@ export default {
         }
         
         // 重新加载线路列表
-        await loadLinesFromFolder(folderId)
+        await refreshExplorer()
       } catch (e) {
         console.error('重命名线路失败:', e)
         await window.__lineManagerDialog.alert(t('lineManager.renameLineError') + '：' + (e.message || e), t('console.error'))
@@ -1153,63 +1530,66 @@ export default {
         line: null,
         folder: { id: folder.id, name: folder.name, path: folder.path },
         sourceFolderId: folder.id,
-        sourceFolderPath: folder.path
+        sourceFolderPath: folder.path,
+        targetPath: folder.path
       }
     }
 
-    async function pasteFolder() {
+    async function cutFolder(folder) {
+      closeContextMenu()
+      if (!folder || folder.id === CLOUD_FOLDER_ID) return
+      clipboard.value = {
+        type: 'cut',
+        line: null,
+        folder: { id: folder.id, name: folder.name, path: folder.path },
+        sourceFolderId: folder.id,
+        sourceFolderPath: folder.path,
+        targetPath: folder.path
+      }
+    }
+
+    async function pasteFolder(targetDir = null) {
       closeContextMenu()
       closeSidebarNewMenu()
-      if (!clipboard.value.folder || !window.electronAPI?.lines?.folders) return
+      if (!clipboard.value.folder || !window.electronAPI?.lines) return
       const api = window.electronAPI.lines
-      const sourcePath = clipboard.value.sourceFolderPath
-      const folderName = clipboard.value.folder.name
-      const existingNames = folders.value.map((f) => f.name)
-      const newName = getUniqueFolderName(existingNames, folderName)
+      const sourcePath = clipboard.value.targetPath || clipboard.value.sourceFolderPath
+      const destinationDir = targetDir || getWritableExplorerPath() || resolveRootFolderByPath(sourcePath)?.path || null
+      if (!sourcePath || !destinationDir) return
       try {
-        const addRes = await api.folders.add(newName)
-        if (!addRes || !addRes.ok) {
-          if (window.__lineManagerDialog) await window.__lineManagerDialog.alert(addRes?.error || '创建文件夹失败', '错误')
+        const res = clipboard.value.type === 'cut'
+          ? await api.fs.move(sourcePath, destinationDir)
+          : await api.fs.copy(sourcePath, destinationDir)
+        if (!res || !res.ok) {
+          if (window.__lineManagerDialog) await window.__lineManagerDialog.alert(res?.error || t('lineManager.folderPasteFailed'), t('console.error'))
           return
         }
-        const newPath = addRes.path
-        const rawList = await api.list(sourcePath)
-        const items = Array.isArray(rawList) ? rawList : []
-        for (const it of items) {
-          const fname = it.name || ''
-          if (!fname) continue
-          const readRes = await api.read(fname, sourcePath)
-          if (readRes && readRes.ok && readRes.content) {
-            const sep = sourcePath && sourcePath.includes('\\') ? '\\' : '/'
-            const sourceLinePath = sourcePath ? ((sourcePath.endsWith(sep) ? sourcePath : sourcePath + sep) + fname) : null
-            await api.save(fname, readRes.content, newPath, sourceLinePath)
-          }
+        clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null }
+        if (isRootExplorer.value) {
+          await refreshRootExplorer()
+        } else {
+          await refreshExplorer()
         }
-        await loadFolders()
-        selectedFolderId.value = addRes.folderId
-        await loadLinesFromFolder(addRes.folderId)
       } catch (e) {
         console.error('粘贴文件夹失败:', e)
-        if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('粘贴文件夹失败：' + (e.message || e), '错误')
+        if (window.__lineManagerDialog) await window.__lineManagerDialog.alert(t('lineManager.folderPasteFailed') + '：' + (e.message || e), t('console.error'))
       }
     }
 
     async function copyLine(line) {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
-      const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
-      clipboard.value = { type: 'copy', line, folder: null, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
+      clipboard.value = { type: 'copy', line, folder: null, sourceFolderId, sourceFolderPath: getLineDirectoryPath(line), targetPath: line.filePath || line.name }
     }
 
     async function cutLine(line) {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
-      const sourceFolder = folders.value.find((f) => f.id === sourceFolderId)
-      clipboard.value = { type: 'cut', line, folder: null, sourceFolderId, sourceFolderPath: sourceFolder ? sourceFolder.path : null }
+      clipboard.value = { type: 'cut', line, folder: null, sourceFolderId, sourceFolderPath: getLineDirectoryPath(line), targetPath: line.filePath || line.name }
     }
 
     // 新建线路（从备份 FolderLineManagerWindow 迁移逻辑）
-    async function createNewLine() {
+    async function createNewLine(targetFolderPath = null, targetFolderId = null) {
       if (!window.electronAPI || !window.electronAPI.lines) return
       if (!window.__lineManagerDialog) return
 
@@ -1226,9 +1606,12 @@ export default {
       if (!lineName || !lineName.trim()) return
 
       try {
-        const folderId = selectedFolderId.value || currentFolderId.value
-        const folder = folders.value.find((f) => f.id === folderId)
-        if (!folder || !folder.path) {
+        const wasRootExplorer = isRootExplorer.value
+        const previousDirectoryPath = currentDirectoryPath.value
+        const previousSelectedFolderId = selectedFolderId.value
+        const resolvedTarget = await resolveCreateLineTarget(targetFolderPath, targetFolderId)
+        const { folderId, folderPath } = resolvedTarget
+        if (!folderPath) {
           await window.__lineManagerDialog.alert('请先选择一个文件夹', '提示')
           return
         }
@@ -1260,9 +1643,17 @@ export default {
         }
         const fileName = cleanName + '.mpl'
 
-        const saveRes = await window.electronAPI.lines.save(fileName, newLine, folder.path)
+        const saveRes = await window.electronAPI.lines.save(fileName, newLine, folderPath)
         if (saveRes && saveRes.ok) {
-          await loadLinesFromFolder(folderId)
+          if (wasRootExplorer) {
+            selectedFolderId.value = null
+            currentDirectoryPath.value = null
+            await refreshRootExplorer()
+          } else if (previousDirectoryPath) {
+            await loadDirectoryContents(previousDirectoryPath, previousSelectedFolderId || folderId || null)
+          } else {
+            await refreshExplorer()
+          }
           await window.__lineManagerDialog.alert('线路已创建', '成功')
         } else {
           await window.__lineManagerDialog.alert(
@@ -1284,12 +1675,10 @@ export default {
       const ok = await window.__lineManagerDialog.confirm(`确定删除线路「${line.name}」吗？`, '删除线路')
       if (!ok) return
       try {
-        const folderId = selectedFolderId.value || currentFolderId.value
-        const folder = folders.value.find((f) => f.id === folderId)
-        const folderPath = folder ? folder.path : null
+        const folderPath = getLineDirectoryPath(line)
         const res = await window.electronAPI.lines.delete(line.filePath || line.name, folderPath)
         if (res && res.ok) {
-          await loadLinesFromFolder(folderId)
+          await refreshExplorer()
         } else if (window.__lineManagerDialog) {
           await window.__lineManagerDialog.alert(res?.error || '删除失败', '错误')
         }
@@ -1300,14 +1689,14 @@ export default {
       }
     }
 
-    async function pasteLine() {
+    async function pasteLine(targetDir = null) {
       closeLineContextMenu()
       if (!clipboard.value.line || !window.electronAPI?.lines) return
-      const targetFolderId = selectedFolderId.value || currentFolderId.value
-      const targetFolder = folders.value.find((f) => f.id === targetFolderId)
-      const targetFolderPath = targetFolder ? targetFolder.path : null
+      const targetFolderId = isRootExplorer.value ? null : (selectedFolderId.value || currentFolderId.value)
+      const targetFolderPath = targetDir || getWritableExplorerPath()
       const sourceFolderId = clipboard.value.sourceFolderId
       const sourceFolderPath = clipboard.value.sourceFolderPath
+      if (!targetFolderPath) return
       try {
         const sourceLine = clipboard.value.line
         let targetFileName = sourceLine.filePath || sourceLine.name
@@ -1364,11 +1753,12 @@ export default {
           const sourceFileName = sourceLine.filePath || sourceLine.name
           await window.electronAPI.lines.delete(sourceFileName, sourceFolderPath)
         }
-        await loadLinesFromFolder(targetFolderId)
-        if (clipboard.value.type === 'cut' && sourceFolderId !== targetFolderId) {
-          await loadLinesFromFolder(sourceFolderId)
+        if (isRootExplorer.value) {
+          await refreshRootExplorer()
+        } else {
+          await refreshExplorer()
         }
-        clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null }
+        clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null }
       } catch (e) {
         console.error('粘贴失败:', e)
         if (window.__lineManagerDialog)
@@ -1627,7 +2017,19 @@ export default {
     })
 
     const activeFolderId = computed(() => selectedFolderId.value || currentFolderId.value)
-    const isCloudFolderActive = computed(() => activeFolderId.value === CLOUD_FOLDER_ID)
+    const activeRootFolder = computed(() => resolveFolderById(selectedFolderId.value || currentFolderId.value))
+    const isCloudFolderActive = computed(() => selectedFolderId.value === CLOUD_FOLDER_ID)
+    const isRootExplorer = computed(() => !selectedFolderId.value)
+    const currentFolderLabel = computed(() => {
+      if (isRootExplorer.value) return t('lineManager.folderAndLines')
+      if (selectedFolderId.value === CLOUD_FOLDER_ID) return t('lineManagerWindow.cloudLinesFolder')
+      return activeRootFolder.value?.name || ''
+    })
+    const currentPathLabel = computed(() => {
+      if (isRootExplorer.value) return ''
+      if (selectedFolderId.value === CLOUD_FOLDER_ID) return ''
+      return currentDirectoryPath.value || activeRootFolder.value?.path || ''
+    })
 
     const isSearchActive = computed(() => (searchQuery.value || '').trim().length > 0)
 
@@ -1659,9 +2061,108 @@ export default {
       })
     })
 
+    const rootExplorerEntries = computed(() => {
+      const items = [...rootExplorerItems.value]
+      const sorted = [...items]
+      if (folderSortMode.value === 'name-asc') {
+        sorted.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true }))
+      } else {
+        sorted.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+          const aTime = a.mtime ? new Date(a.mtime).getTime() : 0
+          const bTime = b.mtime ? new Date(b.mtime).getTime() : 0
+          if (aTime !== bTime) return bTime - aTime
+          return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true })
+        })
+      }
+      return sorted
+    })
+    const explorerEntries = computed(() => {
+      if (isSearchActive.value) return filteredLines.value
+      if (isRootExplorer.value) return rootExplorerEntries.value
+      return [...currentDirectoryFolders.value, ...currentLines.value]
+    })
+
+    const currentDirectoryLineEntries = computed(() => {
+      const lines = [...currentLines.value]
+      if (folderSortMode.value === 'name-asc') {
+        lines.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true }))
+      } else {
+        lines.sort((a, b) => {
+          const diff = Number(b.mtimeMs || 0) - Number(a.mtimeMs || 0)
+          if (diff !== 0) return diff
+          return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true })
+        })
+      }
+      return lines
+    })
+
+    const currentDirectoryEntries = computed(() => {
+      const foldersList = [...currentDirectoryFolders.value].sort((a, b) => {
+        if (folderSortMode.value === 'name-asc') {
+          return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true })
+        }
+        const diff = Number(b.mtimeMs || 0) - Number(a.mtimeMs || 0)
+        if (diff !== 0) return diff
+        return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base', numeric: true })
+      })
+      return [...foldersList, ...currentDirectoryLineEntries.value]
+    })
+
+    const selectableEntries = computed(() => {
+      if (isSearchActive.value) return explorerEntries.value.filter((entry) => entry.type === 'line')
+      if (isRootExplorer.value) return explorerEntries.value
+      return currentDirectoryEntries.value
+    })
+
+    function syncSingleLineSelection() {
+      const selectedLines = selectedEntries.value.filter((entry) => entry.type === 'line')
+      selectedLine.value = selectedLines.length === 1 ? selectedLines[0] : null
+    }
+
+    function toggleEntrySelection(entry, event = null, visibleEntries = selectableEntries.value) {
+      if (!entry || isSavingThroughLine.value) return
+      const key = getEntryKey(entry)
+      const ctrlLike = !!(event && (event.ctrlKey || event.metaKey))
+      const shiftLike = !!(event && event.shiftKey)
+      const currentKeys = selectedEntries.value.map((item) => getEntryKey(item))
+
+      if (shiftLike && selectionAnchorKey.value) {
+        const anchorIndex = visibleEntries.findIndex((item) => getEntryKey(item) === selectionAnchorKey.value)
+        const currentIndex = visibleEntries.findIndex((item) => getEntryKey(item) === key)
+        if (anchorIndex >= 0 && currentIndex >= 0) {
+          const [start, end] = anchorIndex < currentIndex ? [anchorIndex, currentIndex] : [currentIndex, anchorIndex]
+          selectedEntries.value = visibleEntries.slice(start, end + 1)
+          syncSingleLineSelection()
+          return
+        }
+      }
+
+      if (ctrlLike) {
+        if (currentKeys.includes(key)) {
+          selectedEntries.value = selectedEntries.value.filter((item) => getEntryKey(item) !== key)
+        } else {
+          selectedEntries.value = [...selectedEntries.value, entry]
+        }
+        selectionAnchorKey.value = key
+        syncSingleLineSelection()
+        return
+      }
+
+      selectedEntries.value = [entry]
+      selectionAnchorKey.value = key
+      syncSingleLineSelection()
+    }
+
     async function locateToFolder(line) {
       if (!line.folderId) return
-      await selectFolder(line.folderId)
+      if (line.folderId === CLOUD_FOLDER_ID) {
+        await selectFolder(CLOUD_FOLDER_ID)
+      } else if (line.folderPath) {
+        await loadDirectoryContents(line.folderPath, line.folderId)
+      } else {
+        await selectFolder(line.folderId)
+      }
       searchQuery.value = ''
       await nextTick()
       const match = currentLines.value.find((l) => {
@@ -1671,22 +2172,14 @@ export default {
         return l.filePath === line.filePath && l.name === line.name
       })
       if (match) selectedLine.value = match
+      if (match) {
+        selectedEntries.value = [match]
+        selectionAnchorKey.value = getEntryKey(match)
+      }
       await nextTick()
       // 延迟执行滚动，确保 DOM 已更新（搜索清除后列表会重新渲染）
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          // 侧边栏：滚动使当前文件夹可见
-          const sidebar = sidebarRef.value
-          if (sidebar) {
-            const activeFolder = sidebar.querySelector('.lmw-folder.active')
-            if (activeFolder) {
-              const sidebarRect = sidebar.getBoundingClientRect()
-              const folderRect = activeFolder.getBoundingClientRect()
-              const scrollTop = sidebar.scrollTop + (folderRect.top - sidebarRect.top) - sidebarRect.height / 2 + folderRect.height / 2
-              sidebar.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
-            }
-          }
-          // 线路列表：滚动使选中线路可见
           const linesContainer = linesRef.value
           if (linesContainer) {
             const selectedLineEl = linesContainer.querySelector('.lmw-line.selected')
@@ -1716,18 +2209,35 @@ export default {
       t,
       hasFoldersAPI,
       folders,
-      sidebarRef,
       linesRef,
       currentFolderId,
       currentLines,
+      currentDirectoryPath,
+      currentDirectoryFolders,
+      folderSortMode,
       filteredLines,
+      explorerEntries,
+      currentDirectoryLineEntries,
+      currentDirectoryEntries,
+      formatExplorerDate,
+      formatExplorerMonth,
+      formatExplorerFileSize,
+      getFolderEntryHint,
+      getFolderEntryMeta,
+      getFolderEntryUpdateLabel,
+      getLineEntrySourceLabel,
       searchQuery,
       isSearchActive,
       searchLoading,
       loading,
       selectedFolderId,
       selectedLine,
+      selectedEntries,
       activeFolderId,
+      activeRootFolder,
+      currentFolderLabel,
+      currentPathLabel,
+      isRootExplorer,
       contextMenu,
       lineContextMenu,
       sidebarNewMenu,
@@ -1740,7 +2250,12 @@ export default {
       refreshExplorer,
       runtimeLoading,
       selectFolder,
+      enterFolderEntry,
+      goToRootExplorer,
+      navigateUp,
       locateToFolder,
+      isEntrySelected,
+      toggleEntrySelection,
       toggleLineSelection,
       applySelectedLine,
       addFolder,
@@ -1777,28 +2292,34 @@ export default {
       spotlightCloseGuide,
 
       folderMenuItems: computed(() => {
-        const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
-        const canDelete = contextMenu.value.folderId && contextMenu.value.folderId !== CLOUD_FOLDER_ID
-        const canCopyFolder = contextMenu.value.folderId && !isCloud
+        const entry = contextMenu.value.entry
+        const isCloud = entry?.id === CLOUD_FOLDER_ID
+        const isRootFolder = !!entry?.isRootFolder
+        const canDelete = !!entry && !isCloud
+        const canCopyFolder = !!entry && !isCloud
+        const canPasteFolder = !!clipboard.value.folder && !!getActiveDirectoryPath()
+        const canCreateLine = !!entry?.path && !isCloud
         return [
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
-          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: false },
+          { label: t('lineManager.ctxNewFolder'), icon: 'fas fa-folder-plus', action: 'addFolder', disabled: isCloud },
+          { label: t('lineManager.ctxNewLine'), icon: 'fas fa-plus', action: 'createNewLine', disabled: !canCreateLine },
           { type: 'sep' },
           { label: t('lineManager.ctxCopy'), icon: 'fas fa-copy', action: 'copyFolder', disabled: !canCopyFolder },
-          { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'pasteFolder', disabled: !clipboard.value.folder },
+          { label: t('lineManager.ctxCut'), icon: 'fas fa-cut', action: 'cutFolder', disabled: !canCopyFolder },
+          { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'pasteFolder', disabled: !canPasteFolder },
           { type: 'sep' },
           {
             label: t('lineManager.ctxRename'),
             icon: 'fas fa-edit',
             action: 'renameFolder',
-            disabled: !contextMenu.value.folderId || isCloud
+            disabled: !entry || isCloud
           },
           {
             label: t('lineManager.ctxOpenFolder'),
             icon: 'fas fa-folder-open',
             action: 'openFolder',
-            disabled: !contextMenu.value.folderId || isCloud
+            disabled: !entry || isCloud
           },
           ...(canDelete && !isCloud
             ? [{ type: 'sep' }, { label: t('lineManager.ctxDelete'), icon: 'fas fa-trash', action: 'deleteFolder', danger: true }]
@@ -1816,31 +2337,50 @@ export default {
       }),
       linesNewMenuItems: computed(() => {
         const canPaste = clipboard.value.type || clipboard.value.folder
-        const pasteDisabled = isCloudFolderActive.value || !canPaste
+        const createLineTargetPath =
+          linesNewMenu.value.targetFolderPath ||
+          getCreateLineTarget().folderPath
+        const hasWritableDirectory = !!getActiveDirectoryPath()
+        const canCreateLine = !!createLineTargetPath
+        const canCreateFolder = isRootExplorer.value || hasWritableDirectory
+        const pasteDisabled = isCloudFolderActive.value || !canPaste || (!hasWritableDirectory && !isRootExplorer.value)
         return [
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
           {
+            label: t('lineManager.ctxNewFolder'),
+            icon: 'fas fa-folder-plus',
+            action: 'addFolder',
+            disabled: isCloudFolderActive.value || !canCreateFolder
+          },
+          {
             label: t('lineManager.ctxNewLine'),
             icon: 'fas fa-plus',
             action: 'createNewLine',
-            disabled: isCloudFolderActive.value
+            disabled: isCloudFolderActive.value || !canCreateLine
           },
-          { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: isCloudFolderActive.value },
+          { label: t('lineManager.ctxOpenFolder'), icon: 'fas fa-folder-open', action: 'openFolder', disabled: !createLineTargetPath },
           ...(canPaste ? [{ type: 'sep' }, { label: t('lineManager.ctxPaste'), icon: 'fas fa-paste', action: 'paste', disabled: pasteDisabled }] : [])
         ]
       }),
       lineMenuItems: computed(() => {
         const selectedLine = lineContextMenu.value.line
         const isRuntimeLine = !!selectedLine?.isRuntime
+        const hasWritableDirectory = !!getActiveDirectoryPath()
         return [
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
           {
+            label: t('lineManager.ctxNewFolder'),
+            icon: 'fas fa-folder-plus',
+            action: 'addFolder',
+            disabled: isCloudFolderActive.value || !hasWritableDirectory
+          },
+          {
             label: t('lineManager.ctxNewLine'),
             icon: 'fas fa-plus',
             action: 'createNewLine',
-            disabled: isCloudFolderActive.value
+            disabled: isCloudFolderActive.value || !hasWritableDirectory
           },
           { type: 'sep' },
           { label: t('lineManager.ctxOpen'), icon: 'fas fa-folder-open', action: 'openLine' },
@@ -1888,27 +2428,41 @@ export default {
       async onFolderMenuSelect(it) {
         if (!it) return
         if (it.action === 'refresh') return await refreshExplorer()
-        const isCloud = contextMenu.value.folderId === CLOUD_FOLDER_ID
+        const entry = contextMenu.value.entry
+        const isCloud = entry?.id === CLOUD_FOLDER_ID
         if (isCloud && ['createNewLine', 'renameFolder', 'deleteFolder'].includes(it.action)) {
           await dialogService.alert(t('lineManagerWindow.cloudApplyOnlyNotice'), t('console.info'))
           return
         }
-        if (it.action === 'addFolder') return await addFolder()
+        if (it.action === 'addFolder') return await addFolder(entry?.path || getActiveDirectoryPath())
+        if (it.action === 'createNewLine') {
+          if (entry) {
+            selectedEntries.value = [entry]
+            selectionAnchorKey.value = getEntryKey(entry)
+          }
+          if (isRootExplorer.value) {
+            return await createNewLine()
+          }
+          return await createNewLine(entry?.path || null, entry?.id || null)
+        }
         if (it.action === 'copyFolder') {
-          const folder = folders.value.find((f) => f.id === contextMenu.value.folderId)
-          if (folder) return await copyFolder(folder)
+          if (entry) return await copyFolder(entry)
           return
         }
-        if (it.action === 'pasteFolder') return await pasteFolder()
+        if (it.action === 'cutFolder') {
+          if (entry) return await cutFolder(entry)
+          return
+        }
+        if (it.action === 'pasteFolder') return await pasteFolder(entry?.path || getActiveDirectoryPath())
         if (it.action === 'createNewLine') return await createNewLine()
-        if (it.action === 'renameFolder') return await handleContextMenuRename(contextMenu.value.folderId)
-        if (it.action === 'openFolder') return await openFolderInExplorer(contextMenu.value.folderId)
-        if (it.action === 'deleteFolder') return await handleContextMenuDelete(contextMenu.value.folderId)
+        if (it.action === 'renameFolder') return await handleContextMenuRename(entry)
+        if (it.action === 'openFolder') return await openFolderInExplorer(entry?.path || null)
+        if (it.action === 'deleteFolder') return await handleContextMenuDelete(entry)
       },
       async onSidebarNewMenuSelect(it) {
         if (!it) return
         if (it.action === 'refresh') return await refreshExplorer()
-        if (it.action === 'addFolder') return await addFolder()
+        if (it.action === 'addFolder') return await addFolder(getWritableExplorerPath())
         if (it.action === 'paste') {
           if (clipboard.value.folder) return await pasteFolder()
           if (clipboard.value.line) return await pasteLine()
@@ -1920,22 +2474,25 @@ export default {
 
         const targetFolderId = selectedFolderId.value || currentFolderId.value
         const isCloudTarget = targetFolderId === CLOUD_FOLDER_ID
+        const createLineTargetPath = linesNewMenu.value.targetFolderPath || getCreateLineTarget().folderPath
+        const createLineTargetId = linesNewMenu.value.targetFolderId || getCreateLineTarget().folderId
 
         if (isCloudTarget && ['addFolder', 'createNewLine', 'paste'].includes(it.action)) {
           await dialogService.alert(t('lineManagerWindow.cloudApplyOnlyNotice'), t('console.info'))
           return
         }
 
-        if (targetFolderId) selectedFolderId.value = targetFolderId
+        if (!isRootExplorer.value && targetFolderId) selectedFolderId.value = targetFolderId
 
-        if (it.action === 'addFolder') return await addFolder()
-        if (it.action === 'createNewLine') return await createNewLine()
+        if (it.action === 'addFolder') return await addFolder(getWritableExplorerPath())
+        if (it.action === 'createNewLine') return await createNewLine(createLineTargetPath, createLineTargetId)
         if (it.action === 'openFolder') {
-          if (targetFolderId) return await openFolderInExplorer(targetFolderId)
+          const targetPath = getActiveDirectoryPath() || createLineTargetPath
+          if (targetPath) return await window.electronAPI?.lines?.openFolder?.(targetPath)
           return
         }
         if (it.action === 'paste') {
-          if (!targetFolderId) return
+          if (!getWritableExplorerPath()) return
           if (clipboard.value.folder) return await pasteFolder()
           if (clipboard.value.line) return await pasteLine()
         }
@@ -1949,9 +2506,10 @@ export default {
           await dialogService.alert(t('lineManagerWindow.cloudApplyCopyOnlyNotice'), t('console.info'))
           return
         }
-        if (it.action === 'addFolder') return await addFolder()
+        if (it.action === 'addFolder') return await addFolder(getWritableExplorerPath())
         if (it.action === 'openFolder') {
-          if (selectedFolderId.value) return await openFolderInExplorer(selectedFolderId.value)
+          const targetPath = getActiveDirectoryPath()
+          if (targetPath) return await window.electronAPI?.lines?.openFolder?.(targetPath)
           return
         }
         if (it.action === 'createNewLine') return await createNewLine()
@@ -1971,7 +2529,7 @@ export default {
 <template>
   <div class="lmw-root">
     <LineManagerTopbar>
-      <div v-if="folders?.length > 0 && selectedFolderId" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
+      <div v-if="folders?.length > 0 && !isRootExplorer" class="lmw-titlebar-search" style="display:flex; align-items:center; gap:10px;">
         <div class="lmw-search-inner" style="flex:1;">
           <i class="fas fa-search lmw-search-icon"></i>
           <input
@@ -2014,98 +2572,250 @@ export default {
 
     <div class="lmw-main">
       <div class="lmw-main-body">
-      <aside ref="sidebarRef" v-if="folders?.length > 0" class="lmw-sidebar" @contextmenu.prevent="showSidebarNewMenu($event)">
-        <div class="lmw-sidebar-inner">
-          <button
-            v-for="folder in folders"
-            :key="folder.id"
-            class="lmw-folder"
-            :class="{
-              active: selectedFolderId === folder.id,
-              disabled: isSavingThroughLine && folder.id === 'runtime-cloud'
-            }"
-            @click="(isSavingThroughLine && folder.id === 'runtime-cloud') ? null : selectFolder(folder.id)"
-            @contextmenu.prevent.stop="showContextMenu($event, folder)"
+        <section class="lmw-content">
+          <div
+            data-onboard-id="tour-lm-lines-area"
+            ref="linesRef"
+            class="lmw-lines"
+            :class="{ 'lmw-lines--media-view': !isRootExplorer && !isSearchActive }"
+            @contextmenu.prevent="showLinesNewMenu($event)"
           >
-            <i class="fas fa-folder" />
-            <span class="lmw-folder-name">{{ folder.name }}</span>
-          </button>
-        </div>
-      </aside>
-
-      <section class="lmw-content">
-        <header v-if="folders?.length > 0 && selectedFolderId" class="lmw-content-header">
-          <span>{{ t('lineManager.currentFolder') }}：</span>
-          <strong>{{ folders?.find?.(f => f.id === selectedFolderId)?.name || selectedFolderId }}</strong>
-        </header>
-
-        <div data-onboard-id="tour-lm-lines-area" ref="linesRef" class="lmw-lines" @contextmenu.prevent="showLinesNewMenu($event)">
-          <div v-if="loading || runtimeLoading || (isSearchActive && searchLoading)" class="lmw-loading">...</div>
-          <div v-else-if="!isSearchActive && currentLines.length === 0" class="lmw-empty">
-            {{ activeFolderId === 'runtime-cloud' ? t('lineManager.emptyCloudLines') : t('lineManager.emptyFolder') }}
-          </div>
-          <div v-else-if="isSearchActive && filteredLines.length === 0" class="lmw-empty">
-            <i class="fas fa-search" style="font-size:32px; color:var(--muted); margin-bottom:12px;"></i>
-            <span>{{ t('lineManager.noSearchResult') }}</span>
-            <span class="lmw-search-hint">{{ t('lineManager.searchResultHint') }}</span>
-          </div>
-
-          <button
-            v-for="(line, idx) in filteredLines"
-            :key="(line.folderId || '') + '-' + (line.filePath || line.name) + '-' + idx"
-            class="lmw-line"
-            :class="{ selected: selectedLine === line }"
-            @click="toggleLineSelection(line)"
-            @dblclick="openLine(line)"
-            @contextmenu.prevent.stop="showLineContextMenu($event, line)"
-          >
-            <div class="lmw-line-main">
-              <div class="lmw-line-title" v-html="parseColorMarkup(line.name)"></div>
-              <div class="lmw-line-meta">
-                <span v-if="line.isThroughLine" class="lmw-tag through">{{ t('folderLineManager.through') }}</span>
-                <span v-if="line.isLoopLine" class="lmw-tag loop">{{ t('folderLineManager.loop') }}</span>
-                <span class="lmw-stations">
-                  {{ line.firstStation }} → {{ line.lastStation }}
-                  <span v-if="line.isRuntime">{{ t('lineManager.runtimeStationCount', { count: line.stationCount || line.data?.stations?.length || 0 }) }}</span>
-                </span>
-                <span v-if="isSearchActive && line.folderName" class="lmw-line-folder">
-                  <i class="fas fa-folder"></i> {{ line.folderName }}
-                  <button
-                    type="button"
-                    class="lmw-locate-btn"
-                    @click.stop="locateToFolder(line)"
-                    :title="t('lineManager.locate')"
-                  >
-                    {{ t('lineManager.locate') }}
-                  </button>
-                </span>
+            <div v-if="isRootExplorer && !isSearchActive" class="lmw-library-shell">
+              <div class="lmw-media-header">
+                <div class="lmw-media-header-main">
+                  <div class="lmw-media-title">{{ t('lineManager.title') }}</div>
+                </div>
+                <div class="lmw-media-link">
+                  <i class="far fa-folder"></i>
+                  <span>{{ t('lineManager.onlineDocs') }}</span>
+                </div>
+              </div>
+              <div class="lmw-library-toolbar">
+                <div class="lmw-library-toolbar-label">{{ t('lineManager.folderList') }}</div>
+                <label class="lmw-folder-sort">
+                  <select v-model="folderSortMode" class="lmw-folder-sort-select lmw-folder-sort-select--library">
+                    <option value="updated-desc">{{ t('lineManager.sortUpdatedDesc') }}</option>
+                    <option value="name-asc">{{ t('lineManager.sortNameAsc') }}</option>
+                  </select>
+                </label>
+              </div>
+              <div v-if="loading || runtimeLoading || (isSearchActive && searchLoading)" class="lmw-loading">...</div>
+              <div v-else-if="explorerEntries.length === 0" class="lmw-empty">
+                {{ activeFolderId === 'runtime-cloud' ? t('lineManager.emptyCloudLines') : t('lineManager.emptyFolder') }}
+              </div>
+              <div v-else class="lmw-library-list">
+                <button
+                  v-for="(entry, idx) in explorerEntries"
+                  :key="'root-entry-' + (entry.id || entry.path || entry.filePath || entry.name) + '-' + idx"
+                  :class="entry.type === 'folder'
+                    ? ['lmw-library-row', { selected: isEntrySelected(entry) }]
+                    : ['lmw-line', 'lmw-line--inside-folder', { selected: isEntrySelected(entry) }]"
+                  @click="entry.type === 'folder' ? toggleEntrySelection(entry, $event, explorerEntries) : toggleLineSelection(entry, $event)"
+                  @dblclick="entry.type === 'folder' ? enterFolderEntry(entry) : openLine(entry)"
+                  @contextmenu.prevent.stop="entry.type === 'folder' ? showContextMenu($event, entry) : showLineContextMenu($event, entry)"
+                >
+                  <template v-if="entry.type === 'folder'">
+                    <div class="lmw-library-main">
+                      <div class="lmw-library-folder-icon" aria-hidden="true">
+                        <span class="lmw-library-folder-tab"></span>
+                        <span class="lmw-library-folder-body"></span>
+                      </div>
+                      <div class="lmw-library-copy">
+                        <div class="lmw-library-name">{{ entry.name }}</div>
+                        <div class="lmw-library-subtitle">{{ getFolderEntryHint(entry) }}</div>
+                      </div>
+                    </div>
+                    <div class="lmw-library-meta">
+                      <div class="lmw-library-date">{{ formatExplorerDate(entry.mtime) }}</div>
+                      <div class="lmw-library-updated">{{ getFolderEntryUpdateLabel(entry) }}</div>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="lmw-line-main">
+                      <div class="lmw-line-title" v-html="parseColorMarkup(entry.name)"></div>
+                      <div class="lmw-line-meta">
+                        <span v-if="entry.isThroughLine" class="lmw-tag through">{{ t('folderLineManager.through') }}</span>
+                        <span v-else-if="entry.isLoopLine" class="lmw-tag loop">{{ t('folderLineManager.loop') }}</span>
+                        <span v-else class="lmw-tag single">{{ t('folderLineManager.single') }}</span>
+                        <span class="lmw-stations">
+                          {{ entry.firstStation }} -> {{ entry.lastStation }}
+                        </span>
+                        <span class="lmw-line-folder">
+                          <i class="far fa-clock"></i> {{ formatExplorerDate(entry.mtime) || '--' }}
+                        </span>
+                        <span v-if="formatExplorerFileSize(entry.size)" class="lmw-line-folder">
+                          <i class="fas fa-file"></i> {{ formatExplorerFileSize(entry.size) }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="lmw-line-color" :style="{ background: entry.themeColor || '#58a4ed' }"></div>
+                  </template>
+                </button>
               </div>
             </div>
-            <div class="lmw-line-color" :style="{ background: line.themeColor || '#5F27CD' }"></div>
-          </button>
-        </div>
+            <div v-else-if="!isRootExplorer && !isSearchActive" class="lmw-media-shell">
+              <div class="lmw-media-header">
+                <div class="lmw-media-header-main">
+                  <button type="button" class="lmw-media-back" @click="navigateUp">
+                    <i class="fas fa-chevron-left"></i>
+                  </button>
+                  <div class="lmw-media-title">{{ currentFolderLabel }}</div>
+                </div>
+                <div class="lmw-media-link">
+                  <i class="far fa-folder"></i>
+                  <span>{{ t('lineManager.onlineDocs') }}</span>
+                </div>
+              </div>
+              <div class="lmw-media-toolbar">
+                <div class="lmw-media-group-label">{{ formatExplorerMonth(currentDirectoryEntries[0]?.mtime) || currentFolderLabel }}</div>
+                <label class="lmw-folder-sort">
+                  <select v-model="folderSortMode" class="lmw-folder-sort-select lmw-folder-sort-select--library">
+                    <option value="updated-desc">{{ t('lineManager.sortUpdatedDesc') }}</option>
+                    <option value="name-asc">{{ t('lineManager.sortNameAsc') }}</option>
+                  </select>
+                </label>
+              </div>
+              <div v-if="loading || runtimeLoading" class="lmw-loading">...</div>
+              <div v-else-if="currentDirectoryEntries.length === 0" class="lmw-empty">
+                {{ t('lineManager.emptyFolder') }}
+              </div>
+              <div v-else class="lmw-media-list">
+                <button
+                  v-for="(entry, idx) in currentDirectoryEntries"
+                  :key="'media-entry-' + (entry.path || entry.filePath || entry.name) + '-' + idx"
+                  class="lmw-line lmw-line--inside-folder"
+                  :class="{ selected: isEntrySelected(entry), 'lmw-line-folder-entry': entry.type === 'folder' }"
+                  @click="entry.type === 'folder' ? toggleEntrySelection(entry, $event, currentDirectoryEntries) : toggleLineSelection(entry, $event)"
+                  @dblclick="entry.type === 'folder' ? enterFolderEntry(entry) : openLine(entry)"
+                  @contextmenu.prevent.stop="entry.type === 'folder' ? showContextMenu($event, entry) : showLineContextMenu($event, entry)"
+                >
+                  <div class="lmw-line-main">
+                    <div v-if="entry.type === 'folder'" class="lmw-line-title">
+                      <div class="lmw-folder-row">
+                        <div class="lmw-folder-hero">
+                          <i :class="entry.icon || 'fas fa-folder-open'" class="lmw-entry-icon"></i>
+                        </div>
+                        <div class="lmw-folder-copy">
+                          <span class="lmw-folder-name">{{ entry.name }}</span>
+                          <span class="lmw-folder-subtitle">{{ getFolderEntryHint(entry) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="lmw-line-title" v-html="parseColorMarkup(entry.name)"></div>
+                    <div class="lmw-line-meta" :class="{ 'lmw-line-meta--folder': entry.type === 'folder' }">
+                      <template v-if="entry.type === 'folder'">
+                        <span class="lmw-line-folder">
+                          <i class="far fa-clock"></i> {{ formatExplorerDate(entry.mtime) || '--' }}
+                        </span>
+                        <span class="lmw-line-folder">
+                          <i class="fas fa-folder"></i> {{ getFolderEntryMeta(entry) }}
+                        </span>
+                      </template>
+                      <template v-else>
+                      <span v-if="entry.isThroughLine" class="lmw-tag through">{{ t('folderLineManager.through') }}</span>
+                      <span v-else-if="entry.isLoopLine" class="lmw-tag loop">{{ t('folderLineManager.loop') }}</span>
+                      <span v-else class="lmw-tag single">{{ t('folderLineManager.single') }}</span>
+                      <span class="lmw-stations">
+                        {{ entry.firstStation }} -> {{ entry.lastStation }}
+                      </span>
+                      <span class="lmw-line-folder">
+                        <i class="far fa-clock"></i> {{ formatExplorerDate(entry.mtime) || '--' }}
+                      </span>
+                      <span v-if="formatExplorerFileSize(entry.size)" class="lmw-line-folder">
+                        <i class="fas fa-file"></i> {{ formatExplorerFileSize(entry.size) }}
+                      </span>
+                      </template>
+                    </div>
+                  </div>
+                  <div class="lmw-line-color" :style="{ background: entry.type === 'folder' ? 'linear-gradient(180deg, rgba(96,165,250,.95), rgba(59,130,246,.75))' : (entry.themeColor || '#5F27CD') }"></div>
+                </button>
+              </div>
+            </div>
+            <div v-if="!isRootExplorer && isSearchActive && (loading || runtimeLoading || searchLoading)" class="lmw-loading">...</div>
+            <div v-else-if="isRootExplorer && !isSearchActive"></div>
+            <div v-else-if="!isRootExplorer && !isSearchActive"></div>
+            <div v-else-if="!isSearchActive && explorerEntries.length === 0" class="lmw-empty">
+              {{ activeFolderId === 'runtime-cloud' ? t('lineManager.emptyCloudLines') : t('lineManager.emptyFolder') }}
+            </div>
+            <div v-else-if="isSearchActive && filteredLines.length === 0" class="lmw-empty">
+              <i class="fas fa-search" style="font-size:32px; color:var(--muted); margin-bottom:12px;"></i>
+              <span>{{ t('lineManager.noSearchResult') }}</span>
+              <span class="lmw-search-hint">{{ t('lineManager.searchResultHint') }}</span>
+            </div>
+            <template v-else>
+              <button
+                v-for="(entry, idx) in explorerEntries"
+                :key="entry.type + '-' + (entry.id || entry.path || entry.filePath || entry.name) + '-' + idx"
+                class="lmw-line"
+                :class="{ selected: isEntrySelected(entry), 'lmw-line-folder-entry': entry.type === 'folder' }"
+                @click="entry.type === 'folder' ? toggleEntrySelection(entry, $event, explorerEntries) : toggleLineSelection(entry, $event)"
+                @dblclick="entry.type === 'line' ? openLine(entry) : null"
+                @contextmenu.prevent.stop="entry.type === 'line' ? showLineContextMenu($event, entry) : showContextMenu($event, entry)"
+              >
+                <div class="lmw-line-main">
+                  <div class="lmw-line-title">
+                    <template v-if="entry.type === 'folder'">
+                      <div class="lmw-folder-row">
+                        <div class="lmw-folder-hero">
+                          <i :class="entry.icon || 'fas fa-folder'" class="lmw-entry-icon"></i>
+                        </div>
+                        <div class="lmw-folder-copy">
+                          <span class="lmw-folder-name">{{ entry.name }}</span>
+                          <span class="lmw-folder-subtitle">{{ getFolderEntryHint(entry) }}</span>
+                        </div>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div v-html="parseColorMarkup(entry.name)"></div>
+                    </template>
+                  </div>
+                  <div class="lmw-line-meta">
+                    <template v-if="entry.type === 'folder'">
+                      <div class="lmw-folder-meta-panel">
+                        <span v-if="formatExplorerDate(entry.mtime)" class="lmw-folder-date">{{ formatExplorerDate(entry.mtime) }}</span>
+                        <span class="lmw-folder-meta-secondary">{{ getFolderEntryMeta(entry) }}</span>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <span v-if="entry.isThroughLine" class="lmw-tag through">{{ t('folderLineManager.through') }}</span>
+                      <span v-if="entry.isLoopLine" class="lmw-tag loop">{{ t('folderLineManager.loop') }}</span>
+                      <span class="lmw-stations">
+                        {{ entry.firstStation }} -> {{ entry.lastStation }}
+                        <span v-if="entry.isRuntime">{{ t('lineManager.runtimeStationCount', { count: entry.stationCount || entry.data?.stations?.length || 0 }) }}</span>
+                      </span>
+                      <span v-if="isSearchActive && entry.folderName" class="lmw-line-folder">
+                        <i class="fas fa-folder"></i> {{ entry.folderName }}
+                        <button type="button" class="lmw-locate-btn" @click.stop="locateToFolder(entry)" :title="t('lineManager.locate')">
+                          {{ t('lineManager.locate') }}
+                        </button>
+                      </span>
+                    </template>
+                  </div>
+                </div>
+                <div class="lmw-line-color" :style="{ background: entry.type === 'folder' ? 'linear-gradient(180deg, rgba(96,165,250,.95), rgba(59,130,246,.75))' : (entry.themeColor || '#5F27CD') }"></div>
+              </button>
+            </template>
+          </div>
 
-        <!-- 底部操作栏：仅在保存贯通线路时显示，橙色「保存贯通线路」按钮 -->
-        <div v-if="isSavingThroughLine || isSavingLine" class="lmw-bottom-bar">
-          <div class="lmw-bottom-bar-left">
-            <span class="lmw-bottom-bar-muted">
-              {{ t('lineManager.savingToPrefix') }}{{ (folders?.find?.(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '—' }}
-              <template v-if="isSavingLine && pendingLineSaveData && pendingLineSaveData.lineName"> · {{ pendingLineSaveData.lineName }}</template>
-              <template v-else-if="isSavingThroughLine && pendingThroughLineInfo && pendingThroughLineInfo.lineName"> · {{ pendingThroughLineInfo.lineName }}</template>
-            </span>
+          <div v-if="isSavingThroughLine || isSavingLine" class="lmw-bottom-bar">
+            <div class="lmw-bottom-bar-left">
+              <span class="lmw-bottom-bar-muted">
+                {{ t('lineManager.savingToPrefix') }}{{ (folders?.find?.(f => f.id === (selectedFolderId ?? currentFolderId)))?.name || '-' }}
+                <template v-if="isSavingLine && pendingLineSaveData && pendingLineSaveData.lineName"> | {{ pendingLineSaveData.lineName }}</template>
+                <template v-else-if="isSavingThroughLine && pendingThroughLineInfo && pendingThroughLineInfo.lineName"> | {{ pendingThroughLineInfo.lineName }}</template>
+              </span>
+            </div>
+            <div class="lmw-bottom-bar-right">
+              <button type="button" class="lmw-btn lmw-btn-through" @click="isSavingThroughLine ? handleSaveThroughLine() : handleSavePendingLine()">
+                <i class="fas fa-save"></i>
+                <span>{{ bottomBarActionLabel }}</span>
+              </button>
+            </div>
           </div>
-          <div class="lmw-bottom-bar-right">
-            <button type="button" class="lmw-btn lmw-btn-through" @click="isSavingThroughLine ? handleSaveThroughLine() : handleSavePendingLine()">
-              <i class="fas fa-save"></i>
-              <span>{{ bottomBarActionLabel }}</span>
-            </button>
-          </div>
-        </div>
-      </section>
+        </section>
       </div>
     </div>
 
-    <!-- 各类右键菜单统一用 ContextMenu 渲染 -->
     <ContextMenu
       v-model="contextMenu.visible"
       :x="contextMenu.x"
@@ -2135,10 +2845,8 @@ export default {
       @select="onLineMenuSelect"
     />
 
-    <!-- 独立对话框组件，用于右键菜单中的提示/输入（window.__lineManagerDialog） -->
     <LineManagerDialog />
 
-    <!-- 聚光灯引导 -->
     <SpotlightOverlay
       v-if="spotlightVisible && spotlightStepConfig"
       :visible="spotlightVisible"
@@ -2148,8 +2856,8 @@ export default {
       :step-text="spotlightStepConfig.stepText || ''"
       :show-back="spotlightStepConfig.showBack"
       :show-next="spotlightStepConfig.showNext"
-      :back-label="spotlightStepConfig.backLabel || '上一步'"
-      :next-label="spotlightStepConfig.nextLabel || '下一步'"
+      :back-label="spotlightStepConfig.backLabel || 'Back'"
+      :next-label="spotlightStepConfig.nextLabel || 'Next'"
       :padding="12"
       :radius="12"
       @back="spotlightPrevStep"
@@ -2210,11 +2918,102 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 .lmw-main-body {
   flex: 1;
   display: flex;
   overflow: hidden;
+  padding: 0;
+  background: transparent;
+  min-height: 0;
+}
+.lmw-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.lmw-folder-toolbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lmw-folder-toolbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text, #202938);
+}
+.lmw-folder-sort {
+  flex-shrink: 0;
+}
+.lmw-folder-sort-select {
+  min-width: 138px;
+  height: 36px;
+  padding: 0 38px 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text, #202938);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  outline: none;
+}
+.lmw-breadcrumb-back,
+.lmw-breadcrumb-root {
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text, #333);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.lmw-breadcrumb-back:hover,
+.lmw-breadcrumb-root:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.10);
+}
+.lmw-breadcrumb-root.active {
+  background: linear-gradient(180deg, rgba(219, 234, 254, 0.95), rgba(191, 219, 254, 0.88));
+  border-color: rgba(59, 130, 246, 0.18);
+  color: #1d4ed8;
+}
+.lmw-breadcrumb-sep {
+  color: var(--muted, #777);
+  font-size: 12px;
+}
+.lmw-breadcrumb-current {
+  font-weight: 700;
+  color: var(--text, #333);
+}
+.lmw-path-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 50%;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  color: var(--muted, #666);
+  font-size: 12px;
+}
+.lmw-path-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lmw-entry-icon {
+  color: #3b82f6;
+  font-size: 30px;
 }
 /* 标题栏：左侧标题 + 中间搜索 + 右侧预留三大金刚键 */
 .lmw-titlebar.custom-titlebar {
@@ -2395,15 +3194,25 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   overflow: hidden;
+  min-height: 0;
 }
 .lmw-content-header {
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  background: #fafafa;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.50));
   color: var(--muted, #666);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .lmw-search-bar {
   display: flex;
@@ -2460,10 +3269,323 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
 .lmw-lines {
   flex: 1;
   overflow: auto;
-  padding: 12px;
+  padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 0;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  min-height: 0;
+}
+.lmw-lines--media-view {
+  overflow: hidden;
+}
+.lmw-library-shell {
+  min-height: fit-content;
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.lmw-library-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 18px 0 34px;
+  height: 58px;
+}
+.lmw-library-toolbar-label {
+  font-size: 14px;
+  color: #495468;
+}
+.lmw-folder-sort-select--library {
+  min-width: 156px;
+  height: 34px;
+  border-radius: 10px;
+  background: #fbfbfc;
+  border-color: #d9dee7;
+  box-shadow: none;
+  font-size: 14px;
+}
+.lmw-library-list {
+  padding-bottom: 18px;
+}
+.lmw-library-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  align-items: center;
+  gap: 18px;
+  width: calc(100% - 24px);
+  margin: 0 12px;
+  padding: 0 18px 0 22px;
+  min-height: 64px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+.lmw-library-row:hover {
+  background: #f3f3f4;
+}
+.lmw-library-row.selected {
+  background: #ebedef;
+}
+.lmw-library-row--line {
+  grid-template-columns: minmax(0, 1fr) 132px;
+}
+.lmw-library-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.lmw-library-folder-icon {
+  width: 40px;
+  height: 32px;
+  position: relative;
+  flex-shrink: 0;
+}
+.lmw-library-line-icon {
+  width: 12px;
+  height: 42px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+.lmw-library-folder-tab {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 7px;
+  border-radius: 6px 6px 0 0;
+  background: #77b9f6;
+}
+.lmw-library-folder-body {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 40px;
+  height: 25px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #6eb5f6, #58a4ed);
+}
+.lmw-library-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lmw-library-name {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: #141414;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lmw-library-subtitle {
+  font-size: 12px;
+  line-height: 18px;
+  color: #7c8494;
+}
+.lmw-library-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.lmw-library-date {
+  font-size: 12px;
+  line-height: 18px;
+  color: #7c8494;
+}
+.lmw-library-updated {
+  font-size: 12px;
+  line-height: 18px;
+  color: #7c8494;
+  white-space: nowrap;
+}
+.lmw-media-shell {
+  min-height: 100%;
+  height: 100%;
+  margin: 0;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.lmw-media-header {
+  padding: 18px 20px 16px 8px;
+  border-bottom: 1px solid #eceff3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex: 0 0 auto;
+}
+.lmw-media-header-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lmw-media-back {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #171717;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 16px;
+}
+.lmw-media-title {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+  color: #171717;
+}
+.lmw-media-link {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  font-size: 14px;
+  color: #202938;
+}
+.lmw-media-toolbar {
+  height: 58px;
+  padding: 0 18px 0 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+.lmw-media-group-label {
+  font-size: 14px;
+  color: #666f80;
+}
+.lmw-media-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.24) transparent;
+}
+.lmw-media-list::-webkit-scrollbar {
+  width: 10px;
+}
+.lmw-media-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lmw-media-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.lmw-media-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.30);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.lmw-media-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  align-items: center;
+  gap: 18px;
+  min-height: 64px;
+  padding: 0 18px 0 24px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+.lmw-media-row:hover {
+  background: #f3f3f4;
+}
+.lmw-media-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.lmw-media-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #8f8f8f, #6d6d6d);
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lmw-media-disc-ring {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #2b2b2b;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12);
+}
+.lmw-media-disc-core {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  color: #f87171;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+.lmw-media-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lmw-media-name {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+  color: #171717;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lmw-media-subtitle {
+  font-size: 12px;
+  line-height: 18px;
+  color: #80889a;
+}
+.lmw-media-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.lmw-media-date,
+.lmw-media-source {
+  font-size: 12px;
+  line-height: 18px;
+  color: #80889a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .lmw-bottom-bar {
   padding: 12px 16px;
@@ -2516,18 +3638,28 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   background: #e88c2e;
 }
 .lmw-line {
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
+  border-radius: 16px;
+  padding: 14px 15px;
   display: flex;
   align-items: center;
   gap: 12px;
   cursor: pointer;
   position: relative;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 .lmw-line:hover {
-  background: #fafafa;
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10);
+}
+.lmw-line-folder-entry {
+  border-color: rgba(59, 130, 246, 0.14);
+  background:
+    radial-gradient(circle at left top, rgba(191, 219, 254, 0.46), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.88));
 }
 .lmw-line.selected {
   border-color: rgba(22, 119, 255, 0.6);
@@ -2554,11 +3686,73 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lmw-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.lmw-folder-hero {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(219, 234, 254, 0.72));
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+.lmw-folder-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lmw-folder-name {
+  font-weight: 800;
+  color: var(--text, #243244);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lmw-folder-subtitle {
+  font-size: 12px;
+  color: var(--muted, #7b8794);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lmw-folder-date,
+.lmw-folder-open-indicator {
+  margin-left: auto;
+  color: var(--muted, #7b8794);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.lmw-folder-meta-panel {
+  margin-left: auto;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.lmw-folder-meta-secondary {
+  max-width: 240px;
+  color: var(--muted, #7b8794);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lmw-line-meta {
   margin-top: 4px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-size: 12px;
   color: var(--muted, #666);
@@ -2569,6 +3763,11 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   background: rgba(0, 0, 0, 0.03);
+  min-width: 48px;
+  text-align: center;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
 }
 .lmw-tag.through {
   border-color: rgba(155, 89, 182, 0.3);
@@ -2580,7 +3779,14 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   background: rgba(39, 174, 96, 0.08);
   color: #1e8449;
 }
+.lmw-tag.single {
+  border-color: rgba(59, 130, 246, 0.24);
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+}
 .lmw-stations {
+  min-width: 0;
+  flex: 1 1 180px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2593,6 +3799,9 @@ html.dark .lmw-titlebar-search .lmw-search-clear:hover {
   padding-left: 8px;
   border-left: 1px solid rgba(0, 0, 0, 0.1);
   color: var(--muted, #888);
+  min-width: 104px;
+  justify-content: flex-start;
+  flex: 0 0 104px;
 }
 .lmw-line-folder i {
   font-size: 11px;
@@ -2622,9 +3831,53 @@ html.dark .lmw-locate-btn:hover {
   background: rgba(22, 119, 255, 0.35);
 }
 .lmw-line-color {
-  width: 10px;
-  height: 42px;
+  width: 12px;
+  height: 46px;
   border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.lmw-line--inside-folder {
+  width: calc(100% - 36px);
+  margin: 0 18px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  padding: 12px 14px;
+  transform: none !important;
+}
+.lmw-line--inside-folder .lmw-line-meta {
+  flex-wrap: nowrap;
+}
+.lmw-line--inside-folder .lmw-line-title {
+  min-width: 0;
+}
+.lmw-line--inside-folder .lmw-line-meta--folder {
+  gap: 10px;
+}
+.lmw-line--inside-folder:not(.lmw-line-folder-entry) .lmw-line-folder {
+  margin-left: auto;
+  padding-left: 6px;
+  min-width: auto;
+  flex: 0 0 auto;
+}
+.lmw-line--inside-folder:not(.lmw-line-folder-entry) .lmw-line-folder + .lmw-line-folder {
+  margin-left: 4px;
+}
+.lmw-line--inside-folder:not(.lmw-line-folder-entry) .lmw-stations {
+  text-align: left;
+}
+.lmw-line--inside-folder:hover {
+  background: #f3f3f4;
+  box-shadow: none;
+}
+.lmw-line--inside-folder.selected {
+  border: none;
+  box-shadow: none;
+  background: #ebedef;
+}
+.lmw-line--inside-folder.selected::before {
+  display: none;
 }
 
 .lmw-footer {
@@ -2694,7 +3947,9 @@ html.dark .lmw-sidebar {
 }
 
 html.dark .lmw-content {
-  background: rgba(10, 14, 18, 0.90);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 html.dark .lmw-search-bar {
@@ -2714,9 +3969,32 @@ html.dark .lmw-search-clear:hover {
   color: var(--text);
 }
 html.dark .lmw-content-header {
-  background: rgba(255, 255, 255, 0.04);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--muted, rgba(230, 238, 246, 0.65));
+}
+html.dark .lmw-breadcrumb-back,
+html.dark .lmw-breadcrumb-root,
+html.dark .lmw-path-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--text, #e6eef6);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+html.dark .lmw-folder-toolbar-title,
+html.dark .lmw-folder-name {
+  color: #e6eef6;
+}
+html.dark .lmw-folder-sort-select {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.10);
+  color: #e6eef6;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.20);
+}
+html.dark .lmw-breadcrumb-root.active {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.28), rgba(37, 99, 235, 0.20));
+  border-color: rgba(96, 165, 250, 0.26);
+  color: #bfdbfe;
 }
 
 html.dark .lmw-bottom-bar {
@@ -2746,13 +4024,83 @@ html.dark .lmw-folder.active {
 
 html.dark .lmw-lines {
   color: var(--text, #e6eef6);
+  background: rgba(12, 18, 26, 0.96);
+}
+html.dark .lmw-library-shell {
+  background: rgba(12, 18, 26, 0.96);
+}
+html.dark .lmw-library-name {
+  color: #e6eef6;
+}
+html.dark .lmw-library-toolbar-label,
+html.dark .lmw-library-subtitle,
+html.dark .lmw-library-date,
+html.dark .lmw-library-updated {
+  color: rgba(230, 238, 246, 0.62);
+}
+html.dark .lmw-library-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+html.dark .lmw-library-row.selected {
+  background: rgba(255, 255, 255, 0.12);
+}
+html.dark .lmw-library-folder-tab {
+  background: #8cc7ff;
+}
+html.dark .lmw-library-folder-body {
+  background: linear-gradient(180deg, #77bcfb, #4f9cec);
+}
+html.dark .lmw-media-shell {
+  background: rgba(12, 18, 26, 0.96);
+}
+html.dark .lmw-media-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .lmw-media-title,
+html.dark .lmw-media-link,
+html.dark .lmw-media-name,
+html.dark .lmw-media-back {
+  color: #e6eef6;
+}
+html.dark .lmw-media-group-label,
+html.dark .lmw-media-subtitle,
+html.dark .lmw-media-date,
+html.dark .lmw-media-source {
+  color: rgba(230, 238, 246, 0.62);
+}
+html.dark .lmw-media-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+html.dark .lmw-media-list {
+  scrollbar-color: rgba(255, 255, 255, 0.32) transparent;
+}
+html.dark .lmw-media-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+html.dark .lmw-media-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+html.dark .lmw-media-thumb {
+  background: linear-gradient(180deg, #7b7b7b, #5d5d5d);
 }
 html.dark .lmw-line {
-  background: rgba(255, 255, 255, 0.04);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
   border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
 }
 html.dark .lmw-line:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.05));
+}
+html.dark .lmw-line-folder-entry {
+  background:
+    radial-gradient(circle at left top, rgba(59, 130, 246, 0.20), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(30, 41, 59, 0.16));
+  border-color: rgba(96, 165, 250, 0.18);
 }
 html.dark .lmw-line.selected {
   border-color: rgba(64, 156, 255, 0.9);
@@ -2762,8 +4110,30 @@ html.dark .lmw-line.selected {
 html.dark .lmw-line.selected::before {
   background: linear-gradient(180deg, #40a9ff, #69c0ff);
 }
+html.dark .lmw-line--inside-folder:hover {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+}
+html.dark .lmw-line--inside-folder.selected {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  box-shadow: none;
+}
+html.dark .lmw-line--inside-folder.selected::before {
+  display: none;
+}
 html.dark .lmw-line-meta {
   color: var(--muted, rgba(230, 238, 246, 0.62));
+}
+html.dark .lmw-folder-hero {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(59, 130, 246, 0.16));
+  border-color: rgba(96, 165, 250, 0.18);
+}
+html.dark .lmw-folder-subtitle,
+html.dark .lmw-folder-date,
+html.dark .lmw-folder-open-indicator,
+html.dark .lmw-folder-meta-secondary {
+  color: rgba(230, 238, 246, 0.62);
 }
 html.dark .lmw-tag {
   border-color: rgba(255, 255, 255, 0.14);
@@ -2778,6 +4148,11 @@ html.dark .lmw-tag.loop {
   border-color: rgba(92, 214, 147, 0.28);
   background: rgba(92, 214, 147, 0.12);
   color: rgba(173, 245, 205, 0.95);
+}
+html.dark .lmw-tag.single {
+  border-color: rgba(96, 165, 250, 0.30);
+  background: rgba(96, 165, 250, 0.14);
+  color: #bfdbfe;
 }
 
 html.dark .lmw-footer {

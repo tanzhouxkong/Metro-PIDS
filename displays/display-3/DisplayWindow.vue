@@ -552,6 +552,8 @@ import {
   getStationNameFontStyle,
   splitEnglishNameIntoLines,
   calculateNextStationIndex,
+  applyEffectiveDoorToStation,
+  resolveTerminalIndex as resolveTerminalIndexApi,
   computeRingLayoutGeometry,
   getStationTransferInfo
 } from '../../src/utils/displayStationCalculator.js'
@@ -675,6 +677,7 @@ let displaySdk = null
 let uninstallKeyboardHandler = null
 let localKeyboardHandler = null
 let displaySdkUnsubscribe = null
+let lastDisplay3DirType = null
 const _lastKeySent = new Map()
 const _KEY_DEDUPE_MS = 300
 
@@ -1311,6 +1314,8 @@ function normalizeExitData(raw = {}) {
 function normalizeSyncData(appData = {}, rtState = null) {
   const stations = Array.isArray(appData.stations) ? appData.stations : []
   const meta = appData.meta || {}
+  const currDirType = meta.dirType || meta.direction || null
+  const prevDirType = lastDisplay3DirType
   const total = stations.length
   const rawIdx = Number(rtState?.idx)
   const fallbackIdx = Number(meta.startIdx)
@@ -1334,15 +1339,35 @@ function normalizeSyncData(appData = {}, rtState = null) {
     }
   }
 
-  const focusStation = stations[focusIndex] || null
-  const nextStationRaw = rtStateNum === 1 ? (stations[nextIndex] || focusStation) : focusStation
-  const terminalStation = stations[resolveTerminalIndex(meta, stations)] || null
+  const focusStation = applyEffectiveDoorToStation(stations[focusIndex] || null, {
+    meta,
+    rtState,
+    stations,
+    prevDirType
+  })
+  const nextStationCandidate = stations[nextIndex] || focusStation
+  const nextStationRaw = rtStateNum === 1
+    ? applyEffectiveDoorToStation(nextStationCandidate, {
+        meta,
+        rtState: { ...(rtState || {}), idx: nextIndex },
+        stations,
+        prevDirType
+      })
+    : focusStation
+  const terminalStation = applyEffectiveDoorToStation(stations[resolveTerminalIndexApi(meta, stations)] || null, {
+    meta,
+    rtState,
+    stations,
+    prevDirType
+  })
   const derivedStations = deriveWindowStations(stations, focusIndex)
   const exitGuideStation = rtStateNum === 1 ? nextStationRaw : focusStation
   const exitGuide = buildExitGuide(
     exitGuideStation?._effectiveDoor || exitGuideStation?.door || exitGuideStation?.dock,
     exitGuideStation?.door || exitGuideStation?.dock
   )
+
+  lastDisplay3DirType = currDirType || lastDisplay3DirType
 
   return {
     line: extractLineLabel(meta, appData.line),
@@ -2357,15 +2382,39 @@ function isReverseDirection(direction) {
   return direction === 'down' || direction === 'inner'
 }
 
-function resolveMiniRouteDisplayIndices(total, currentIndex, reversed) {
+function resolveMiniRouteServiceRange(total) {
+  if (total <= 0) {
+    return {
+      minIdx: 0,
+      maxIdx: -1
+    }
+  }
+
+  const hasShortTurn = (ui.startIdx !== undefined && ui.startIdx !== -1) || (ui.termIdx !== undefined && ui.termIdx !== -1)
+  if (!hasShortTurn) {
+    return {
+      minIdx: 0,
+      maxIdx: total - 1
+    }
+  }
+
+  const startIdx = (ui.startIdx !== undefined && ui.startIdx !== -1) ? Number.parseInt(ui.startIdx, 10) : 0
+  const termIdx = (ui.termIdx !== undefined && ui.termIdx !== -1) ? Number.parseInt(ui.termIdx, 10) : (total - 1)
+  return {
+    minIdx: clamp(Math.min(startIdx, termIdx), 0, total - 1),
+    maxIdx: clamp(Math.max(startIdx, termIdx), 0, total - 1)
+  }
+}
+
+function resolveMiniRouteDisplayIndices(total, currentIndex, reversed, serviceMinIdx = 0, serviceMaxIdx = total - 1) {
   // 计算中部竖向小线路图需要展示的站点索引窗口，优先保证当前站与前后站可见
   if (total <= 0) return []
 
-  const targetTotal = Math.min(8, total)
+  const minIdx = clamp(serviceMinIdx, 0, Math.max(total - 1, 0))
+  const maxIdx = clamp(serviceMaxIdx, minIdx, Math.max(total - 1, 0))
+  const targetTotal = Math.min(8, Math.max(0, maxIdx - minIdx + 1))
   const nextStep = reversed ? -1 : 1
   const prevStep = -nextStep
-  const minIdx = 0
-  const maxIdx = total - 1
   const future = []
   const past = []
 
@@ -2426,8 +2475,9 @@ function resolveMiniRouteDisplayIndices(total, currentIndex, reversed) {
   return reversed ? indices.reverse() : indices
 }
 
-function resolveMiniRouteNodeState(realIndex, currentIndex, reversed, uiState) {
+function resolveMiniRouteNodeState(realIndex, currentIndex, reversed, uiState, serviceMinIdx = 0, serviceMaxIdx = Number.MAX_SAFE_INTEGER) {
   // 根据方向与运行状态判断某个站点属于已过、当前或未到
+  if (realIndex < serviceMinIdx || realIndex > serviceMaxIdx) return 'past'
   if (reversed) {
     if (realIndex > currentIndex) return 'past'
     if (realIndex === currentIndex && Number(uiState) === 1) return 'past'
@@ -2440,7 +2490,7 @@ function resolveMiniRouteNodeState(realIndex, currentIndex, reversed, uiState) {
   return 'future'
 }
 
-function resolveMiniRouteHighlight(total, currentIndex, reversed) {
+function resolveMiniRouteHighlight(total, currentIndex, reversed, serviceMinIdx = 0, serviceMaxIdx = total - 1) {
   // 计算小线路图中高亮轨道的起止范围与箭头目标站
   if (total <= 0) {
     return {
@@ -2450,8 +2500,8 @@ function resolveMiniRouteHighlight(total, currentIndex, reversed) {
     }
   }
 
-  const minIdx = 0
-  const maxIdx = total - 1
+  const minIdx = clamp(serviceMinIdx, 0, Math.max(total - 1, 0))
+  const maxIdx = clamp(serviceMaxIdx, minIdx, Math.max(total - 1, 0))
   const nextStep = reversed ? -1 : 1
   const nextIdx = currentIndex + nextStep
   const targetIndex = nextIdx < minIdx || nextIdx > maxIdx ? currentIndex : nextIdx
@@ -2500,19 +2550,20 @@ const miniRouteModel = computed(() => {
   }
 
   const reversed = isReverseDirection(ui.direction)
+  const { minIdx: serviceMinIdx, maxIdx: serviceMaxIdx } = resolveMiniRouteServiceRange(total)
   const currentIndex = clamp(
     Number.isFinite(Number(ui.routeCurrentStationIndex)) ? Number(ui.routeCurrentStationIndex) : Number(ui.currentStationIndex) || 0,
-    0,
-    Math.max(total - 1, 0)
+    serviceMinIdx,
+    Math.max(serviceMaxIdx, serviceMinIdx)
   )
-  const displayIndices = resolveMiniRouteDisplayIndices(total, currentIndex, reversed)
-  const { targetIndex } = resolveMiniRouteHighlight(total, currentIndex, reversed)
+  const displayIndices = resolveMiniRouteDisplayIndices(total, currentIndex, reversed, serviceMinIdx, serviceMaxIdx)
+  const { targetIndex } = resolveMiniRouteHighlight(total, currentIndex, reversed, serviceMinIdx, serviceMaxIdx)
   const highlightedIndex = Number(ui.state) === 0 ? currentIndex : targetIndex
 
   const stations = displayIndices.map((realIndex, viewIndex) => ({
     ...normalizeStation(routeStations[realIndex]),
     originalIndex: realIndex,
-    state: resolveMiniRouteNodeState(realIndex, currentIndex, reversed, ui.state),
+    state: resolveMiniRouteNodeState(realIndex, currentIndex, reversed, ui.state, serviceMinIdx, serviceMaxIdx),
     isNextTarget: realIndex === highlightedIndex,
     first: viewIndex === 0,
     last: viewIndex === displayIndices.length - 1,

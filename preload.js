@@ -198,6 +198,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: async (dir) => {
       return await ipcRenderer.invoke('lines/list', dir);
     },
+    browse: async (dir) => {
+      return await ipcRenderer.invoke('lines/browse', dir);
+    },
+    rootDir: async () => {
+      return await ipcRenderer.invoke('lines/rootDir');
+    },
     read: async (filename, dir) => {
       return await ipcRenderer.invoke('lines/read', filename, dir);
     },
@@ -236,16 +242,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cleanupAudioDir: async (lineData, lineFilePath, options) => {
       try { return await ipcRenderer.invoke('lines/cleanupAudioDir', lineData, lineFilePath, options); } catch (e) { return { ok: false, error: String(e) }; }
     },
-    saveAsZip: async (lineData, lineFilePath, targetZipPath, audioSourceDir) => {
-      try { return await ipcRenderer.invoke('lines/saveAsZip', lineData, lineFilePath, targetZipPath, audioSourceDir); } catch (e) { return { ok: false, error: String(e) }; }
-    },
-    extractZipToTemp: async (zipPath) => {
-      try { return await ipcRenderer.invoke('lines/extractZipToTemp', zipPath); } catch (e) { return { ok: false, error: String(e) }; }
-    },
-    folders: {
-      list: async () => {
-        try { return await ipcRenderer.invoke('lines/folders/list'); } catch (e) { return { ok: false, error: String(e) }; }
+      saveAsZip: async (lineData, lineFilePath, targetZipPath, audioSourceDir) => {
+        try { return await ipcRenderer.invoke('lines/saveAsZip', lineData, lineFilePath, targetZipPath, audioSourceDir); } catch (e) { return { ok: false, error: String(e) }; }
       },
+      extractZipToTemp: async (zipPath) => {
+        try { return await ipcRenderer.invoke('lines/extractZipToTemp', zipPath); } catch (e) { return { ok: false, error: String(e) }; }
+      },
+      fs: {
+        createFolder: async (parentDir, folderName) => {
+          try { return await ipcRenderer.invoke('lines/fs/createFolder', parentDir, folderName); } catch (e) { return { ok: false, error: String(e) }; }
+        },
+        rename: async (targetPath, newName) => {
+          try { return await ipcRenderer.invoke('lines/fs/rename', targetPath, newName); } catch (e) { return { ok: false, error: String(e) }; }
+        },
+        delete: async (targetPath) => {
+          try { return await ipcRenderer.invoke('lines/fs/delete', targetPath); } catch (e) { return { ok: false, error: String(e) }; }
+        },
+        copy: async (sourcePath, destinationDir) => {
+          try { return await ipcRenderer.invoke('lines/fs/copy', sourcePath, destinationDir); } catch (e) { return { ok: false, error: String(e) }; }
+        },
+        move: async (sourcePath, destinationDir) => {
+          try { return await ipcRenderer.invoke('lines/fs/move', sourcePath, destinationDir); } catch (e) { return { ok: false, error: String(e) }; }
+        }
+      },
+      folders: {
+        list: async () => {
+          try { return await ipcRenderer.invoke('lines/folders/list'); } catch (e) { return { ok: false, error: String(e) }; }
+        },
       open: async (folderPath) => {
         try { return await ipcRenderer.invoke('lines/folders/open', folderPath); } catch (e) { return { ok: false, error: String(e) }; }
       },
@@ -275,6 +298,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     read: async (presetName) => {
       return await ipcRenderer.invoke('shortturns/read', presetName);
+    },
+    rename: async (oldName, newName) => {
+      return await ipcRenderer.invoke('shortturns/rename', oldName, newName);
     },
     delete: async (presetName) => {
       return await ipcRenderer.invoke('shortturns/delete', presetName);

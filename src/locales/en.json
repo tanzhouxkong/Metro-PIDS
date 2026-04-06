@@ -263,6 +263,12 @@
     "presetShare": "Share",
     "presetImport": "Import from Share Code",
     "presetDelete": "Delete",
+    "presetRenameTitle": "Rename Preset",
+    "presetRenamePrompt": "Enter a new preset name",
+    "presetRenameElectronOnly": "Renaming short-turn presets is only supported in Electron environment",
+    "presetRenamedSuccess": "Short-turn preset renamed",
+    "presetRenamedNotifyDesc": "Renamed \"{oldName}\" to \"{newName}\".",
+    "presetRenameFailed": "Failed to rename preset",
     "presetSavedSuccess": "Short-turn preset saved",
     "presetSavedNotifyDesc": "The list has been updated.",
     "presetDeletedSuccess": "Short-turn preset removed",
@@ -418,7 +424,13 @@
     "savingToPrefix": "Saving to:",
     "throughSaveButton": "Save Through Line",
     "saveLineButton": "Save Current Line",
-    "saveZipButton": "Save as ZIP"
+    "saveZipButton": "Save as ZIP",
+    "onlineDocs": "Group Docs",
+    "folderList": "Folders",
+    "sortUpdatedDesc": "Latest First",
+    "sortNameAsc": "Name",
+    "folderPasteFailed": "Failed to paste folder"
+    ,"selectFolderForNewLine": "Select a folder for the new line"
   },
   "colorPicker": {
     "title": "Color Picker",

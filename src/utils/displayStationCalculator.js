@@ -35,6 +35,107 @@ export function isSkippedByService(st, idx, len, meta) {
   return false;
 }
 
+export function normalizeTurnbackType(raw) {
+  if (raw === 'pre') return 'pre';
+  if (raw === 'post') return 'post';
+  if (raw === true) return 'pre';
+  return 'none';
+}
+
+export function normalizeDirectionBucket(dirType) {
+  const raw = String(dirType || '').trim().toLowerCase();
+  if (raw === 'up' || raw === 'outer') return 'up';
+  if (raw === 'down' || raw === 'inner') return 'down';
+  return null;
+}
+
+export function invertDoorSide(door) {
+  const raw = String(door || '').trim().toLowerCase();
+  if (raw === 'left') return 'right';
+  if (raw === 'right') return 'left';
+  if (raw === 'both') return 'both';
+  return raw || 'left';
+}
+
+export function resolveTerminalIndex(meta = {}, stations = []) {
+  const len = Array.isArray(stations) ? stations.length : 0;
+  if (!len) return 0;
+
+  const hasTerm = meta.termIdx !== undefined && meta.termIdx !== -1;
+  const hasStart = meta.startIdx !== undefined && meta.startIdx !== -1;
+  const dirType = String(meta.dirType || meta.direction || '').toLowerCase();
+
+  if (meta.terminalIndex !== undefined && meta.terminalIndex !== null) {
+    const idx = Number(meta.terminalIndex);
+    return Math.max(0, Math.min(len - 1, Number.isFinite(idx) ? idx : len - 1));
+  }
+
+  let terminalIdx = -1;
+  if (hasTerm && hasStart) {
+    terminalIdx = (dirType === 'up' || dirType === 'outer')
+      ? Number.parseInt(meta.termIdx, 10)
+      : Number.parseInt(meta.startIdx, 10);
+  } else if (hasTerm) {
+    terminalIdx = Number.parseInt(meta.termIdx, 10);
+  } else if (hasStart) {
+    terminalIdx = Number.parseInt(meta.startIdx, 10);
+  } else {
+    terminalIdx = (dirType === 'up' || dirType === 'outer') ? (len - 1) : 0;
+  }
+
+  if (!Number.isFinite(terminalIdx)) terminalIdx = len - 1;
+  return Math.max(0, Math.min(len - 1, terminalIdx));
+}
+
+export function resolveEffectiveDoorForStation(station, options = {}) {
+  if (!station || typeof station !== 'object') return '';
+
+  const {
+    meta = {},
+    rtState = {},
+    stations = [],
+    prevDirType = null
+  } = options;
+
+  if (station._effectiveDoor) return station._effectiveDoor;
+
+  const baseDoor = station.door || station.dock || 'left';
+  const turnbackType = normalizeTurnbackType(station.turnback);
+  if (turnbackType === 'none') return baseDoor;
+
+  const currDirType = meta?.dirType || meta?.direction || null;
+  const currBucket = normalizeDirectionBucket(currDirType);
+  const prevBucket = normalizeDirectionBucket(prevDirType);
+  const idx = typeof rtState?.idx === 'number'
+    ? rtState.idx
+    : (typeof station.originalIndex === 'number' ? station.originalIndex : -1);
+  const terminalIdx = resolveTerminalIndex(meta, stations);
+  const atTerminalForDir = idx >= 0 && idx === terminalIdx;
+
+  if (turnbackType === 'pre') {
+    if (prevBucket && currBucket && prevBucket !== currBucket) {
+      return invertDoorSide(baseDoor);
+    }
+    return baseDoor;
+  }
+
+  if (turnbackType === 'post' && atTerminalForDir) {
+    return invertDoorSide(baseDoor);
+  }
+
+  return baseDoor;
+}
+
+export function applyEffectiveDoorToStation(station, options = {}) {
+  if (!station || typeof station !== 'object') return station;
+  const effectiveDoor = resolveEffectiveDoorForStation(station, options);
+  if (!effectiveDoor || effectiveDoor === station._effectiveDoor) return station;
+  return {
+    ...station,
+    _effectiveDoor: effectiveDoor
+  };
+}
+
 /**
  * 获取下一个有效站点索引（考虑短交路、方向、dock限制、运营模式等）
  * 直接使用显示器1的逻辑

@@ -340,6 +340,13 @@ export default {
       return true;
     };
 
+    const tryAdvanceNextShortcutSilent = async () => {
+      if (isAtTerminal()) return false;
+      const advanced = next();
+      if (advanced === false) return false;
+      return true;
+    };
+
     const tryToggleArrDepSilent = async () => {
       const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
       const currentState = Number.isInteger(pidState.rt?.state) ? pidState.rt.state : 0;
@@ -480,12 +487,12 @@ export default {
           return;
         }
         if (match(km.prev)) { move(-getStep()); return; }
-        if (match(km.next)) { await tryAdvanceNextSilent(); return; }
+        if (match(km.next)) { await tryAdvanceNextShortcutSilent(); return; }
         
         // 硬编码兜底
         if (code === 'Enter' || key === 'Enter') { e.preventDefault(); await tryToggleArrDepSilent(); }
         if (code === 'ArrowLeft' || key === 'ArrowLeft') move(-getStep());
-        if (code === 'ArrowRight' || key === 'ArrowRight') await tryAdvanceNextSilent();
+        if (code === 'ArrowRight' || key === 'ArrowRight') await tryAdvanceNextShortcutSilent();
     });
 
     // 广播处理
@@ -572,7 +579,7 @@ export default {
              return;
          }
          if (match(km.next)) {
-             await tryAdvanceNextSilent();
+             await tryAdvanceNextShortcutSilent();
              return;
          }
          
@@ -582,7 +589,7 @@ export default {
          } else if (code === 'ArrowLeft' || key === 'ArrowLeft') {
              move(-getStep());
          } else if (code === 'ArrowRight' || key === 'ArrowRight') {
-             await tryAdvanceNextSilent();
+             await tryAdvanceNextShortcutSilent();
          }
       }
       // 来自显示端的 UI 命令；若标记 src=display 则忽略
