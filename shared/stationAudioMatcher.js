@@ -42,8 +42,9 @@ function normalizeDoorSide(raw) {
 }
 
 function detectDoorSideFromText(text) {
-  const s = String(text || '').normalize('NFKC').toLowerCase();
+  let s = String(text || '').normalize('NFKC').toLowerCase();
   if (!s) return '';
+  s = s.replace(/(?:[_-]\d+|\(\d+\)|（\d+）)+$/g, '');
   // 优先识别“双侧/两边”，避免同时包含“左/右”时误判
   if (
     // 简/繁中文
@@ -158,6 +159,7 @@ function normalizeForStationMatch(raw) {
   if (raw === undefined || raw === null) return '';
   let s = String(raw).normalize('NFKC').trim().toLowerCase();
   if (!s) return '';
+  s = s.replace(/(?:[_-]\d+|\(\d+\)|（\d+）)+$/g, '');
   s = s.replace(/[\s._\-:/\\，。,.、·•（）()【】\[\]「」『』"'“”‘’]/g, '');
   s = s.replace(/站$/u, '');
   let out = '';

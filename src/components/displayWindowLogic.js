@@ -1472,6 +1472,7 @@ export function initDisplayWindow(rootElement) {
   let rt = { idx: 0, state: 0 };
   let arrivalTimer = null;
   let lastArrivalIdx = -1;
+  let lastArrivalDirType = null;
   let asViewMode = 0;
   let recorder = null;
   let chunks = [];
@@ -1629,18 +1630,26 @@ export function initDisplayWindow(rootElement) {
     const header = locate('.header');
     renderNormalScreen(sts, meta);
     if (rt.state === 0) {
-      if (rt.idx !== lastArrivalIdx) {
+      const currentArrivalDirType = meta?.dirType || meta?.direction || null;
+      const shouldResetArrivalTimer =
+        rt.idx !== lastArrivalIdx || currentArrivalDirType !== lastArrivalDirType;
+      if (shouldResetArrivalTimer) {
         lastArrivalIdx = rt.idx;
+        lastArrivalDirType = currentArrivalDirType;
         asViewMode = 0;
         cleanupArrivalTimer();
         arrivalTimer = setInterval(() => {
           asViewMode = (asViewMode + 1) % 2;
-          renderArrivalScreen(sts, meta);
+          const latestStations = Array.isArray(appData?.stations) ? appData.stations : sts;
+          const latestMeta = appData?.meta || meta;
+          renderArrivalScreen(latestStations, latestMeta);
         }, 5000);
       } else if (!arrivalTimer) {
         arrivalTimer = setInterval(() => {
           asViewMode = (asViewMode + 1) % 2;
-          renderArrivalScreen(sts, meta);
+          const latestStations = Array.isArray(appData?.stations) ? appData.stations : sts;
+          const latestMeta = appData?.meta || meta;
+          renderArrivalScreen(latestStations, latestMeta);
         }, 5000);
       }
       if (mapDiv) mapDiv.style.display = 'none';
@@ -1652,6 +1661,7 @@ export function initDisplayWindow(rootElement) {
     } else {
       cleanupArrivalTimer();
       lastArrivalIdx = -1;
+      lastArrivalDirType = null;
       if (mapDiv) mapDiv.style.display = 'flex';
       if (header) header.style.display = 'flex';
       if (arrivalScreen) arrivalScreen.style.display = 'none';
@@ -2022,19 +2032,17 @@ export function initDisplayWindow(rootElement) {
       return door; // “双侧”或其他保持原样
     };
 
-    // 优先使用 payload 中的显式有效车门(如 _effectiveDoor)，否则用配置并结合折返动态判断
-    let effectiveDoor = (st._effectiveDoor) ? st._effectiveDoor : (st.door || 'left');
-    if (!st._effectiveDoor) {
-      try {
-        const startIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx) : 0;
-        const termIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx) : sts.length - 1;
-        const atTerminalForDir = (meta.dirType === 'up' || meta.dirType === 'outer') ? (rt.idx === termIdx) : (rt.idx === startIdx);
-        if (st.turnback && st.turnback !== 'none' && atTerminalForDir) {
-          effectiveDoor = invertDoor(effectiveDoor);
-        }
-      } catch (e) {
-        // 忽略异常，继续使用配置值
-      }
+    // 到站页每次重绘都按当前方向重新计算一次，避免 5 秒轮播刷新后退回旧门方向
+    const baseDoor = (st.door || st.dock || st._effectiveDoor || 'left');
+    const turnbackRaw = String(st.turnback ?? '').trim().toLowerCase();
+    const turnbackType = (st.turnback === true || turnbackRaw === 'pre')
+      ? 'pre'
+      : (turnbackRaw === 'post' ? 'post' : 'none');
+    const dirType = String(meta.dirType || meta.direction || '').trim().toLowerCase();
+    const isDownbound = dirType === 'down' || dirType === 'inner';
+    let effectiveDoor = baseDoor;
+    if (turnbackType === 'pre' && baseDoor !== 'both' && isDownbound) {
+      effectiveDoor = invertDoor(baseDoor);
     }
 
     if (effectiveDoor === 'right') {
@@ -3248,4 +3256,3 @@ export function initDisplayWindow(rootElement) {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 }
-

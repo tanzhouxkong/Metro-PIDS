@@ -11,8 +11,7 @@
         <textarea
           readonly
           :value="slidePanelDiagnosticLog"
-          style="width:100%; min-height:160px; padding:8px; font-size:12px; line-height:1.45; border:1px solid var(--divider, rgba(0,0,0,0.12)); border-radius:8px; background:var(--bg, #f8f8f8); color:var(--text, #222); resize:vertical;"
-        />
+          style="width:100%; min-height:160px; padding:8px; font-size:12px; line-height:1.45; border:1px solid var(--divider, rgba(0,0,0,0.12)); border-radius:8px; background:var(--bg, #f8f8f8); color:var(--text, #222); resize:vertical;" />
       </div>
       <SlidePanel v-else :key="slidePanelRenderKey" />
     </div>

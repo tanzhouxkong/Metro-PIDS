@@ -61,19 +61,83 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
 const NT_LOG_DIR_SEGMENTS = ['data', 'log'];
+let resolvedNtLogDir = null;
+const MAIN_LOG_BASENAME = 'maino';
+
+function padLogDatePart(value) {
+  const n = Number(value) || 0;
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function getLocalLogDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = padLogDatePart(date.getMonth() + 1);
+  const day = padLogDatePart(date.getDate());
+  return `${year}-${month}-${day}`;
+}
+
+function buildDailyLogFilename(baseName, date = new Date()) {
+  return `${String(baseName || 'log')}-${getLocalLogDateKey(date)}.log`;
+}
 
 function getNtLogDir() {
-  try {
-    return path.join(app.getPath('userData'), ...NT_LOG_DIR_SEGMENTS);
-  } catch (e) {
-    return path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS);
-  }
+  if (resolvedNtLogDir) return resolvedNtLogDir;
+  const candidates = [];
+  // 优先固定到稳定目录，避免因 userData 名称/大小写变化造成“日志停在某一天”的错觉
+  try { candidates.push(path.join(app.getPath('appData'), 'Metro-PIDS', ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  try { candidates.push(path.join(app.getPath('appData'), 'metro-pids', ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  try { candidates.push(path.join(app.getPath('userData'), ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  try { if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, 'Metro-PIDS', ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  candidates.push(path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS));
+  resolvedNtLogDir = candidates.find(Boolean) || path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS);
+  return resolvedNtLogDir;
 }
 
 function ensureNtLogDir() {
-  const ntLogDir = getNtLogDir();
-  fs.mkdirSync(ntLogDir, { recursive: true });
-  return ntLogDir;
+  const tried = [];
+  const candidates = [];
+  // 与 getNtLogDir 保持一致：先尝试固定目录，再尝试兼容目录
+  try { candidates.push(path.join(app.getPath('appData'), 'Metro-PIDS', ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  try { candidates.push(path.join(app.getPath('appData'), 'metro-pids', ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  try { candidates.push(path.join(app.getPath('userData'), ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  try { if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, 'Metro-PIDS', ...NT_LOG_DIR_SEGMENTS)); } catch (e) {}
+  candidates.push(path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS));
+
+  for (const dir of candidates) {
+    if (!dir) continue;
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const probe = path.join(dir, '.write-test');
+      fs.writeFileSync(probe, String(Date.now()));
+      fs.unlinkSync(probe);
+      resolvedNtLogDir = dir;
+      return dir;
+    } catch (e) {
+      tried.push(`${dir} -> ${e && e.message ? e.message : String(e)}`);
+    }
+  }
+
+  const fallback = path.join(process.cwd(), ...NT_LOG_DIR_SEGMENTS);
+  try {
+    fs.mkdirSync(fallback, { recursive: true });
+  } catch (e) {}
+  resolvedNtLogDir = fallback;
+  try {
+    process.stderr.write(`[main] ensureNtLogDir fallback=${fallback}; tried=${tried.join(' | ')}\n`);
+  } catch (e) {}
+  return fallback;
+}
+
+function ensureNtLogSubdir(subdirName) {
+  const dir = path.join(ensureNtLogDir(), String(subdirName || '').trim());
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {}
+  return dir;
+}
+
+function getMainLogPath(date = new Date()) {
+  return path.join(ensureNtLogSubdir('main'), buildDailyLogFilename(MAIN_LOG_BASENAME, date));
 }
 
 function ntLog(level, message, meta) {
@@ -95,6 +159,7 @@ function ntLog(level, message, meta) {
 
   logger[level](message, meta);
 }
+
 let archiver = null;
 let extractZip = null;
 try { archiver = require('archiver'); } catch (e) { /* optional */ }
@@ -128,6 +193,17 @@ const {
   buildPeerNormalizedSetForFindAudio,
   findAudioByStationNameFromIndex
 } = require(path.join(__dirname, 'main', 'stationAudioMatch.js'));
+const { createAudioLogger } = require(path.join(__dirname, 'main', 'audioLogger.js'));
+const audioLogger = createAudioLogger({
+  getLogDir: () => ensureNtLogSubdir('renderer-audio'),
+  getPointerPaths: () => {
+    const paths = [];
+    try { paths.push(path.join(app.getPath('userData'), 'current-audio-log-path.txt')); } catch (e) {}
+    try { paths.push(path.join(app.getPath('appData'), 'metro-pids', 'current-audio-log-path.txt')); } catch (e) {}
+    try { paths.push(path.join(app.getPath('appData'), 'Metro-PIDS', 'current-audio-log-path.txt')); } catch (e) {}
+    return paths;
+  }
+});
 const { spawn } = require('child_process');
 const os = require('os');
 let WebSocketServer = null;
@@ -385,16 +461,63 @@ try {
   // 配置 logger 输出到文件和控制台
   if (logger) {
     const ntLogDir = ensureNtLogDir();
-    logger.transports.file.resolvePathFn = () => path.join(ntLogDir, 'main.log');
+    logger.transports.file.resolvePathFn = () => getMainLogPath();
     logger.transports.console.level = 'debug';
     logger.transports.file.level = 'debug';
     logger.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
     console.log('[main] 日志目录:', ntLogDir);
     console.log('[main] 日志文件位置:', logger.transports.file.getFile().path);
+    try {
+      const pointers = [
+        path.join(app.getPath('userData'), 'current-log-path.txt'),
+        path.join(app.getPath('appData'), 'metro-pids', 'current-log-path.txt'),
+        path.join(app.getPath('appData'), 'Metro-PIDS', 'current-log-path.txt')
+      ];
+      const logPath = logger.transports.file.getFile().path;
+      for (const p of pointers) {
+        try {
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.writeFileSync(p, `${new Date().toISOString()}\n${logPath}\n`, 'utf8');
+        } catch (e) {}
+      }
+    } catch (e) {}
+    audioLogger.writePointerFiles();
   }
 } catch (e) {
   console.warn('electron-log not available:', e);
 }
+
+function sanitizeRendererAudioLogPayload(payload) {
+  const src = (payload && typeof payload === 'object') ? payload : {};
+  const msg = typeof src.message === 'string' ? src.message : '';
+  const extraRaw = typeof src.extra === 'string' ? src.extra : (src.extra == null ? '' : (() => {
+    try { return JSON.stringify(src.extra); } catch (e) { return String(src.extra); }
+  })());
+  return {
+    level: String(src.level || 'info').toLowerCase(),
+    message: msg.length > 6000 ? `${msg.slice(0, 6000)}...(truncated)` : msg,
+    extra: extraRaw.length > 12000 ? `${extraRaw.slice(0, 12000)}...(truncated)` : extraRaw
+  };
+}
+
+let rendererAudioLogIpcRegistered = false;
+function ensureRendererAudioLogIpcRegistered() {
+  if (rendererAudioLogIpcRegistered) return;
+  rendererAudioLogIpcRegistered = true;
+  ipcMain.on('renderer/audio-log', (event, payload) => {
+    try {
+      const safe = sanitizeRendererAudioLogPayload(payload);
+      const level = (safe.level === 'error' || safe.level === 'warn') ? safe.level : 'info';
+      if (!safe.message) return;
+      audioLogger.append(safe);
+      ntLog(level, `[renderer][audio] ${safe.message}`, safe.extra);
+    } catch (e) {
+      try { ntLog('warn', '[renderer][audio] failed to persist renderer audio log', String(e && e.message ? e.message : e)); } catch (e2) {}
+    }
+  });
+}
+
+ensureRendererAudioLogIpcRegistered();
 
 try {
   const storeModule = require('electron-store');
@@ -837,6 +960,7 @@ function sendMediaControlActionToWindow(action, targetWindow) {
   }
 }
 
+// 渲染进程音频诊断日志落盘（来自 rendererDiagnostics）
 function registerMediaControlGlobalShortcuts() {
   const mediaShortcuts = [
     { accelerator: 'MediaPlayPause', action: 'playPause' },
@@ -5938,11 +6062,19 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
     contentObj.meta.version = version;
     // 确定音频来源目录：目标文件所在目录、传入目录、原线路目录、MPL 解压缓存
     const audioSourceDirs = new Set();
+    const audioSourceDirKeys = new Set();
+    const pushAudioSourceDir = (p) => {
+      const abs = normalizeAbsPath(p);
+      const key = normalizeAbsPathKey(p);
+      if (!abs || !key || audioSourceDirKeys.has(key)) return;
+      audioSourceDirKeys.add(key);
+      audioSourceDirs.add(abs);
+    };
     const fileDir = path.dirname(fp);
-    if (fileDir) audioSourceDirs.add(path.normalize(fileDir));
+    if (!isMpl && fileDir) pushAudioSourceDir(fileDir);
     if (dir && typeof dir === 'string' && dir.trim()) {
       const norm = path.normalize(dir.trim());
-      audioSourceDirs.add(path.isAbsolute(norm) ? norm : path.resolve(norm));
+      if (!isMpl) pushAudioSourceDir(path.isAbsolute(norm) ? norm : path.resolve(norm));
     }
     const normalizedSourceLinePaths = [];
     const sourcePathList = Array.isArray(sourceLinePath)
@@ -5970,33 +6102,110 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
           }
         }
       }
+      if (isMpl && !normalizedSourceLinePath.toLowerCase().endsWith('.mpl')) {
+        // 对 .mpl 保存链路，只接受明确的源 .mpl 路径，避免把目录路径误当成音频源根目录。
+        continue;
+      }
       normalizedSourceLinePaths.push(normalizedSourceLinePath);
       const sourceDir = path.dirname(normalizedSourceLinePath);
-      if (sourceDir) audioSourceDirs.add(sourceDir);
+      if (!isMpl && sourceDir) pushAudioSourceDir(sourceDir);
     }
     const extracted = isMpl ? await ensureMplExtracted(fp) : null;
-    if (extracted && extracted.dir) audioSourceDirs.add(extracted.dir);
+    if (extracted && extracted.dir) pushAudioSourceDir(extracted.dir);
+    if (isMpl) {
+      const managedWorkspaceDir = getManagedLineAudioWorkspaceDir(fp);
+      if (managedWorkspaceDir) pushAudioSourceDir(managedWorkspaceDir);
+    }
     for (const sourcePath of normalizedSourceLinePaths) {
       if (sourcePath && sourcePath.toLowerCase().endsWith('.mpl')) {
         const sourceExtracted = await ensureMplExtracted(sourcePath);
-        if (sourceExtracted && sourceExtracted.dir) audioSourceDirs.add(sourceExtracted.dir);
+        if (sourceExtracted && sourceExtracted.dir) pushAudioSourceDir(sourceExtracted.dir);
+        const sourceWorkspaceDir = getManagedLineAudioWorkspaceDir(sourcePath);
+        if (sourceWorkspaceDir) pushAudioSourceDir(sourceWorkspaceDir);
+      } else if (!isMpl) {
+        const sourceDir = path.dirname(sourcePath);
+        if (sourceDir) pushAudioSourceDir(sourceDir);
       }
     }
     const sourceDirs = Array.from(audioSourceDirs);
     const fallbackSourceDirs = new Set(sourceDirs);
-    try {
-      const folders = getLinesFolders();
-      Object.values(folders || {}).forEach((f) => {
-        const p = f && f.path;
-        if (p && typeof p === 'string' && p.trim()) fallbackSourceDirs.add(path.normalize(p.trim()));
-      });
-    } catch (e) { /* ignore */ }
-    try {
-      fallbackSourceDirs.add(path.join(app.getPath('userData'), 'lines'));
-    } catch (e) { /* ignore */ }
+    if (!isMpl) {
+      try {
+        const folders = getLinesFolders();
+        Object.values(folders || {}).forEach((f) => {
+          const p = f && f.path;
+          if (p && typeof p === 'string' && p.trim()) fallbackSourceDirs.add(path.normalize(p.trim()));
+        });
+      } catch (e) { /* ignore */ }
+      try {
+        fallbackSourceDirs.add(path.join(app.getPath('userData'), 'lines'));
+      } catch (e) { /* ignore */ }
+    }
     const fallbackDirs = Array.from(fallbackSourceDirs);
     // 收集音频路径（统一逻辑：包含站点音频 + 通用音频）
-    const relPaths = collectAudioRelPaths(contentObj);
+    let relPaths = collectAudioRelPaths(contentObj);
+    const DYNAMIC_ROLE_KEYS = new Set(['start', 'current', 'next', 'terminal', 'end']);
+    const INVALID_FS_CHAR_RE = /[<>:"/\\|?*\x00-\x1F]/g;
+    const normalizeAudioSubDirFromDialectKey = (dialectKey) => {
+      if (!dialectKey) return '';
+      const raw = String(dialectKey || '').trim();
+      if (!raw) return '';
+      const lower = raw.toLowerCase();
+      if (lower === 'cmn' || lower === 'zhcn' || lower === 'zh-cn' || lower === 'zh_cn') return 'zhcn';
+      if (lower === 'zhtw' || lower === 'zh-tw' || lower === 'zh_tw' || lower === 'tw' || lower === 'hk') return 'zhtw';
+      return raw
+        .replace(/\\/g, '/')
+        .replace(/^\/+|\/+$/g, '')
+        .split('/')
+        .map((s) => String(s || '').replace(INVALID_FS_CHAR_RE, '_').trim())
+        .filter(Boolean)
+        .join('/');
+    };
+    const collectDialectKeysFromDynamicPlaceholders = (ld) => {
+      const out = new Set();
+      const collectList = (list) => {
+        if (!Array.isArray(list)) return;
+        for (const item of list) {
+          if (!item || typeof item !== 'object') continue;
+          const role = String(item.role || '').trim();
+          if (!DYNAMIC_ROLE_KEYS.has(role)) continue;
+          const dk = item.dialectKey;
+          if (typeof dk === 'string' && dk.trim()) out.add(dk.trim());
+        }
+      };
+      const stations = (ld && Array.isArray(ld.stations)) ? ld.stations : [];
+      for (const st of stations) {
+        const sa = st && st.stationAudio;
+        if (!sa || typeof sa !== 'object') continue;
+        collectList(sa.up && sa.up.list);
+        collectList(sa.down && sa.down.list);
+      }
+      const common = ld && ld.meta && ld.meta.commonAudio;
+      if (common && typeof common === 'object') {
+        collectList(common.up && common.up.list);
+        collectList(common.down && common.down.list);
+        collectList(common.list);
+      }
+      return out;
+    };
+    const requiredAudioSubDirs = (() => {
+      const dks = collectDialectKeysFromDynamicPlaceholders(contentObj);
+      const out = new Set();
+      for (const dk of dks) {
+        const sub = normalizeAudioSubDirFromDialectKey(dk);
+        if (sub) out.add(sub);
+      }
+      if (!out.size) {
+        const stations = (contentObj && Array.isArray(contentObj.stations)) ? contentObj.stations : [];
+        for (const st of stations) {
+          const sa = st && st.stationAudio;
+          const dk = sa && typeof sa.dynamicDialect === 'string' ? sa.dynamicDialect : '';
+          const sub = normalizeAudioSubDirFromDialectKey(dk);
+          if (sub) out.add(sub);
+        }
+      }
+      return out;
+    })();
     const entries = [{ type: 'string', name: 'line.json', content: JSON.stringify(contentObj, null, 2) }];
     const addedSet = new Set();
     const addOne = (fullPath, nameInZip) => {
@@ -6039,7 +6248,6 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
               const originalRef = relNorm.replace(/\\/g, '/');
               const rootRef = path.basename(relNormalized).replace(/\\/g, '/');
               addOne(full, originalRef || rootRef);
-              if (originalRef !== rootRef) addOne(full, rootRef);
               resolved = true;
               break;
             } catch (eRoot) { /* continue */ }
@@ -6050,7 +6258,6 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
               const originalRef = relNorm.replace(/\\/g, '/');
               const audioRef = path.join('audio', path.basename(relNormalized)).replace(/\\/g, '/');
               addOne(full, originalRef || audioRef);
-              if (originalRef !== audioRef) addOne(full, audioRef);
               resolved = true;
               break;
             } catch (e2) {
@@ -6061,7 +6268,6 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
                 const originalRef = relNorm.replace(/\\/g, '/');
                 const audioRef = path.join('audio', relNormalized).replace(/\\/g, '/');
                 addOne(full, originalRef || audioRef);
-                if (originalRef !== audioRef) addOne(full, audioRef);
                 resolved = true;
                 break;
               } catch (e3) { /* try next dir */ }
@@ -6076,7 +6282,6 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
               await fsPromises.access(c1);
               const originalRef = relNorm.replace(/\\/g, '/');
               addOne(c1, originalRef || baseNameOnly);
-              if (originalRef !== baseNameOnly) addOne(c1, baseNameOnly.replace(/\\/g, '/'));
               resolved = true;
               break;
             } catch (e) { /* continue */ }
@@ -6086,7 +6291,6 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
               const originalRef = relNorm.replace(/\\/g, '/');
               const audioRef = path.join('audio', baseNameOnly).replace(/\\/g, '/');
               addOne(c2, originalRef || audioRef);
-              if (originalRef !== audioRef) addOne(c2, audioRef);
               resolved = true;
               break;
             } catch (e2) { /* continue */ }
@@ -6110,6 +6314,15 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
           const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
           for (const ent of entries) {
             if (ent.isFile()) {
+              if (ent.name === '.audio-hashes.json') {
+                const full = path.join(audioDir, ent.name);
+                const nameInZip = path.join('audio', ent.name).replace(/\\/g, '/');
+                addOne(full, nameInZip);
+                continue;
+              }
+              const audioRootRel = ('audio/' + ent.name).replace(/\\/g, '/');
+              const keepRootFile = relPaths.has(audioRootRel) || relPaths.has(ent.name);
+              if (!keepRootFile) continue;
               const full = path.join(audioDir, ent.name);
               const nameInZip = path.join('audio', ent.name).replace(/\\/g, '/');
               addOne(full, nameInZip);
@@ -6117,6 +6330,7 @@ ipcMain.handle('lines/save', async (event, filename, contentObj, dir, sourceLine
             }
             // 兼容多语种存储：audio/<dialect>/xxx.wav
             if (ent.isDirectory()) {
+              if (requiredAudioSubDirs.size && !requiredAudioSubDirs.has(ent.name)) continue;
               const subDir = path.join(audioDir, ent.name);
               let subEntries = [];
               try {
@@ -6267,6 +6481,12 @@ function normalizeAbsPath(p) {
   }
 }
 
+function normalizeAbsPathKey(p) {
+  const abs = normalizeAbsPath(p);
+  if (!abs) return null;
+  return process.platform === 'win32' ? abs.toLowerCase() : abs;
+}
+
 function isPathUnderRoot(targetPath, rootPath) {
   const target = normalizeAbsPath(targetPath);
   const root = normalizeAbsPath(rootPath);
@@ -6319,6 +6539,63 @@ function isLineDirAllowed(lineDir) {
   return roots.some((r) => isPathUnderRoot(abs, r));
 }
 
+const MANAGED_LINE_AUDIO_WORKSPACES_DIR = 'managed-line-audio';
+
+function isMplLineFilePath(p) {
+  return !!(p && typeof p === 'string' && /\.mpl$/i.test(String(p).trim()));
+}
+
+function getManagedLineAudioWorkspaceBaseDir() {
+  return path.join(app.getPath('userData'), MANAGED_LINE_AUDIO_WORKSPACES_DIR);
+}
+
+function getManagedLineAudioWorkspaceDir(lineFilePath) {
+  const abs = normalizeAbsPath(lineFilePath);
+  if (!abs || !isMplLineFilePath(abs)) return null;
+  const key = crypto
+    .createHash('sha1')
+    .update(process.platform === 'win32' ? abs.toLowerCase() : abs)
+    .digest('hex');
+  return path.join(getManagedLineAudioWorkspaceBaseDir(), key);
+}
+
+async function getAudioLookupRootsForLine(lineFilePath, options = {}) {
+  const normalized = normalizeAbsPath(lineFilePath);
+  if (!normalized) return [];
+  const includeWorkspace = options.includeWorkspace !== false;
+  const includeExtracted = options.includeExtracted !== false;
+  const includeLegacyDir = options.includeLegacyDir === true;
+  const roots = [];
+  const rootKeys = new Set();
+  const pushRoot = (p) => {
+    const abs = normalizeAbsPath(p);
+    const key = normalizeAbsPathKey(p);
+    if (!abs || !key || rootKeys.has(key)) return;
+    rootKeys.add(key);
+    if (!roots.includes(abs)) roots.push(abs);
+  };
+
+  if (isMplLineFilePath(normalized)) {
+    if (includeWorkspace) {
+      const workspaceDir = getManagedLineAudioWorkspaceDir(normalized);
+      if (workspaceDir) {
+        const workspaceAudioDir = path.join(workspaceDir, 'audio');
+        const workspaceStat = await fsPromises.stat(workspaceAudioDir).catch(() => null);
+        if (workspaceStat && workspaceStat.isDirectory()) pushRoot(workspaceDir);
+      }
+    }
+    if (includeExtracted) {
+      const extracted = await ensureMplExtracted(normalized);
+      if (extracted && extracted.dir) pushRoot(extracted.dir);
+    }
+    if (includeLegacyDir) pushRoot(path.dirname(normalized));
+    return roots;
+  }
+
+  pushRoot(normalized.endsWith('.json') ? path.dirname(normalized) : normalized);
+  return roots;
+}
+
 // 根据线路文件路径获取其所在目录（用于车站音频 resolve/copy）
 ipcMain.handle('lines/getLineDir', async (event, lineFilePath) => {
   if (!lineFilePath || typeof lineFilePath !== 'string') return { ok: false, error: 'invalid-path' };
@@ -6340,11 +6617,13 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
   const sourceAbs = normalizeAbsPath(sourceFilePath);
   if (!sourceAbs) return { ok: false, error: 'source-must-be-absolute' };
   let lineDir = null;
+  let lineFilePathAbs = null;
   const raw = lineDirOrLineFilePath;
   if (raw != null && typeof raw === 'string' && raw.trim()) {
     const s = raw.trim();
     const normalizedRaw = path.normalize(s);
     if (/\.(json|mpl)$/i.test(normalizedRaw)) {
+      lineFilePathAbs = normalizeAbsPath(normalizedRaw);
       lineDir = path.dirname(normalizedRaw);
     } else {
       lineDir = normalizedRaw;
@@ -6361,6 +6640,8 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
   lineDir = normalizeAbsPath(lineDir);
   if (!lineDir) return { ok: false, error: 'line-dir-must-be-absolute' };
   if (!isLineDirAllowed(lineDir)) return { ok: false, error: 'forbidden-line-dir' };
+  const managedWorkspaceDir = lineFilePathAbs ? getManagedLineAudioWorkspaceDir(lineFilePathAbs) : null;
+  const storageRoot = managedWorkspaceDir || lineDir;
   const normalizeAudioSubDir = (rawSubDir) => {
     if (rawSubDir == null) return '';
     const norm = String(rawSubDir || '')
@@ -6481,14 +6762,14 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
   }
 
   // 统一使用 nested 布局：音频文件放在 audio/ 子目录；多语种可放在 audio/<subDir>/ 子目录
-  const audioDir = audioSubDir ? path.join(lineDir, 'audio', ...audioSubDir.split('/')) : path.join(lineDir, 'audio');
+  const audioDir = audioSubDir ? path.join(storageRoot, 'audio', ...audioSubDir.split('/')) : path.join(storageRoot, 'audio');
   await ensureDir(audioDir);
   // 仅隐藏根 audio 目录（不隐藏子语言目录），避免用户以为“只创建了 zhcn/en”
   // 例如 audio/ja、audio/ko 在资源管理器里经常因为“隐藏属性”而看不到。
   if (!audioSubDir) {
     await hideDirOnWindows(audioDir);
   }
-  const hashCachePath = path.join(lineDir, 'audio', '.audio-hashes.json');
+  const hashCachePath = path.join(storageRoot, 'audio', '.audio-hashes.json');
   let sourceMd5 = '';
   try {
     const buf = await fsPromises.readFile(sourceAbs);
@@ -6501,26 +6782,50 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
     const raw = await fsPromises.readFile(hashCachePath, 'utf8');
     cache = JSON.parse(raw);
   } catch (e) { /* no cache or invalid */ }
-  if (!preserveFileName) {
-    for (const [rel, stored] of Object.entries(cache)) {
-      const relNorm = String(rel || '').replace(/\\/g, '/');
-      if (audioSubDir) {
-        const prefix = `audio/${audioSubDir}/`;
-        if (!relNorm.startsWith(prefix)) continue;
-      }
-      const storedMd5 = (typeof stored === 'string')
-        ? stored
-        : (stored && typeof stored === 'object' && typeof stored.md5 === 'string' ? stored.md5 : '');
-      if (storedMd5 === sourceMd5) {
-        const full = path.join(lineDir, rel.replace(/\//g, path.sep));
-        try {
-          await fsPromises.access(full);
-          invalidateAudioStationIndexCache(lineDir);
-          return { ok: true, relativePath: rel };
-        } catch (e) { /* file removed, continue */ }
-      }
-    }
+  const currentSubDirPrefix = audioSubDir ? `audio/${audioSubDir}/` : 'audio/';
+  for (const [rel, stored] of Object.entries(cache)) {
+    const relNorm = String(rel || '').replace(/\\/g, '/');
+    if (!relNorm.startsWith(currentSubDirPrefix)) continue;
+    const storedMd5 = (typeof stored === 'string')
+      ? stored
+      : (stored && typeof stored === 'object' && typeof stored.md5 === 'string' ? stored.md5 : '');
+    if (storedMd5 !== sourceMd5) continue;
+    const full = path.join(storageRoot, relNorm.replace(/\//g, path.sep));
+    try {
+      await fsPromises.access(full);
+      invalidateAudioStationIndexCache(storageRoot);
+      return { ok: true, relativePath: relNorm, reusedExisting: true };
+    } catch (e) { /* file removed, continue */ }
   }
+
+  // 缓存缺失或过期时，再扫一遍当前子目录做兜底去重，避免同 MD5 文件被重复导入成 _1/_2/_3。
+  try {
+    const existingEntries = await fsPromises.readdir(audioDir, { withFileTypes: true });
+    for (const ent of existingEntries) {
+      if (!ent || !ent.isFile() || ent.name === '.audio-hashes.json') continue;
+      const full = path.join(audioDir, ent.name);
+      try {
+        const existingBuf = await fsPromises.readFile(full);
+        const existingMd5 = crypto.createHash('md5').update(existingBuf).digest('hex');
+        if (existingMd5 !== sourceMd5) continue;
+        const existingRelPath = audioSubDir
+          ? path.join('audio', audioSubDir, ent.name)
+          : path.join('audio', ent.name);
+        const normalizedExistingRelPath = (path.sep !== '/')
+          ? existingRelPath.split(path.sep).join('/')
+          : existingRelPath;
+        const st = await fsPromises.stat(full).catch(() => null);
+        cache[normalizedExistingRelPath] = {
+          md5: existingMd5,
+          size: st && typeof st.size === 'number' ? st.size : existingBuf.length,
+          mtimeMs: st && typeof st.mtimeMs === 'number' ? st.mtimeMs : Date.now()
+        };
+        await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
+        invalidateAudioStationIndexCache(storageRoot);
+        return { ok: true, relativePath: normalizedExistingRelPath, reusedExisting: true };
+      } catch (e) { /* continue */ }
+    }
+  } catch (e) { /* ignore */ }
   const baseName = path.basename(sourceFilePath);
   const safeName = baseName.replace(/[<>:"/\\|?*]/g, '_').trim() || 'audio';
   let destPath = path.join(audioDir, safeName);
@@ -6531,6 +6836,20 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
   let exists = false;
   try { await fsPromises.access(destPath); exists = true; } catch (e) { /* not exists */ }
   if (exists) {
+    try {
+      const existingBuf = await fsPromises.readFile(destPath);
+      const existingMd5 = crypto.createHash('md5').update(existingBuf).digest('hex');
+      if (existingMd5 === sourceMd5) {
+        cache[relPath] = {
+          md5: existingMd5,
+          size: existingBuf.length,
+          mtimeMs: Date.now()
+        };
+        await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
+        invalidateAudioStationIndexCache(storageRoot);
+        return { ok: true, relativePath: relPath, reusedExisting: true };
+      }
+    } catch (e) { /* existing file unreadable, continue to suffix fallback */ }
     const ext = path.extname(safeName);
     const nameNoExt = path.basename(safeName, ext);
     for (let i = 1; i < 1000; i++) {
@@ -6555,7 +6874,7 @@ ipcMain.handle('lines/copyAudioToLineDir', async (event, lineDirOrLineFilePath, 
       mtimeMs: st && typeof st.mtimeMs === 'number' ? st.mtimeMs : Date.now()
     };
     await writeSafe(hashCachePath, JSON.stringify(cache), 'utf8');
-    invalidateAudioStationIndexCache(lineDir);
+    invalidateAudioStationIndexCache(storageRoot);
     return { ok: true, relativePath: relPath };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -6624,6 +6943,23 @@ ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePat
   const lineDirAbs = normalizeAbsPath(lineDir);
   if (!lineDirAbs) return { ok: false, error: 'invalid-line-dir' };
   if (!isLineDirAllowed(lineDirAbs)) return { ok: false, error: 'forbidden-line-dir' };
+  if (isMpl) {
+    const candidateRoots = await getAudioLookupRootsForLine(normalized);
+    for (const playableDir of candidateRoots) {
+      const fullPath = path.resolve(playableDir, relSafe.split('/').join(path.sep));
+      if (!isPathUnderRoot(fullPath, playableDir)) continue;
+      try {
+        const st = await fsPromises.stat(fullPath);
+        if (!st.isFile()) continue;
+        allowLocalAudioPath(fullPath);
+        const playableUrl = 'local-audio://file/' + encodeURIComponent(fullPath);
+        return { ok: true, path: fullPath, playableUrl };
+      } catch (e) {
+        // try next root
+      }
+    }
+    return { ok: false, error: 'file-not-found' };
+  }
 
   let playableDir = lineDirAbs;
   if (isMpl) {
@@ -6664,9 +7000,9 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
     if (!lineDirAbs) return { ok: false, error: 'invalid-line-dir' };
     if (!isLineDirAllowed(lineDirAbs)) return { ok: false, error: 'forbidden-line-dir' };
 
-    const audioDirAbs = path.join(lineDirAbs, 'audio');
-    const audioDirStat = await fsPromises.stat(audioDirAbs).catch(() => null);
-    if (!audioDirStat || !audioDirStat.isDirectory()) return { ok: false, error: 'no-audio-dir' };
+    const audioLookupRoots = isMpl
+      ? await getAudioLookupRootsForLine(normalized)
+      : [lineDirAbs];
 
     const effectiveOpts = (opts && typeof opts === 'object') ? { ...opts } : {};
     if (!effectiveOpts.matcherRules) {
@@ -6678,10 +7014,23 @@ ipcMain.handle('lines/findAudioByStationName', async (event, lineFilePath, stati
       : [];
     if (importedRelativePaths.length > 0) {
       // 导入后立即校验时，强制刷新索引，避免命中旧缓存。
-      invalidateAudioStationIndexCache(lineDirAbs);
+      for (const root of audioLookupRoots) invalidateAudioStationIndexCache(root);
     }
 
-    const entries = await getAudioStationIndexForAudioDir(audioDirAbs, lineDirAbs);
+    const entries = [];
+    const seenRelativePaths = new Set();
+    for (const audioLookupRootAbs of audioLookupRoots) {
+      const audioDirAbs = path.join(audioLookupRootAbs, 'audio');
+      const audioDirStat = await fsPromises.stat(audioDirAbs).catch(() => null);
+      if (!audioDirStat || !audioDirStat.isDirectory()) continue;
+      const rootEntries = await getAudioStationIndexForAudioDir(audioDirAbs, audioLookupRootAbs);
+      for (const ent of rootEntries) {
+        const rel = String(ent?.relativePath || '').replace(/\\/g, '/').toLowerCase();
+        if (!rel || seenRelativePaths.has(rel)) continue;
+        seenRelativePaths.add(rel);
+        entries.push(ent);
+      }
+    }
     if (!entries.length) return { ok: false, error: 'no-audio-entries' };
 
     let matchEntries = entries;
@@ -6846,12 +7195,10 @@ ipcMain.handle('lines/cleanupAudioDir', async (event, lineData, lineFilePath, op
     let lineDir = normalizedPath ? path.dirname(normalizedPath) : null;
     if (!lineDir && typeof getLinesDir === 'function') lineDir = getLinesDir(null);
     if (!lineDir) return { ok: false, error: 'no-line-dir' };
-    const audioDir = path.join(lineDir, 'audio');
-    let stat = null;
-    try { stat = await fsPromises.stat(audioDir); } catch (e) { return { ok: true, removed: 0, skipped: 'no-audio-dir' }; }
-    if (!stat.isDirectory()) return { ok: false, error: 'audio-dir-not-directory' };
-
     const isMpl = normalizedPath ? normalizedPath.toLowerCase().endsWith('.mpl') : false;
+    const managedWorkspaceDir = isMpl && normalizedPath ? getManagedLineAudioWorkspaceDir(normalizedPath) : null;
+    const cleanupRoot = managedWorkspaceDir || lineDir;
+    const audioDir = path.join(cleanupRoot, 'audio');
     let hasJsonSibling = false;
     if (isMpl) {
       const jsonSibling = normalizedPath.replace(/\.mpl$/i, '.json');
@@ -6860,6 +7207,15 @@ ipcMain.handle('lines/cleanupAudioDir', async (event, lineData, lineFilePath, op
     const aggressive = isMpl && !hasJsonSibling && (!options || options.removeAllForMpl !== false);
     let removed = 0;
     let kept = 0;
+
+    if (aggressive) {
+      if (managedWorkspaceDir) {
+        try { await fsPromises.rm(managedWorkspaceDir, { recursive: true, force: true }); removed++; } catch (e) { /* ignore */ }
+      }
+      const legacyAudioDir = path.join(lineDir, 'audio');
+      try { await fsPromises.rm(legacyAudioDir, { recursive: true, force: true }); removed++; } catch (e) { /* ignore */ }
+      return { ok: true, removed, kept, mode: 'aggressive' };
+    }
 
     if (aggressive) {
       const entries = await fsPromises.readdir(audioDir, { withFileTypes: true });
@@ -6871,6 +7227,10 @@ ipcMain.handle('lines/cleanupAudioDir', async (event, lineData, lineFilePath, op
       }
       return { ok: true, removed, kept, mode: 'aggressive' };
     }
+
+    let stat = null;
+    try { stat = await fsPromises.stat(audioDir); } catch (e) { return { ok: true, removed: 0, skipped: 'no-audio-dir' }; }
+    if (!stat.isDirectory()) return { ok: false, error: 'audio-dir-not-directory' };
 
     const allowed = new Set();
     const addAllowed = (p) => {
@@ -7040,6 +7400,7 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
   }
   if (lineDir && !path.isAbsolute(lineDir)) lineDir = path.resolve(lineDir);
   const extractedForMpl = (lineFilePath && String(lineFilePath).toLowerCase().endsWith('.mpl')) ? await ensureMplExtracted(lineFilePath) : null;
+  const managedWorkspaceForMpl = (lineFilePath && String(lineFilePath).toLowerCase().endsWith('.mpl')) ? getManagedLineAudioWorkspaceDir(lineFilePath) : null;
   let relPaths = collectAudioRelPaths(lineData);
 
   // 动态占位符（start/current/next/terminal/end）没有 path，但运行时会按方言在 audio/<subDir>/ 下匹配；
@@ -7251,20 +7612,23 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
       addedInZip.add(nameInZip);
     };
     const audioDirs = new Set();
-    if (lineDir) audioDirs.add(lineDir);
+    if (managedWorkspaceForMpl) audioDirs.add(managedWorkspaceForMpl);
     if (extractedForMpl && extractedForMpl.dir) audioDirs.add(extractedForMpl.dir);
+    if (!managedWorkspaceForMpl && !extractedForMpl?.dir && lineDir) audioDirs.add(lineDir);
     const audioDirList = Array.from(audioDirs);
     const fallbackAudioDirs = new Set(audioDirList);
-    try {
-      const folders = getLinesFolders();
-      Object.values(folders || {}).forEach((f) => {
-        const p = f && f.path;
-        if (p && typeof p === 'string' && p.trim()) fallbackAudioDirs.add(path.normalize(p.trim()));
-      });
-    } catch (e) { /* ignore */ }
-    try {
-      fallbackAudioDirs.add(path.join(app.getPath('userData'), 'lines'));
-    } catch (e) { /* ignore */ }
+    if (!managedWorkspaceForMpl && !extractedForMpl?.dir) {
+      try {
+        const folders = getLinesFolders();
+        Object.values(folders || {}).forEach((f) => {
+          const p = f && f.path;
+          if (p && typeof p === 'string' && p.trim()) fallbackAudioDirs.add(path.normalize(p.trim()));
+        });
+      } catch (e) { /* ignore */ }
+      try {
+        fallbackAudioDirs.add(path.join(app.getPath('userData'), 'lines'));
+      } catch (e) { /* ignore */ }
+    }
     const fallbackDirs = Array.from(fallbackAudioDirs);
     if (audioDirList.length) {
       for (const rel of relPaths) {
@@ -7299,7 +7663,6 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
               const originalRef = relNorm.replace(/\\/g, '/');
               const rootRef = path.basename(relNormalized).replace(/\\/g, '/');
               addFileToZip(full, originalRef || rootRef);
-              if (originalRef !== rootRef) addFileToZip(full, rootRef);
               resolved = true;
               break;
             } catch (eRoot) { /* continue */ }
@@ -7310,7 +7673,6 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
               const originalRef = relNorm.replace(/\\/g, '/');
               const audioRef = path.join('audio', path.basename(relNormalized)).replace(/\\/g, '/');
               addFileToZip(full, originalRef || audioRef);
-              if (originalRef !== audioRef) addFileToZip(full, audioRef);
               resolved = true;
               break;
             } catch (e2) {
@@ -7321,7 +7683,6 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
                 const originalRef = relNorm.replace(/\\/g, '/');
                 const audioRef = path.join('audio', relNormalized).replace(/\\/g, '/');
                 addFileToZip(full, originalRef || audioRef);
-                if (originalRef !== audioRef) addFileToZip(full, audioRef);
                 resolved = true;
                 break;
               } catch (e3) { /* keep trying */ }
@@ -7336,7 +7697,6 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
               await fsPromises.access(c1);
               const originalRef = relNorm.replace(/\\/g, '/');
               addFileToZip(c1, originalRef || baseNameOnly);
-              if (originalRef !== baseNameOnly) addFileToZip(c1, baseNameOnly.replace(/\\/g, '/'));
               resolved = true;
               break;
             } catch (e) { /* continue */ }
@@ -7346,7 +7706,6 @@ ipcMain.handle('lines/saveAsZip', async (event, lineData, lineFilePath, targetZi
               const originalRef = relNorm.replace(/\\/g, '/');
               const audioRef = path.join('audio', baseNameOnly).replace(/\\/g, '/');
               addFileToZip(c2, originalRef || audioRef);
-              if (originalRef !== audioRef) addFileToZip(c2, audioRef);
               resolved = true;
               break;
             } catch (e2) { /* continue */ }

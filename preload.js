@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return file.path || '';
     }
   },
+  logRendererAudio: (payload) => {
+    try {
+      ipcRenderer.send('renderer/audio-log', payload || {});
+    } catch (e) {}
+  },
   // 平台信息
   platform: process.platform,
   isPackaged: async () => {

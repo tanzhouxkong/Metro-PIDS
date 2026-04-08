@@ -5,7 +5,16 @@ let installed = false;
 function safeStringify(value) {
   try {
     if (typeof value === 'string') return value;
-    return JSON.stringify(value);
+    const seen = new WeakSet();
+    return JSON.stringify(value, (key, val) => {
+      if (typeof val === 'bigint') return String(val);
+      if (typeof val === 'function') return `[Function ${val.name || 'anonymous'}]`;
+      if (val && typeof val === 'object') {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      return val;
+    });
   } catch (e) {
     try { return String(value); } catch (e2) { return '[unserializable]'; }
   }
@@ -31,7 +40,8 @@ function patchConsoleMethod(name) {
   if (typeof original !== 'function') return;
   console[name] = function patchedConsoleMethod(...args) {
     try {
-      const msg = args.map((x) => safeStringify(x)).join(' ');
+      const serializedArgs = args.map((x) => safeStringify(x));
+      const msg = serializedArgs.join(' ');
       appendDiagnosticLog(name, msg);
     } catch (e) {}
     return original.apply(this, args);
@@ -87,4 +97,3 @@ export function getRendererDiagnosticsSnapshot() {
 
   return `${header.join('\n')}\n---\n${lines.join('\n')}`;
 }
-

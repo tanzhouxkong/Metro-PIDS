@@ -119,6 +119,34 @@ export function useStationAudio(state) {
   let hasMediaStartedForSession = false
   let pausedByMedia = false
 
+  const audioDiagLog = (level, message, extra) => {
+    const lv = String(level || 'warn').toLowerCase()
+    if (lv === 'error') console.error(message, extra)
+    else if (lv === 'log' || lv === 'info') console.log(message, extra)
+    else console.warn(message, extra)
+    try {
+      if (
+        typeof window !== 'undefined' &&
+        window.electronAPI &&
+        typeof window.electronAPI.logRendererAudio === 'function'
+      ) {
+        window.electronAPI.logRendererAudio({
+          level: lv,
+          message: String(message || ''),
+          extra
+        })
+      }
+    } catch (e) {}
+  }
+
+  try {
+    audioDiagLog('info', '[useStationAudio][logger][ready]', {
+      instanceId,
+      hasElectronApi: !!(typeof window !== 'undefined' && window.electronAPI),
+      hasRendererAudioLogger: !!(typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.logRendererAudio === 'function')
+    })
+  } catch (e) {}
+
   let lastStationPlayback = null // { type: 'arrive'|'depart', idx: number }
   const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
   const setExternalMediaControlState = (playbackState) => {
@@ -488,11 +516,14 @@ export function useStationAudio(state) {
   // 根据模式/短交路/进出站筛选可播放列表，并附加首末站角色条目
   const getFilteredList = (list, serviceMode, isShortTurn, forArrive, stations, meta, dir, currentIdx, debugTag) => {
     if (!Array.isArray(list)) return []
-    const lineStartIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
-    const lineTermIdx =
+    const configuredStartIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
+    const configuredTermIdx =
       typeof meta?.termIdx === 'number' && meta.termIdx >= 0
         ? meta.termIdx
         : (Array.isArray(stations) && stations.length ? stations.length - 1 : -1)
+    const isReverseDirection = dir === 'down' || meta?.dirType === 'down' || meta?.dirType === 'inner'
+    const lineStartIdx = isReverseDirection ? configuredTermIdx : configuredStartIdx
+    const lineTermIdx = isReverseDirection ? configuredStartIdx : configuredTermIdx
     const nextIdxForDepart =
       forArrive === false && Array.isArray(stations) && typeof currentIdx === 'number' && currentIdx >= 0
         ? calculateNextStationIndex(currentIdx, { stations, meta: meta || {} })
@@ -503,20 +534,14 @@ export function useStationAudio(state) {
       nextIdxForDepart >= 0 &&
       lineTermIdx >= 0 &&
       nextIdxForDepart === lineTermIdx
-    const filtered = list.filter((item) => {
-      const hasArriveFlag = item.modes && item.modes.arrive === true
-      const hasDepartFlag = item.modes && item.modes.depart === true
-      if (forArrive === true && hasDepartFlag && !hasArriveFlag) return false
-      if (forArrive === false && hasArriveFlag && !hasDepartFlag) return false
-
-      if (item.modes && item.modes.originStation === true) {
-        if (typeof currentIdx !== 'number' || currentIdx !== lineStartIdx) return false
-      }
-      if (item.modes && item.modes.terminalStation === true) {
-        const isAtTerminal = typeof currentIdx === 'number' && lineTermIdx >= 0 && currentIdx === lineTermIdx
-        if (!isAtTerminal && !isDepartTowardTerminal) return false
-      }
-
+    const isDepartTowardStart =
+      forArrive === false &&
+      typeof nextIdxForDepart === 'number' &&
+      nextIdxForDepart >= 0 &&
+      lineStartIdx >= 0 &&
+      nextIdxForDepart === lineStartIdx
+    const matchServiceScenario = (item) => {
+      if (!item || typeof item !== 'object') return false
       if (serviceMode === 'normal' && !isShortTurn) {
         if (item.disabledInNormal) return false
         const hasSpecial = item.modes && (item.modes.shortTurn || item.modes.express || item.modes.direct)
@@ -527,6 +552,22 @@ export function useStationAudio(state) {
       if (serviceMode === 'direct' && item.modes && item.modes.direct) return true
       if (serviceMode === 'normal' && !item.disabledInNormal) return true
       return false
+    }
+    const filtered = list.filter((item) => {
+      const hasArriveFlag = item.modes && item.modes.arrive === true
+      const hasDepartFlag = item.modes && item.modes.depart === true
+      if (forArrive === true && hasDepartFlag && !hasArriveFlag) return false
+      if (forArrive === false && hasArriveFlag && !hasDepartFlag) return false
+
+      if (item.modes && item.modes.originStation === true) {
+        const isAtStart = typeof currentIdx === 'number' && lineStartIdx >= 0 && currentIdx === lineStartIdx
+        if (!isAtStart && !isDepartTowardStart) return false
+      }
+      if (item.modes && item.modes.terminalStation === true) {
+        const isAtTerminal = typeof currentIdx === 'number' && lineTermIdx >= 0 && currentIdx === lineTermIdx
+        if (!isAtTerminal && !isDepartTowardTerminal) return false
+      }
+      return matchServiceScenario(item)
     })
 
     const extras = []
@@ -542,11 +583,12 @@ export function useStationAudio(state) {
           const hasDepartFlag = item.modes && item.modes.depart === true
           if (forArrive === true && hasDepartFlag && !hasArriveFlag) return false
           if (forArrive === false && hasArriveFlag && !hasDepartFlag) return false
+          if (!matchServiceScenario(item)) return false
           return true
         })
       }
 
-      if (currentIdx === startIdx) {
+      if (currentIdx === startIdx || isDepartTowardStart) {
         const startItems = pickStationItems(list, stations, startIdx, 'start')
         extras.push(...filterExtrasByArriveDepart(startItems))
       }
@@ -580,8 +622,8 @@ export function useStationAudio(state) {
       return true
     })
     if (isDynamicAudioDebugEnabled() && merged.length === 0 && Array.isArray(list) && typeof currentIdx === 'number') {
-      const startIdx = typeof meta?.startIdx === 'number' && meta.startIdx >= 0 ? meta.startIdx : 0
-      const termIdx = typeof meta?.termIdx === 'number' && meta.termIdx >= 0 ? meta.termIdx : (Array.isArray(stations) ? stations.length - 1 : -1)
+      const startIdx = lineStartIdx
+      const termIdx = lineTermIdx
       const payload = {
         debugTag,
         currentIdx,
@@ -602,7 +644,7 @@ export function useStationAudio(state) {
         }))
       }
       // 用 JSON.stringify 固化输出，避免 devtools 在复制时把字段省略成 …
-      console.warn('[useStationAudio][getFilteredList][empty]', JSON.stringify(payload))
+      audioDiagLog('warn', '[useStationAudio][getFilteredList][empty]', JSON.stringify(payload))
     }
     return merged
   }
@@ -768,7 +810,7 @@ export function useStationAudio(state) {
 
       const dynDebug = isDynamicAudioDebugEnabled()
       if (dynDebug) {
-        console.warn('[useStationAudio][dynamic-placeholder][try]', {
+        audioDiagLog('warn', '[useStationAudio][dynamic-placeholder][try]', {
           roleKey,
           targetIdx,
           dialectKey,
@@ -784,7 +826,7 @@ export function useStationAudio(state) {
         if (resolveCache.has(cacheKey)) {
           const cached = resolveCache.get(cacheKey)
           if (dynDebug) {
-            console.warn('[useStationAudio][dynamic-placeholder][cache-hit]', {
+            audioDiagLog('warn', '[useStationAudio][dynamic-placeholder][cache-hit]', {
               roleKey,
               dialectKey,
               languageKey: langKey,
@@ -803,7 +845,7 @@ export function useStationAudio(state) {
           const tryCloudResolve = async () => {
             if (!allowCloudResolver) return ''
             if (dynDebug) {
-              console.warn('[useStationAudio][dynamic-placeholder][cloud-call]', {
+              audioDiagLog('warn', '[useStationAudio][dynamic-placeholder][cloud-call]', {
                 roleKey,
                 dialectKey,
                 languageKey: langKey,
@@ -823,7 +865,7 @@ export function useStationAudio(state) {
           const tryLocalResolve = async () => {
             if (!allowLocalResolver || typeof localIpc !== 'function') return ''
             if (dynDebug) {
-              console.warn('[useStationAudio][dynamic-placeholder][ipc-call]', {
+              audioDiagLog('warn', '[useStationAudio][dynamic-placeholder][ipc-call]', {
                 roleKey,
                 dialectKey,
                 languageKey: langKey,
@@ -846,7 +888,7 @@ export function useStationAudio(state) {
               // 后续动态解析就会永远跳过，导致只剩少数站点正常。
               resolveCache.set(cacheKey, resolved)
               if (dynDebug) {
-                console.warn('[useStationAudio][dynamic-placeholder][resolved]', {
+                audioDiagLog('warn', '[useStationAudio][dynamic-placeholder][resolved]', {
                   roleKey,
                   dialectKey,
                   languageKey: langKey,
@@ -864,7 +906,7 @@ export function useStationAudio(state) {
       }
 
       if (isDynamicAudioDebugEnabled()) {
-        console.warn('[useStationAudio][dynamic-placeholder][not-found]', {
+        audioDiagLog('warn', '[useStationAudio][dynamic-placeholder][not-found]', {
           roleKey,
           dialectKey,
           languageKey: langKey,
@@ -1084,7 +1126,7 @@ export function useStationAudio(state) {
       } catch (e) {}
       return u
     }
-    const urlDisplay = audioDebug ? formatUrlForDebug(url) : ''
+    const urlDisplay = formatUrlForDebug(url)
     const result = await new Promise((resolve, reject) => {
       let done = false
       let timeoutId = null
@@ -1121,16 +1163,12 @@ export function useStationAudio(state) {
         reject(err)
       }
 
-      if (audioDebug) {
-        console.warn('[useStationAudio][playAudioFile][start]', { sessionId, url, urlDisplay })
-      }
+      audioDiagLog('warn', '[useStationAudio][playAudioFile][start]', { sessionId, url, urlDisplay, audioDebug })
 
       const armTimeoutAndStallDetection = () => {
         clearTimers()
         timeoutId = setTimeout(() => {
-          if (audioDebug) {
-            console.warn('[useStationAudio][playAudioFile][timeout]', { sessionId, url, urlDisplay, timeoutMs })
-          }
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][timeout]', { sessionId, url, urlDisplay, timeoutMs })
           try {
             audio.pause()
             audio.currentTime = 0
@@ -1148,9 +1186,7 @@ export function useStationAudio(state) {
           pausedWaiting = true
           clearTimers()
           setPlaybackState('paused')
-          if (audioDebug) {
-            console.warn('[useStationAudio][playAudioFile][paused-by-media]', { sessionId, url, urlDisplay })
-          }
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][paused-by-media]', { sessionId, url, urlDisplay })
           return
         }
         // 其它 pause（例如结束/被打断）仍按“结束”处理
@@ -1172,7 +1208,7 @@ export function useStationAudio(state) {
                 hasMediaStartedForSession = true
               }
               setPlaybackState('playing')
-              if (audioDebug) console.warn('[useStationAudio][playAudioFile][resumed]', { sessionId, url, urlDisplay })
+              audioDiagLog('warn', '[useStationAudio][playAudioFile][resumed]', { sessionId, url, urlDisplay })
             } catch (e) {
               return finishReject(e)
             }
@@ -1190,9 +1226,7 @@ export function useStationAudio(state) {
           hasMediaStartedForSession = true
           setPlaybackState('playing')
         }
-        if (audioDebug) {
-          console.warn('[useStationAudio][playAudioFile][playing]', { sessionId, url, urlDisplay })
-        }
+        audioDiagLog('warn', '[useStationAudio][playAudioFile][playing]', { sessionId, url, urlDisplay, audioDebug })
 
         // 防御：有些 wav 可能既不触发 onended，也不触发 onerror（会导致队列卡住）。
         // 使用 currentTime 是否在前进做“卡死检测”。
@@ -1211,16 +1245,14 @@ export function useStationAudio(state) {
           const rs = audio.readyState // 0..4
           const stalledFor = Date.now() - lastProgressTime
           if (rs >= 2 && stalledFor >= stallMs) {
-            if (audioDebug) {
-              console.warn('[useStationAudio][playAudioFile][stalled]', {
-                sessionId,
-                url,
-                urlDisplay,
-                stallMs,
-                currentTime: ct,
-                readyState: rs
-              })
-            }
+            audioDiagLog('warn', '[useStationAudio][playAudioFile][stalled]', {
+              sessionId,
+              url,
+              urlDisplay,
+              stallMs,
+              currentTime: ct,
+              readyState: rs
+            })
             try {
               audio.pause()
               audio.currentTime = 0
@@ -1241,7 +1273,7 @@ export function useStationAudio(state) {
       return msg.includes('play() request was interrupted by a call to pause')
     }
     if (!result.ok && sessionId === playSessionId && !isExpectedPlayInterrupt(result.err)) {
-      console.warn('[useStationAudio] playAudioFile failed', result.err)
+      audioDiagLog('warn', '[useStationAudio] playAudioFile failed', result.err)
     }
     if (sessionId !== playSessionId) stopCurrentPlayback()
   }
@@ -1263,7 +1295,7 @@ export function useStationAudio(state) {
         setPlaybackState('none')
       }
       if (dynDebug && sessionId === playSessionId) {
-        console.warn('[useStationAudio][playList][empty]', { sessionId, stationIdxForLog, dir, listKindForLog, listLength: list.length })
+        audioDiagLog('warn', '[useStationAudio][playList][empty]', { sessionId, stationIdxForLog, dir, listKindForLog, listLength: list.length })
       }
       return
     }
@@ -1274,7 +1306,7 @@ export function useStationAudio(state) {
       if (sessionId !== playSessionId) {
         endedBy = 'session-changed'
         if (dynDebug) {
-          console.warn('[useStationAudio][playList][abort]', {
+          audioDiagLog('warn', '[useStationAudio][playList][abort]', {
             sessionId,
             stationIdxForLog,
             dir,
@@ -1302,7 +1334,7 @@ export function useStationAudio(state) {
         if (!source || !source.url) {
           skippedNoSource++
           if (sessionId === playSessionId && dynDebug) {
-            console.warn('[useStationAudio][playList][skip][no-source]', { sessionId, stationIdxForLog, dir, itemPath: item.path })
+            audioDiagLog('warn', '[useStationAudio][playList][skip][no-source]', { sessionId, stationIdxForLog, dir, itemPath: item.path })
           }
           continue
         }
@@ -1333,7 +1365,7 @@ export function useStationAudio(state) {
         playedCount++
       } catch (e) {
         errorCount++
-        if (sessionId === playSessionId) console.warn('[useStationAudio] play error', item.path, e)
+        if (sessionId === playSessionId) audioDiagLog('warn', '[useStationAudio] play error', { itemPath: item.path, error: String(e && e.message ? e.message : e) })
       }
     }
     // 当前会话的串行列表播放结束
@@ -1342,7 +1374,7 @@ export function useStationAudio(state) {
       // none 在部分平台上会让媒体卡片立即消失。
       setPlaybackState('paused')
       if (dynDebug) {
-        console.warn('[useStationAudio][playList][done]', {
+        audioDiagLog('warn', '[useStationAudio][playList][done]', {
           sessionId,
           stationIdxForLog,
           dir,
@@ -1481,7 +1513,7 @@ export function useStationAudio(state) {
           dialectTotalUpLen,
           dialectTotalDownLen
         }
-        console.warn('[useStationAudio][playArrive][emptyEffectiveList]', JSON.stringify(payload))
+        audioDiagLog('warn', '[useStationAudio][playArrive][emptyEffectiveList]', JSON.stringify(payload))
       }
     }
 
@@ -1622,7 +1654,7 @@ export function useStationAudio(state) {
           dialectTotalUpLen,
           dialectTotalDownLen
         }
-        console.warn('[useStationAudio][playDepart][emptyEffectiveList]', JSON.stringify(payload))
+        audioDiagLog('warn', '[useStationAudio][playDepart][emptyEffectiveList]', JSON.stringify(payload))
       }
     }
 

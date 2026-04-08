@@ -3353,6 +3353,7 @@ export function initDisplayWindow(rootElement) {
   let rt = { idx: 0, state: 0 };
   let arrivalTimer = null;
   let lastArrivalIdx = -1;
+  let lastArrivalDirType = null;
   let asViewMode = 0;
   let recorder = null;
   let chunks = [];
@@ -3573,6 +3574,7 @@ export function initDisplayWindow(rootElement) {
     if (rt.state === 2) {
       cleanupArrivalTimer();
       lastArrivalIdx = -1;
+      lastArrivalDirType = null;
       if (mapDiv) mapDiv.style.display = 'none';
       if (header) header.style.display = 'none';
       if (arrivalScreen) arrivalScreen.style.display = 'none';
@@ -3587,18 +3589,26 @@ export function initDisplayWindow(rootElement) {
     // 如果是到达站状态，只更新地图等部分，不更新顶栏，避免中断滚动动画
     renderNormalScreen(sts, meta);
     if (rt.state === 0) {
-      if (rt.idx !== lastArrivalIdx) {
+      const currentArrivalDirType = meta?.dirType || meta?.direction || null;
+      const shouldResetArrivalTimer =
+        rt.idx !== lastArrivalIdx || currentArrivalDirType !== lastArrivalDirType;
+      if (shouldResetArrivalTimer) {
         lastArrivalIdx = rt.idx;
+        lastArrivalDirType = currentArrivalDirType;
         asViewMode = 0;
         cleanupArrivalTimer();
         arrivalTimer = setInterval(() => {
           asViewMode = (asViewMode + 1) % 2;
-          renderArrivalScreen(sts, meta);
+          const latestStations = Array.isArray(appData?.stations) ? appData.stations : sts;
+          const latestMeta = appData?.meta || meta;
+          renderArrivalScreen(latestStations, latestMeta);
         }, 5000);
       } else if (!arrivalTimer) {
         arrivalTimer = setInterval(() => {
           asViewMode = (asViewMode + 1) % 2;
-          renderArrivalScreen(sts, meta);
+          const latestStations = Array.isArray(appData?.stations) ? appData.stations : sts;
+          const latestMeta = appData?.meta || meta;
+          renderArrivalScreen(latestStations, latestMeta);
         }, 5000);
       }
       if (mapDiv) mapDiv.style.display = 'none';
@@ -3611,6 +3621,7 @@ export function initDisplayWindow(rootElement) {
     } else {
       cleanupArrivalTimer();
       lastArrivalIdx = -1;
+      lastArrivalDirType = null;
       if (mapDiv) mapDiv.style.display = 'flex';
       if (header) header.style.display = 'flex';
       if (arrivalScreen) arrivalScreen.style.display = 'none';
@@ -4583,19 +4594,18 @@ export function initDisplayWindow(rootElement) {
       return door; // “双侧”或其他保持原样
     };
 
-    // 优先使用 payload 中的显式有效车门(如 _effectiveDoor)，否则用配置并结合折返动态判断
-    let effectiveDoor = (st._effectiveDoor) ? st._effectiveDoor : (st.door || 'left');
-    if (!st._effectiveDoor) {
-      try {
-        const startIdx = (meta.startIdx !== undefined && meta.startIdx !== -1) ? parseInt(meta.startIdx) : 0;
-        const termIdx = (meta.termIdx !== undefined && meta.termIdx !== -1) ? parseInt(meta.termIdx) : sts.length - 1;
-        const atTerminalForDir = (meta.dirType === 'up' || meta.dirType === 'outer') ? (effectiveIdx === termIdx) : (effectiveIdx === startIdx);
-        if (st.turnback && st.turnback !== 'none' && atTerminalForDir) {
-          effectiveDoor = invertDoor(effectiveDoor);
-        }
-      } catch (e) {
-        // 忽略异常，继续使用配置值
-      }
+    // 到站页每次重绘都按当前方向重新计算，避免 5 秒轮播后退回切换前方向
+    const baseDoor = (st.door || st.dock || st._effectiveDoor || 'left');
+    const turnbackRaw = String(st.turnback ?? '').trim().toLowerCase();
+    const turnbackType = (st.turnback === true || turnbackRaw === 'pre')
+      ? 'pre'
+      : (turnbackRaw === 'post' ? 'post' : 'none');
+    const dirType = String(meta.dirType || meta.direction || '').trim().toLowerCase();
+    const isDownbound = dirType === 'down' || dirType === 'inner';
+    let effectiveDoor = baseDoor;
+    const appliedFlip = turnbackType === 'pre' && baseDoor !== 'both' && isDownbound;
+    if (appliedFlip) {
+      effectiveDoor = invertDoor(baseDoor);
     }
 
     // === 虚拟定位 + 开门提示（与显示器3 对齐的门逻辑） ===
@@ -4675,6 +4685,32 @@ export function initDisplayWindow(rootElement) {
 
     if (doorCn) doorCn.innerText = doorPresentation.cn;
     if (doorEn) doorEn.innerText = doorPresentation.en;
+
+    // 调试开关：localStorage.setItem('metro_pids_debug_turnback_door', '1')
+    try {
+      const isDebug =
+        typeof window !== 'undefined' &&
+        !!window.localStorage &&
+        window.localStorage.getItem('metro_pids_debug_turnback_door') === '1';
+      if (isDebug) {
+        console.warn('[turnback-door][display-1][arrival-screen]', {
+          idx: effectiveIdx,
+          stationName: st?.name || '',
+          dirType: meta?.dirType || meta?.direction || '',
+          turnback: st?.turnback,
+          turnbackType,
+          stationDoor: st?.door || st?.dock || '',
+          stationEffectiveDoor: st?._effectiveDoor || '',
+          appliedFlip,
+          computedEffectiveDoor: effectiveDoor,
+          actualSide,
+          virtualSide,
+          presentationMode: doorPresentation?.mode || '',
+          presentationLayout: doorPresentation?.layout || '',
+          showForbidden: !!doorPresentation?.showForbidden
+        });
+      }
+    } catch (e) {}
 
     // 按模式切换门片动画 class
     if (doorPanel) {

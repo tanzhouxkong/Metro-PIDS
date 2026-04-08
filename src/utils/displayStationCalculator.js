@@ -90,40 +90,40 @@ export function resolveTerminalIndex(meta = {}, stations = []) {
 export function resolveEffectiveDoorForStation(station, options = {}) {
   if (!station || typeof station !== 'object') return '';
 
-  const {
-    meta = {},
-    rtState = {},
-    stations = [],
-    prevDirType = null
-  } = options;
-
-  if (station._effectiveDoor) return station._effectiveDoor;
+  const { meta = {} } = options;
 
   const baseDoor = station.door || station.dock || 'left';
   const turnbackType = normalizeTurnbackType(station.turnback);
   if (turnbackType === 'none') return baseDoor;
+  if (String(baseDoor || '').trim().toLowerCase() === 'both') return 'both';
 
   const currDirType = meta?.dirType || meta?.direction || null;
   const currBucket = normalizeDirectionBucket(currDirType);
-  const prevBucket = normalizeDirectionBucket(prevDirType);
-  const idx = typeof rtState?.idx === 'number'
-    ? rtState.idx
-    : (typeof station.originalIndex === 'number' ? station.originalIndex : -1);
-  const terminalIdx = resolveTerminalIndex(meta, stations);
-  const atTerminalForDir = idx >= 0 && idx === terminalIdx;
+  // 规则：仅站前折返（pre）在反向（down/inner）时翻转；站后折返（post）保持原侧
+  const shouldFlipForTurnback = turnbackType === 'pre' && currBucket === 'down';
+  const effectiveDoor = shouldFlipForTurnback ? invertDoorSide(baseDoor) : baseDoor;
 
-  if (turnbackType === 'pre') {
-    if (prevBucket && currBucket && prevBucket !== currBucket) {
-      return invertDoorSide(baseDoor);
+  // 调试开关：localStorage.setItem('metro_pids_debug_turnback_door', '1')
+  try {
+    const isDebug =
+      typeof window !== 'undefined' &&
+      !!window.localStorage &&
+      window.localStorage.getItem('metro_pids_debug_turnback_door') === '1';
+    if (isDebug) {
+      console.warn('[turnback-door][calculator]', {
+        stationName: station?.name || '',
+        turnback: station?.turnback,
+        turnbackType,
+        baseDoor,
+        currDirType,
+        currBucket,
+        shouldFlipForTurnback,
+        effectiveDoor
+      });
     }
-    return baseDoor;
-  }
+  } catch (e) {}
 
-  if (turnbackType === 'post' && atTerminalForDir) {
-    return invertDoorSide(baseDoor);
-  }
-
-  return baseDoor;
+  return effectiveDoor;
 }
 
 export function applyEffectiveDoorToStation(station, options = {}) {

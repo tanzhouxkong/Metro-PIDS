@@ -957,8 +957,15 @@ export default {
         sync();
     }
 
-    async function applyShortTurn() {
+    function saveCfgAndPersistSilent() {
         saveCfg();
+        fileIO.saveCurrentLine({ silent: true }).catch((e) => {
+            console.warn('[SlidePanel] short turn silent persist failed', e);
+        });
+    }
+
+    async function applyShortTurn() {
+        saveCfgAndPersistSilent();
         const startName = pidsState.appData.meta.startIdx >= 0 ? pidsState.appData.stations[pidsState.appData.meta.startIdx].name : '无';
         const termName = pidsState.appData.meta.termIdx >= 0 ? pidsState.appData.stations[pidsState.appData.meta.termIdx].name : '无';
         await showMsg(`短交路设置已应用！\n起点: ${startName}\n终点: ${termName}`);
@@ -968,7 +975,7 @@ export default {
         if (await askUser('确定要清除短交路设置吗？')) {
             pidsState.appData.meta.startIdx = -1;
             pidsState.appData.meta.termIdx = -1;
-            saveCfg();
+            await saveCfgAndPersistSilent();
         }
     }
 
@@ -2192,6 +2199,8 @@ export default {
     // 存储清理函数（用于网页环境的事件监听器）
     let cleanupWebListeners = null;
     let cleanupWsPortAutoSwitchListener = null;
+    let cleanupSwitchLineRequestListener = null;
+    let cleanupSwitchRuntimeLineListener = null;
 
     // 处理云控/运控线路数据（Electron 与网页环境共用，用于“应用”云控线路）
     async function applyRuntimeLineData(lineData) {
@@ -2275,7 +2284,7 @@ export default {
         // Electron 环境：通过 IPC 监听
         if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onSwitchLineRequest) {
             try {
-                window.electronAPI.onSwitchLineRequest(async (lineName, target, folderPath) => {
+                cleanupSwitchLineRequestListener = window.electronAPI.onSwitchLineRequest(async (lineName, target, folderPath) => {
                     await handleSwitchLineRequest(lineName, target, folderPath);
                 });
             } catch (e) {
@@ -2283,7 +2292,7 @@ export default {
             }
             if (window.electronAPI.onSwitchRuntimeLine) {
                 try {
-                    window.electronAPI.onSwitchRuntimeLine(async (payloadOrLineData) => {
+                    cleanupSwitchRuntimeLineListener = window.electronAPI.onSwitchRuntimeLine(async (payloadOrLineData) => {
                         const isPayloadObject = !!(payloadOrLineData && typeof payloadOrLineData === 'object' && Object.prototype.hasOwnProperty.call(payloadOrLineData, 'lineData'));
                         const runtimeLineData = isPayloadObject ? payloadOrLineData.lineData : payloadOrLineData;
                         const target = isPayloadObject ? payloadOrLineData.target : null;
@@ -4664,6 +4673,14 @@ export default {
             if (cleanupWsPortAutoSwitchListener) {
                 cleanupWsPortAutoSwitchListener();
                 cleanupWsPortAutoSwitchListener = null;
+            }
+            if (cleanupSwitchLineRequestListener) {
+                cleanupSwitchLineRequestListener();
+                cleanupSwitchLineRequestListener = null;
+            }
+            if (cleanupSwitchRuntimeLineListener) {
+                cleanupSwitchRuntimeLineListener();
+                cleanupSwitchRuntimeLineListener = null;
             }
             stopLineManagerSaveWatcher();
         });

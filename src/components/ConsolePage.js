@@ -37,16 +37,24 @@ export default {
     const dropdownThemeDark = ref(false)
     let dropdownThemeObserver = null
     let dropdownThemeMediaQuery = null
+    const getPendingShortTurnStartIdx = () => {
+        const meta = pidsState.appData?.meta || {}
+        return typeof meta.pendingShortTurnStartIdx === 'number' ? meta.pendingShortTurnStartIdx : -1
+    }
+    const getPendingShortTurnTermIdx = () => {
+        const meta = pidsState.appData?.meta || {}
+        return typeof meta.pendingShortTurnTermIdx === 'number' ? meta.pendingShortTurnTermIdx : -1
+    }
 
     const shortTurnStartTitle = computed(() => {
-        const idx = pidsState.appData?.meta?.startIdx
+        const idx = getPendingShortTurnStartIdx()
         if (idx === -1 || idx == null) return '无'
         const station = pidsState.appData?.stations?.[idx]
         return station ? `[${idx + 1}] ${station.name}` : '无'
     })
 
     const shortTurnEndTitle = computed(() => {
-        const idx = pidsState.appData?.meta?.termIdx
+        const idx = getPendingShortTurnTermIdx()
         if (idx === -1 || idx == null) return '无'
         const station = pidsState.appData?.stations?.[idx]
         return station ? `[${idx + 1}] ${station.name}` : '无'
@@ -70,26 +78,26 @@ export default {
     }
 
     const selectShortTurnStart = async (idx) => {
-        const currentTerm = pidsState.appData?.meta?.termIdx
+        const currentTerm = getPendingShortTurnTermIdx()
         if (isInvalidShortTurnSelection(idx, currentTerm)) {
             await showMsg(t('console.invalidRouteRuleRetry'))
             showShortTurnStartDropdown.value = false
             return
         }
-        pidsState.appData.meta.startIdx = idx
+        pidsState.appData.meta.pendingShortTurnStartIdx = idx
         unlockAutoShortTurn()
         saveCfg()
         showShortTurnStartDropdown.value = false
     }
 
     const selectShortTurnEnd = async (idx) => {
-        const currentStart = pidsState.appData?.meta?.startIdx
+        const currentStart = getPendingShortTurnStartIdx()
         if (isInvalidShortTurnSelection(currentStart, idx)) {
             await showMsg(t('console.invalidRouteRuleRetry'))
             showShortTurnEndDropdown.value = false
             return
         }
-        pidsState.appData.meta.termIdx = idx
+        pidsState.appData.meta.pendingShortTurnTermIdx = idx
         unlockAutoShortTurn()
         saveCfg()
         showShortTurnEndDropdown.value = false
@@ -655,8 +663,8 @@ export default {
     }
     
     async function applyShortTurn() {
-        const startIdx = pidsState.appData?.meta?.startIdx
-        const termIdx = pidsState.appData?.meta?.termIdx
+        const startIdx = getPendingShortTurnStartIdx()
+        const termIdx = getPendingShortTurnTermIdx()
         if (isInvalidShortTurnSelection(startIdx, termIdx)) {
             await showMsg(t('console.invalidRouteRuleRetry'))
             return
@@ -664,6 +672,9 @@ export default {
         // 一旦用户手动应用短交路，视为“手动设置”，避免被自动短交路逻辑覆盖
         if (pidsState?.appData?.meta) {
             pidsState.appData.meta.autoShortTurn = false;
+            pidsState.appData.meta.shortTurnApplied = startIdx !== -1 && termIdx !== -1;
+            pidsState.appData.meta.startIdx = startIdx;
+            pidsState.appData.meta.termIdx = termIdx;
         }
         saveCfg();
         const startName = pidsState.appData.meta.startIdx >= 0 ? pidsState.appData.stations[pidsState.appData.meta.startIdx].name : '无';
@@ -673,10 +684,13 @@ export default {
     
     async function clearShortTurn() {
         if (await askUser('确定要清除短交路设置吗？')) {
+            pidsState.appData.meta.pendingShortTurnStartIdx = -1;
+            pidsState.appData.meta.pendingShortTurnTermIdx = -1;
             pidsState.appData.meta.startIdx = -1;
             pidsState.appData.meta.termIdx = -1;
             if (pidsState?.appData?.meta) {
                 pidsState.appData.meta.autoShortTurn = false;
+                pidsState.appData.meta.shortTurnApplied = false;
             }
             saveCfg();
         }
@@ -1338,8 +1352,8 @@ export default {
             await showMsg('仅 Electron 环境支持保存短交路预设');
             return;
         }
-        const startIdx = pidsState.appData.meta.startIdx;
-        const termIdx = pidsState.appData.meta.termIdx;
+        const startIdx = getPendingShortTurnStartIdx();
+        const termIdx = getPendingShortTurnTermIdx();
         if (startIdx === -1 || termIdx === -1) {
             await showMsg('请先设置短交路的起点和终点');
             return;
@@ -1427,8 +1441,11 @@ export default {
                     return;
                 }
 
-                pidsState.appData.meta.startIdx = startIdxResolved;
-                pidsState.appData.meta.termIdx = termIdxResolved;
+                pidsState.appData.meta.pendingShortTurnStartIdx = startIdxResolved;
+                pidsState.appData.meta.pendingShortTurnTermIdx = termIdxResolved;
+                pidsState.appData.meta.startIdx = -1;
+                pidsState.appData.meta.termIdx = -1;
+                pidsState.appData.meta.shortTurnApplied = false;
                 saveCfg();
                 const startName = stations[startIdxResolved]?.name || `站点${startIdxResolved + 1}`;
                 const termName  = stations[termIdxResolved]?.name  || `站点${termIdxResolved + 1}`;

@@ -19,12 +19,53 @@ const state = reactive({
 
 const cleanLineName = (n) => (n ? String(n).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim() : '');
 
+function normalizeShortTurnMeta(meta, stationCount) {
+    if (!meta || typeof meta !== 'object') return;
+    const total = Number.isInteger(stationCount) && stationCount >= 0 ? stationCount : 0;
+    const parseIdx = (value) => {
+        if (value === null || value === undefined || value === '') return -1;
+        const num = Number.parseInt(value, 10);
+        if (!Number.isFinite(num) || num < 0 || (total > 0 && num >= total)) return -1;
+        return num;
+    };
+    const normalizePair = (startValue, termValue) => {
+        const startIdx = parseIdx(startValue);
+        const termIdx = parseIdx(termValue);
+        const coversFullRange = total > 0 && (
+            (startIdx === 0 && termIdx === total - 1) ||
+            (startIdx === total - 1 && termIdx === 0)
+        );
+        return coversFullRange ? { startIdx: -1, termIdx: -1 } : { startIdx, termIdx };
+    };
+
+    const activePair = normalizePair(meta.startIdx, meta.termIdx);
+    const pendingSeedStart = meta.pendingShortTurnStartIdx ?? meta.startIdx;
+    const pendingSeedTerm = meta.pendingShortTurnTermIdx ?? meta.termIdx;
+    const pendingPair = normalizePair(pendingSeedStart, pendingSeedTerm);
+    const shortTurnApplied = meta.shortTurnApplied === true && activePair.startIdx !== -1 && activePair.termIdx !== -1;
+
+    meta.pendingShortTurnStartIdx = pendingPair.startIdx;
+    meta.pendingShortTurnTermIdx = pendingPair.termIdx;
+    meta.shortTurnApplied = shortTurnApplied;
+    meta.startIdx = shortTurnApplied ? activePair.startIdx : -1;
+    meta.termIdx = shortTurnApplied ? activePair.termIdx : -1;
+}
+
+function normalizeLoadedLine(line) {
+    if (!line || typeof line !== 'object') return line;
+    if (!Array.isArray(line.stations)) line.stations = [];
+    if (!line.meta || typeof line.meta !== 'object') line.meta = {};
+    normalizeShortTurnMeta(line.meta, line.stations.length);
+    return line;
+}
+
 function loadSafe() {
     try {
         const saved = localStorage.getItem('pids_global_store_v1');
         if (saved) {
             const parsed = JSON.parse(saved);
             if (parsed.list && Array.isArray(parsed.list) && parsed.list.length > 0) {
+                parsed.list = parsed.list.map((line) => normalizeLoadedLine(line));
                 state.store = parsed;
             } else {
                 throw new Error('Invalid store');
@@ -37,17 +78,17 @@ function loadSafe() {
         state.store = { 
             cur: 0, 
             list: [
-                JSON.parse(JSON.stringify(DEF)),
-                JSON.parse(JSON.stringify(DEF_LINE_16)),
-                JSON.parse(JSON.stringify(DEF_JINAN_BUS)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_1)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_2)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_3)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_4)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_6)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_8)),
-                JSON.parse(JSON.stringify(DEF_JINAN_METRO_4_8)),
-                JSON.parse(JSON.stringify(DEF_JINAN_YUNBA))
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_LINE_16))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_BUS))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_1))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_2))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_3))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_4))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_6))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_8))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_METRO_4_8))),
+                normalizeLoadedLine(JSON.parse(JSON.stringify(DEF_JINAN_YUNBA)))
             ] 
         };
     }

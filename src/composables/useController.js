@@ -2,6 +2,7 @@ import { usePidsState } from './usePidsState.js'
 import { useSettings } from './useSettings.js'
 import { cloneDisplayState } from '../utils/displayStateSerializer.js'
 import { applyThroughOperation } from '../utils/throughOperation.js'
+import { applyEffectiveDoorToStation } from '../utils/displayStationCalculator.js'
 
 export function useController() {
     const { state, bcPost } = usePidsState();
@@ -43,6 +44,34 @@ export function useController() {
         if (appDataToSend && typeof appDataToSend === 'object') {
             appDataToSend.meta = appDataToSend.meta && typeof appDataToSend.meta === 'object' ? appDataToSend.meta : {};
             appDataToSend.meta._lineFilePath = state.currentFilePath || '';
+            if (Array.isArray(appDataToSend.stations)) {
+                const currentIdx = typeof rtToSend?.idx === 'number' ? rtToSend.idx : -1;
+                if (currentIdx >= 0 && currentIdx < appDataToSend.stations.length) {
+                    const beforeStation = appDataToSend.stations[currentIdx]
+                    appDataToSend.stations[currentIdx] = applyEffectiveDoorToStation(appDataToSend.stations[currentIdx], {
+                        meta: appDataToSend.meta,
+                        rtState: rtToSend,
+                        stations: appDataToSend.stations
+                    });
+                    try {
+                        const isDebug =
+                            typeof window !== 'undefined' &&
+                            !!window.localStorage &&
+                            window.localStorage.getItem('metro_pids_debug_turnback_door') === '1'
+                        if (isDebug) {
+                            const afterStation = appDataToSend.stations[currentIdx]
+                            console.warn('[turnback-door][controller.sync]', {
+                                idx: currentIdx,
+                                stationName: afterStation?.name || beforeStation?.name || '',
+                                dirType: appDataToSend?.meta?.dirType || '',
+                                turnback: afterStation?.turnback ?? beforeStation?.turnback,
+                                baseDoor: beforeStation?.door || beforeStation?.dock || '',
+                                sentEffectiveDoor: afterStation?._effectiveDoor || ''
+                            })
+                        }
+                    } catch (e) {}
+                }
+            }
             // 将当前车厢号一并广播给显示端 3，作为额外容错通道
             const d3 = settings?.display?.displays?.['display-3'];
             let activeCarFromSettings = null;

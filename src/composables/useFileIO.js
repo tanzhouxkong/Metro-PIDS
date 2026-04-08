@@ -48,6 +48,38 @@ function sanitizeFilename(filename) {
 
 const normalizeLineNameForPath = (n) => (n ? String(n).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim() : '');
 
+function normalizeShortTurnMeta(meta, stationCount) {
+    if (!meta || typeof meta !== 'object') return;
+    const total = Number.isInteger(stationCount) && stationCount >= 0 ? stationCount : 0;
+    const parseIdx = (value) => {
+        if (value === null || value === undefined || value === '') return -1;
+        const num = Number.parseInt(value, 10);
+        if (!Number.isFinite(num) || num < 0 || (total > 0 && num >= total)) return -1;
+        return num;
+    };
+    const normalizePair = (startValue, termValue) => {
+        const startIdx = parseIdx(startValue);
+        const termIdx = parseIdx(termValue);
+        const coversFullRange = total > 0 && (
+            (startIdx === 0 && termIdx === total - 1) ||
+            (startIdx === total - 1 && termIdx === 0)
+        );
+        return coversFullRange ? { startIdx: -1, termIdx: -1 } : { startIdx, termIdx };
+    };
+
+    const activePair = normalizePair(meta.startIdx, meta.termIdx);
+    const pendingSeedStart = meta.pendingShortTurnStartIdx ?? meta.startIdx;
+    const pendingSeedTerm = meta.pendingShortTurnTermIdx ?? meta.termIdx;
+    const pendingPair = normalizePair(pendingSeedStart, pendingSeedTerm);
+    const shortTurnApplied = meta.shortTurnApplied === true && activePair.startIdx !== -1 && activePair.termIdx !== -1;
+
+    meta.pendingShortTurnStartIdx = pendingPair.startIdx;
+    meta.pendingShortTurnTermIdx = pendingPair.termIdx;
+    meta.shortTurnApplied = shortTurnApplied;
+    meta.startIdx = shortTurnApplied ? activePair.startIdx : -1;
+    meta.termIdx = shortTurnApplied ? activePair.termIdx : -1;
+}
+
 const persistLinePathInfo = (state) => {
     if (typeof localStorage === 'undefined') return;
     try {
@@ -158,6 +190,7 @@ export function useFileIO(state) {
         if (!line.meta.lineName) line.meta.lineName = '线路';
         if (!('startIdx' in line.meta)) line.meta.startIdx = -1;
         if (!('termIdx' in line.meta)) line.meta.termIdx = -1;
+        normalizeShortTurnMeta(line.meta, line.stations.length);
         // 确保 serviceMode 存在
         if (!('serviceMode' in line.meta)) line.meta.serviceMode = 'normal';
         if (!line.meta.commonAudio || typeof line.meta.commonAudio !== 'object') {

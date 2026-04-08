@@ -49,6 +49,9 @@ export default {
     let commonStopIntent = false; // 区分“停止/暂停”来源，避免 pause 导致 playbackState 变 none
     const _lastCmdKey = new Map();
     const _CMD_KEY_DEDUPE_MS = 300;
+    const _ARRDEP_TOGGLE_DEDUPE_MS = 350;
+    let _arrDepToggleInFlight = false;
+    let _lastArrDepToggleAt = 0;
 
     // 系统媒体控制面板（Windows/锁屏/全局媒体控制）
     const canUseMediaSession = typeof navigator !== 'undefined' && !!navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function'
@@ -312,6 +315,13 @@ export default {
     };
 
     const tryToggleArrDep = async () => {
+      const now = Date.now();
+      if (_arrDepToggleInFlight) return false;
+      if (now - _lastArrDepToggleAt < _ARRDEP_TOGGLE_DEDUPE_MS) return false;
+      _arrDepToggleInFlight = true;
+      _lastArrDepToggleAt = now;
+      setTimeout(() => { _arrDepToggleInFlight = false; }, _ARRDEP_TOGGLE_DEDUPE_MS);
+
       const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
       const currentState = Number.isInteger(pidState.rt?.state) ? pidState.rt.state : 0;
 
@@ -348,6 +358,13 @@ export default {
     };
 
     const tryToggleArrDepSilent = async () => {
+      const now = Date.now();
+      if (_arrDepToggleInFlight) return false;
+      if (now - _lastArrDepToggleAt < _ARRDEP_TOGGLE_DEDUPE_MS) return false;
+      _arrDepToggleInFlight = true;
+      _lastArrDepToggleAt = now;
+      setTimeout(() => { _arrDepToggleInFlight = false; }, _ARRDEP_TOGGLE_DEDUPE_MS);
+
       const prevIdx = Number.isInteger(pidState.rt?.idx) ? pidState.rt.idx : 0;
       const currentState = Number.isInteger(pidState.rt?.state) ? pidState.rt.state : 0;
 
@@ -374,6 +391,8 @@ export default {
 
     // 在组件卸载时清理监听器
     let mediaControlCleanup = null;
+    let keyboardListenerCleanup = null;
+    let broadcastListenerCleanup = null;
     if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onMediaControlAction) {
       mediaControlCleanup = window.electronAPI.onMediaControlAction(async (action) => {
         const ctrl = window.__activeStationAudioController;
@@ -404,6 +423,13 @@ export default {
     }
 
     onUnmounted(() => {
+      if (keyboardListenerCleanup) {
+        keyboardListenerCleanup();
+      }
+      kbd.uninstall();
+      if (broadcastListenerCleanup) {
+        broadcastListenerCleanup();
+      }
       if (panelStateCleanup) {
         panelStateCleanup();
       }
@@ -453,7 +479,7 @@ export default {
 
     // 键盘处理
     kbd.install();
-    kbd.onKey(async (e) => {
+    keyboardListenerCleanup = kbd.onKey(async (e) => {
         if (pidState.isRec || ['INPUT','TEXTAREA'].includes((e.target && e.target.tagName) || '')) return;
         
         const code = e.code;
@@ -496,7 +522,7 @@ export default {
     });
 
     // 广播处理
-    bcOn(async (data) => {
+    broadcastListenerCleanup = bcOn(async (data) => {
       // 调试：记录收到的 CMD_UI 消息
       try { if (data && data.t === 'CMD_UI') console.log('[debug][bc] CMD_UI received in App.js', data); } catch(e) {}
       // 安全：忽略通过 BroadcastChannel 传入的 CMD_UI，防止显示端误触主控的窗口操作
