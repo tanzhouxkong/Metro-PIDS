@@ -173,12 +173,15 @@ export default {
         const showTrainFormationDropdown = ref(false)
         const showActiveCarDropdown = ref(false)
         const showVirtualPosDropdown = ref(false)
+        const showDisplaySourceDropdown = ref(false)
         const trainFormationDropdownOpenUp = ref(false)
         const activeCarDropdownOpenUp = ref(false)
         const virtualPosDropdownOpenUp = ref(false)
+        const displaySourceDropdownOpenUp = ref(false)
         const trainFormationDropdownRef = ref(null)
         const activeCarDropdownRef = ref(null)
         const virtualPosDropdownRef = ref(null)
+        const displaySourceDropdownRef = ref(null)
 
         const languageOptions = langs
 
@@ -350,6 +353,29 @@ export default {
                 displayEdit.virtualPosition = text
             }
             showVirtualPosDropdown.value = false
+        }
+
+        const displaySourceOptions = computed(() => ([
+            { value: 'builtin', title: i18n.global.t('display.sourceBuiltin') },
+            { value: 'online', title: i18n.global.t('display.sourceOnline') }
+        ]))
+
+        const currentDisplaySourceTitle = computed(() => {
+            const current = String(displayEdit.source || 'builtin').trim()
+            const opt = displaySourceOptions.value.find((item) => item.value === current)
+            return opt ? opt.title : i18n.global.t('display.sourceBuiltin')
+        })
+
+        const toggleDisplaySourceDropdown = () => {
+            if (!showDisplaySourceDropdown.value) {
+                displaySourceDropdownOpenUp.value = resolveDropdownDirection(displaySourceDropdownRef, 180)
+            }
+            showDisplaySourceDropdown.value = !showDisplaySourceDropdown.value
+        }
+
+        const selectDisplaySource = (value) => {
+            displayEdit.source = value === 'online' ? 'online' : 'builtin'
+            showDisplaySourceDropdown.value = false
         }
 
         const updateDropdownThemeState = () => {
@@ -553,6 +579,21 @@ export default {
             return opt ? i18n.global.t(opt.labelKey) : i18n.global.t('display.display3VirtualPosCenter')
         })
 
+        const displaySourceDropdownMenuStyle = computed(() => ({
+            position: 'absolute',
+            left: '0',
+            right: '0',
+            top: displaySourceDropdownOpenUp.value ? 'auto' : 'calc(100% + 8px)',
+            bottom: displaySourceDropdownOpenUp.value ? 'calc(100% + 8px)' : 'auto',
+            border: `1px solid ${glassMenuBorder()}`,
+            borderRadius: '12px',
+            boxShadow: glassMenuShadow(),
+            maxHeight: 'min(180px, 28vh)',
+            overflowY: 'auto',
+            padding: '6px',
+            zIndex: 25001
+        }))
+
         const handlePreferencesDropdownOutsideClick = (event) => {
             const target = event.target
             if (
@@ -589,6 +630,13 @@ export default {
                 !virtualPosDropdownRef.value.contains(target)
             ) {
                 showVirtualPosDropdown.value = false
+            }
+            if (
+                showDisplaySourceDropdown.value &&
+                displaySourceDropdownRef.value &&
+                !displaySourceDropdownRef.value.contains(target)
+            ) {
+                showDisplaySourceDropdown.value = false
             }
         }
 
@@ -3787,6 +3835,7 @@ export default {
 
         function closeDisplayEditDialog() {
             showDisplayEditDialog.value = false;
+            showDisplaySourceDropdown.value = false;
         }
 
         async function pickDisplayEditFile() {
@@ -4737,6 +4786,7 @@ export default {
             showLanguageDropdown, toggleLanguageDropdown, currentLanguageTitle, selectLanguage, languageDropdownMenuStyle,
             glassDropdownDirective,
             dropdownTriggerStyle,
+            showDisplaySourceDropdown, toggleDisplaySourceDropdown, selectDisplaySource, displaySourceDropdownRef, displaySourceOptions, currentDisplaySourceTitle, displaySourceDropdownMenuStyle,
             showUiVariantDropdown, toggleUiVariantDropdown, selectUiVariant, uiVariantDropdownRef, uiVariantDropdownMenuStyle,
             display3TrainFormationOptions,
             // 显示器3：车辆编组 / 当前车厢 / 屏幕位置下拉

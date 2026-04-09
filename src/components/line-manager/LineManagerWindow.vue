@@ -483,8 +483,14 @@ export default {
         }
         if (target) {
           currentFolderId.value = target.id
-          selectedFolderId.value = target.id
-          await loadLinesFromFolder(target.id)
+          if (isRootExplorer.value) {
+            clearEntrySelection()
+            selectedFolderId.value = null
+            currentDirectoryPath.value = null
+          } else {
+            selectedFolderId.value = target.id
+            await loadLinesFromFolder(target.id)
+          }
         }
       } catch (e) {
         console.error('[线路管理器] checkPendingLineSaveMode 解析失败:', e)

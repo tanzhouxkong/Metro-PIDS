@@ -521,11 +521,47 @@
                                 <input v-model="displayEdit.name" type="text" class="se-input" placeholder="例如：主显示器">
                             </div>
                             <div>
-                                <label class="se-label">显示端类型</label>
-                                <select v-model="displayEdit.source" class="se-input" style="cursor:pointer;">
-                                    <option value="builtin">本地显示器</option>
-                                    <option value="online">在线显示器</option>
-                                </select>
+                                <label class="se-label">{{ $t("display.sourceLabel") }}</label>
+                                <div ref="displaySourceDropdownRef" style="position:relative;" class="custom-dropdown-container">
+                                    <div
+                                        @click.stop="toggleDisplaySourceDropdown"
+                                        :style="dropdownTriggerStyle"
+                                    >
+                                        <span style="font-size:13px; font-weight:600;">{{ currentDisplaySourceTitle }}</span>
+                                        <i :class="showDisplaySourceDropdown ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:12px; color:var(--muted);"></i>
+                                    </div>
+                                    <transition name="dropdown-fade">
+                                        <div
+                                            v-show="showDisplaySourceDropdown"
+                                            v-glassmorphism="glassDropdownDirective"
+                                            :style="displaySourceDropdownMenuStyle"
+                                            @click.stop
+                                        >
+                                            <div
+                                                v-for="opt in displaySourceOptions"
+                                                :key="opt.value"
+                                                @click.stop="selectDisplaySource(opt.value)"
+                                                :style="{
+                                                    padding: '9px 10px',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    color: 'var(--text)',
+                                                    fontSize: '13px',
+                                                    fontWeight: displayEdit.source === opt.value ? '700' : '500',
+                                                    background: displayEdit.source === opt.value ? glassItemActiveBackground() : 'transparent'
+                                                }"
+                                                @mouseover="$event.currentTarget.style.background=glassItemHoverBackground()"
+                                                @mouseout="$event.currentTarget.style.background = (displayEdit.source === opt.value ? glassItemActiveBackground() : 'transparent')"
+                                            >
+                                                <span>{{ opt.title }}</span>
+                                                <i v-if="displayEdit.source === opt.value" class="fas fa-check" style="font-size:12px; color:var(--muted);"></i>
+                                            </div>
+                                        </div>
+                                    </transition>
+                                </div>
                             </div>
                             <div v-show="displayEdit.source === 'builtin'">
                                 <label class="se-label">本地网页文件</label>

@@ -1358,6 +1358,8 @@ export default {
           ledContent.style.animation = ''
           ledContent.style.animationDuration = ''
           ledContent.style.transform = ''
+          ledContent.style.removeProperty('--footer-led-start')
+          ledContent.style.removeProperty('--footer-led-shift')
           ledContent.innerHTML = ''
           return
         }
@@ -1382,6 +1384,8 @@ export default {
         ledContent.style.animation = 'none'
         ledContent.style.animationDuration = ''
         ledContent.style.transform = ''
+        ledContent.style.removeProperty('--footer-led-start')
+        ledContent.style.removeProperty('--footer-led-shift')
 
         // 每次先恢复为当前文案，避免历史拼接内容影响宽度计算
         ledContent.innerHTML = parseColorMarkup(text)
@@ -1394,7 +1398,12 @@ export default {
         const contentWidth = ledContent.scrollWidth
         const containerWidth = ledContainer.offsetWidth
         const scrollSpeed = 50 // 像素/秒
-        const duration = (contentWidth + containerWidth + 40) / scrollSpeed
+        const gap = 40
+        const startOffset = containerWidth
+        const travelDistance = startOffset + contentWidth + gap
+        const duration = travelDistance / scrollSpeed
+        ledContent.style.setProperty('--footer-led-start', `${startOffset}px`)
+        ledContent.style.setProperty('--footer-led-shift', `${travelDistance}px`)
         ledContent.style.animationDuration = `${Math.max(8, Math.min(30, duration))}s`
 
         // 下一帧再加回滚动类，确保动画从 0% 重新开始（文字从右侧重新出现）
@@ -2142,10 +2151,6 @@ export default {
             <div class="footer-led-content" v-html="parseColorMarkup(displayedFooterLED)"></div>
           </div>
           <!-- 水印 -->
-          <div v-if="footerWatermark" class="footer-watermark">
-            <div class="watermark-item">Metro PIDS</div>
-            <div class="watermark-item">Display 2</div>
-          </div>
         </div>
       </div>
     </div>

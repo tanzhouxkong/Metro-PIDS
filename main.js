@@ -507,10 +507,8 @@ function ensureRendererAudioLogIpcRegistered() {
   ipcMain.on('renderer/audio-log', (event, payload) => {
     try {
       const safe = sanitizeRendererAudioLogPayload(payload);
-      const level = (safe.level === 'error' || safe.level === 'warn') ? safe.level : 'info';
       if (!safe.message) return;
       audioLogger.append(safe);
-      ntLog(level, `[renderer][audio] ${safe.message}`, safe.extra);
     } catch (e) {
       try { ntLog('warn', '[renderer][audio] failed to persist renderer audio log', String(e && e.message ? e.message : e)); } catch (e2) {}
     }

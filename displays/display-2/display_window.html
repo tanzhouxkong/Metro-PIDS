@@ -183,19 +183,20 @@
             color: #fff;
             display: inline-block;
             padding-right: 50px;
+            --footer-led-start: 0px;
+            --footer-led-shift: 0px;
         }
         
         .footer-led-content.scrolling {
             animation: footer-led-scroll 20s linear infinite;
-            padding-left: 100%;
         }
         
         @keyframes footer-led-scroll {
             0% {
-                transform: translateX(0);
+                transform: translateX(var(--footer-led-start, 0px));
             }
             100% {
-                transform: translateX(calc(-100% - 40px));
+                transform: translateX(calc(var(--footer-led-start, 0px) - var(--footer-led-shift, 0px)));
             }
         }
         
@@ -764,6 +765,14 @@
         }
 
         /* ================= Display-2 新UI（modern） ================= */
+        #display-app.ui-classic .footer-led-content {
+            font-size: 32px;
+            display: inline-flex;
+            align-items: center;
+            height: 100%;
+            line-height: 1;
+        }
+
         #display-app.ui-modern {
             --app-bg: radial-gradient(1200px 360px at 50% 0%, #f4f8ff 0%, #eaf2ff 55%, #e3edff 100%);
         }
