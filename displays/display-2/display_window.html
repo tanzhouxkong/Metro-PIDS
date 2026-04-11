@@ -18,6 +18,11 @@
             --bg-body: #f5f5f5;
             --bg-panel: #ffffff;
             --font-main: "Microsoft YaHei", "SimHei", Arial, sans-serif;
+            --titlebar-text: #2F3542;
+        }
+        html.dark,
+        html[data-theme='dark'] {
+            --titlebar-text: #EAF2FF;
         }
         * {
             box-sizing: border-box;
@@ -105,7 +110,7 @@
             -webkit-backdrop-filter: none;
             backdrop-filter: none;
             border-bottom: none;
-            color: #000;
+            color: var(--titlebar-text, #2F3542);
             padding-left: 12px;
             padding-right: 140px; /* 为右侧窗口控制按钮预留空间 */
             font-size: 14px;

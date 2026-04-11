@@ -5,12 +5,22 @@ import { cloneDisplayState } from '../utils/displayStateSerializer.js'
 import { showNotification } from '../utils/notificationService.js'
 import { resolveDisplayName } from '../utils/displayLabels.js'
 import { calculateDisplayStationInfo } from '../utils/displayStationCalculator.js'
+import { observeThemeState } from '../utils/themeObserver.js'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 export default {
     name: 'LeftRail',
     setup() {
+        const { t } = useI18n()
         const { uiState, togglePanel, closePanel } = useUIState()
+        const isDarkTheme = ref(false)
+        let stopThemeObserver = null
+
+        const railInactiveColor = computed(() => (isDarkTheme.value ? '#EAF2FF' : '#2F3542'))
+        const railMutedColor = computed(() => (isDarkTheme.value ? 'rgba(234, 242, 255, 0.78)' : 'rgba(47, 53, 66, 0.78)'))
+        const getRailButtonStyle = (isActive) => (isActive ? null : { color: railInactiveColor.value })
+        const getRailLabelStyle = (isActive) => ({ color: isActive ? 'currentColor' : railMutedColor.value })
         
         // 通过 IPC 通知主窗口切换面板
         const notifyMainWindow = async (panelId) => {
@@ -705,6 +715,13 @@ export default {
         let updateListenerCleanup = null;
         let localStorageListenerCleanup = null;
         onMounted(async () => {
+            stopThemeObserver = observeThemeState((value) => {
+                isDarkTheme.value = value
+            })
+
+            
+
+            
             // 检查是否应该显示开发者按钮
             console.log('[LeftRail] onMounted: 开始检查开发者按钮可见性...');
             console.log('[LeftRail] onMounted: window.electronAPI =', typeof window !== 'undefined' ? window.electronAPI : 'undefined');
@@ -724,6 +741,10 @@ export default {
         });
 
         onUnmounted(() => {
+            if (stopThemeObserver) {
+                stopThemeObserver()
+                stopThemeObserver = null
+            }
             if (updateListenerCleanup) {
                 updateListenerCleanup();
             }
@@ -747,6 +768,9 @@ export default {
             formatReleaseBody,
             openDevWindow,
             shouldShowDevButton,
-            currentDisplayInfo
+            currentDisplayInfo,
+            t,
+            getRailButtonStyle,
+            getRailLabelStyle
         }
     }}

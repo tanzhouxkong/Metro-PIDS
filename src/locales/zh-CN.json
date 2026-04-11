@@ -373,6 +373,14 @@
     "presetRenamedNotifyDesc": "已将“{oldName}”重命名为“{newName}”。",
     "presetRenameFailed": "重命名预设失败"
   },
+  "leftRail": {
+    "home": "首页",
+    "console": "控制台",
+    "display": "显示器",
+    "developer": "开发者",
+    "settings": "设置",
+    "github": "GitHub"
+  },
   "lineManager": {
     "title": "线路管理器",
     "folderAndLines": "文件夹与线路管理",

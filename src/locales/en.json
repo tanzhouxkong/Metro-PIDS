@@ -363,6 +363,14 @@
     "recordingStageConcatStart": "Concatenating segments",
     "recordingOpenFolder": "Open Folder"
   },
+  "leftRail": {
+    "home": "Home",
+    "console": "Console",
+    "display": "Display",
+    "developer": "Developer",
+    "settings": "Settings",
+    "github": "GitHub"
+  },
   "lineManager": {
     "title": "Line Manager",
     "folderAndLines": "Folders & Lines",

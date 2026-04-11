@@ -5,14 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;">
     <title>Sidebar - Metro PIDS</title>
-    <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Sidebar] Font Awesome 加载失败，使用本地备用图标'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
+    <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" onerror="console.warn('[Sidebar] Font Awesome load failed, using local fallback'); var fallback = document.createElement('link'); fallback.rel = 'stylesheet'; fallback.href = 'assets/local-icons.css'; document.head.appendChild(fallback);">
     <script>
-      // 兜底：有时 CSS 200 但字体文件未生效（CSP/路径/加载时序），会导致图标空白且不会触发 link.onerror
       (function () {
         function ensureLocalIconsFallback() {
           try {
             if (document.fonts && typeof document.fonts.check === 'function') {
-              // 任意一个族命中即可视为可用（Free 用于 fas，Brands 用于 fab）
               if (
                 document.fonts.check('12px "Font Awesome 6 Free"') ||
                 document.fonts.check('12px "Font Awesome 6 Brands"')
@@ -20,7 +18,7 @@
             }
           } catch (e) {}
           if (!document.querySelector('link[href="assets/local-icons.css"]')) {
-            console.warn('[Sidebar] Font Awesome 字体未就绪，启用本地备用图标');
+            console.warn('[Sidebar] Font Awesome font not ready, using local fallback');
             var fallback = document.createElement('link');
             fallback.rel = 'stylesheet';
             fallback.href = 'assets/local-icons.css';
@@ -32,9 +30,9 @@
       })();
     </script>
     <style>
-        :root { 
-            --theme: #00b894; 
-            --font: "Microsoft YaHei", sans-serif; 
+        :root {
+            --theme: #00b894;
+            --font: "Microsoft YaHei", sans-serif;
             --bg: #f0f2f5;
             --card: #ffffff;
             --card-border: #f0f0f0;
@@ -46,7 +44,8 @@
             --titlebar-border: rgba(0, 0, 0, 0.08);
             --rail-bg: rgba(255,255,255,0.65);
         }
-        html.dark {
+        html.dark,
+        html[data-theme='dark'] {
             --bg: #0b1116;
             --card: #091018;
             --card-border: rgba(255,255,255,0.04);
@@ -57,79 +56,69 @@
             --rail-bg: rgba(7, 16, 24, 0.65);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body, html { 
-            width: 100%; 
-            height: 100%; 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden; 
-            background: transparent; 
-            font-family: var(--font); 
-            color: var(--text); 
+        body, html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: var(--font);
+            color: var(--text);
         }
-        /* 毛玻璃效果通过 mica-electron 实现，不使用 CSS backdrop-filter */
-        /* 侧边栏容器：只显示侧边栏，不显示顶部栏 */
         .sidebar-container {
             display: flex;
             flex-direction: column;
             width: 100%;
             height: 100vh;
             min-height: 100vh;
-            background: transparent; /* 透明背景，让 mica-electron 的 Mica 效果透出 */
+            background: transparent;
             position: relative;
             z-index: 9999;
             overflow: hidden;
-            pointer-events: auto; /* 侧边栏需要可以交互（点击按钮） */
+            pointer-events: auto;
         }
-        /* 移除模糊效果覆盖层，让侧边栏完全透明，模糊效果由组件本身提供 */
-        
-        /* 侧边栏区域 */
         .sidebar-section {
             flex: 1;
             display: flex;
             overflow: hidden;
             position: relative;
-            width: 60px; /* 侧边栏固定宽度 60px */
+            width: 72px;
             height: 100%;
-            pointer-events: auto; /* 侧边栏需要可以交互（点击按钮） */
+            pointer-events: auto;
         }
-        
-        /* 确保 leftrail-app 容器占满整个侧边栏区域 */
         #leftrail-app {
             width: 100%;
             height: 100%;
             position: relative;
             overflow: hidden;
-            pointer-events: auto; /* 侧边栏内容需要可以交互 */
-            background: transparent; /* 透明背景，让模糊效果透出 */
+            pointer-events: auto;
+            background: transparent;
         }
-        
-        /* 侧边栏模糊效果，与状态栏一致 */
-        /* 模糊效果由 mica-electron 原生控制，背景完全透明让原生模糊效果透出 */
-        .left-rail-blur {
-            background: transparent !important; /* 完全透明，让 mica-electron 的原生模糊效果透出 */
+        .left-rail-blur,
+        html.dark .left-rail-blur,
+        html[data-theme='dark'] .left-rail-blur,
+        html.dark .sidebar-container,
+        html[data-theme='dark'] .sidebar-container {
+            background: transparent !important;
         }
-        html.dark .left-rail-blur {
-            background: transparent !important; /* 完全透明，让 mica-electron 的原生模糊效果透出 */
-        }
-        
-        html.dark .sidebar-container {
-            background: transparent; /* 透明背景，让 mica-electron 的 Mica 效果透出 */
-        }
-        /* Ant Design Vue：侧边栏方形图标按钮 */
         #leftRail .left-rail-icon-btn.ant-btn {
-            width: 48px;
-            min-width: 48px;
-            height: 48px;
-            padding: 0;
+            width: 68px;
+            min-width: 68px;
+            height: 64px;
+            padding: 8px 6px !important;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto;
+            margin: 0 auto !important;
             line-height: 1 !important;
-            overflow: hidden;
+            overflow: visible;
             border: none !important;
+            border-radius: 18px !important;
             transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+            text-align: center !important;
+            position: relative;
+            left: -4px;
         }
         #leftRail .left-rail-icon-btn.ant-btn:hover,
         #leftRail .left-rail-icon-btn.ant-btn:focus,
@@ -138,17 +127,40 @@
             border: none !important;
         }
         #leftRail .left-rail-icon-btn.ant-btn > span {
-            display: inline-flex !important;
+            display: flex !important;
+            flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
             line-height: 1 !important;
             height: 100%;
+            width: 100%;
+            gap: 4px;
+            color: inherit !important;
+            text-align: center !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
         }
         #leftRail .left-rail-icon-btn.ant-btn .ant-btn-icon {
             line-height: 1 !important;
             margin-inline-end: 0 !important;
         }
-        /* 侧栏图标按钮：背景全透明（Mica 透出） */
+        #leftRail .left-rail-btn-content,
+        #leftRail .left-rail-btn-icon,
+        #leftRail .left-rail-btn-label {
+            color: inherit !important;
+        }
+        #leftRail .left-rail-btn-icon {
+            font-size: 18px;
+            line-height: 1;
+        }
+        #leftRail .left-rail-btn-label {
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.1;
+            white-space: nowrap;
+            width: 100%;
+            text-align: center;
+        }
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-solid.ant-btn-color-primary {
             background: transparent !important;
@@ -162,22 +174,12 @@
             color: var(--text) !important;
             box-shadow: none !important;
         }
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default,
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined,
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default {
-            background: transparent !important;
-        }
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:hover,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:hover,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:hover {
             filter: none !important;
             background: transparent !important;
             box-shadow: none;
-        }
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:hover,
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:hover,
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:hover {
-            background: transparent !important;
         }
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-primary:hover,
         #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-solid.ant-btn-color-primary:hover {
@@ -199,11 +201,6 @@
             filter: none !important;
             background: transparent !important;
         }
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-default:active,
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-variant-outlined:active,
-        html.dark #leftRail .left-rail-icon-btn.ant-btn.ant-btn-color-default:active {
-            background: transparent !important;
-        }
     </style>
     <script type="importmap">
         {
@@ -214,9 +211,7 @@
     </script>
 </head>
 <body>
-    <!-- 侧边栏布局：只显示侧边栏，不显示顶部栏（顶部栏由 topbar.html 单独处理） -->
     <div class="sidebar-container">
-        <!-- 侧边栏区域 -->
         <div class="sidebar-section" id="sidebar-section">
             <div id="leftrail-app"></div>
         </div>

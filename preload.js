@@ -317,6 +317,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   }
   ,
+  clipboard: {
+    appLineFormat: 'application/x-metro-pids-line',
+    write: async (payload) => {
+      try { return await ipcRenderer.invoke('clipboard/write', payload || {}); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    readText: async () => {
+      try { return await ipcRenderer.invoke('clipboard/read-text'); } catch (e) { return { ok: false, error: String(e), text: '' }; }
+    },
+    readCustom: async (formatName) => {
+      try { return await ipcRenderer.invoke('clipboard/read-custom', formatName); } catch (e) { return { ok: false, error: String(e), exists: false, text: '' }; }
+    },
+    readFilePaths: async () => {
+      try { return await ipcRenderer.invoke('clipboard/read-file-paths'); } catch (e) { return { ok: false, error: String(e), paths: [], operation: 'copy' }; }
+    },
+    getState: async () => {
+      try { return await ipcRenderer.invoke('clipboard/get-state'); } catch (e) { return { ok: false, error: String(e), hasText: false, hasFilePaths: false, hasLinePayload: false, filePathsCount: 0, operation: 'copy' }; }
+    }
+  }
+  ,
   windowControls: {
     minimize: async () => { try { return await ipcRenderer.invoke('window/minimize'); } catch(e){return {ok:false,error:String(e)}} },
     toggleMax: async () => { try { return await ipcRenderer.invoke('window/toggleMax'); } catch(e){return {ok:false,error:String(e)}} },

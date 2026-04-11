@@ -233,6 +233,7 @@
 .cp-btn-gray {
   background: var(--btn-gray-bg, #f5f5f5);
   color: var(--btn-gray-text, #666);
+  border: 1px solid transparent;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -345,6 +346,19 @@ html.dark .ud-share-code,
 html[data-theme='dark'] .ud-share-code {
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(40, 40, 44, 0.75);
+}
+html.dark .cp-btn-gray,
+html[data-theme='dark'] .cp-btn-gray {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text, #e6eef6);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+html.dark .cp-btn-gray:hover:not(:disabled),
+html[data-theme='dark'] .cp-btn-gray:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
 }
 
 html.blur-disabled .cp-dialog {

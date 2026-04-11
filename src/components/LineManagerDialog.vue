@@ -38,6 +38,7 @@
               style="margin-top: 16px;"
               @keyup.enter="handleConfirm"
               @keyup.esc="handleCancel"
+              @contextmenu.prevent="onInputContextMenu($event)"
               autofocus
             />
           </div>
@@ -61,6 +62,43 @@
             </div>
           </div>
         </div>
+
+        <div
+          v-if="inputMenuVisible"
+          ref="inputMenuRef"
+          class="station-context-menu station-context-menu--glass-shell"
+          v-glassmorphism="glassDirective"
+          :style="{
+            left: inputMenuX + 'px',
+            top: inputMenuY + 'px',
+            zIndex: 1000010,
+            minWidth: '120px'
+          }"
+          @click.stop
+          @contextmenu.prevent
+        >
+          <div
+            class="station-context-menu-item"
+            @click="copyInput"
+          >
+            <i class="fas fa-copy" style="font-size:12px;width:14px;"></i>
+            {{ tUd('copy') }}
+          </div>
+          <div class="station-context-menu-divider"></div>
+          <div
+            class="station-context-menu-item"
+            @click="pasteInput"
+          >
+            <i class="fas fa-paste" style="font-size:12px;width:14px;"></i>
+            {{ tUd('paste') }}
+          </div>
+        </div>
+        <div
+          v-if="inputMenuVisible"
+          class="station-context-menu-mask"
+          style="z-index: 1000009;"
+          @click="closeInputMenu"
+        ></div>
       </div>
     </Transition>
   </Teleport>

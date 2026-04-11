@@ -235,6 +235,106 @@ export default {
         WebkitBackdropFilter: `blur(${blur}px)`
       }
     })
+    const textInputMenuVisible = ref(false)
+    const textInputMenuX = ref(0)
+    const textInputMenuY = ref(0)
+    const activeTextInputKey = ref('')
+    const textInputMenuRef = ref(null)
+    let activeTextInputEl = null
+    const textInputMenuGlass = computed(() => menuGlassDirective.value || { blur: 12, opacity: 0.2, color: isDarkTheme.value ? '#1c1c20' : '#ffffff' })
+
+    const closeTextInputMenu = () => {
+      textInputMenuVisible.value = false
+      activeTextInputKey.value = ''
+      activeTextInputEl = null
+    }
+    const onDialogInputContextMenu = (event, inputKey) => {
+      try {
+        event.preventDefault()
+        event.stopPropagation()
+        activeTextInputKey.value = String(inputKey || '')
+        activeTextInputEl = event?.target || null
+        textInputMenuVisible.value = true
+        textInputMenuX.value = event.clientX
+        textInputMenuY.value = event.clientY
+        nextTick(() => adjustTextInputMenuPosition())
+      } catch (e) {}
+    }
+    const onGenericTextInputContextMenu = (event) => {
+      const target = event?.target
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return
+      if (!target.classList?.contains('se-input')) return
+      onDialogInputContextMenu(event, '')
+    }
+    const getDialogInputValue = () => {
+      if (activeTextInputEl && typeof activeTextInputEl.value === 'string') return String(activeTextInputEl.value || '')
+      if (activeTextInputKey.value === 'xfer') return String(xferNameEditValue.value || '')
+      if (activeTextInputKey.value === 'audio') return String(audioNameEditValue.value || '')
+      return ''
+    }
+    const setDialogInputValue = (text) => {
+      if (activeTextInputEl && typeof activeTextInputEl.value === 'string') {
+        activeTextInputEl.focus()
+        activeTextInputEl.value = String(text || '')
+        activeTextInputEl.dispatchEvent(new Event('input', { bubbles: true }))
+        activeTextInputEl.dispatchEvent(new Event('change', { bubbles: true }))
+        return
+      }
+      if (activeTextInputKey.value === 'xfer') xferNameEditValue.value = String(text || '')
+      if (activeTextInputKey.value === 'audio') audioNameEditValue.value = String(text || '')
+    }
+    const copyDialogInputText = async () => {
+      try {
+        const text = getDialogInputValue()
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text)
+        } else if (document && document.execCommand) {
+          const el = activeTextInputEl || document.querySelector('.se-name-edit-input')
+          if (el) {
+            el.focus()
+            el.select()
+            document.execCommand('copy')
+          }
+        }
+      } catch (e) {
+        console.error('复制失败:', e)
+      } finally {
+        closeTextInputMenu()
+      }
+    }
+    const pasteDialogInputText = async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText()
+          if (typeof text === 'string') setDialogInputValue(text)
+        }
+      } catch (e) {
+        console.error('粘贴失败:', e)
+      } finally {
+        closeTextInputMenu()
+      }
+    }
+    const adjustTextInputMenuPosition = () => {
+      const el = textInputMenuRef.value
+      if (!el || typeof window === 'undefined') return
+      const rect = el.getBoundingClientRect()
+      const vp = getEffectiveViewportRect(el)
+      const vw = (vp.right - vp.left) || window.innerWidth || document.documentElement.clientWidth
+      const vh = (vp.bottom - vp.top) || window.innerHeight || document.documentElement.clientHeight
+      const margin = 8
+      let x = textInputMenuX.value
+      let y = textInputMenuY.value
+      if (((x - (vp.left || 0)) + rect.width) > vw - margin) {
+        x = Math.max((vp.left || 0) + margin, (vp.left || 0) + vw - rect.width - margin)
+      }
+      if (((y - (vp.top || 0)) + rect.height) > vh - margin) {
+        y = Math.max((vp.top || 0) + margin, (vp.top || 0) + vh - rect.height - margin)
+      }
+      if (x < (vp.left || 0) + margin) x = (vp.left || 0) + margin
+      if (y < (vp.top || 0) + margin) y = (vp.top || 0) + margin
+      textInputMenuX.value = x
+      textInputMenuY.value = y
+    }
 
     const sectionMode = ref('xfer') // 'xfer' | 'audio' | 'commonAudio'
     const editorSectionToggleRef = ref(null)
@@ -1904,6 +2004,7 @@ export default {
     const closeXferNameEdit = () => {
       showXferNameEdit.value = false
       xferNameEditIdx.value = -1
+      closeTextInputMenu()
     }
     const confirmXferNameEdit = () => {
       if (xferNameEditIdx.value >= 0 && form.xfer[xferNameEditIdx.value]) {
@@ -1941,6 +2042,7 @@ export default {
       showAudioNameEdit.value = false
       audioNameEditIdx.value = -1
       audioNameEditApplyIndices.value = []
+      closeTextInputMenu()
     }
     const confirmAudioNameEdit = () => {
       const dir = audioNameEditDir.value || 'up'
@@ -2057,6 +2159,10 @@ export default {
     }
     onMounted(() => window.addEventListener('keydown', handleCommonAudioHotkey))
     onBeforeUnmount(() => window.removeEventListener('keydown', handleCommonAudioHotkey))
+    onMounted(() => window.addEventListener('pointerdown', closeTextInputMenu, true))
+    onBeforeUnmount(() => window.removeEventListener('pointerdown', closeTextInputMenu, true))
+    onMounted(() => window.addEventListener('contextmenu', onGenericTextInputContextMenu, true))
+    onBeforeUnmount(() => window.removeEventListener('contextmenu', onGenericTextInputContextMenu, true))
 
     watch(
       [
@@ -2780,6 +2886,15 @@ export default {
       isDarkTheme,
       menuGlassDirective,
       nameEditGlassStyle,
+      textInputMenuVisible,
+      textInputMenuX,
+      textInputMenuY,
+      textInputMenuRef,
+      textInputMenuGlass,
+      onDialogInputContextMenu,
+      closeTextInputMenu,
+      copyDialogInputText,
+      pasteDialogInputText,
       close,
       armSaveClick,
       onOverlayMouseDown,
@@ -3699,6 +3814,7 @@ export default {
                     class="cp-input cp-input--dialog se-name-edit-input"
                     :placeholder="t('stationEditor.xferNamePlaceholder')"
                     @keydown.enter="confirmXferNameEdit"
+                    @contextmenu.prevent="onDialogInputContextMenu($event, 'xfer')"
                   />
                   </div>
                   <div class="cp-footer cp-footer--end se-name-edit-actions">
@@ -3743,6 +3859,7 @@ export default {
                     class="cp-input cp-input--dialog se-name-edit-input"
                     :placeholder="t('stationEditor.audioRenamePlaceholder')"
                     @keydown.enter="confirmAudioNameEdit"
+                    @contextmenu.prevent="onDialogInputContextMenu($event, 'audio')"
                   />
                   </div>
                   <div class="cp-footer cp-footer--end se-name-edit-actions">
@@ -3757,6 +3874,45 @@ export default {
           </Teleport>
 
           <!-- 音频导入进度弹窗（导入动态音频文件夹） -->
+          <Teleport to="body">
+            <div
+              v-if="textInputMenuVisible"
+              ref="textInputMenuRef"
+              class="station-context-menu station-context-menu--glass-shell"
+              v-glassmorphism="textInputMenuGlass"
+              :style="{
+                left: textInputMenuX + 'px',
+                top: textInputMenuY + 'px',
+                zIndex: 1000010,
+                minWidth: '120px'
+              }"
+              @click.stop
+              @contextmenu.prevent
+            >
+              <div
+                class="station-context-menu-item"
+                @click="copyDialogInputText"
+              >
+                <i class="fas fa-copy" style="font-size:12px;width:14px;"></i>
+                {{ t('unifiedDialog.copy') }}
+              </div>
+              <div class="station-context-menu-divider"></div>
+              <div
+                class="station-context-menu-item"
+                @click="pasteDialogInputText"
+              >
+                <i class="fas fa-paste" style="font-size:12px;width:14px;"></i>
+                {{ t('unifiedDialog.paste') }}
+              </div>
+            </div>
+            <div
+              v-if="textInputMenuVisible"
+              class="station-context-menu-mask"
+              style="z-index: 1000009;"
+              @click="closeTextInputMenu"
+            ></div>
+          </Teleport>
+
           <Teleport to="body">
             <Transition name="cp-fade">
               <div

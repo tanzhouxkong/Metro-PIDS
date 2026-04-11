@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut, clipboard } = require('electron');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
@@ -251,6 +251,100 @@ const DYNAMIC_AUDIO_MATCHER_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 let dynamicAudioMatcherConfigCache = null;
 let dynamicAudioMatcherSyncTimer = null;
 let dynamicAudioMatcherSyncInFlight = null;
+const APP_LINE_CLIPBOARD_FORMAT = 'application/x-metro-pids-line';
+const WINDOWS_CF_HDROP_FORMATS = ['CF_HDROP', 'FileNameW'];
+const WINDOWS_PREFERRED_DROP_EFFECT = 'Preferred DropEffect';
+
+function encodeWindowsClipboardFileList(pathsList) {
+  const normalized = (Array.isArray(pathsList) ? pathsList : [])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  if (!normalized.length) return null;
+
+  const filesSection = Buffer.from(normalized.join('\0') + '\0\0', 'utf16le');
+  const header = Buffer.alloc(20);
+  header.writeUInt32LE(20, 0);
+  header.writeInt32LE(0, 4);
+  header.writeInt32LE(0, 8);
+  header.writeUInt32LE(0, 12);
+  header.writeUInt32LE(1, 16);
+  return Buffer.concat([header, filesSection]);
+}
+
+function decodeWindowsClipboardFileList(buffer) {
+  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 2) return [];
+  let content = buffer;
+  if (buffer.length >= 20) {
+    const offset = buffer.readUInt32LE(0);
+    const isWide = buffer.readUInt32LE(16) !== 0;
+    if (offset >= 20 && offset < buffer.length && isWide) {
+      content = buffer.subarray(offset);
+    }
+  }
+  return content
+    .toString('utf16le')
+    .split('\0')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getClipboardAvailableFormatsSafe() {
+  try {
+    return clipboard.availableFormats();
+  } catch (e) {
+    return [];
+  }
+}
+
+function readClipboardFilePaths() {
+  const formats = getClipboardAvailableFormatsSafe();
+  for (const formatName of WINDOWS_CF_HDROP_FORMATS) {
+    const matchedFormat = formats.find((it) => String(it || '').toLowerCase() === formatName.toLowerCase());
+    if (!matchedFormat) continue;
+    try {
+      const parsed = decodeWindowsClipboardFileList(clipboard.readBuffer(matchedFormat))
+        .map((item) => path.normalize(item))
+        .filter(Boolean);
+      if (parsed.length) return parsed;
+    } catch (e) {}
+  }
+
+  if (formats.some((it) => String(it || '').toLowerCase() === 'text/uri-list')) {
+    try {
+      const uriText = clipboard.read('text/uri-list');
+      const parsed = String(uriText || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#'))
+        .map((line) => {
+          try {
+            return decodeURI(new URL(line).pathname || '');
+          } catch (e) {
+            return '';
+          }
+        })
+        .filter(Boolean)
+        .map((item) => process.platform === 'win32' && item.startsWith('/') ? item.slice(1) : item)
+        .map((item) => path.normalize(item));
+      if (parsed.length) return parsed;
+    } catch (e) {}
+  }
+
+  return [];
+}
+
+function getClipboardPreferredOperation() {
+  try {
+    const formats = getClipboardAvailableFormatsSafe();
+    const matchedFormat = formats.find((it) => String(it || '').toLowerCase() === WINDOWS_PREFERRED_DROP_EFFECT.toLowerCase());
+    if (!matchedFormat) return 'copy';
+    const buf = clipboard.readBuffer(matchedFormat);
+    if (!buf || buf.length < 4) return 'copy';
+    const effect = buf.readUInt32LE(0);
+    if (effect === 2) return 'cut';
+  } catch (e) {}
+  return 'copy';
+}
 
 function getDefaultDynamicAudioMatcherConfig() {
   return {
@@ -8400,6 +8494,97 @@ ipcMain.handle('utils/calculate-md5', async (event, data) => {
     return { ok: true, hash };
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('clipboard/write', async (event, payload) => {
+  try {
+    const text = typeof payload?.text === 'string' ? payload.text : '';
+    const customFormat = payload?.customFormat ? String(payload.customFormat) : '';
+    const customData = payload?.customData;
+    const operation = String(payload?.operation || 'copy').toLowerCase() === 'cut' ? 'cut' : 'copy';
+    const filePaths = (Array.isArray(payload?.filePaths) ? payload.filePaths : [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+
+    clipboard.clear();
+    if (text) clipboard.writeText(text);
+
+    if (customFormat && typeof customData !== 'undefined') {
+      const raw = typeof customData === 'string' ? customData : JSON.stringify(customData);
+      clipboard.writeBuffer(customFormat, Buffer.from(raw, 'utf8'));
+    }
+
+    if (filePaths.length && process.platform === 'win32') {
+      const filesBuffer = encodeWindowsClipboardFileList(filePaths);
+      if (filesBuffer) {
+        clipboard.writeBuffer('CF_HDROP', filesBuffer);
+        const effectBuffer = Buffer.alloc(4);
+        effectBuffer.writeUInt32LE(operation === 'cut' ? 2 : 1, 0);
+        clipboard.writeBuffer(WINDOWS_PREFERRED_DROP_EFFECT, effectBuffer);
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('clipboard/read-text', async () => {
+  try {
+    return { ok: true, text: clipboard.readText() || '' };
+  } catch (err) {
+    return { ok: false, error: String(err), text: '' };
+  }
+});
+
+ipcMain.handle('clipboard/read-custom', async (event, formatName) => {
+  try {
+    const targetFormat = String(formatName || '').trim();
+    if (!targetFormat) return { ok: false, error: 'format required' };
+    const formats = getClipboardAvailableFormatsSafe();
+    const matchedFormat = formats.find((it) => String(it || '').toLowerCase() === targetFormat.toLowerCase());
+    if (!matchedFormat) return { ok: true, exists: false, text: '' };
+    const text = clipboard.readBuffer(matchedFormat).toString('utf8');
+    return { ok: true, exists: true, text };
+  } catch (err) {
+    return { ok: false, error: String(err), exists: false, text: '' };
+  }
+});
+
+ipcMain.handle('clipboard/read-file-paths', async () => {
+  try {
+    return { ok: true, paths: readClipboardFilePaths(), operation: getClipboardPreferredOperation() };
+  } catch (err) {
+    return { ok: false, error: String(err), paths: [], operation: 'copy' };
+  }
+});
+
+ipcMain.handle('clipboard/get-state', async () => {
+  try {
+    const formats = getClipboardAvailableFormatsSafe();
+    const text = clipboard.readText() || '';
+    const filePaths = readClipboardFilePaths();
+    const hasCustom = formats.some((it) => String(it || '').toLowerCase() === APP_LINE_CLIPBOARD_FORMAT.toLowerCase());
+    return {
+      ok: true,
+      hasText: !!text,
+      hasFilePaths: filePaths.length > 0,
+      hasLinePayload: hasCustom,
+      filePathsCount: filePaths.length,
+      operation: getClipboardPreferredOperation()
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: String(err),
+      hasText: false,
+      hasFilePaths: false,
+      hasLinePayload: false,
+      filePathsCount: 0,
+      operation: 'copy'
+    };
   }
 });
 

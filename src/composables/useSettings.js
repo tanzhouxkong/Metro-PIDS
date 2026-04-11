@@ -217,6 +217,7 @@ export function useSettings() {
         function setDark(on) { 
             if (on) document.documentElement.classList.add('dark'); 
             else document.documentElement.classList.remove('dark'); 
+            document.documentElement.setAttribute('data-theme', on ? 'dark' : 'light');
         }
         function setDarkVariant(v) { 
             document.documentElement.setAttribute('data-dark-variant', v || 'soft'); 

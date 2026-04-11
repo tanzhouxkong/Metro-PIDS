@@ -1,4 +1,5 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { observeThemeState } from '../utils/themeObserver.js'
 
 export default {
     name: 'LineManagerTopbar',
@@ -9,46 +10,14 @@ export default {
         const isLinux = computed(() => platform.value === 'linux');
         const isDarkTheme = ref(false);
 
-        let themeObserver = null;
-        let mediaQueryList = null;
-        let mediaQueryHandler = null;
-
-        const updateThemeState = () => {
-            try {
-                if (typeof document === 'undefined') return;
-                const root = document.documentElement;
-                const byClass = root.classList.contains('dark') || root.getAttribute('data-theme') === 'dark';
-                const byMedia = typeof window !== 'undefined' && window.matchMedia
-                    ? window.matchMedia('(prefers-color-scheme: dark)').matches
-                    : false;
-                isDarkTheme.value = byClass || byMedia;
-            } catch (e) {
-                isDarkTheme.value = false;
-            }
-        };
+        let stopThemeObserver = null;
 
         const titleColor = computed(() => (isDarkTheme.value ? '#EAF2FF' : '#2F3542'));
         
         onMounted(() => {
-            updateThemeState();
-
-            if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
-                themeObserver = new MutationObserver(() => updateThemeState());
-                themeObserver.observe(document.documentElement, {
-                    attributes: true,
-                    attributeFilter: ['class', 'data-theme']
-                });
-            }
-
-            if (typeof window !== 'undefined' && window.matchMedia) {
-                mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)');
-                mediaQueryHandler = () => updateThemeState();
-                if (typeof mediaQueryList.addEventListener === 'function') {
-                    mediaQueryList.addEventListener('change', mediaQueryHandler);
-                } else if (typeof mediaQueryList.addListener === 'function') {
-                    mediaQueryList.addListener(mediaQueryHandler);
-                }
-            }
+            stopThemeObserver = observeThemeState((value) => {
+                isDarkTheme.value = value;
+            });
 
             // 获取平台信息
             if (window.electronAPI && window.electronAPI.platform) {
@@ -66,19 +35,10 @@ export default {
         });
 
         onUnmounted(() => {
-            if (themeObserver) {
-                themeObserver.disconnect();
-                themeObserver = null;
+            if (stopThemeObserver) {
+                stopThemeObserver();
+                stopThemeObserver = null;
             }
-            if (mediaQueryList && mediaQueryHandler) {
-                if (typeof mediaQueryList.removeEventListener === 'function') {
-                    mediaQueryList.removeEventListener('change', mediaQueryHandler);
-                } else if (typeof mediaQueryList.removeListener === 'function') {
-                    mediaQueryList.removeListener(mediaQueryHandler);
-                }
-            }
-            mediaQueryList = null;
-            mediaQueryHandler = null;
         });
         
         return {

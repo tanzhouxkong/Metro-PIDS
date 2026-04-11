@@ -1,7 +1,7 @@
 import { Teleport, Transition } from 'vue'
 import { i18n } from '../locales/index.js'
-// 独立线路管理器窗口内须静态导入，勿用模板内 <style>@import（Vite 下可能不注入）
 import '../styles/cp-glass-modal-shell.css'
+import '../styles/station-context-menu.css'
 
 export default {
   name: 'LineManagerDialog',
@@ -12,8 +12,11 @@ export default {
       title: '',
       message: '',
       inputValue: '',
+      inputMenuVisible: false,
+      inputMenuX: 0,
+      inputMenuY: 0,
       resolve: null,
-      type: 'prompt' // 'prompt', 'alert', 'confirm'
+      type: 'prompt' // 'prompt' | 'alert' | 'confirm'
     }
   },
   computed: {
@@ -33,12 +36,8 @@ export default {
             if (settings && settings.blurEnabled === false) blurEnabled = false
           }
         }
-      } catch (e) {
-        // Ignore invalid persisted settings and fall back to current DOM state.
-      }
-      if (!blurEnabled) {
-        return { blur: 0, opacity: 1, color: isDark ? '#1c1c20' : '#ffffff' }
-      }
+      } catch (e) {}
+      if (!blurEnabled) return { blur: 0, opacity: 1, color: isDark ? '#1c1c20' : '#ffffff' }
       return { blur: 12, opacity: 0.2, color: isDark ? '#1c1c20' : '#ffffff' }
     },
     iconBoxStyle() {
@@ -53,7 +52,10 @@ export default {
     tCp(key) {
       return i18n.global.t(`colorPicker.${key}`)
     },
-    prompt(message, defaultValue = '', title = '新建文件夹') {
+    tUd(key) {
+      return i18n.global.t(`unifiedDialog.${key}`)
+    },
+    prompt(message, defaultValue = '', title = '输入') {
       this.title = title
       this.message = message
       this.inputValue = defaultValue || ''
@@ -85,14 +87,12 @@ export default {
       const resolver = this.resolve
       this.resolve = null
       this.visible = false
+      this.inputMenuVisible = false
       if (resolver) resolver(result)
     },
     handleConfirm() {
-      if (this.type === 'prompt') {
-        this.close(this.inputValue)
-      } else {
-        this.close(true)
-      }
+      if (this.type === 'prompt') this.close(this.inputValue)
+      else this.close(true)
     },
     handleCancel() {
       this.close(this.type === 'prompt' ? null : false)
@@ -100,6 +100,67 @@ export default {
     onOverlayClick() {
       if (this.type === 'alert') return
       this.handleCancel()
+    },
+    onInputContextMenu(event) {
+      try {
+        event.preventDefault()
+        event.stopPropagation()
+        this.inputMenuVisible = true
+        this.inputMenuX = event.clientX
+        this.inputMenuY = event.clientY
+        this.$nextTick(() => this.adjustInputMenuPosition())
+      } catch (e) {}
+    },
+    adjustInputMenuPosition() {
+      const el = this.$refs.inputMenuRef
+      if (!el || typeof window === 'undefined') return
+      const rect = el.getBoundingClientRect()
+      const root = document.documentElement
+      const vw = window.innerWidth || root.clientWidth || 0
+      const vh = window.innerHeight || root.clientHeight || 0
+      const margin = 8
+      let x = this.inputMenuX
+      let y = this.inputMenuY
+      if (x + rect.width > vw - margin) x = Math.max(margin, vw - rect.width - margin)
+      if (y + rect.height > vh - margin) y = Math.max(margin, vh - rect.height - margin)
+      if (x < margin) x = margin
+      if (y < margin) y = margin
+      this.inputMenuX = x
+      this.inputMenuY = y
+    },
+    closeInputMenu() {
+      this.inputMenuVisible = false
+    },
+    async copyInput() {
+      try {
+        const text = this.inputValue || ''
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text)
+        } else if (document && document.execCommand) {
+          const input = document.getElementById('lm-dialog-input')
+          if (input) {
+            input.focus()
+            input.select()
+            document.execCommand('copy')
+          }
+        }
+      } catch (e) {
+        console.error('复制失败', e)
+      } finally {
+        this.closeInputMenu()
+      }
+    },
+    async pasteInput() {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText()
+          if (typeof text === 'string') this.inputValue = text
+        }
+      } catch (e) {
+        console.error('粘贴失败', e)
+      } finally {
+        this.closeInputMenu()
+      }
     },
     getDialogIcon() {
       if (this.type === 'alert') return 'fa-info-circle'
@@ -121,6 +182,12 @@ export default {
         alert: (msg, title) => this.alert(msg, title),
         confirm: (msg, title) => this.confirm(msg, title)
       }
+      window.addEventListener('pointerdown', this.closeInputMenu, true)
+    }
+  },
+  beforeUnmount() {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pointerdown', this.closeInputMenu, true)
     }
   }
 }

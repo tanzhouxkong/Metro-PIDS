@@ -1,7 +1,9 @@
 import { createApp } from 'vue'
 import { initDisplayWindow } from './displayWindowLogic.js'
+import { setupWindowThemeSync } from '../../src/utils/windowSettingsSync.js'
 
 console.log('========================================');
+setupWindowThemeSync()
 console.log('[Display-1] 显示器1初始化 (主显示器，默认直线线路图，可切换 C 型)');
 console.log('[Display-1] 期望尺寸: 1900 x 600');
 console.log('[Display-1] 实际窗口尺寸:', window.innerWidth, 'x', window.innerHeight);

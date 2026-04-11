@@ -3402,7 +3402,7 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  color: #000;
+  color: var(--display-titlebar-text, #2F3542);
   padding-left: 12px;
   padding-right: 140px;
   font-size: 14px;
@@ -4459,6 +4459,11 @@ watch([destCnText, destEnText, nextCnText, nextEnText, scale], () => {
   inset: 0;
   padding: 24px 18px 22px 18px;
   transform: translateX(40px);
+}
+
+:global(html.dark) #display-titlebar.custom-titlebar,
+:global(html[data-theme='dark']) #display-titlebar.custom-titlebar {
+  color: #EAF2FF;
 }
 
 .route-svg {

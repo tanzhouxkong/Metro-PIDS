@@ -1,8 +1,10 @@
 import { createApp } from 'vue'
 import JinanDisplay from './JinanDisplay.js'
+import { setupWindowThemeSync } from '../../src/utils/windowSettingsSync.js'
 
 // 输出窗口尺寸信息（在渲染进程中可见）
 console.log('========================================');
+setupWindowThemeSync()
 console.log('[Display-2] 显示器2初始化');
 console.log('[Display-2] 期望尺寸: 1900 x 600');
 console.log('[Display-2] 实际窗口尺寸:', window.innerWidth, 'x', window.innerHeight);

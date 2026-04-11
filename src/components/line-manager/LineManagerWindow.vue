@@ -105,6 +105,7 @@ export default {
     const sidebarNewMenu = ref({ visible: false, x: 0, y: 0 })
     const linesNewMenu = ref({ visible: false, x: 0, y: 0, targetFolderId: null, targetFolderPath: null })
     const clipboard = ref({ type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null })
+    const systemClipboardState = ref({ hasText: false, hasFilePaths: false, hasLinePayload: false, filePathsCount: 0, operation: 'copy' })
 
     const isSavingThroughLine = ref(false)
     const pendingThroughLineInfo = ref(null)
@@ -693,6 +694,223 @@ export default {
     function getLineDirectoryPath(line) {
       if (line?.folderPath) return line.folderPath
       return getActiveDirectoryPath()
+    }
+
+    function resetLocalClipboard() {
+      clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null }
+    }
+
+    function getLineClipboardFormat() {
+      return window.electronAPI?.clipboard?.appLineFormat || 'application/x-metro-pids-line'
+    }
+
+    function sanitizeClipboardLineFileName(name) {
+      const safeBaseName = String(name || t('lineManagerWindow.unnamedLine'))
+        .replace(/[<>:"/\\|?*]/g, '')
+        .trim() || 'line'
+      return safeBaseName.toLowerCase().endsWith('.mpl') || safeBaseName.toLowerCase().endsWith('.json')
+        ? safeBaseName
+        : `${safeBaseName}.mpl`
+    }
+
+    function pathBasename(filePath) {
+      const raw = String(filePath || '').trim()
+      if (!raw) return ''
+      const parts = raw.split(/[\\/]/)
+      return parts[parts.length - 1] || ''
+    }
+
+    function isValidLineData(data) {
+      return !!(data && typeof data === 'object' && data.meta && Array.isArray(data.stations))
+    }
+
+    async function syncSystemClipboardState() {
+      if (!window.electronAPI?.clipboard?.getState) return systemClipboardState.value
+      try {
+        const res = await window.electronAPI.clipboard.getState()
+        if (res && res.ok) {
+          systemClipboardState.value = {
+            hasText: !!res.hasText,
+            hasFilePaths: !!res.hasFilePaths,
+            hasLinePayload: !!res.hasLinePayload,
+            filePathsCount: Number(res.filePathsCount || 0),
+            operation: res.operation === 'cut' ? 'cut' : 'copy'
+          }
+        }
+      } catch (e) {
+        console.warn('[LineManagerWindow] 同步系统剪贴板状态失败:', e)
+      }
+      return systemClipboardState.value
+    }
+
+    async function writeSystemClipboard(payload) {
+      if (!window.electronAPI?.clipboard?.write) return { ok: false, error: 'clipboard-unavailable' }
+      const res = await window.electronAPI.clipboard.write(payload)
+      await syncSystemClipboardState()
+      return res
+    }
+
+    async function readSystemClipboardLinePayload() {
+      if (!window.electronAPI?.clipboard?.readCustom) return null
+      try {
+        const res = await window.electronAPI.clipboard.readCustom(getLineClipboardFormat())
+        if (!(res && res.ok && res.exists && res.text)) return null
+        const parsed = JSON.parse(res.text)
+        return parsed && parsed.kind === 'metro-pids-line' && isValidLineData(parsed.content) ? parsed : null
+      } catch (e) {
+        console.warn('[LineManagerWindow] 读取线路剪贴板负载失败:', e)
+        return null
+      }
+    }
+
+    async function readSystemClipboardText() {
+      if (!window.electronAPI?.clipboard?.readText) return ''
+      try {
+        const res = await window.electronAPI.clipboard.readText()
+        return res && res.ok ? String(res.text || '') : ''
+      } catch (e) {
+        return ''
+      }
+    }
+
+    async function readSystemClipboardFilePaths() {
+      if (!window.electronAPI?.clipboard?.readFilePaths) return { paths: [], operation: 'copy' }
+      try {
+        const res = await window.electronAPI.clipboard.readFilePaths()
+        if (res && res.ok) {
+          return {
+            paths: Array.isArray(res.paths) ? res.paths.filter(Boolean) : [],
+            operation: res.operation === 'cut' ? 'cut' : 'copy'
+          }
+        }
+      } catch (e) {}
+      return { paths: [], operation: 'copy' }
+    }
+
+    async function buildLineClipboardPayload(line, operation = 'copy') {
+      if (!line) return null
+      const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value ?? null
+      const sourceFolderPath = getLineDirectoryPath(line)
+      let lineContent = null
+      let fileName = sanitizeClipboardLineFileName(line.filePath || line.name)
+      let targetPath = null
+
+      if (line.isRuntime) {
+        const sourceName = String(line?.name || line?.data?.meta?.lineName || '').trim()
+        let runtimeLineData = line?.data || null
+        try {
+          const full = await cloudConfig.getRuntimeLine(sourceName)
+          if (full?.ok && full?.data) runtimeLineData = full.data
+          else if (full?.line) runtimeLineData = full.line
+        } catch (e) {
+          console.warn('[LineManagerWindow] 复制云控线路时获取完整线路失败，回退使用当前数据:', e)
+        }
+        if (!isValidLineData(runtimeLineData)) return null
+        lineContent = JSON.parse(JSON.stringify(runtimeLineData))
+        fileName = sanitizeClipboardLineFileName(sourceName || lineContent?.meta?.lineName || line.name)
+      } else {
+        const sourceFileName = line.filePath || line.name
+        const readRes = await window.electronAPI?.lines?.read?.(sourceFileName, sourceFolderPath)
+        if (!(readRes && readRes.ok && isValidLineData(readRes.content))) return null
+        lineContent = readRes.content
+        if (sourceFolderPath && sourceFileName) {
+          const sep = sourceFolderPath.includes('\\') ? '\\' : '/'
+          targetPath = (sourceFolderPath.endsWith(sep) ? sourceFolderPath : sourceFolderPath + sep) + sourceFileName
+        }
+      }
+
+      return {
+        kind: 'metro-pids-line',
+        version: 1,
+        operation: operation === 'cut' ? 'cut' : 'copy',
+        sourceFolderId,
+        sourceFolderPath: sourceFolderPath || null,
+        targetPath,
+        fileName,
+        line: {
+          name: line.name || lineContent?.meta?.lineName || '',
+          filePath: line.filePath || null,
+          isRuntime: !!line.isRuntime
+        },
+        content: lineContent
+      }
+    }
+
+    function tryParseLineClipboardText(text) {
+      const raw = String(text || '').trim()
+      if (!raw) return null
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed && parsed.kind === 'metro-pids-line' && isValidLineData(parsed.content)) return parsed
+        if (isValidLineData(parsed)) {
+          return {
+            kind: 'metro-pids-line',
+            version: 1,
+            operation: 'copy',
+            sourceFolderId: null,
+            sourceFolderPath: null,
+            targetPath: null,
+            fileName: sanitizeClipboardLineFileName(parsed?.meta?.lineName || t('lineManagerWindow.unnamedLine')),
+            line: {
+              name: parsed?.meta?.lineName || '',
+              filePath: null,
+              isRuntime: false
+            },
+            content: parsed
+          }
+        }
+      } catch (e) {}
+      return null
+    }
+
+    async function getEffectiveClipboardPayload() {
+      await syncSystemClipboardState()
+
+      const customPayload = await readSystemClipboardLinePayload()
+      if (customPayload) return { type: 'linePayload', payload: customPayload }
+
+      const textPayload = tryParseLineClipboardText(await readSystemClipboardText())
+      if (textPayload) return { type: 'linePayload', payload: textPayload }
+
+      const filePayload = await readSystemClipboardFilePaths()
+      if (filePayload.paths.length) return { type: 'filePaths', ...filePayload }
+
+      if (clipboard.value.line) {
+        const localPayload = await buildLineClipboardPayload(clipboard.value.line, clipboard.value.type)
+        if (localPayload) return { type: 'linePayload', payload: localPayload }
+      }
+
+      if (clipboard.value.folder && clipboard.value.targetPath) {
+        return { type: 'filePaths', paths: [clipboard.value.targetPath], operation: clipboard.value.type === 'cut' ? 'cut' : 'copy' }
+      }
+
+      return null
+    }
+
+    async function importClipboardFilePaths(targetDir) {
+      const clipboardPayload = await getEffectiveClipboardPayload()
+      if (!clipboardPayload || clipboardPayload.type !== 'filePaths') return false
+      const sourcePaths = clipboardPayload.paths.filter(Boolean)
+      if (!sourcePaths.length || !targetDir || !window.electronAPI?.lines?.fs) return false
+
+      let importedCount = 0
+      for (const sourcePath of sourcePaths) {
+        const action = clipboardPayload.operation === 'cut' ? 'move' : 'copy'
+        const res = await window.electronAPI.lines.fs[action](sourcePath, targetDir)
+        if (!(res && res.ok)) {
+          if (window.__lineManagerDialog) {
+            await window.__lineManagerDialog.alert(res?.error || '导入剪贴板文件失败', '错误')
+          }
+          return true
+        }
+        importedCount += 1
+      }
+
+      if (importedCount > 0) {
+        if (clipboardPayload.operation === 'cut') resetLocalClipboard()
+        return true
+      }
+      return false
     }
 
     function getEntryKey(entry) {
@@ -1313,9 +1531,10 @@ export default {
       }
     }
 
-    function showContextMenu(event, folder) {
+    async function showContextMenu(event, folder) {
       event.preventDefault()
       event.stopPropagation()
+      await syncSystemClipboardState()
       toggleEntrySelection(folder, event)
       contextMenu.value = {
         visible: true,
@@ -1328,9 +1547,10 @@ export default {
       contextMenu.value.visible = false
     }
 
-    function showSidebarNewMenu(event) {
+    async function showSidebarNewMenu(event) {
       event.preventDefault()
       event.stopPropagation()
+      await syncSystemClipboardState()
       contextMenu.value.visible = false
       lineContextMenu.value.visible = false
       linesNewMenu.value.visible = false
@@ -1340,9 +1560,10 @@ export default {
       sidebarNewMenu.value.visible = false
     }
 
-    function showLinesNewMenu(event) {
+    async function showLinesNewMenu(event) {
       event.preventDefault()
       event.stopPropagation()
+      await syncSystemClipboardState()
       contextMenu.value.visible = false
       lineContextMenu.value.visible = false
       sidebarNewMenu.value.visible = false
@@ -1391,9 +1612,10 @@ export default {
       if (entry) await deleteFolder(entry.id || null, entry.name, entry.path || null)
     }
 
-    function showLineContextMenu(event, line) {
+    async function showLineContextMenu(event, line) {
       event.preventDefault()
       event.stopPropagation()
+      await syncSystemClipboardState()
       toggleEntrySelection(line, event)
       lineContextMenu.value = { visible: true, x: event.clientX, y: event.clientY, line }
       nextTick(() => {
@@ -1574,6 +1796,11 @@ export default {
         sourceFolderPath: folder.path,
         targetPath: folder.path
       }
+      await writeSystemClipboard({
+        text: folder.path || folder.name || '',
+        filePaths: folder.path ? [folder.path] : [],
+        operation: 'copy'
+      })
     }
 
     async function cutFolder(folder) {
@@ -1587,25 +1814,37 @@ export default {
         sourceFolderPath: folder.path,
         targetPath: folder.path
       }
+      await writeSystemClipboard({
+        text: folder.path || folder.name || '',
+        filePaths: folder.path ? [folder.path] : [],
+        operation: 'cut'
+      })
     }
 
     async function pasteFolder(targetDir = null) {
       closeContextMenu()
       closeSidebarNewMenu()
-      if (!clipboard.value.folder || !window.electronAPI?.lines) return
+      if (!window.electronAPI?.lines) return
       const api = window.electronAPI.lines
-      const sourcePath = clipboard.value.targetPath || clipboard.value.sourceFolderPath
-      const destinationDir = targetDir || getWritableExplorerPath() || resolveRootFolderByPath(sourcePath)?.path || null
-      if (!sourcePath || !destinationDir) return
+      const destinationDir = targetDir || getWritableExplorerPath() || resolveRootFolderByPath(clipboard.value.targetPath || clipboard.value.sourceFolderPath)?.path || null
+      if (!destinationDir) return
       try {
-        const res = clipboard.value.type === 'cut'
-          ? await api.fs.move(sourcePath, destinationDir)
-          : await api.fs.copy(sourcePath, destinationDir)
-        if (!res || !res.ok) {
-          if (window.__lineManagerDialog) await window.__lineManagerDialog.alert(res?.error || t('lineManager.folderPasteFailed'), t('console.error'))
-          return
+        const imported = await importClipboardFilePaths(destinationDir)
+        if (!imported) {
+          if (!clipboard.value.folder) return
+          const sourcePath = clipboard.value.targetPath || clipboard.value.sourceFolderPath
+          if (!sourcePath) return
+          const res = clipboard.value.type === 'cut'
+            ? await api.fs.move(sourcePath, destinationDir)
+            : await api.fs.copy(sourcePath, destinationDir)
+          if (!res || !res.ok) {
+            if (window.__lineManagerDialog) await window.__lineManagerDialog.alert(res?.error || t('lineManager.folderPasteFailed'), t('console.error'))
+            return
+          }
+          resetLocalClipboard()
+        } else {
+          resetLocalClipboard()
         }
-        clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null }
         if (isRootExplorer.value) {
           await refreshRootExplorer()
         } else {
@@ -1621,12 +1860,32 @@ export default {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       clipboard.value = { type: 'copy', line, folder: null, sourceFolderId, sourceFolderPath: getLineDirectoryPath(line), targetPath: line.filePath || line.name }
+      const payload = await buildLineClipboardPayload(line, 'copy')
+      if (payload) {
+        await writeSystemClipboard({
+          text: JSON.stringify(payload.content, null, 2),
+          filePaths: payload.targetPath ? [payload.targetPath] : [],
+          operation: 'copy',
+          customFormat: getLineClipboardFormat(),
+          customData: payload
+        })
+      }
     }
 
     async function cutLine(line) {
       closeLineContextMenu()
       const sourceFolderId = line.folderId ?? selectedFolderId.value ?? currentFolderId.value
       clipboard.value = { type: 'cut', line, folder: null, sourceFolderId, sourceFolderPath: getLineDirectoryPath(line), targetPath: line.filePath || line.name }
+      const payload = await buildLineClipboardPayload(line, 'cut')
+      if (payload) {
+        await writeSystemClipboard({
+          text: JSON.stringify(payload.content, null, 2),
+          filePaths: payload.targetPath ? [payload.targetPath] : [],
+          operation: 'cut',
+          customFormat: getLineClipboardFormat(),
+          customData: payload
+        })
+      }
     }
 
     // 新建线路（从备份 FolderLineManagerWindow 迁移逻辑）
@@ -1732,54 +1991,29 @@ export default {
 
     async function pasteLine(targetDir = null) {
       closeLineContextMenu()
-      if (!clipboard.value.line || !window.electronAPI?.lines) return
+      if (!window.electronAPI?.lines) return
       const targetFolderId = isRootExplorer.value ? null : (selectedFolderId.value || currentFolderId.value)
       const targetFolderPath = targetDir || getWritableExplorerPath()
-      const sourceFolderId = clipboard.value.sourceFolderId
-      const sourceFolderPath = clipboard.value.sourceFolderPath
       if (!targetFolderPath) return
       try {
-        const sourceLine = clipboard.value.line
-        let targetFileName = sourceLine.filePath || sourceLine.name
-        let lineContent = null
-        let sourceLinePath = null
-
-        if (sourceLine.isRuntime) {
-          const sourceName = String(sourceLine?.name || sourceLine?.data?.meta?.lineName || '').trim()
-          let runtimeLineData = sourceLine?.data || null
-          try {
-            const full = await cloudConfig.getRuntimeLine(sourceName)
-            if (full?.ok && full?.data) runtimeLineData = full.data
-            else if (full?.line) runtimeLineData = full.line
-          } catch (e) {
-            console.warn('[LineManagerWindow] 粘贴云控线路时获取完整线路失败，回退使用当前数据:', e)
-          }
-
-          if (!(runtimeLineData && typeof runtimeLineData === 'object')) {
-            if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('读取源线路失败', '错误')
-            return
-          }
-
-          lineContent = JSON.parse(JSON.stringify(runtimeLineData))
-          const safeBaseName = (sourceName || lineContent?.meta?.lineName || t('lineManagerWindow.unnamedLine'))
-            .replace(/[<>:"/\\|?*]/g, '')
-            .trim() || 'line'
-          targetFileName = safeBaseName + '.mpl'
-        } else {
-          const sourceFileName = sourceLine.filePath || sourceLine.name
-          const readRes = await window.electronAPI.lines.read(sourceFileName, sourceFolderPath)
-          if (!(readRes && readRes.ok && readRes.content)) {
-            if (window.__lineManagerDialog) await window.__lineManagerDialog.alert('读取源线路失败', '错误')
-            return
-          }
-          lineContent = readRes.content
-          const sep = sourceFolderPath && sourceFolderPath.includes('\\') ? '\\' : '/'
-          sourceLinePath = sourceFolderPath
-            ? ((sourceFolderPath.endsWith(sep) ? sourceFolderPath : sourceFolderPath + sep) + sourceFileName)
-            : null
+        const imported = await importClipboardFilePaths(targetFolderPath)
+        if (imported) {
+          if (isRootExplorer.value) await refreshRootExplorer()
+          else await refreshExplorer()
+          return
         }
 
-        if (clipboard.value.type === 'copy' && targetFolderId === sourceFolderId) {
+        const clipboardPayload = await getEffectiveClipboardPayload()
+        if (!clipboardPayload || clipboardPayload.type !== 'linePayload') return
+
+        const payload = clipboardPayload.payload
+        const sourceFolderId = payload.sourceFolderId ?? null
+        const sourceFolderPath = payload.sourceFolderPath || null
+        const sourceLinePath = payload.targetPath || null
+        let targetFileName = sanitizeClipboardLineFileName(payload.fileName || payload.line?.filePath || payload.line?.name)
+        const lineContent = JSON.parse(JSON.stringify(payload.content))
+
+        if (payload.operation === 'copy' && targetFolderId === sourceFolderId) {
           const listRes = await window.electronAPI.lines.list(targetFolderPath)
           const existingNames = (listRes || []).map((it) => it.name)
           targetFileName = getUniqueLineFileName(existingNames, targetFileName)
@@ -1790,8 +2024,8 @@ export default {
             await window.__lineManagerDialog.alert(saveRes?.error || '写入目标失败', '错误')
           return
         }
-        if (clipboard.value.type === 'cut' && !sourceLine.isRuntime) {
-          const sourceFileName = sourceLine.filePath || sourceLine.name
+        if (payload.operation === 'cut' && sourceLinePath && sourceFolderPath) {
+          const sourceFileName = payload.line?.filePath || payload.line?.name || pathBasename(sourceLinePath)
           await window.electronAPI.lines.delete(sourceFileName, sourceFolderPath)
         }
         if (isRootExplorer.value) {
@@ -1799,7 +2033,7 @@ export default {
         } else {
           await refreshExplorer()
         }
-        clipboard.value = { type: null, line: null, folder: null, sourceFolderId: null, sourceFolderPath: null, targetPath: null }
+        resetLocalClipboard()
       } catch (e) {
         console.error('粘贴失败:', e)
         if (window.__lineManagerDialog)
@@ -2040,6 +2274,8 @@ export default {
       window.addEventListener('storage', handleSettingsStorageChange)
       window.addEventListener('beforeunload', handleWindowBeforeUnload)
       window.addEventListener('pointerdown', handleGlobalPointerDown, true)
+      window.addEventListener('keydown', handleWindowKeydown, true)
+      await syncSystemClipboardState()
       await loadFolders()
       await nextTick()
       await checkSaveThroughLineMode()
@@ -2050,6 +2286,7 @@ export default {
       window.removeEventListener('storage', handleSettingsStorageChange)
       window.removeEventListener('beforeunload', handleWindowBeforeUnload)
       window.removeEventListener('pointerdown', handleGlobalPointerDown, true)
+      window.removeEventListener('keydown', handleWindowKeydown, true)
       if (isSavingThroughLine.value) {
         try {
           localStorage.removeItem('pendingThroughLineData')
@@ -2117,6 +2354,48 @@ export default {
       const root = searchSortDropdownRef.value
       if (root && !root.contains(event.target)) {
         closeSearchSortDropdown()
+      }
+    }
+
+    function isEditableTarget(target) {
+      if (!target || typeof target.closest !== 'function') return false
+      return !!target.closest('input, textarea, [contenteditable="true"], [contenteditable=""], [contenteditable]')
+    }
+
+    function getShortcutTargetEntry() {
+      if (selectedEntries.value.length === 1) return selectedEntries.value[0]
+      if (selectedLine.value) return selectedLine.value
+      return null
+    }
+
+    async function handleWindowKeydown(event) {
+      const ctrlLike = !!(event && (event.ctrlKey || event.metaKey))
+      if (!ctrlLike || event.altKey) return
+      if (isEditableTarget(event.target)) return
+
+      const key = String(event.key || '').toLowerCase()
+      const targetEntry = getShortcutTargetEntry()
+
+      if (key === 'c') {
+        if (!targetEntry) return
+        event.preventDefault()
+        if (targetEntry.type === 'folder') return await copyFolder(targetEntry)
+        return await copyLine(targetEntry)
+      }
+
+      if (key === 'x') {
+        if (!targetEntry) return
+        if (targetEntry.type === 'folder' && targetEntry.id === CLOUD_FOLDER_ID) return
+        if (targetEntry.type === 'line' && targetEntry.isRuntime) return
+        event.preventDefault()
+        if (targetEntry.type === 'folder') return await cutFolder(targetEntry)
+        return await cutLine(targetEntry)
+      }
+
+      if (key === 'v') {
+        event.preventDefault()
+        if (targetEntry?.type === 'folder') return await pasteFolder(targetEntry.path || getWritableExplorerPath())
+        return await pasteLine()
       }
     }
 
@@ -2434,7 +2713,7 @@ export default {
         const isRootFolder = !!entry?.isRootFolder
         const canDelete = !!entry && !isCloud
         const canCopyFolder = !!entry && !isCloud
-        const canPasteFolder = !!clipboard.value.folder && !!getActiveDirectoryPath()
+        const canPasteFolder = (!!clipboard.value.folder || systemClipboardState.value.hasFilePaths) && !!getActiveDirectoryPath()
         const canCreateLine = !!entry?.path && !isCloud
         return [
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
@@ -2464,7 +2743,7 @@ export default {
         ]
       }),
       sidebarNewMenuItems: computed(() => {
-        const canPaste = clipboard.value.folder || clipboard.value.type
+        const canPaste = clipboard.value.folder || clipboard.value.type || systemClipboardState.value.hasFilePaths || systemClipboardState.value.hasLinePayload || systemClipboardState.value.hasText
         return [
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
@@ -2473,7 +2752,7 @@ export default {
         ]
       }),
       linesNewMenuItems: computed(() => {
-        const canPaste = clipboard.value.type || clipboard.value.folder
+        const canPaste = clipboard.value.type || clipboard.value.folder || systemClipboardState.value.hasFilePaths || systemClipboardState.value.hasLinePayload || systemClipboardState.value.hasText
         const createLineTargetPath =
           linesNewMenu.value.targetFolderPath ||
           getCreateLineTarget().folderPath
@@ -2504,6 +2783,7 @@ export default {
         const selectedLine = lineContextMenu.value.line
         const isRuntimeLine = !!selectedLine?.isRuntime
         const hasWritableDirectory = !!getActiveDirectoryPath()
+        const canPaste = !!(clipboard.value.type || clipboard.value.folder || systemClipboardState.value.hasFilePaths || systemClipboardState.value.hasLinePayload || systemClipboardState.value.hasText)
         return [
           { label: t('lineManager.ctxRefresh'), icon: 'fas fa-sync-alt', action: 'refresh', disabled: false },
           { type: 'sep' },
@@ -2550,7 +2830,7 @@ export default {
             label: t('lineManager.ctxPaste'),
             icon: 'fas fa-paste',
             action: 'pasteLine',
-            disabled: isCloudFolderActive.value || !clipboard.value.type
+            disabled: isCloudFolderActive.value || !canPaste
           },
           { type: 'sep' },
           {
@@ -2602,7 +2882,7 @@ export default {
         if (it.action === 'addFolder') return await addFolder(getWritableExplorerPath())
         if (it.action === 'paste') {
           if (clipboard.value.folder) return await pasteFolder()
-          if (clipboard.value.line) return await pasteLine()
+          return await pasteLine()
         }
       },
       async onLinesNewMenuSelect(it) {
@@ -2631,7 +2911,7 @@ export default {
         if (it.action === 'paste') {
           if (!getWritableExplorerPath()) return
           if (clipboard.value.folder) return await pasteFolder()
-          if (clipboard.value.line) return await pasteLine()
+          return await pasteLine()
         }
       },
       async onLineMenuSelect(it) {
@@ -3216,8 +3496,8 @@ export default {
   height: 32px;
   padding: 0 12px 0 12px;
   background: transparent !important;
-  border-bottom: 1px solid var(--titlebar-border, rgba(0, 0, 0, 0.08));
-  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.05);
+  border-bottom: none;
+  box-shadow: none;
   -webkit-app-region: drag;
 }
 .lmw-titlebar-left {
