@@ -13,6 +13,8 @@ let __mediaSessionHandlersRegistered = false
 let __stationAudioInstanceSeq = 0
 const __cloudAudioBlobUrlCache = new Map() // key -> { url, usedAt }
 const __cloudAudioBlobUrlCacheLimit = 30
+const __localAudioBlobUrlCache = new Map() // absPath -> { url, usedAt }
+const __localAudioBlobUrlCacheLimit = 60
 
 const __normalizeCloudAudioRelPath = (p) => String(p || '')
   .replace(/\\/g, '/')
@@ -44,6 +46,62 @@ const __setCloudAudioBlobCache = (key, url) => {
     __cloudAudioBlobUrlCache.delete(firstKey)
     try { if (first?.url) URL.revokeObjectURL(first.url) } catch (e) {}
   }
+}
+
+const __normalizeLocalAudioCacheKey = (p) => {
+  const raw = String(p || '').trim()
+  if (!raw) return ''
+  return raw.replace(/\//g, '\\').toLowerCase()
+}
+
+const __touchLocalAudioCache = (key) => {
+  const ent = __localAudioBlobUrlCache.get(key)
+  if (!ent) return
+  ent.usedAt = Date.now()
+  __localAudioBlobUrlCache.delete(key)
+  __localAudioBlobUrlCache.set(key, ent)
+}
+
+const __setLocalAudioBlobCache = (key, url) => {
+  __localAudioBlobUrlCache.set(key, { url, usedAt: Date.now() })
+  while (__localAudioBlobUrlCache.size > __localAudioBlobUrlCacheLimit) {
+    const firstKey = __localAudioBlobUrlCache.keys().next().value
+    if (!firstKey) break
+    const first = __localAudioBlobUrlCache.get(firstKey)
+    __localAudioBlobUrlCache.delete(firstKey)
+    try { if (first?.url) URL.revokeObjectURL(first.url) } catch (e) {}
+  }
+}
+
+const __guessAudioMimeType = (p) => {
+  const lower = String(p || '').trim().toLowerCase()
+  if (lower.endsWith('.wav')) return 'audio/wav'
+  if (lower.endsWith('.mp3')) return 'audio/mpeg'
+  if (lower.endsWith('.ogg')) return 'audio/ogg'
+  if (lower.endsWith('.flac')) return 'audio/flac'
+  if (lower.endsWith('.m4a')) return 'audio/mp4'
+  if (lower.endsWith('.aac')) return 'audio/aac'
+  return 'application/octet-stream'
+}
+
+const __fetchLocalAudioBlobUrl = async (absolutePath, mimeTypeHint = '') => {
+  const cacheKey = __normalizeLocalAudioCacheKey(absolutePath)
+  if (!cacheKey) return ''
+  const cached = __localAudioBlobUrlCache.get(cacheKey)
+  if (cached?.url) {
+    __touchLocalAudioCache(cacheKey)
+    return cached.url
+  }
+  const api = typeof window !== 'undefined' ? window?.electronAPI?.lines?.readAudioFile : null
+  if (typeof api !== 'function') return ''
+  const res = await api(absolutePath)
+  if (!res?.ok || !res?.bytes) return ''
+  const bytes = res.bytes instanceof Uint8Array ? res.bytes : new Uint8Array(res.bytes)
+  if (!bytes.byteLength) return ''
+  const blob = new Blob([bytes], { type: res.mimeType || mimeTypeHint || __guessAudioMimeType(absolutePath) })
+  const objectUrl = URL.createObjectURL(blob)
+  __setLocalAudioBlobCache(cacheKey, objectUrl)
+  return objectUrl
 }
 
 const __fetchCloudAudioBlobUrl = async (lineName, relativePath) => {
@@ -116,8 +174,10 @@ export function useStationAudio(state) {
   const instanceId = ++__stationAudioInstanceSeq
   let playSessionId = 0
   let currentAudio = null
+  let sharedAudioContext = null
   let hasMediaStartedForSession = false
   let pausedByMedia = false
+  let lastTriggerMeta = null // { type: 'arrive'|'depart', idx: number, at: number }
 
   const audioDiagLog = (level, message, extra) => {
     const lv = String(level || 'warn').toLowerCase()
@@ -224,6 +284,284 @@ export function useStationAudio(state) {
     } catch (e) {}
   }
 
+  const ensureAudioContext = async () => {
+    if (typeof window === 'undefined') return null
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (typeof AC !== 'function') return null
+    if (!sharedAudioContext) sharedAudioContext = new AC()
+    if (sharedAudioContext.state === 'suspended') {
+      try { await sharedAudioContext.resume() } catch (e) {}
+    }
+    return sharedAudioContext
+  }
+
+  const isWebAudioController = (value) => !!(value && value.__stationAudioKind === 'webaudio')
+
+  const isNativeManagedWavController = (value) => !!(value && value.__stationAudioKind === 'native-managed-wav')
+
+  const shouldUseNativeManagedWavPlayback = ({ absolutePath, rawUrl, mimeTypeHint }) => {
+    if (typeof window === 'undefined') return false
+    if (window.electronAPI?.platform !== 'win32') return false
+    if (typeof window.electronAPI?.audio?.playNativeManagedWav !== 'function') return false
+    const pathLower = String(absolutePath || '').trim().toLowerCase()
+    const mimeLower = String(mimeTypeHint || '').trim().toLowerCase()
+    const rawLower = String(rawUrl || '').trim().toLowerCase()
+    if (!pathLower || !pathLower.endsWith('.wav')) return false
+    if (!(pathLower.includes('\\managed-line-audio\\') || pathLower.includes('/managed-line-audio/'))) return false
+    if (mimeLower && !['audio/wav', 'audio/wave', 'audio/x-wav'].includes(mimeLower)) return false
+    return rawLower.startsWith('local-audio-stream://') || rawLower.startsWith('local-audio://') || rawLower.startsWith('file:///')
+  }
+
+  const shouldUseDecodedBufferPlayback = ({ rawUrl, playbackUrl, absolutePath, mimeTypeHint }) => {
+    const pathLower = String(absolutePath || '').trim().toLowerCase()
+    const mimeLower = String(mimeTypeHint || '').trim().toLowerCase()
+    const rawLower = String(rawUrl || '').trim().toLowerCase()
+    const playbackLower = String(playbackUrl || '').trim().toLowerCase()
+    if (pathLower.endsWith('.wav')) return true
+    if (mimeLower === 'audio/wav' || mimeLower === 'audio/wave' || mimeLower === 'audio/x-wav') return true
+    return (
+      (rawLower.startsWith('local-audio-stream://') || rawLower.startsWith('local-audio://')) &&
+      (rawLower.endsWith('.wav') || playbackLower.startsWith('blob:'))
+    )
+  }
+
+  const normalizeDecodedBufferForPlayback = (ctx, decoded) => {
+    if (!decoded) return decoded
+    const ctxRate = Number(ctx?.sampleRate || 0)
+    const srcRate = Number(decoded.sampleRate || 0)
+    const channels = Number(decoded.numberOfChannels || 0)
+    if (channels !== 1 && (!ctxRate || !srcRate || ctxRate === srcRate)) return decoded
+
+    const frameCount = Number(decoded.length || 0)
+    if (!frameCount) return decoded
+    const targetChannels = channels === 1 ? 2 : channels
+    const targetRate = ctxRate || srcRate || 48000
+    const normalized = ctx.createBuffer(targetChannels, frameCount, targetRate)
+    for (let ch = 0; ch < targetChannels; ch++) {
+      const srcIndex = Math.min(ch, channels - 1)
+      normalized.getChannelData(ch).set(decoded.getChannelData(srcIndex))
+    }
+    return normalized
+  }
+
+  const playDecodedAudioBuffer = async ({ sessionId, rawUrl, playbackUrl, absolutePath, urlDisplay, audioDebug, timeoutMs }) => {
+    const ctx = await ensureAudioContext()
+    if (!ctx) throw new Error('AudioContext unavailable')
+    const res = await fetch(playbackUrl, {
+      headers: { Accept: 'audio/wav,application/octet-stream;q=0.9,*/*;q=0.8' }
+    })
+    if (!res.ok) throw new Error(`fetch audio failed: ${res.status}`)
+    const arr = await res.arrayBuffer()
+    if (sessionId !== playSessionId) return
+    const decoded = await ctx.decodeAudioData(arr.slice(0))
+    const normalized = normalizeDecodedBufferForPlayback(ctx, decoded)
+    if (sessionId !== playSessionId) return
+
+    await new Promise((resolve, reject) => {
+      let done = false
+      let timeoutId = null
+      let pausedWaiting = false
+      let sourceNode = null
+      const controller = {
+        __stationAudioKind: 'webaudio',
+        paused: false,
+        muted: false,
+        volume: 1,
+        currentTime: 0,
+        src: playbackUrl,
+        load: () => {},
+        pause: async () => {
+          controller.paused = true
+          try { await ctx.suspend() } catch (e) {}
+        },
+        stop: () => {
+          try { if (sourceNode) sourceNode.stop(0) } catch (e) {}
+        }
+      }
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId)
+        timeoutId = null
+        if (currentAudio === controller) currentAudio = null
+      }
+      const finishResolve = () => {
+        if (done) return
+        done = true
+        cleanup()
+        resolve()
+      }
+      const finishReject = (err) => {
+        if (done) return
+        done = true
+        cleanup()
+        reject(err)
+      }
+      const armTimeout = () => {
+        if (timeoutId) clearTimeout(timeoutId)
+        timeoutId = setTimeout(() => {
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][timeout]', { sessionId, url: rawUrl, playbackUrl, urlDisplay, timeoutMs, mode: 'webaudio' })
+          try { controller.stop() } catch (e) {}
+          finishReject(new Error(`audio timeout after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }
+      const ensureResumeLoop = () => {
+        if (!pausedWaiting) return
+        const tick = async () => {
+          if (done) return
+          if (sessionId !== playSessionId) return finishResolve()
+          if (!pausedByMedia) {
+            pausedWaiting = false
+            controller.paused = false
+            armTimeout()
+            try { await ctx.resume() } catch (e) { return finishReject(e) }
+            setPlaybackState('playing')
+            audioDiagLog('warn', '[useStationAudio][playAudioFile][resumed]', { sessionId, url: rawUrl, playbackUrl, urlDisplay, absolutePath, audioDebug, mode: 'webaudio' })
+          }
+          if (pausedWaiting) setTimeout(tick, 120)
+        }
+        setTimeout(tick, 120)
+      }
+
+      sourceNode = ctx.createBufferSource()
+      sourceNode.buffer = normalized
+      sourceNode.connect(ctx.destination)
+      sourceNode.onended = () => {
+        if (done) return
+        if (sessionId === playSessionId && pausedByMedia) {
+          pausedWaiting = true
+          controller.paused = true
+          return
+        }
+        finishResolve()
+      }
+
+      currentAudio = controller
+      audioDiagLog('warn', '[useStationAudio][playAudioFile][start]', {
+        sessionId,
+        url: rawUrl,
+        playbackUrl,
+        urlDisplay,
+        absolutePath,
+        audioDebug,
+        mode: 'webaudio',
+        contextSampleRate: ctx.sampleRate,
+        destinationChannels: ctx.destination?.channelCount,
+        destinationMaxChannels: ctx.destination?.maxChannelCount,
+        decodedSampleRate: decoded.sampleRate,
+        decodedChannels: decoded.numberOfChannels,
+        decodedDuration: decoded.duration,
+        playbackSampleRate: normalized.sampleRate,
+        playbackChannels: normalized.numberOfChannels
+      })
+
+      armTimeout()
+      try {
+        sourceNode.start(0)
+        if (sessionId === playSessionId && !hasMediaStartedForSession) {
+          hasMediaStartedForSession = true
+          setPlaybackState('playing')
+        }
+        controller.paused = false
+        audioDiagLog('warn', '[useStationAudio][playAudioFile][playing]', {
+          sessionId,
+          url: rawUrl,
+          playbackUrl,
+          urlDisplay,
+          absolutePath,
+          audioDebug,
+          mode: 'webaudio',
+          contextSampleRate: ctx.sampleRate,
+          decodedSampleRate: decoded.sampleRate,
+          decodedChannels: decoded.numberOfChannels,
+          playbackSampleRate: normalized.sampleRate,
+          playbackChannels: normalized.numberOfChannels
+        })
+      } catch (e) {
+        finishReject(e)
+        return
+      }
+
+      ensureResumeLoop()
+    })
+  }
+
+  const playNativeManagedWav = async ({ sessionId, rawUrl, absolutePath, urlDisplay, audioDebug, timeoutMs }) => {
+    const api = window?.electronAPI?.audio?.playNativeManagedWav
+    if (typeof api !== 'function') throw new Error('native managed wav playback unavailable')
+    await new Promise((resolve, reject) => {
+      let done = false
+      let timeoutId = null
+      const controller = {
+        __stationAudioKind: 'native-managed-wav',
+        paused: false,
+        muted: false,
+        volume: 1,
+        currentTime: 0,
+        src: absolutePath,
+        load: () => {},
+        pause: async () => {
+          controller.paused = true
+          try { await window?.electronAPI?.audio?.stopNativeManagedWav?.() } catch (e) {}
+        },
+        stop: async () => {
+          try { await window?.electronAPI?.audio?.stopNativeManagedWav?.() } catch (e) {}
+        }
+      }
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId)
+        timeoutId = null
+        if (currentAudio === controller) currentAudio = null
+      }
+      const finishResolve = () => {
+        if (done) return
+        done = true
+        cleanup()
+        resolve()
+      }
+      const finishReject = (err) => {
+        if (done) return
+        done = true
+        cleanup()
+        reject(err)
+      }
+      currentAudio = controller
+      audioDiagLog('warn', '[useStationAudio][playAudioFile][start]', {
+        sessionId,
+        url: rawUrl,
+        playbackUrl: absolutePath,
+        urlDisplay,
+        absolutePath,
+        audioDebug,
+        mode: 'native-managed-wav'
+      })
+      timeoutId = setTimeout(() => {
+        audioDiagLog('warn', '[useStationAudio][playAudioFile][timeout]', { sessionId, url: rawUrl, playbackUrl: absolutePath, urlDisplay, timeoutMs, mode: 'native-managed-wav' })
+        void controller.stop()
+        finishReject(new Error(`native managed wav timeout after ${timeoutMs}ms`))
+      }, timeoutMs)
+      Promise.resolve()
+        .then(async () => {
+          const res = await api(absolutePath)
+          if (!res?.ok && !res?.stopped) throw new Error(String(res?.error || 'native managed wav failed'))
+          if (sessionId === playSessionId && !hasMediaStartedForSession) {
+            hasMediaStartedForSession = true
+            setPlaybackState('playing')
+          }
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][playing]', {
+            sessionId,
+            url: rawUrl,
+            playbackUrl: absolutePath,
+            urlDisplay,
+            absolutePath,
+            audioDebug,
+            mode: 'native-managed-wav',
+            stopped: !!res?.stopped
+          })
+          finishResolve()
+        })
+        .catch((err) => finishReject(err))
+    })
+  }
+
   // 清理线路名中的富文本标签
   const cleanLineName = (n) => (n ? String(n).replace(/<[^>]+>([^<]*)<\/>/g, '$1').trim() : '')
 
@@ -266,17 +604,22 @@ export function useStationAudio(state) {
     if (!currentAudio) return
     try {
       const a = currentAudio
-      a.muted = true
-      a.volume = 0
+      if (isWebAudioController(a) || isNativeManagedWavController(a)) {
+        a.stop()
+      } else {
+        a.muted = true
+        a.volume = 0
+        a.pause()
       // 不在这里清空 onended/onpause/onerror：
       // playAudioFile 内部会用这些事件/超时来 resolve/reject Promise，
       // 清空会导致队列等待永远无法结束。
       a.pause()
       a.currentTime = 0
       // 彻底清空源，避免浏览器延迟触发 onpause/onended
-      a.src = ''
-      if (typeof a.load === 'function') {
-        a.load()
+        a.src = ''
+        if (typeof a.load === 'function') {
+          a.load()
+        }
       }
     } catch (e) {}
     currentAudio = null
@@ -958,7 +1301,9 @@ export function useStationAudio(state) {
     if (role === 'door') {
       // 车门提示在“出站模式”按下一站开门侧播报；其余模式沿用当前站。
       const doorTargetIdx = ctx?.forArrive === false ? getNextStationIdx(currentIdx, appData) : currentIdx
-      const resolved = resolveWithIdx(doorTargetIdx, { roleKey: role, allowNameMatch: true, useNameForCommon: true })
+      // door 角色绝不能按“站名模糊匹配”回退，否则会把车门占位符错误绑定到站名音频。
+      // 这里只允许命中显式 role=door 的条目；找不到时交给后面的动态门侧匹配兜底。
+      const resolved = resolveWithIdx(doorTargetIdx, { roleKey: role, allowNameMatch: false, useNameForCommon: false })
       if (resolved?.path) return resolved
       const dynResolved = await tryResolveDynamicFromDir(doorTargetIdx, role)
       return dynResolved || item
@@ -1098,9 +1443,92 @@ export function useStationAudio(state) {
   }
 
   // 播放单条音频，结束/打断时清理引用
-  const playAudioFile = async (sessionId, url) => {
-    if (!url || url === 'file:///') return
-    const audio = new Audio(url)
+  const playAudioFile = async (sessionId, source) => {
+    const rawUrl = typeof source === 'string' ? source : String(source?.url || '')
+    const absolutePath = typeof source === 'object' ? String(source?.absolutePath || '') : ''
+    const mimeTypeHint = typeof source === 'object' ? String(source?.mimeType || '') : ''
+    if (!rawUrl || rawUrl === 'file:///') return
+    if (sessionId !== playSessionId) return
+    let playbackUrl = rawUrl
+    if (absolutePath) {
+      try {
+        const localBlobUrl = await __fetchLocalAudioBlobUrl(absolutePath, mimeTypeHint)
+        if (localBlobUrl) playbackUrl = localBlobUrl
+      } catch (e) {}
+    }
+    if (sessionId !== playSessionId) return
+    if (shouldUseNativeManagedWavPlayback({ absolutePath, rawUrl, mimeTypeHint })) {
+      const audioDebug = isDynamicAudioDebugEnabled()
+      const timeoutMs = 12000
+      const urlDisplay = (() => {
+        try {
+          if (typeof rawUrl !== 'string' || !rawUrl) return ''
+          const prefixes = ['local-audio://file/', 'local-audio-stream://file/', 'audio://file/', 'file:///']
+          for (const prefix of prefixes) {
+            if (rawUrl.startsWith(prefix)) {
+              return decodeURIComponent(rawUrl.slice(prefix.length)).replace(/\//g, '\\')
+            }
+          }
+        } catch (e) {}
+        return rawUrl
+      })()
+      try {
+        await playNativeManagedWav({ sessionId, rawUrl, absolutePath, urlDisplay, audioDebug, timeoutMs })
+        if (sessionId !== playSessionId) stopCurrentPlayback()
+        return
+      } catch (err) {
+        if (sessionId === playSessionId) {
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][native-fallback]', {
+            sessionId,
+            url: rawUrl,
+            absolutePath,
+            urlDisplay,
+            error: String(err && err.message ? err.message : err)
+          })
+        }
+      }
+    }
+    if (shouldUseDecodedBufferPlayback({ rawUrl, playbackUrl, absolutePath, mimeTypeHint })) {
+      const audioDebug = isDynamicAudioDebugEnabled()
+      const timeoutMs = 12000
+      const urlDisplay = (() => {
+        try {
+          if (typeof rawUrl !== 'string' || !rawUrl) return ''
+          const prefixes = ['local-audio://file/', 'local-audio-stream://file/', 'audio://file/', 'file:///']
+          for (const prefix of prefixes) {
+            if (rawUrl.startsWith(prefix)) {
+              return decodeURIComponent(rawUrl.slice(prefix.length)).replace(/\//g, '\\')
+            }
+          }
+        } catch (e) {}
+        return rawUrl
+      })()
+      const result = await Promise.resolve()
+        .then(() => playDecodedAudioBuffer({ sessionId, rawUrl, playbackUrl, absolutePath, urlDisplay, audioDebug, timeoutMs }))
+        .then(() => ({ ok: true }))
+        .catch((err) => ({ ok: false, err }))
+      const isExpectedPlayInterrupt = (err) => {
+        if (!err) return false
+        const name = String(err?.name || '').trim()
+        if (name === 'AbortError') return true
+        const msg = String(err?.message || '').toLowerCase()
+        return msg.includes('play() request was interrupted by a call to pause')
+      }
+      if (!result.ok && sessionId === playSessionId && !isExpectedPlayInterrupt(result.err)) {
+        audioDiagLog('warn', '[useStationAudio] playAudioFile failed', result.err)
+      }
+      if (sessionId !== playSessionId) stopCurrentPlayback()
+      return
+    }
+    const audio = new Audio(playbackUrl)
+    if (sessionId !== playSessionId) {
+      try {
+        audio.pause()
+        audio.src = ''
+        if (typeof audio.load === 'function') audio.load()
+      } catch (e) {}
+      return
+    }
     currentAudio = audio
     const audioDebug = isDynamicAudioDebugEnabled()
     // 站点播报一般不会超过十几秒；更短的超时能避免队列“看起来完全卡死”
@@ -1109,8 +1537,9 @@ export function useStationAudio(state) {
       try {
         if (typeof u !== 'string' || !u) return ''
         const p1 = 'local-audio://file/'
-        const p2 = 'audio://file/'
-        const p3 = 'file:///'
+        const p2 = 'local-audio-stream://file/'
+        const p3 = 'audio://file/'
+        const p4 = 'file:///'
         if (u.startsWith(p1)) {
           const enc = u.slice(p1.length)
           return decodeURIComponent(enc).replace(/\//g, '\\')
@@ -1123,10 +1552,14 @@ export function useStationAudio(state) {
           const enc = u.slice(p3.length)
           return decodeURIComponent(enc).replace(/\//g, '\\')
         }
+        if (u.startsWith(p4)) {
+          const enc = u.slice(p4.length)
+          return decodeURIComponent(enc).replace(/\//g, '\\')
+        }
       } catch (e) {}
       return u
     }
-    const urlDisplay = formatUrlForDebug(url)
+    const urlDisplay = formatUrlForDebug(rawUrl)
     const result = await new Promise((resolve, reject) => {
       let done = false
       let timeoutId = null
@@ -1163,12 +1596,19 @@ export function useStationAudio(state) {
         reject(err)
       }
 
-      audioDiagLog('warn', '[useStationAudio][playAudioFile][start]', { sessionId, url, urlDisplay, audioDebug })
+      audioDiagLog('warn', '[useStationAudio][playAudioFile][start]', {
+        sessionId,
+        url: rawUrl,
+        playbackUrl,
+        urlDisplay,
+        absolutePath,
+        audioDebug
+      })
 
       const armTimeoutAndStallDetection = () => {
         clearTimers()
         timeoutId = setTimeout(() => {
-          audioDiagLog('warn', '[useStationAudio][playAudioFile][timeout]', { sessionId, url, urlDisplay, timeoutMs })
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][timeout]', { sessionId, url: rawUrl, playbackUrl, urlDisplay, timeoutMs })
           try {
             audio.pause()
             audio.currentTime = 0
@@ -1186,7 +1626,7 @@ export function useStationAudio(state) {
           pausedWaiting = true
           clearTimers()
           setPlaybackState('paused')
-          audioDiagLog('warn', '[useStationAudio][playAudioFile][paused-by-media]', { sessionId, url, urlDisplay })
+          audioDiagLog('warn', '[useStationAudio][playAudioFile][paused-by-media]', { sessionId, url: rawUrl, playbackUrl, urlDisplay })
           return
         }
         // 其它 pause（例如结束/被打断）仍按“结束”处理
@@ -1208,7 +1648,7 @@ export function useStationAudio(state) {
                 hasMediaStartedForSession = true
               }
               setPlaybackState('playing')
-              audioDiagLog('warn', '[useStationAudio][playAudioFile][resumed]', { sessionId, url, urlDisplay })
+              audioDiagLog('warn', '[useStationAudio][playAudioFile][resumed]', { sessionId, url: rawUrl, playbackUrl, urlDisplay })
             } catch (e) {
               return finishReject(e)
             }
@@ -1226,7 +1666,7 @@ export function useStationAudio(state) {
           hasMediaStartedForSession = true
           setPlaybackState('playing')
         }
-        audioDiagLog('warn', '[useStationAudio][playAudioFile][playing]', { sessionId, url, urlDisplay, audioDebug })
+        audioDiagLog('warn', '[useStationAudio][playAudioFile][playing]', { sessionId, url: rawUrl, playbackUrl, urlDisplay, absolutePath, audioDebug })
 
         // 防御：有些 wav 可能既不触发 onended，也不触发 onerror（会导致队列卡住）。
         // 使用 currentTime 是否在前进做“卡死检测”。
@@ -1247,7 +1687,8 @@ export function useStationAudio(state) {
           if (rs >= 2 && stalledFor >= stallMs) {
             audioDiagLog('warn', '[useStationAudio][playAudioFile][stalled]', {
               sessionId,
-              url,
+              url: rawUrl,
+              playbackUrl,
               urlDisplay,
               stallMs,
               currentTime: ct,
@@ -1287,8 +1728,10 @@ export function useStationAudio(state) {
     let playedCount = 0
     let skippedNoPlaceholder = 0
     let skippedNoSource = 0
+    let skippedDuplicateResolved = 0
     let errorCount = 0
     let endedBy = 'completed' // or 'session-changed' | 'aborted-due-to-stop'
+    let lastResolvedPlaybackKey = ''
 
     if (!list.length) {
       if (sessionId === playSessionId) {
@@ -1338,10 +1781,45 @@ export function useStationAudio(state) {
           }
           continue
         }
+        const resolvedPlaybackKey = String(source.absolutePath || source.relativePath || source.url || '').trim()
+        if (resolvedPlaybackKey && resolvedPlaybackKey === lastResolvedPlaybackKey) {
+          skippedDuplicateResolved++
+          if (sessionId === playSessionId && dynDebug) {
+            audioDiagLog('warn', '[useStationAudio][playList][skip][duplicate-resolved]', {
+              sessionId,
+              stationIdxForLog,
+              dir,
+              listKindForLog,
+              role: item?.role || '',
+              itemPath: item?.path || '',
+              itemName: item?.name || '',
+              relativePath: source.relativePath || '',
+              absolutePath: source.absolutePath || '',
+              playbackKey: resolvedPlaybackKey
+            })
+          }
+          continue
+        }
+        lastResolvedPlaybackKey = resolvedPlaybackKey
         if (sessionId !== playSessionId) {
           endedBy = 'session-changed'
           stopCurrentPlayback()
           return
+        }
+
+        if (sessionId === playSessionId && dynDebug) {
+          audioDiagLog('warn', '[useStationAudio][playList][resolved-item]', {
+            sessionId,
+            stationIdxForLog,
+            dir,
+            listKindForLog,
+            role: item?.role || '',
+            itemPath: item?.path || '',
+            itemName: item?.name || '',
+            relativePath: source.relativePath || '',
+            absolutePath: source.absolutePath || '',
+            url: source.url || ''
+          })
         }
 
         try {
@@ -1361,7 +1839,7 @@ export function useStationAudio(state) {
           }
         } catch (e) {}
 
-        await playAudioFile(sessionId, source.url)
+        await playAudioFile(sessionId, source)
         playedCount++
       } catch (e) {
         errorCount++
@@ -1382,6 +1860,7 @@ export function useStationAudio(state) {
           playedCount,
           skippedNoPlaceholder,
           skippedNoSource,
+          skippedDuplicateResolved,
           errorCount,
           endedBy,
           durationMs: Date.now() - startedAt
@@ -1395,6 +1874,13 @@ export function useStationAudio(state) {
     if (typeof window !== 'undefined' && window.__disableStationAudioDuringRecording) return
     const stations = state.appData?.stations
     if (!stations || idx < 0 || idx >= stations.length) return
+    {
+      const now = Date.now()
+      if (lastTriggerMeta && lastTriggerMeta.type === 'arrive' && lastTriggerMeta.idx === idx && (now - lastTriggerMeta.at) < 350) {
+        return
+      }
+      lastTriggerMeta = { type: 'arrive', idx, at: now }
+    }
     const meta = state.appData?.meta || {}
     if (typeof window !== 'undefined') {
       if (typeof window.__stopCommonAudio === 'function') { try { window.__stopCommonAudio() } catch (e) {} }
@@ -1538,6 +2024,13 @@ export function useStationAudio(state) {
     if (typeof window !== 'undefined' && window.__disableStationAudioDuringRecording) return
     const stations = state.appData?.stations
     if (!stations || idx < 0 || idx >= stations.length) return
+    {
+      const now = Date.now()
+      if (lastTriggerMeta && lastTriggerMeta.type === 'depart' && lastTriggerMeta.idx === idx && (now - lastTriggerMeta.at) < 350) {
+        return
+      }
+      lastTriggerMeta = { type: 'depart', idx, at: now }
+    }
     const meta = state.appData?.meta || {}
     if (typeof window !== 'undefined') {
       if (typeof window.__stopCommonAudio === 'function') { try { window.__stopCommonAudio() } catch (e) {} }

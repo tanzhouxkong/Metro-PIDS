@@ -83,6 +83,12 @@ async function statSafe(p) {
 async function collectAudioEntries(audioDirAbs) {
   const entries = [];
   const audioRoot = path.resolve(audioDirAbs);
+  const detectVariantRank = (stem) => {
+    const m = String(stem || '').match(/(?:[_-](\d+)|\((\d+)\)|（(\d+)）)$/);
+    if (!m) return 0;
+    const n = Number(m[1] || m[2] || m[3] || 0);
+    return Number.isFinite(n) ? n : 0;
+  };
 
   async function walk(dirAbs, partsFromAudio) {
     let list;
@@ -107,12 +113,15 @@ async function collectAudioEntries(audioDirAbs) {
       const stemNorm = normalizeForStationMatch(stem);
       if (!stemNorm) continue;
       const doorSide = detectDoorSideFromText(`${stem} ${unixRel}`);
+      const st = await statSafe(full);
       entries.push({
         relativePath: unixRel,
         stem,
         stemNorm,
         langFlags: { ...detectLangFlagsFromPath(unixRel), ...detectLangFlags(stem) },
-        doorSide
+        doorSide,
+        mtimeMs: st && Number.isFinite(st.mtimeMs) ? st.mtimeMs : 0,
+        variantRank: detectVariantRank(stem)
       });
     }
   }

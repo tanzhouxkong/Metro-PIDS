@@ -16,6 +16,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     } catch (e) {}
   },
   // 平台信息
+  audio: {
+    playNativeManagedWav: async (absolutePath) => {
+      try { return await ipcRenderer.invoke('audio/playNativeManagedWav', absolutePath); } catch (e) { return { ok: false, error: String(e), stopped: false }; }
+    },
+    stopNativeManagedWav: async () => {
+      try { return await ipcRenderer.invoke('audio/stopNativeManagedWav'); } catch (e) { return { ok: false, error: String(e) }; }
+    }
+  },
   platform: process.platform,
   isPackaged: async () => {
     try {
@@ -237,6 +245,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     resolveAudioPath: async (lineFilePath, relativePath) => {
       try { return await ipcRenderer.invoke('lines/resolveAudioPath', lineFilePath, relativePath); } catch (e) { return { ok: false, error: String(e) }; }
+    },
+    readAudioFile: async (absolutePath) => {
+      try { return await ipcRenderer.invoke('lines/readAudioFile', absolutePath); } catch (e) { return { ok: false, error: String(e) }; }
     },
     findAudioByStationName: async (lineFilePath, stationName, opts) => {
       try { return await ipcRenderer.invoke('lines/findAudioByStationName', lineFilePath, stationName, opts || {}); } catch (e) { return { ok: false, error: String(e) }; }

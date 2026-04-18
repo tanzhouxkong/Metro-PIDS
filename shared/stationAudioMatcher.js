@@ -277,6 +277,22 @@ function addStationPeersFromLineData(lineData, set) {
   }
 }
 
+function compareEntryPreference(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return -1;
+  if (!b) return 1;
+  const aMtime = Number(a.mtimeMs || 0);
+  const bMtime = Number(b.mtimeMs || 0);
+  if (aMtime !== bMtime) return aMtime > bMtime ? 1 : -1;
+  const aVariant = Number(a.variantRank || 0);
+  const bVariant = Number(b.variantRank || 0);
+  if (aVariant !== bVariant) return aVariant > bVariant ? 1 : -1;
+  const aRel = String(a.relativePath || '');
+  const bRel = String(b.relativePath || '');
+  if (aRel === bRel) return 0;
+  return aRel < bRel ? 1 : -1;
+}
+
 function findAudioByStationNameFromIndex({ entries, stationName, opts, peerNormsSet }) {
   const role = opts && opts.role;
   const rules = resolveMatcherRules(opts || {});
@@ -324,7 +340,7 @@ function findAudioByStationNameFromIndex({ entries, stationName, opts, peerNorms
       const ls = langPreferenceScore(e.langFlags, opts || {});
       const ds = doorSideScore(e.doorSide);
       const exactScore = ls + ds;
-      if (!bestExact || exactScore > bestExactScore || (exactScore === bestExactScore && e.relativePath < bestExact.relativePath)) {
+      if (!bestExact || exactScore > bestExactScore || (exactScore === bestExactScore && compareEntryPreference(e, bestExact) > 0)) {
         bestExact = e;
         bestExactScore = exactScore;
       }
@@ -360,7 +376,7 @@ function findAudioByStationNameFromIndex({ entries, stationName, opts, peerNorms
       const penalty = lengthImportPenalty(stemNorm, targetNorm, rules);
       const ds = doorSideScore(e.doorSide);
       const score = match + ls * 0.85 + ds - penalty;
-      if (score > bestScore || (score === bestScore && best && e.relativePath < best.relativePath)) {
+      if (score > bestScore || (score === bestScore && compareEntryPreference(e, best) > 0)) {
         bestScore = score;
         best = e;
       }
@@ -388,7 +404,7 @@ function findAudioByStationNameFromIndex({ entries, stationName, opts, peerNorms
       const ls = langPreferenceScore(e.langFlags, opts || {});
       const ds = doorSideScore(e.doorSide);
       const score = 220 + ls * 0.9 + ds;
-      if (score > genericBestScore || (score === genericBestScore && genericBest && e.relativePath < genericBest.relativePath)) {
+      if (score > genericBestScore || (score === genericBestScore && compareEntryPreference(e, genericBest) > 0)) {
         genericBest = e;
         genericBestScore = score;
       }
@@ -416,6 +432,7 @@ module.exports = {
   detectDoorSideFromText,
   prefixStrictConflict,
   lineContextBlocksAudioBinding,
+  compareEntryPreference,
   langPreferenceScore,
   lengthImportPenalty,
   addStationPeersFromLineData,

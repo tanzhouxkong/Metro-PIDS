@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut, clipboard } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, nativeImage, desktopCapturer, Notification, protocol, nativeTheme, globalShortcut, clipboard, net } = require('electron');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
@@ -60,6 +60,7 @@ ${JSON.stringify(details.config || {}, null, 2)}`;
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
+const { pathToFileURL } = require('url');
 const NT_LOG_DIR_SEGMENTS = ['data', 'log'];
 let resolvedNtLogDir = null;
 const MAIN_LOG_BASENAME = 'maino';
@@ -213,6 +214,7 @@ try {
   console.warn('[main] ws 模块不可用，局域网 WebSocket 同步将被禁用:', e && e.message);
 }
 let ffmpegPath = null;
+let nativeManagedWavPlayback = null;
 try {
   const ffmpeg = require('@ffmpeg-installer/ffmpeg');
   ffmpegPath = ffmpeg.path;
@@ -1152,6 +1154,12 @@ function getStaticMimeType(filePath) {
   if (ext === '.woff') return 'font/woff';
   if (ext === '.woff2') return 'font/woff2';
   if (ext === '.ttf') return 'font/ttf';
+  if (ext === '.wav') return 'audio/wav';
+  if (ext === '.mp3') return 'audio/mpeg';
+  if (ext === '.ogg') return 'audio/ogg';
+  if (ext === '.flac') return 'audio/flac';
+  if (ext === '.m4a') return 'audio/mp4';
+  if (ext === '.aac') return 'audio/aac';
   return 'application/octet-stream';
 }
 
@@ -6651,6 +6659,85 @@ function getManagedLineAudioWorkspaceDir(lineFilePath) {
   return path.join(getManagedLineAudioWorkspaceBaseDir(), key);
 }
 
+function getManagedLineAudioNormalizedCacheDir() {
+  return path.join(getManagedLineAudioWorkspaceBaseDir(), '_normalized-cache');
+}
+
+function shouldNormalizeManagedDynamicWavForPlayback(absolutePath) {
+  const abs = normalizeAbsPath(absolutePath);
+  if (!abs) return false;
+  if (!/\.wav$/i.test(abs)) return false;
+  const managedBase = normalizeAbsPath(getManagedLineAudioWorkspaceBaseDir());
+  return !!(managedBase && isPathUnderRoot(abs, managedBase));
+}
+
+async function ensureNormalizedManagedDynamicWavForPlayback(absolutePath, statInfo) {
+  const abs = normalizeAbsPath(absolutePath);
+  if (!abs || !shouldNormalizeManagedDynamicWavForPlayback(abs) || !ffmpegPath) return abs;
+  const st = statInfo || await fsPromises.stat(abs).catch(() => null);
+  if (!st || !st.isFile()) return abs;
+
+  const cacheKey = crypto
+    .createHash('sha1')
+    .update(`${process.platform === 'win32' ? abs.toLowerCase() : abs}|${st.size}|${st.mtimeMs}`)
+    .digest('hex');
+  const cacheDir = getManagedLineAudioNormalizedCacheDir();
+  const outPath = path.join(cacheDir, `${cacheKey}.wav`);
+  const outStat = await fsPromises.stat(outPath).catch(() => null);
+  if (outStat && outStat.isFile() && outStat.size > 44) return outPath;
+
+  await ensureDir(cacheDir);
+  await new Promise((resolve, reject) => {
+    const args = [
+      '-y',
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-i', abs,
+      '-map_metadata', '-1',
+      '-vn',
+      '-acodec', 'pcm_s16le',
+      '-ar', '48000',
+      '-ac', '2',
+      outPath
+    ];
+    const p = spawn(ffmpegPath, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    p.stderr.on('data', (chunk) => { stderr += String(chunk || ''); });
+    p.once('error', reject);
+    p.once('close', (code) => {
+      if (code === 0) return resolve();
+      reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+    });
+  });
+
+  const normalizedStat = await fsPromises.stat(outPath).catch(() => null);
+  if (!normalizedStat || !normalizedStat.isFile() || normalizedStat.size <= 44) return abs;
+  return outPath;
+}
+
+function stopNativeManagedWavPlayback() {
+  const current = nativeManagedWavPlayback;
+  nativeManagedWavPlayback = null;
+  if (!current || !current.child) return false;
+  try { current.child.kill(); } catch (e) {}
+  return true;
+}
+
+function getNativeManagedWavPlayerScriptPath() {
+  const candidates = [
+    path.join(__dirname, 'scripts', 'play-managed-wav.ps1'),
+    path.join(__dirname, '..', 'scripts', 'play-managed-wav.ps1'),
+    path.join(app.getAppPath(), 'scripts', 'play-managed-wav.ps1'),
+    path.join(process.cwd(), 'scripts', 'play-managed-wav.ps1')
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch (e) {}
+  }
+  return '';
+}
+
 async function getAudioLookupRootsForLine(lineFilePath, options = {}) {
   const normalized = normalizeAbsPath(lineFilePath);
   if (!normalized) return [];
@@ -7044,7 +7131,7 @@ ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePat
         const st = await fsPromises.stat(fullPath);
         if (!st.isFile()) continue;
         allowLocalAudioPath(fullPath);
-        const playableUrl = 'local-audio://file/' + encodeURIComponent(fullPath);
+        const playableUrl = 'local-audio-stream://file/' + encodeURIComponent(fullPath);
         return { ok: true, path: fullPath, playableUrl };
       } catch (e) {
         // try next root
@@ -7070,7 +7157,7 @@ ipcMain.handle('lines/resolveAudioPath', async (event, lineFilePath, relativePat
     const st = await fsPromises.stat(fullPath);
     if (!st.isFile()) return { ok: false, error: 'not-a-file' };
     allowLocalAudioPath(fullPath);
-    const playableUrl = 'local-audio://file/' + encodeURIComponent(fullPath);
+    const playableUrl = 'local-audio-stream://file/' + encodeURIComponent(fullPath);
     return { ok: true, path: fullPath, playableUrl };
   } catch (e) {
     return { ok: false, error: 'file-not-found' };
@@ -8334,6 +8421,97 @@ ipcMain.handle('shortturns/rename', async (event, oldName, newName) => {
     return { ok: true, oldPath, newPath };
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('lines/readAudioFile', async (event, absolutePath) => {
+  try {
+    const normalized = normalizeAbsPath(String(absolutePath || ''));
+    if (!normalized) return { ok: false, error: 'invalid-audio-path' };
+    if (!isLocalAudioPathAllowed(normalized)) return { ok: false, error: 'forbidden-audio-path' };
+    const st = await fsPromises.stat(normalized).catch(() => null);
+    if (!st || !st.isFile()) return { ok: false, error: 'file-not-found' };
+    // 刷新短期放行窗口，允许同一条音频在一个播放会话里重复读取/重播。
+    allowLocalAudioPath(normalized);
+    let readPath = normalized;
+    let mimeType = getStaticMimeType(normalized);
+    if (shouldNormalizeManagedDynamicWavForPlayback(normalized)) {
+      try {
+        const normalizedPlaybackPath = await ensureNormalizedManagedDynamicWavForPlayback(normalized, st);
+        if (normalizedPlaybackPath && normalizedPlaybackPath !== normalized) {
+          readPath = normalizedPlaybackPath;
+          mimeType = 'audio/wav';
+        }
+      } catch (e) {
+        console.warn('[main] normalize managed dynamic wav failed:', {
+          source: normalized,
+          error: String(e && e.message ? e.message : e)
+        });
+      }
+    }
+    const buf = await fsPromises.readFile(readPath);
+    return {
+      ok: true,
+      path: normalized,
+      mimeType,
+      normalizedPlaybackPath: readPath !== normalized ? readPath : '',
+      bytes: Uint8Array.from(buf)
+    };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+});
+
+ipcMain.handle('audio/playNativeManagedWav', async (event, absolutePath) => {
+  try {
+    const normalized = normalizeAbsPath(String(absolutePath || ''));
+    if (!normalized) return { ok: false, error: 'invalid-audio-path' };
+    if (!isLocalAudioPathAllowed(normalized)) return { ok: false, error: 'forbidden-audio-path' };
+    if (!shouldNormalizeManagedDynamicWavForPlayback(normalized)) return { ok: false, error: 'unsupported-audio-path' };
+    const st = await fsPromises.stat(normalized).catch(() => null);
+    if (!st || !st.isFile()) return { ok: false, error: 'file-not-found' };
+    const playbackPath = await ensureNormalizedManagedDynamicWavForPlayback(normalized, st);
+    if (!playbackPath) return { ok: false, error: 'normalize-failed' };
+    const playerScriptPath = getNativeManagedWavPlayerScriptPath();
+    if (!playerScriptPath) return { ok: false, error: 'native-player-script-not-found' };
+
+    stopNativeManagedWavPlayback();
+    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', playerScriptPath, '-Path', playbackPath], {
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe']
+    });
+    nativeManagedWavPlayback = { child, sourcePath: normalized, playbackPath };
+    let stderr = '';
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (payload) => {
+        if (settled) return;
+        settled = true;
+        if (nativeManagedWavPlayback && nativeManagedWavPlayback.child === child) nativeManagedWavPlayback = null;
+        resolve(payload);
+      };
+      child.stderr.on('data', (chunk) => { stderr += String(chunk || ''); });
+      child.once('error', (err) => finish({ ok: false, error: String(err && err.message ? err.message : err), stopped: false }));
+      child.once('close', (code, signal) => {
+        const stopped = !nativeManagedWavPlayback || nativeManagedWavPlayback.child !== child || !!signal;
+        if (code === 0 || stopped) {
+          finish({ ok: true, stopped, playbackPath });
+          return;
+        }
+        finish({ ok: false, error: stderr.trim() || `native wav player exited with code ${code}`, stopped: false, playbackPath });
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e), stopped: false };
+  }
+});
+
+ipcMain.handle('audio/stopNativeManagedWav', async () => {
+  try {
+    const stopped = stopNativeManagedWavPlayback();
+    return { ok: true, stopped };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
   }
 });
 
@@ -10062,6 +10240,42 @@ app.whenReady().then(async () => {
   }
 
   // 在 Windows 上，尝试显示控制台窗口以便调试（仅打包后）
+  try {
+    protocol.handle('local-audio-stream', async (request) => {
+      try {
+        const prefix = 'local-audio-stream://file/';
+        const reqUrl = String(request && request.url ? request.url : '');
+        if (!reqUrl.startsWith(prefix)) {
+          return new Response('bad-request', { status: 400 });
+        }
+        const encoded = reqUrl.slice(prefix.length).replace(/\?.*$/, '');
+        const fullPath = decodeURIComponent(encoded);
+        const normalized = path.normalize(fullPath);
+        if (!path.isAbsolute(normalized)) {
+          return new Response('bad-request', { status: 400 });
+        }
+        if (!isLocalAudioPathAllowed(normalized)) {
+          return new Response('forbidden', { status: 403 });
+        }
+        const fileUrl = pathToFileURL(normalized).toString();
+        const response = await net.fetch(fileUrl);
+        const headers = new Headers(response.headers || {});
+        if (!headers.has('content-type')) {
+          headers.set('content-type', getStaticMimeType(normalized));
+        }
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers
+        });
+      } catch (e) {
+        return new Response(String(e && e.message ? e.message : e), { status: 500 });
+      }
+    });
+  } catch (e) {
+    console.warn('[main] local-audio-stream protocol 娉ㄥ唽寮傚父:', e);
+  }
+
   if (app.isPackaged && process.platform === 'win32') {
     try {
       // 尝试附加到父进程的控制台，或创建新的控制台窗口
