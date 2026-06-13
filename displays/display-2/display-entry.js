@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import JinanDisplay from './JinanDisplay.js'
-import { setupWindowThemeSync } from '../../src/utils/windowSettingsSync.js'
+import { setupWindowThemeSync } from '../shared/windowSettingsSync.js'
 
 // 输出窗口尺寸信息（在渲染进程中可见）
 console.log('========================================');

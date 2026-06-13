@@ -2,7 +2,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import {
   getFilteredStations,
   calculateDisplayStationInfo
-} from '../../src/utils/displayStationCalculator.js'
+} from '../shared/displayStationCalculator.js'
 
 export default {
   name: 'JinanDisplay',

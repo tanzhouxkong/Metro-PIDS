@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import DisplayWindow from './DisplayWindow.vue'
-import { setupWindowThemeSync } from '../../src/utils/windowSettingsSync.js'
+import { setupWindowThemeSync } from '../shared/windowSettingsSync.js'
 
 console.log('========================================')
 setupWindowThemeSync()
