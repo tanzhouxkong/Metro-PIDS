@@ -3915,7 +3915,6 @@ function createWindow() {
 
   // 停止录制
   async function stopRecording({ error = null, completed = false } = {}) {
-  async function stopRecording({ error = null, completed = false } = {}) {
     if (!recordingState.isRecording) return;
 
     // 清除所有定时器
@@ -3932,9 +3931,19 @@ function createWindow() {
       recordingState.durationTimer = null;
     }
 
-    // 关闭FFmpeg stdin
-    if (recordingState.ffmpegProcess && recordingState.ffmpegProcess.stdin) {
-      recordingState.ffmpegProcess.stdin.end();
+    // 关闭FFmpeg stdin并等待进程退出
+    const ffmpegProc = recordingState.ffmpegProcess;
+    if (ffmpegProc && ffmpegProc.stdin && !ffmpegProc.stdin.destroyed) {
+      ffmpegProc.stdin.end();
+      // 等待 FFmpeg 正常退出，避免音频混音时文件还未写完导致损坏
+      await new Promise((resolve) => {
+        let resolved = false;
+        const done = () => { if (!resolved) { resolved = true; resolve(); } };
+        ffmpegProc.once('close', done);
+        ffmpegProc.once('error', done);
+        // 超时兜底：最多等 10 秒
+        setTimeout(done, 10000);
+      });
     }
 
     // 销毁离屏窗口
@@ -4914,12 +4923,15 @@ function createWindow() {
       console.warn('[main] 主窗口 closed 清理异常:', e);
     } finally {
       mainWin = null;
-      setTimeout(forceTerminate, 20);
-      setTimeout(forceTerminate, 260);
+      // 如果正在录制，等待录制优雅停止后再强制退出，避免视频文件损坏
+      const recordingPromise = recordingState.isRecording
+        ? stopRecording({ completed: true }).catch(e => console.warn('[main] 关闭前停止录制异常:', e))
+        : Promise.resolve();
+      recordingPromise.then(() => {
+        setTimeout(forceTerminate, 20);
+      });
     }
   });
-}
-
 }
 
 // ==================== BrowserView 复合布局管理 ====================

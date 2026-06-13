@@ -1,6 +1,6 @@
 {
   "name": "metro-pids",
-  "version": "1.7.4",
+  "version": "1.7.7",
   "description": "Metro-PIDS ",
   "author": "",
   "repository": {
@@ -155,7 +155,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.0",
-    "electron": "^32.0.0",
+    "electron": "^32.3.3",
     "electron-builder": "^24.13.3",
     "electron-vite": "^5.0.0",
     "sass": "^1.97.3"

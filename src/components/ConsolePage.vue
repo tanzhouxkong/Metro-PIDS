@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <div id="console-page" class="pids-ant-page pids-console-ant" style="flex:1; display:flex; flex-direction:column; overflow:auto; background:var(--bg); padding:24px 16px;">
       <a-space direction="vertical" :size="16" style="width:100%">
       <!-- Header -->
@@ -590,7 +590,7 @@
             />
             <div v-if="recordingState.mode!=='parallel'" style="margin-top:6px; display:flex; justify-content:space-between; font-size:12px; color:var(--muted);">
               <span>
-                {{ t('console.recordingCurrentStation') }}闂傚倸鍊搁崐鎼佸磹閻戣姤鍊块柨鏃堟暜閸嬫挾绮☉妯诲櫧闁活厽鐟╅弻鐔兼倻濮楀棙顓归梺杞扮濡稓妲?recordingCurrentStationName }}
+                {{ t('console.recordingCurrentStation') }}{{ recordingCurrentStationName }}
               </span>
               <span>
                 {{ recordingArrDepLabel }}
